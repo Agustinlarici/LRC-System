@@ -1,0 +1,14 @@
+{
+  "name": "lrc-system-migration",
+  "version": "1.0.0",
+  "description": "MySQL to PostgreSQL migration script for LRC-System",
+  "main": "migrate.js",
+  "scripts": {
+    "migrate": "node migrate.js --all",
+    "migrate:dry": "node migrate.js --all --dry-run"
+  },
+  "dependencies": {
+    "mysql2": "^3.11.0",
+    "pg": "^8.13.0"
+  }
+}

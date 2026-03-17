@@ -1,0 +1,25 @@
+Luego docker compose -f docker-compose.dev.yml up adminer y abrís http://localhost:8080.
+
+Datos de conexión:
+
+Sistema: PostgreSQL
+Servidor: db
+Usuario: lrc
+Contraseña: lrc_password
+Base de datos: lrc_system_dev
+Opción 3 — TablePlus / DBeaver (app de escritorio)
+
+Conectás directo al puerto 5432 expuesto:
+
+Host: localhost
+Puerto: 5432
+User: lrc
+Password: lrc_password
+Database: lrc_system_dev
+
+Campo	Valor
+Sistema	PostgreSQL
+Servidor	db
+Usuario	lrc
+Contraseña	lrc_password
+Base de datos	lrc_system_dev

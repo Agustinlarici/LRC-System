@@ -1,0 +1,83 @@
+name: lrc-system-dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       lrc_system_dev
+      POSTGRES_USER:     lrc
+      POSTGRES_PASSWORD: lrc_password
+    volumes:
+      - pg_dev_data:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lrc -d lrc_system_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    restart: unless-stopped
+    environment:
+      NODE_ENV:            development
+      PORT:                3001
+      DATABASE_URL:        postgres://lrc:lrc_password@db:5432/lrc_system_dev
+      CORS_ORIGINS:        "*"
+      OPENAI_API_KEY:      ${OPENAI_API_KEY:-}
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend/src:/app/src          # solo fuente → polling detecta cambios
+      - ./backend/package.json:/app/package.json
+      - ./backend/tsconfig.json:/app/tsconfig.json
+      - backend_nm:/app/node_modules    # node_modules en volumen interno (rápido)
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    restart: unless-stopped
+    environment:
+      BACKEND_URL:             http://backend:3001
+      INTERNAL_API_URL:        http://backend:3001
+      NEXT_PUBLIC_BACKEND_URL: http://localhost:3001
+      WATCHPACK_POLLING:       "true"   # webpack polling (funciona con --no-turbopack)
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend/src:/app/src                     # solo fuente
+      - ./frontend/public:/app/public
+      - ./frontend/package.json:/app/package.json
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - ./frontend/next.config.ts:/app/next.config.ts
+      - ./frontend/tailwind.config.ts:/app/tailwind.config.ts
+      - ./frontend/postcss.config.js:/app/postcss.config.js
+      - frontend_nm:/app/node_modules               # node_modules interno
+      - frontend_next:/app/.next                    # .next interno (nunca stale)
+    depends_on:
+      - backend
+
+  adminer:
+    image: adminer
+    restart: unless-stopped
+    ports:
+      - "8888:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pg_dev_data:
+  backend_nm:
+  frontend_nm:
+  frontend_next:    # .next vive dentro de Docker, no en Windows
