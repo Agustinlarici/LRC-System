@@ -12,7 +12,7 @@ const CreateSchema = z.object({
   materiale:    z.string().min(1, 'materiale è obbligatorio'),
   mezzo:        z.string().min(1, 'mezzo è obbligatorio'),
   commessa:     z.string().optional().nullable(),
-  inseritoDa:   z.string().optional().default('Anonimo'),
+  inseritoDa:   z.string().default('Anonimo'),
   orarioArrivo: z.string().min(1, 'orario_arrivo è obbligatorio'),
 });
 
@@ -54,7 +54,7 @@ ingressoMerciRoutes.post('/', async (c) => {
       ${body.materiale},
       ${body.mezzo},
       ${body.commessa ?? null},
-      ${body.inseritoDa},
+      ${body.inseritoDa ?? 'Anonimo'},
       ${body.orarioArrivo.replace('T', ' ')}
     )
     RETURNING id
@@ -76,7 +76,8 @@ ingressoMerciRoutes.post('/:id/arrivato', async (c) => {
   `;
   if (!existing) throw new HTTPException(404, { message: 'Materiale non trovato' });
 
-  await db.begin(async (tx) => {
+  await db.begin(async (txRaw) => {
+    const tx = txRaw as unknown as typeof db;
     await tx`
       INSERT INTO ingresso_merci_storico
         (materiale, mezzo, commessa, inserito_da, orario_arrivo, ricevuto_da)

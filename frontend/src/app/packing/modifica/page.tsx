@@ -56,6 +56,8 @@ export default function ModificaPackingListPage() {
   // Local edits buffer
   const [localItems, setLocalItems] = useState<Record<number, PalletItem>>({});
 
+  useEffect(() => { document.title = 'Modifica Packing — STR'; }, []);
+
   useEffect(() => {
     setLoadingList(true);
     api.get<DispatchOption[]>('/api/pack/packing-lists')

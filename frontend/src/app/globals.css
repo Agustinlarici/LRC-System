@@ -33,3 +33,17 @@ body {
 .badge-confirmed { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800; }
 .badge-sent      { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800; }
 .badge-skipped   { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700; }
+
+/* Skeleton shimmer */
+.skeleton {
+  @apply bg-gray-200 rounded animate-pulse;
+}
+
+/* Toast slide-in */
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.animate-slideIn {
+  animation: slideIn 0.2s ease-out;
+}

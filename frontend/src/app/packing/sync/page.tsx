@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 
 export default function SyncArticlesPage() {
+  useEffect(() => { document.title = 'Sync Articoli — STR'; }, []);
   const [loading, setLoading] = useState(false);
   const [result,  setResult]  = useState<{ inserted: number; bc_total: number; existing_in_mysql: number } | null>(null);
   const [error,   setError]   = useState<string | null>(null);

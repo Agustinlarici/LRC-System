@@ -3,14 +3,17 @@
  */
 
 const BACKEND = typeof window !== 'undefined'
-  ? 'http://localhost:3001'                                    // browser → backend direct
-  : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');  // SSR → Docker service
+  ? (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001')  // browser → backend direct
+  : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');      // SSR → Docker service
+
+const REQUEST_TIMEOUT_MS = 15_000;
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BACKEND}${path}`, {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
   if (!res.ok) {

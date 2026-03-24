@@ -3,13 +3,17 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { fmtDatetime } from '@/lib/utils';
+import { SkeletonTable } from '@/components/ui/Skeleton';
 
 interface PackingList {
-  id:          number;
-  type:        string;
-  created_at:  string;
-  pallets:     number;
-  total_items: number;
+  id:               number;
+  type:             string | null;
+  destination_name: string | null;
+  operator_name:    string | null;
+  created_at:       string;
+  pallets:          number;
+  total_items:      number;
 }
 
 interface PalletItem {
@@ -41,11 +45,6 @@ interface SummaryItem {
   total_quantity: number;
 }
 
-function fmtDate(raw: string) {
-  const d = new Date(raw);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
-}
 
 function SummaryTable({ dispatchId }: { dispatchId: number }) {
   const [rows, setRows] = useState<SummaryItem[]>([]);
@@ -92,6 +91,7 @@ export default function PackingListePage() {
   const [visibleCount, setVisibleCount] = useState(40);
 
   useEffect(() => {
+    document.title = 'Packing Lists — STR';
     api.get<PackingList[]>('/api/pack/packing-lists')
       .then(data => { setLists(data); setVisibleCount(40); })
       .catch(console.error)
@@ -122,24 +122,26 @@ export default function PackingListePage() {
       </div>
 
       {loading ? (
-        <p className="text-gray-400">Caricamento...</p>
+        <SkeletonTable rows={6} cols={8} />
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-gray-500">
                 <th className="py-3 px-4 text-left font-medium">#</th>
-                <th className="py-3 px-4 text-left font-medium">Tipo spedizione</th>
+                <th className="py-3 px-4 text-left font-medium">Destinazione</th>
+                <th className="py-3 px-4 text-left font-medium">Tipo</th>
+                <th className="py-3 px-4 text-left font-medium">Operatore</th>
                 <th className="py-3 px-4 text-left font-medium">Data</th>
                 <th className="py-3 px-4 text-center font-medium">Pallet</th>
-                <th className="py-3 px-4 text-center font-medium">Tot. articoli</th>
+                <th className="py-3 px-4 text-center font-medium">Tot. pezzi</th>
                 <th className="py-3 px-4 text-center font-medium">Azioni</th>
               </tr>
             </thead>
             <tbody>
               {visible.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-10 text-center text-gray-400">
+                  <td colSpan={8} className="py-10 text-center text-gray-400">
                     Nessuna packing list disponibile
                   </td>
                 </tr>
@@ -147,8 +149,10 @@ export default function PackingListePage() {
                 <>
                   <tr key={pl.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-3 px-4 text-gray-500">{idx + 1}</td>
-                    <td className="py-3 px-4 font-medium">{pl.type}</td>
-                    <td className="py-3 px-4 text-gray-500">{fmtDate(pl.created_at)}</td>
+                    <td className="py-3 px-4 font-medium">{pl.destination_name || '–'}</td>
+                    <td className="py-3 px-4 text-gray-500">{pl.type || '–'}</td>
+                    <td className="py-3 px-4 text-gray-500">{pl.operator_name || '–'}</td>
+                    <td className="py-3 px-4 text-gray-500">{fmtDatetime(pl.created_at)}</td>
                     <td className="py-3 px-4 text-center">{pl.pallets}</td>
                     <td className="py-3 px-4 text-center">{pl.total_items}</td>
                     <td className="py-3 px-4">
@@ -172,7 +176,7 @@ export default function PackingListePage() {
 
                   {expanded?.id === pl.id && (
                     <tr key={`${pl.id}-detail`}>
-                      <td colSpan={6} className="p-4 bg-gray-50 border-b border-gray-200">
+                      <td colSpan={8} className="p-4 bg-gray-50 border-b border-gray-200">
                         <div className="flex gap-2 mb-3">
                           <button
                             onClick={() => setViewMode('detailed')}

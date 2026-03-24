@@ -37,7 +37,7 @@ export default function IngressoMerciTablet() {
   const router = useRouter();
   const [items,   setItems]   = useState<IngressoMerci[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modo,    setModo]    = useState<'monitor'>('monitor');
+  const [modo,    setModo]    = useState<'monitor' | 'input'>('monitor');
   const [msg,     setMsg]     = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // Conferma arrivo modal

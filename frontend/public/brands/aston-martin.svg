@@ -1,0 +1,10 @@
+<!-- PLACEHOLDER — sostituire con il logo Aston Martin ufficiale -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 100">
+  <rect width="240" height="100" fill="none"/>
+  <!-- Ali semplificate -->
+  <ellipse cx="60"  cy="50" rx="50" ry="18" fill="none" stroke="white" stroke-width="2.5"/>
+  <ellipse cx="180" cy="50" rx="50" ry="18" fill="none" stroke="white" stroke-width="2.5"/>
+  <rect x="85" y="35" width="70" height="30" rx="4" fill="none" stroke="white" stroke-width="2.5"/>
+  <text x="120" y="56" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="11" fill="white" text-anchor="middle" letter-spacing="1">AM</text>
+  <text x="120" y="88" font-family="Arial, sans-serif" font-size="9" fill="#aaa" text-anchor="middle" letter-spacing="2">ASTON MARTIN</text>
+</svg>

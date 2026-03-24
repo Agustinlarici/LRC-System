@@ -9,7 +9,7 @@ services:
       POSTGRES_USER:     lrc
       POSTGRES_PASSWORD: lrc_password
     volumes:
-      - pg_dev_data:/var/lib/postgresql/data
+      - lrc-system-pgdata-dev:/var/lib/postgresql/data
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     ports:
       - "5432:5432"
@@ -24,12 +24,24 @@ services:
     working_dir: /app
     command: sh -c "npm install && npm run dev"
     restart: unless-stopped
+    env_file:
+      - .env.dev
     environment:
       NODE_ENV:            development
       PORT:                3001
       DATABASE_URL:        postgres://lrc:lrc_password@db:5432/lrc_system_dev
       CORS_ORIGINS:        "*"
       OPENAI_API_KEY:      ${OPENAI_API_KEY:-}
+      WEBTHRON_HOST:       ${WEBTHRON_HOST:-192.168.1.12}
+      WEBTHRON_PORT:       ${WEBTHRON_PORT:-3306}
+      WEBTHRON_DB:         ${WEBTHRON_DB:-WebThron}
+      WEBTHRON_USER:       ${WEBTHRON_USER}
+      WEBTHRON_PASS:       ${WEBTHRON_PASS}
+      WEBTHRON_TZ:         ${WEBTHRON_TZ:-+01:00}
+      BC_SERVER:           ${BC_SERVER:-192.168.1.159}
+      BC_DATABASE:         ${BC_DATABASE:-STR}
+      BC_USER:             ${BC_USER}
+      BC_PASSWORD:         ${BC_PASSWORD}
       CHOKIDAR_USEPOLLING: "true"
     ports:
       - "3001:3001"
@@ -48,9 +60,9 @@ services:
     command: sh -c "npm install && npm run dev"
     restart: unless-stopped
     environment:
-      BACKEND_URL:             http://backend:3001
-      INTERNAL_API_URL:        http://backend:3001
-      NEXT_PUBLIC_BACKEND_URL: http://localhost:3001
+      BACKEND_URL:          http://backend:3001
+      INTERNAL_API_URL:     http://backend:3001
+      NEXT_PUBLIC_API_URL:  http://localhost:3001
       WATCHPACK_POLLING:       "true"   # webpack polling (funciona con --no-turbopack)
     ports:
       - "3000:3000"
@@ -77,7 +89,8 @@ services:
         condition: service_healthy
 
 volumes:
-  pg_dev_data:
+  lrc-system-pgdata-dev:
+    external: true
   backend_nm:
   frontend_nm:
   frontend_next:    # .next vive dentro de Docker, no en Windows

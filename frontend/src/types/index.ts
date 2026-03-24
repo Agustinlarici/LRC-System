@@ -86,6 +86,72 @@ export interface SpmaPlanItem {
   updatedAt: string;
 }
 
+// ─── Monitor ──────────────────────────────────────────────────────────────────
+
+export interface MonitorLinea {
+  id: number;
+  nome: string;
+  fase: string;
+  attivo: boolean;
+  logo: string | null;
+  created_at: string;
+}
+
+export interface MonitorCombo {
+  id: number;
+  linea_id: number;
+  modello: string;
+  componente: string;
+}
+
+export interface MonitorTurno {
+  id: number;
+  linea_id: number;
+  data: string;
+  numero: number;
+  ora_inizio: string;
+  ora_fine: string;
+}
+
+export interface MonitorSoglie {
+  linea_id: number;
+  soglia_giallo: number;
+  soglia_rosso: number;
+}
+
+export interface MonitorStato {
+  linea: { id: number; nome: string; logo: string | null };
+  turno_attivo: boolean;
+  in_pausa?: boolean;
+  qta_prodotta: number;
+  qta_da_produrre: number;
+  cycle_time_sec: number | null;
+  ultimo_evento: string | null;
+  elapsed_sec: number | null;
+  remaining_sec: number | null;
+  linestop_sec: number;
+  avanzamento_previsto: number;
+  soglie: { soglia_giallo: number; soglia_rosso: number };
+}
+
+// ─── Buffer ───────────────────────────────────────────────────────────────────
+
+export interface BufferLinea {
+  id: number;
+  nome: string;
+  fasi: string[];
+  attivo: boolean;
+  combos: { modello: string; componente: string }[];
+  soglie: { soglia_verde: number; soglia_giallo: number };
+}
+
+export interface BufferStato {
+  count: number;
+  commesse: string[];
+  colore: 'verde' | 'giallo' | 'rosso';
+  soglie: { soglia_verde: number; soglia_giallo: number };
+}
+
 // ─── Production ───────────────────────────────────────────────────────────────
 
 export interface ProdOrder {

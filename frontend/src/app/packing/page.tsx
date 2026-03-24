@@ -1,7 +1,7 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
 
-export const metadata: Metadata = { title: 'Packing — STR' };
+export const metadata: Metadata = { title: 'Packing' };
 
 const options = [
   {
@@ -15,6 +15,12 @@ const options = [
     title:       'Consulta Packing Lists',
     description: 'Visualizza, stampa e modifica le spedizioni',
     icon:        '🔍',
+  },
+  {
+    href:        '/packing/impostazioni',
+    title:       'Impostazioni',
+    description: 'Gestisci magazzinieri e destinazioni',
+    icon:        '⚙️',
   },
 ];
 

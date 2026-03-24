@@ -8,12 +8,10 @@ services:
     environment:
       POSTGRES_DB:       ${POSTGRES_DB:-lrc_system}
       POSTGRES_USER:     ${POSTGRES_USER:-lrc}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lrc_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - lrc-system-pgdata-prod:/var/lib/postgresql/data
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lrc}"]
       interval: 5s
@@ -27,20 +25,29 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      NODE_ENV:       development
+      NODE_ENV:       production
       PORT:           3001
-      DATABASE_URL:   postgres://${POSTGRES_USER:-lrc}:${POSTGRES_PASSWORD:-lrc_password}@db:5432/${POSTGRES_DB:-lrc_system}
-      CORS_ORIGINS:   http://localhost:3000
+      DATABASE_URL:   postgres://${POSTGRES_USER:-lrc}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lrc_system}
+      CORS_ORIGINS:   ${CORS_ORIGINS:?CORS_ORIGINS is required}
+      # Business Central (SQL Server) — article sync at 03:00
+      BC_SERVER:      ${BC_SERVER:-}
+      BC_DATABASE:    ${BC_DATABASE:-STR}
+      BC_USER:        ${BC_USER:-}
+      BC_PASSWORD:    ${BC_PASSWORD:-}
+      # WebThron (MySQL) — monitor data
+      WEBTHRON_HOST:  ${WEBTHRON_HOST:-}
+      WEBTHRON_PORT:  ${WEBTHRON_PORT:-3306}
+      WEBTHRON_DB:    ${WEBTHRON_DB:-WebThron}
+      WEBTHRON_USER:  ${WEBTHRON_USER:-}
+      WEBTHRON_PASS:  ${WEBTHRON_PASS:-}
+      WEBTHRON_TZ:    ${WEBTHRON_TZ:-+01:00}
+      # Optional
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
       - "3001:3001"
     depends_on:
       db:
         condition: service_healthy
-    develop:
-      watch:
-        - path: ./backend/src
-          action: rebuild
 
   # ─── Frontend (Next.js) ───────────────────────────────────────────────────────
   frontend:
@@ -48,14 +55,16 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://backend:3001
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
     restart: unless-stopped
     environment:
       INTERNAL_API_URL: http://backend:3001
+      BACKEND_URL:      http://backend:3001
     ports:
       - "3000:3000"
     depends_on:
       - backend
 
 volumes:
-  pg_data:
+  lrc-system-pgdata-prod:
+    external: true

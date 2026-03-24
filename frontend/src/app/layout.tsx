@@ -3,8 +3,11 @@ import '@/app/globals.css';
 import { AppShell } from '@/components/layout/AppShell';
 
 export const metadata: Metadata = {
-  title: 'STR',
-  description: 'Production Management System',
+  title: {
+    default:  'STR',
+    template: '%s — STR',
+  },
+  description: 'Sistema di gestione produzione STR',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -378,6 +378,108 @@ CREATE TABLE IF NOT EXISTS ingresso_merci_storico (
 );
 
 -- ============================================================
+-- MONITOR MODULE
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS monitor_linea (
+    id          SERIAL PRIMARY KEY,
+    nome        VARCHAR(100) NOT NULL,
+    fase        VARCHAR(200) NOT NULL,
+    modello     VARCHAR(200),
+    componente  VARCHAR(200),
+    attivo      BOOLEAN NOT NULL DEFAULT TRUE,
+    logo        VARCHAR(50) DEFAULT NULL,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+-- Per database già esistenti: ALTER TABLE monitor_linea ADD COLUMN IF NOT EXISTS logo VARCHAR(50) DEFAULT NULL;
+
+CREATE TABLE IF NOT EXISTS monitor_turno (
+    id          SERIAL PRIMARY KEY,
+    linea_id    INTEGER NOT NULL REFERENCES monitor_linea(id) ON DELETE CASCADE,
+    data        DATE NOT NULL,
+    numero      INTEGER NOT NULL DEFAULT 1,
+    ora_inizio  TIME NOT NULL,
+    ora_fine    TIME NOT NULL,
+    UNIQUE (linea_id, data, numero)
+);
+
+CREATE TABLE IF NOT EXISTS monitor_quantita_giorno (
+    id                   SERIAL PRIMARY KEY,
+    linea_id             INTEGER NOT NULL REFERENCES monitor_linea(id) ON DELETE CASCADE,
+    data                 DATE NOT NULL,
+    quantita_giornaliera INTEGER NOT NULL,
+    UNIQUE (linea_id, data)
+);
+
+CREATE TABLE IF NOT EXISTS monitor_soglie (
+    id              SERIAL PRIMARY KEY,
+    linea_id        INTEGER NOT NULL REFERENCES monitor_linea(id) ON DELETE CASCADE,
+    soglia_giallo   INTEGER NOT NULL DEFAULT 50,
+    soglia_rosso    INTEGER NOT NULL DEFAULT 20,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (linea_id)
+);
+
+CREATE TABLE IF NOT EXISTS monitor_pausa (
+    id          SERIAL PRIMARY KEY,
+    linea_id    INTEGER NOT NULL REFERENCES monitor_linea(id) ON DELETE CASCADE,
+    data        DATE NOT NULL,
+    ora_inizio  TIME NOT NULL,
+    ora_fine    TIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS monitor_linestop (
+    id          SERIAL PRIMARY KEY,
+    linea_id    INTEGER NOT NULL REFERENCES monitor_linea(id) ON DELETE CASCADE,
+    data        DATE NOT NULL,
+    inizio_ts   TIMESTAMP WITH TIME ZONE NOT NULL,
+    fine_ts     TIMESTAMP WITH TIME ZONE,
+    durata_sec  INTEGER  -- compilato quando la linea riprende
+);
+
+-- ============================================================
+-- BUFFER MODULE
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS buffer_linea (
+    id         SERIAL PRIMARY KEY,
+    nome       VARCHAR(100) NOT NULL,
+    attivo     BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS buffer_linea_fase (
+    id         SERIAL PRIMARY KEY,
+    linea_id   INTEGER NOT NULL REFERENCES buffer_linea(id) ON DELETE CASCADE,
+    fase       VARCHAR(200) NOT NULL
+);
+CREATE TABLE IF NOT EXISTS buffer_linea_combo (
+    id         SERIAL PRIMARY KEY,
+    linea_id   INTEGER NOT NULL REFERENCES buffer_linea(id) ON DELETE CASCADE,
+    modello    VARCHAR(200) NOT NULL,
+    componente VARCHAR(200) NOT NULL
+);
+CREATE TABLE IF NOT EXISTS buffer_soglie (
+    id             SERIAL PRIMARY KEY,
+    linea_id       INTEGER NOT NULL REFERENCES buffer_linea(id) ON DELETE CASCADE UNIQUE,
+    soglia_verde   INTEGER NOT NULL DEFAULT 10,
+    soglia_giallo  INTEGER NOT NULL DEFAULT 5
+);
+
+-- ============================================================
+-- MAPPA MODULE
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS mappa_shape_monitor (
+    shape_tag   VARCHAR(50) PRIMARY KEY,
+    monitor_id  INTEGER NOT NULL REFERENCES monitor_linea(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS mappa_shape_buffer (
+    shape_tag  VARCHAR(50) PRIMARY KEY,
+    buffer_id  INTEGER NOT NULL REFERENCES buffer_linea(id) ON DELETE CASCADE
+);
+
+-- ============================================================
 -- INDEXES
 -- ============================================================
 
@@ -385,7 +487,14 @@ CREATE INDEX IF NOT EXISTS idx_pack_pallet_item_pallet   ON pack_pallet_item(pal
 CREATE INDEX IF NOT EXISTS idx_pack_pallet_item_article  ON pack_pallet_item(article_code);
 CREATE INDEX IF NOT EXISTS idx_pack_dispatch_pallet_d    ON pack_dispatch_pallet(dispatch_id);
 CREATE INDEX IF NOT EXISTS idx_pack_dispatch_pallet_p    ON pack_dispatch_pallet(pallet_id);
+CREATE INDEX IF NOT EXISTS idx_pack_session_operator     ON pack_operator_session(operator_id);
 CREATE INDEX IF NOT EXISTS idx_spma_plan_commessa        ON spma_plan(commessa_id);
 CREATE INDEX IF NOT EXISTS idx_spma_plan_status          ON spma_plan(status);
 CREATE INDEX IF NOT EXISTS idx_prod_order_bc             ON prod_order(bc_order_no);
 CREATE INDEX IF NOT EXISTS idx_ingresso_merci_arrivo     ON ingresso_merci(orario_arrivo);
+CREATE INDEX IF NOT EXISTS idx_monitor_linea_attivo      ON monitor_linea(attivo);
+CREATE INDEX IF NOT EXISTS idx_monitor_turno_linea_data  ON monitor_turno(linea_id, data);
+CREATE INDEX IF NOT EXISTS idx_monitor_pausa_linea_data    ON monitor_pausa(linea_id, data);
+CREATE INDEX IF NOT EXISTS idx_monitor_linestop_linea_data ON monitor_linestop(linea_id, data);
+CREATE INDEX IF NOT EXISTS idx_monitor_qta_linea_data    ON monitor_quantita_giorno(linea_id, data);
+CREATE INDEX IF NOT EXISTS idx_buffer_linea_attivo ON buffer_linea(attivo);

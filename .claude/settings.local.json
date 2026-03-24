@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose:*)",
+      "Bash(find /c/ProduzioneSTR/produccion -type f \\\\\\(-name *.tsx -o -name *.ts -o -name *.jsx -o -name *.js \\\\\\))",
+      "Bash(cmd /c \"tasklist | findstr 17440\")",
+      "Bash(docker volume:*)",
+      "Bash(docker run:*)",
+      "Bash(npx tsc:*)",
+      "Bash(ls c:/LRC-System/frontend/node_modules/.bin/tsc*)",
+      "Bash(curl -s http://localhost:3001/api/buffer/1/debug)",
+      "Bash(curl -s --max-time 30 http://localhost:3001/api/buffer/1/debug)",
+      "Bash(curl -s --max-time 5 http://localhost:3001/health)",
+      "Bash(curl -s --max-time 120 http://localhost:3001/api/buffer/1/debug)",
+      "Bash(curl -s --max-time 60 http://localhost:3001/api/buffer/1/debug)",
+      "Bash(curl -s --max-time 30 \"http://localhost:3001/api/buffer/fasi\")",
+      "Bash(curl -s --max-time 10 \"http://localhost:3001/api/monitor/linee\")",
+      "Bash(curl -s --max-time 15 \"http://localhost:3001/api/buffer/modelli\")",
+      "Bash(curl -s --max-time 15 \"http://localhost:3001/api/buffer/ping-mysql\")",
+      "Bash(curl -s --max-time 20 \"http://localhost:3001/api/buffer/ping-mysql\")",
+      "Bash(curl.exe -s --max-time 20 \"http://localhost:3001/api/buffer/ping-mysql\")",
+      "Bash(curl.exe -s --max-time 30 \"http://localhost:3001/api/buffer/ping-mysql\")"
+    ]
+  }
+}
