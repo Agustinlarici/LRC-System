@@ -1,0 +1,132 @@
+[1m
+╔══════════════════════════════════════════════════╗
+║       LRC-System — Security & Update Report      ║
+║       2026-04-01 12:28:56                        ║
+╚══════════════════════════════════════════════════╝
+[0m
+
+[1m▶ Versione Node.js[0m
+  Locale       : v22.13.1
+  Dockerfile   : node:20-alpine
+  [1;33m⚠ Dockerfile usa node:20 — LTS attuale è 22 (considera di aggiornare)[0m
+
+[1m▶ Versione Docker[0m
+  Client          : 28.4.0
+  Engine (server) : [1;33mN/A — Docker Desktop non avviato[0m
+  [1;33m⚠ Avviare Docker Desktop per vedere la versione del server[0m
+
+  Come aggiornare: Docker Desktop → Help → Check for Updates
+  Changelog: https://docs.docker.com/desktop/release-notes/
+
+[1m[0;34m══════════════════════════════════════════[0m
+[1m[0;34m  BACKEND (Node.js / Hono)[0m
+[1m[0;34m══════════════════════════════════════════[0m
+
+[1m▶ npm audit — backend[0m
+  [0;32mCritico  : 0[0m
+  [0;32mAlto     : 0[0m
+  [1;33mModerato : 5[0m
+  Basso    : 0
+
+[1m▶ Pacchetti outdated — backend[0m
+  Pacchetto                          Attuale     Richiesto   Ultimo      Tipo
+  ---------------------------------------------------------------------------
+  @hono/node-server                  1.19.11     1.19.12     1.19.12     
+  @types/mssql                       9.1.9       9.1.11      9.1.11      
+  @types/node                        22.19.15    22.19.15    25.5.0      
+  esbuild                            0.24.2      0.24.2      0.27.4      
+  hono                               4.12.8      4.12.9      4.12.9      
+  mssql                              11.0.1      11.0.1      12.2.1      
+  node-cron                          3.0.3       3.0.3       4.2.1       
+  openai                             4.104.0     4.104.0     6.33.0      
+  pino                               9.14.0      9.14.0      10.3.1      
+  pino-pretty                        11.3.0      11.3.0      13.1.3      
+  typescript                         5.9.3       5.9.3       6.0.2       
+  vitest                             2.1.9       2.1.9       4.1.2       
+  zod                                3.25.76     3.25.76     4.3.6       
+
+  Totale da aggiornare: 13
+
+[1m[0;34m══════════════════════════════════════════[0m
+[1m[0;34m  FRONTEND (Next.js / React)[0m
+[1m[0;34m══════════════════════════════════════════[0m
+
+[1m▶ npm audit — frontend[0m
+  [0;32mCritico  : 0[0m
+  [0;31mAlto     : 2[0m
+  [1;33mModerato : 2[0m
+  Basso    : 0
+
+  [0;31m⚠ Dettaglio (critiche/alte):[0m
+# npm audit report
+brace-expansion  <1.1.13 || >=4.0.0 <5.0.5
+Severity: moderate
+brace-expansion: Zero-step sequence causes process hang and memory exhaustion - https://github.com/advisories/GHSA-f886-m6hf-6m8v
+brace-expansion: Zero-step sequence causes process hang and memory exhaustion - https://github.com/advisories/GHSA-f886-m6hf-6m8v
+fix available via `npm audit fix`
+node_modules/@typescript-eslint/typescript-estree/node_modules/brace-expansion
+node_modules/brace-expansion
+flatted  <=3.4.1
+Severity: high
+Prototype Pollution via parse() in NodeJS flatted - https://github.com/advisories/GHSA-rf6f-7fwh-wjgh
+fix available via `npm audit fix`
+node_modules/flatted
+next  9.5.0 - 15.5.13
+Severity: moderate
+Next.js: HTTP request smuggling in rewrites - https://github.com/advisories/GHSA-ggv3-7p47-pfv8
+Next.js: Unbounded next/image disk cache growth can exhaust storage - https://github.com/advisories/GHSA-3x4c-7xq6-9pq8
+fix available via `npm audit fix`
+node_modules/next
+picomatch  <=2.3.1 || 4.0.0 - 4.0.3
+Severity: high
+Picomatch: Method Injection in POSIX Character Classes causes incorrect Glob Matching - https://github.com/advisories/GHSA-3v7f-55p6-f55p
+Picomatch: Method Injection in POSIX Character Classes causes incorrect Glob Matching - https://github.com/advisories/GHSA-3v7f-55p6-f55p
+Picomatch has a ReDoS vulnerability via extglob quantifiers - https://github.com/advisories/GHSA-c2c7-rcm5-vvqj
+Picomatch has a ReDoS vulnerability via extglob quantifiers - https://github.com/advisories/GHSA-c2c7-rcm5-vvqj
+fix available via `npm audit fix`
+node_modules/picomatch
+node_modules/tinyglobby/node_modules/picomatch
+4 vulnerabilities (2 moderate, 2 high)
+To address all issues, run:
+  npm audit fix
+
+[1m▶ Pacchetti outdated — frontend[0m
+  Pacchetto                          Attuale     Richiesto   Ultimo      Tipo
+  ---------------------------------------------------------------------------
+  next                               -           15.5.14     16.2.2      
+  react                              -           19.2.4      19.2.4      
+  react-dom                          -           19.2.4      19.2.4      
+  zod                                -           3.25.76     4.3.6       
+
+  Totale da aggiornare: 4
+
+[1m[0;34m══════════════════════════════════════════[0m
+[1m[0;34m  DOCKER IMAGES[0m
+[1m[0;34m══════════════════════════════════════════[0m
+
+[1m▶ Immagini Docker (docker-compose.yml)[0m
+  Immagine                                   Tag              Note
+  ------------------------------------------------------------------------
+  adminer                                    latest           ⚠ tag non fissato
+  postgres:16-alpine                         16-alpine        OK (alpine)
+
+[1m[0;34m══════════════════════════════════════════[0m
+[1m[0;34m  RIEPILOGO AZIONI CONSIGLIATE[0m
+[1m[0;34m══════════════════════════════════════════[0m
+  1. Vulnerabilità npm → cd backend && npm audit fix
+                         cd frontend && npm audit fix
+
+  2. Pacchetti outdated → npm update (patch/minor)
+     Major: npx npm-check-updates -u && npm install
+
+  3. Node Dockerfile: node:20-alpine → node:22-alpine (LTS attuale)
+     Modifica: backend/Dockerfile e frontend/Dockerfile
+
+  4. Docker Desktop → Help → Check for Updates
+     Changelog: https://docs.docker.com/desktop/release-notes/
+
+  5. postgres:16-alpine → supportato fino al 2028, OK per ora
+
+  6. adminer senza tag fisso → considera adminer:4
+
+  Report: [1msecurity-report-2026-04-01.txt[0m

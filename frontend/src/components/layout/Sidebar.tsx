@@ -1,9 +1,11 @@
 'use client';
 
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState, useEffect } from 'react';
-import { visibleModules } from '@/lib/modules';
+import { MODULE_GROUPS, modulesByGroup } from '@/lib/modules';
+import { useAuth } from '@/lib/auth';
+import type { ModuleKey } from '@/types';
 
 // ─── SVG Icons ────────────────────────────────────────────────────────────────
 
@@ -54,7 +56,7 @@ function IconMap() {
 function IconClipboard() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-5 h-5 shrink-0">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
     </svg>
   );
 }
@@ -65,10 +67,11 @@ function IconFactory() {
     </svg>
   );
 }
-function IconSparkles() {
+function IconSettings() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-5 h-5 shrink-0">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M5 3l1.5 4.5L11 9l-4.5 1.5L5 15l-1.5-4.5L-1 9l4.5-1.5L5 3zM19 11l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3zM12 2l.75 2.25L15 5l-2.25.75L12 8l-.75-2.25L9 5l2.25-.75L12 2z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
     </svg>
   );
 }
@@ -79,114 +82,246 @@ function IconArchive() {
     </svg>
   );
 }
+function IconTicket() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-5 h-5 shrink-0">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+    </svg>
+  );
+}
+function IconChart() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-5 h-5 shrink-0">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+    </svg>
+  );
+}
+function IconHeatmap() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-5 h-5 shrink-0">
+      <rect x="3" y="3" width="4" height="4" rx="0.5" strokeLinecap="round" />
+      <rect x="10" y="3" width="4" height="4" rx="0.5" strokeLinecap="round" />
+      <rect x="17" y="3" width="4" height="4" rx="0.5" strokeLinecap="round" />
+      <rect x="3" y="10" width="4" height="4" rx="0.5" strokeLinecap="round" />
+      <rect x="10" y="10" width="4" height="4" rx="0.5" strokeLinecap="round" />
+      <rect x="17" y="10" width="4" height="4" rx="0.5" strokeLinecap="round" />
+      <rect x="3" y="17" width="4" height="4" rx="0.5" strokeLinecap="round" />
+      <rect x="10" y="17" width="4" height="4" rx="0.5" strokeLinecap="round" />
+      <rect x="17" y="17" width="4" height="4" rx="0.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconChevron({ open }: { open: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+      className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+    </svg>
+  );
+}
 
 // ─── Icon map ─────────────────────────────────────────────────────────────────
 
-const ICON_MAP: Record<string, () => JSX.Element> = {
-  IconBox:       IconBox,
-  IconTruck:     IconTruck,
-  IconMonitor:   IconMonitor,
-  IconArchive:   IconArchive,
-  IconMap:       IconMap,
-  IconClipboard: IconClipboard,
-  IconFactory:   IconFactory,
-  IconSparkles:  IconSparkles,
+const ICON_MAP: Record<string, () => React.ReactElement> = {
+  IconBox, IconTruck, IconMonitor, IconArchive, IconMap,
+  IconClipboard, IconFactory, IconSettings, IconTicket, IconChart, IconHeatmap,
 };
 
-// ─── Nav items ────────────────────────────────────────────────────────────────
+// ─── Group representative icons ───────────────────────────────────────────────
 
-const NAV_ITEMS = [
-  { href: '/', label: 'Home', Icon: IconHome },
-  ...visibleModules.map(m => ({ href: m.href, label: m.label, Icon: ICON_MAP[m.sidebar] ?? IconHome })),
-];
+const GROUP_ICON_MAP: Record<string, () => React.ReactElement> = {
+  Logistica:  IconTruck,
+  Produzione: IconMonitor,
+  Dashboard:  IconChart,
+  IT:         IconSettings,
+};
+
+// ─── Permission key map ───────────────────────────────────────────────────────
+
+const MODULE_KEY_MAP: Record<string, ModuleKey> = {
+  '/ingresso-merci':     'ingresso_merci',
+  '/packing':            'packing',
+  '/monitor':            'monitor',
+  '/buffer':             'buffer',
+  '/mappa':              'mappa',
+  '/tickets':            'tickets',
+  '/tickets/admin':      'tickets_admin',
+  '/dashboards':         'dashboards',
+  '/dashboards/heatmap': 'dashboards',
+};
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function Sidebar() {
-  const pathname = usePathname();
-  const [expanded, setExpanded] = useState(true);
+  const pathname  = usePathname();
+  const [expanded,   setExpanded]   = useState(true);
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const { user, canView, canManage, logout } = useAuth();
 
+  // Restore sidebar expanded state + open the group containing the current page
   useEffect(() => {
     const saved = localStorage.getItem('sidebar-expanded');
     if (saved !== null) setExpanded(saved === 'true');
   }, []);
 
-  function toggle() {
+  useEffect(() => {
+    // Auto-open the group that contains the active page
+    const activeGroup = MODULE_GROUPS.find(g =>
+      modulesByGroup(g).some(m => pathname === m.href || pathname.startsWith(m.href + '/'))
+    );
+    if (activeGroup) setOpenGroups(prev => new Set([...prev, activeGroup]));
+  }, [pathname]);
+
+  function toggleSidebar() {
     setExpanded(prev => {
       localStorage.setItem('sidebar-expanded', String(!prev));
       return !prev;
     });
   }
 
+  function expandToGroup(group: string) {
+    setExpanded(true);
+    localStorage.setItem('sidebar-expanded', 'true');
+    setOpenGroups(new Set([group]));
+  }
+
+  function toggleGroup(group: string) {
+    setOpenGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+  }
+
+  // Check if a module is accessible
+  function canAccess(href: string, manageOnly?: boolean): boolean {
+    const key = MODULE_KEY_MAP[href];
+    if (!key) return true;
+    return manageOnly ? canView(key) || canManage(key) : canView(key);
+  }
+
+  function isActive(href: string): boolean {
+    if (href === '/') return pathname === '/';
+    if (pathname === href) return true;
+    if (pathname.startsWith(href + '/')) {
+      // Don't mark parent active if a sibling module more specifically matches
+      const allHrefs = Object.keys(MODULE_KEY_MAP);
+      const hasSibling = allHrefs.some(h => h !== href && h.startsWith(href + '/') && pathname.startsWith(h));
+      return !hasSibling;
+    }
+    return false;
+  }
+
   return (
-    <aside
-      className={`relative min-h-full bg-zinc-900 text-white flex flex-col shrink-0 transition-all duration-300 ${
-        expanded ? 'w-56' : 'w-[68px]'
-      }`}
-    >
+    <aside className={`relative min-h-full bg-zinc-900 text-white flex flex-col shrink-0 transition-all duration-300 ${
+      expanded ? 'w-56' : 'w-[68px]'
+    }`}>
+
       {/* Logo */}
       <div className="flex items-center justify-center border-b border-zinc-800 h-14 px-4">
-        <img
-          src="/logo.png"
-          alt="STR"
-          className={`select-none object-contain transition-all duration-300 ${expanded ? 'h-9' : 'h-9'}`}
-        />
+        <img src="/logo.png" alt="STR" className="h-9 select-none object-contain" />
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-2 py-3 space-y-0.5">
+      <nav className="flex-1 px-2 py-3 overflow-y-auto space-y-0.5">
 
-        {/* Toggle: hamburger quando compresso, freccia a destra quando espanso */}
-        <button
-          onClick={toggle}
+        {/* Toggle button */}
+        <button onClick={toggleSidebar}
           aria-label={expanded ? 'Comprimi menu' : 'Espandi menu'}
-          title={expanded ? 'Comprimi' : 'Espandi'}
-          className={`w-full flex items-center px-2.5 py-2.5 rounded-lg text-sm transition-all duration-150 text-zinc-500 hover:bg-zinc-800 hover:text-white mb-1 ${
-            expanded ? 'justify-end' : 'justify-center'
-          }`}
+          className={`w-full flex items-center px-2.5 py-2 rounded-lg text-sm text-zinc-500
+            hover:bg-zinc-800 hover:text-white transition-colors mb-1
+            ${expanded ? 'justify-end' : 'justify-center'}`}
         >
-          {expanded ? (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-5 h-5 shrink-0">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
-          ) : (
-            <IconMenu />
-          )}
+          {expanded
+            ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-5 h-5 shrink-0"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+            : <IconMenu />}
         </button>
 
-        {/* Nav items */}
-        {NAV_ITEMS.map((item) => {
-          const active =
-            pathname === item.href ||
-            (item.href !== '/' && pathname.startsWith(item.href));
+        {/* Home */}
+        <Link href="/" title="Home"
+          className={`flex items-center gap-3 px-2.5 py-2.5 rounded-lg text-sm transition-colors
+            ${expanded ? '' : 'justify-center'}
+            ${isActive('/') ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'}`}
+        >
+          <IconHome />
+          {expanded && <span className="truncate font-medium">Home</span>}
+        </Link>
+
+        {/* Grouped modules */}
+        {MODULE_GROUPS.map(group => {
+          const items = modulesByGroup(group).filter(m => canAccess(m.href, m.manageOnly));
+          if (items.length === 0) return null;
+
+          const groupOpen   = openGroups.has(group);
+          const groupActive = items.some(m => isActive(m.href));
+          const GroupIcon   = GROUP_ICON_MAP[group] ?? IconHome;
 
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={item.label}
-              aria-label={item.label}
-              aria-current={active ? 'page' : undefined}
-              className={`
-                flex items-center gap-3 px-2.5 py-2.5 rounded-lg text-sm transition-all duration-150
-                ${expanded ? '' : 'justify-center'}
-                ${active
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'}
-              `}
-            >
-              <item.Icon />
-              {expanded && (
-                <span className="truncate font-medium">{item.label}</span>
+            <div key={group} className="pt-1">
+              {expanded ? (
+                // ── Expanded: collapsible group header ──────────────────────
+                <>
+                  <button onClick={() => toggleGroup(group)}
+                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold
+                      uppercase tracking-widest transition-colors select-none
+                      ${groupActive && !groupOpen
+                        ? 'text-blue-400 hover:bg-zinc-800'
+                        : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'}`}
+                  >
+                    <span>{group}</span>
+                    <IconChevron open={groupOpen} />
+                  </button>
+                  {groupOpen && (
+                    <div className="mt-0.5 space-y-0.5">
+                      {items.map(m => {
+                        const Icon   = ICON_MAP[m.sidebar] ?? IconHome;
+                        const active = isActive(m.href);
+                        return (
+                          <Link key={m.href} href={m.href} title={m.label}
+                            className={`flex items-center gap-3 pl-5 pr-2.5 py-2 rounded-lg text-sm transition-colors
+                              ${active ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'}`}
+                          >
+                            <Icon />
+                            <span className="truncate font-medium">{m.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              ) : (
+                // ── Collapsed: one icon per group, click expands sidebar ────
+                <button onClick={() => expandToGroup(group)} title={group}
+                  className={`w-full flex justify-center px-2.5 py-2.5 rounded-lg transition-colors
+                    ${groupActive ? 'text-blue-400 bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'}`}
+                >
+                  <GroupIcon />
+                </button>
               )}
-            </Link>
+            </div>
           );
         })}
       </nav>
 
-      {/* Footer */}
-      <div className={`border-t border-zinc-800 py-3 px-4 text-xs text-zinc-500 ${expanded ? '' : 'text-center px-0'}`}>
-        {expanded ? 'STR System v1.0' : '1.0'}
+      {/* Footer — user + logout */}
+      <div className={`border-t border-zinc-800 py-3 px-3 text-xs text-zinc-500 ${expanded ? '' : 'flex justify-center'}`}>
+        {expanded ? (
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate">{user?.display_name ?? 'STR System'}</span>
+            <button onClick={logout} title="Esci" className="text-zinc-600 hover:text-white transition-colors shrink-0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+            </button>
+          </div>
+        ) : (
+          <button onClick={logout} title="Esci" className="text-zinc-600 hover:text-white transition-colors">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+          </button>
+        )}
       </div>
     </aside>
   );

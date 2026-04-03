@@ -437,6 +437,13 @@ CREATE TABLE IF NOT EXISTS monitor_linestop (
     durata_sec  INTEGER  -- compilato quando la linea riprende
 );
 
+CREATE TABLE IF NOT EXISTS monitor_linea_combo (
+    id          SERIAL PRIMARY KEY,
+    linea_id    INTEGER NOT NULL REFERENCES monitor_linea(id) ON DELETE CASCADE,
+    modello     VARCHAR(200) NOT NULL,
+    componente  VARCHAR(200) NOT NULL
+);
+
 -- ============================================================
 -- BUFFER MODULE
 -- ============================================================

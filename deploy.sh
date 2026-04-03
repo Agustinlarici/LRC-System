@@ -62,11 +62,34 @@ docker compose up --build -d
 info "Attendo che il database sia pronto..."
 timeout=60
 elapsed=0
-while ! docker compose exec db pg_isready -U "$(grep POSTGRES_USER .env | cut -d= -f2)" -q 2>/dev/null; do
+DB_USER="$(grep POSTGRES_USER .env | cut -d= -f2)"
+DB_NAME="$(grep POSTGRES_DB .env | cut -d= -f2)"
+DB_NAME="${DB_NAME:-lrc_system}"
+while ! docker compose exec db pg_isready -U "$DB_USER" -d "$DB_NAME" -q 2>/dev/null; do
   sleep 2
   elapsed=$((elapsed+2))
   if [ $elapsed -ge $timeout ]; then
     error "Database non pronto dopo ${timeout}s. Controlla i log: ./deploy.sh logs"
+  fi
+done
+
+# ─── Migrazioni ───────────────────────────────────────────────
+info "Applico le migrazioni al database..."
+MIGRATIONS=(
+  "db/migrate.sql"
+  "db/migrate-tickets.sql"
+  "db/migrate-auth.sql"
+  "db/migrate-heatmap.sql"
+  "db/migrate-heatmap-hourly.sql"
+  "db/migrate-dashboards.sql"
+  "db/migrate-webthron-cache.sql"
+  "db/migrate-system-config.sql"
+)
+for f in "${MIGRATIONS[@]}"; do
+  if [ -f "$f" ]; then
+    docker compose cp "$f" "db:/tmp/$(basename "$f")"
+    docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -q -f "/tmp/$(basename "$f")"
+    info "  ✓ $(basename "$f")"
   fi
 done
 

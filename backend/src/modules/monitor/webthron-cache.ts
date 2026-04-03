@@ -1,5 +1,6 @@
 import { db } from '../../db/client.js';
 import { getWebthronPool } from './mysql-client.js';
+import { logger } from '../../lib/logger.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,7 +27,7 @@ function buildQuery(combos: Combo[], incremental: boolean) {
   const where = incremental ? `AND ubi.datain > ?` : '';
 
   return `
-    SELECT ubi.datain
+    SELECT LOW_PRIORITY /*+ MAX_EXECUTION_TIME(300000) */ ubi.datain
     FROM ubidocum AS ubi
     LEFT JOIN ikExtra     AS Extra62     ON ubi.iddocu = Extra62.iddocu  AND Extra62.idcampo = 62  AND Extra62.idcomm = 0 AND Extra62.seq = 0
     LEFT JOIN ikExtra     AS Extra43     ON ubi.iddocu = Extra43.iddocu  AND Extra43.idcampo = 43  AND Extra43.idcomm = 0 AND Extra43.seq = 0
@@ -40,14 +41,17 @@ function buildQuery(combos: Combo[], incremental: boolean) {
       AND (${comboConditions || '1=0'})
       ${where}
     ORDER BY ubi.datain ASC
+    LIMIT 15000
   `;
 }
+
+const QUERY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
 async function queryFull(fase: string, combos: Combo[]): Promise<Date[]> {
   if (combos.length === 0) return [];
   const sql    = buildQuery(combos, false);
   const params = [fase, ...combos.flatMap(c => [c.modello, c.componente])];
-  const [rows] = await getWebthronPool().execute(sql, params);
+  const [rows] = await getWebthronPool().execute({ sql, timeout: QUERY_TIMEOUT }, params);
   return (rows as Array<{ datain: Date }>).map(r => r.datain);
 }
 
@@ -55,7 +59,7 @@ async function queryIncremental(fase: string, combos: Combo[], since: Date): Pro
   if (combos.length === 0) return [];
   const sql    = buildQuery(combos, true);
   const params = [fase, ...combos.flatMap(c => [c.modello, c.componente]), since];
-  const [rows] = await getWebthronPool().execute(sql, params);
+  const [rows] = await getWebthronPool().execute({ sql, timeout: QUERY_TIMEOUT }, params);
   return (rows as Array<{ datain: Date }>).map(r => r.datain);
 }
 
@@ -83,7 +87,7 @@ async function fullRefreshLine(lineaId: number, fase: string, combos: Combo[]) {
     const timestamps = await queryFull(fase, combos);
     cache.set(lineaId, { timestamps, updatedAt: new Date() });
   } catch (err) {
-    process.stderr.write(`[WebthronCache] Full refresh errore linea ${lineaId}: ${err}\n`);
+    logger.error(`[WebthronCache] Full refresh errore linea ${lineaId}: ${err}`);
   }
 }
 
@@ -108,30 +112,32 @@ async function incrementalRefreshLine(lineaId: number, fase: string, combos: Com
       });
     }
   } catch (err) {
-    process.stderr.write(`[WebthronCache] Incremental errore linea ${lineaId}: ${err}\n`);
+    logger.error(`[WebthronCache] Incremental errore linea ${lineaId}: ${err}`);
   }
 }
 
 async function runFullRefresh() {
   try {
     const linee = await getActiveLinee();
-    await Promise.all(linee.map(l =>
-      fullRefreshLine(l.id as number, l.fase as string, l.combos as Combo[])
-    ));
-    process.stdout.write(`[WebthronCache] Full refresh completato — ${linee.length} linee\n`);
+    // Sequenziale — non in parallelo — per non saturare il pool MySQL (limit 2)
+    for (const l of linee) {
+      await fullRefreshLine(l.id as number, l.fase as string, l.combos as Combo[]);
+    }
+    logger.info(`[WebthronCache] Full refresh completato — ${linee.length} linee`);
   } catch (err) {
-    process.stderr.write(`[WebthronCache] Full refresh globale errore: ${err}\n`);
+    logger.error(`[WebthronCache] Full refresh globale errore: ${err}`);
   }
 }
 
 async function runIncrementalRefresh() {
   try {
     const linee = await getActiveLinee();
-    await Promise.all(linee.map(l =>
-      incrementalRefreshLine(l.id as number, l.fase as string, l.combos as Combo[])
-    ));
+    // Sequenziale — non in parallelo
+    for (const l of linee) {
+      await incrementalRefreshLine(l.id as number, l.fase as string, l.combos as Combo[]);
+    }
   } catch (err) {
-    process.stderr.write(`[WebthronCache] Incremental refresh globale errore: ${err}\n`);
+    logger.error(`[WebthronCache] Incremental refresh globale errore: ${err}`);
   }
 }
 
@@ -141,5 +147,5 @@ export { runIncrementalRefresh as webthronIncrementalRefresh, runFullRefresh as 
 
 export async function startWebthronCache() {
   await runFullRefresh();
-  console.log('🔄 WebThron cache avviata');
+  logger.info('WebThron cache avviata');
 }

@@ -2,6 +2,10 @@ import mysql from 'mysql2/promise';
 
 let pool: mysql.Pool | null = null;
 
+export function resetWebthronPool(): void {
+  pool = null;
+}
+
 export function getWebthronPool(): mysql.Pool {
   if (!pool) {
     pool = mysql.createPool({
@@ -11,10 +15,16 @@ export function getWebthronPool(): mysql.Pool {
       user:             process.env.WEBTHRON_USER ?? '',
       password:         process.env.WEBTHRON_PASS ?? '',
       waitForConnections: true,
-      connectionLimit:  5,
-      queueLimit:       0,
+      connectionLimit:  2,
+      queueLimit:       2,
       timezone:         process.env.WEBTHRON_TZ ?? '+01:00',
       connectTimeout:   5000,
+    });
+    // Set session wait_timeout = 5 min on every new connection.
+    // If our backend dies abruptly, MySQL releases the slot within 5 minutes
+    // instead of the server default (often 8 hours). No admin rights needed.
+    pool.on('connection', (conn) => {
+      conn.query('SET SESSION wait_timeout = 300, SESSION interactive_timeout = 300');
     });
   }
   return pool;
@@ -36,7 +46,7 @@ export async function queryWebthron(fase: string, combos: Combo[]) {
   const comboParams = combos.flatMap(c => [c.modello, c.componente]);
 
   const sql = `
-    SELECT
+    SELECT /*+ MAX_EXECUTION_TIME(300000) */
       ubi.datain           AS Data_Inserimento,
       ikExtra62Tab.stringa AS Fase,
       ikExtra43Tab.stringa AS Modello,

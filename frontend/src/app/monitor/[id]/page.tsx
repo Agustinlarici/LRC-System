@@ -136,6 +136,10 @@ export default function MonitorDisplayPage() {
     ? '--:--'
     : formatTime(localRemaining);
 
+  const qtaInRitardo = stato.turno_attivo &&
+    stato.avanzamento_previsto != null &&
+    stato.qta_prodotta < stato.avanzamento_previsto;
+
   // Sfondo: grigio durante pausa, lampeggia rosso quando scaduto, altrimenti scuro
   const bgColor = isPausa
     ? '#374151'
@@ -159,12 +163,12 @@ export default function MonitorDisplayPage() {
           </div>
 
           {/* Nome linea + logo marca */}
-          <div className="flex flex-col items-center justify-center gap-3 px-6">
-            <span className="text-gray-600 text-xs font-medium tracking-[0.3em] uppercase">
+          <div className="flex flex-col items-center justify-center gap-3 px-6" style={{ backgroundColor: '#facf5a' }}>
+            <span className="text-black font-medium tracking-[0.3em] uppercase" style={{ fontSize: 'clamp(1.2rem, 2.50vw, 2.3rem)' }}>
               Linea
             </span>
             <span
-              className="text-white font-semibold text-center break-all leading-tight"
+              className="text-black font-semibold text-center break-words leading-tight"
               style={{ fontSize: 'clamp(1.8rem, 5vw, 4.5rem)' }}
             >
               {stato.linea.nome}
@@ -173,8 +177,8 @@ export default function MonitorDisplayPage() {
               <img
                 src={logoSrc(stato.linea.logo)}
                 alt={stato.linea.logo}
-                className="w-full max-w-[324px] object-contain opacity-90"
-                style={{ maxHeight: 'clamp(5.4rem, 14.4vh, 12.6rem)' }}
+                className="w-full max-w-[324px] object-contain"
+                style={{ maxHeight: 'clamp(5.4rem, 14.4vh, 12.6rem)', filter: 'brightness(0)' }}
               />
             )}
           </div>
@@ -185,52 +189,60 @@ export default function MonitorDisplayPage() {
 
           {/* LINE STOP */}
           <div className={`flex flex-col items-center justify-center border-r ${c.border}`}>
-            <span
-              className="text-white font-semibold tabular-nums"
-              style={{ fontSize: 'clamp(1.6rem, 5.5vw, 5rem)', lineHeight: 1 }}
-            >
-              {formatLinestop(lineStopSec)}
-            </span>
-            <span className="text-gray-500 text-xs font-medium tracking-[0.2em] uppercase mt-4">
+            <div className="flex items-center justify-center" style={{ height: 'clamp(3rem, 10vw, 9rem)' }}>
+              <span
+                className="text-white font-semibold tabular-nums"
+                style={{ fontSize: 'clamp(1.6rem, 5.5vw, 5rem)', lineHeight: 1 }}
+              >
+                {formatLinestop(lineStopSec)}
+              </span>
+            </div>
+            <span className="text-gray-500 font-medium tracking-[0.2em] uppercase text-center mt-4" style={{ fontSize: 'clamp(1.2rem, 2.50vw, 2.3rem)', maxWidth: '55%' }}>
               Line Stop
             </span>
           </div>
 
           {/* QTA' PRODOTTA */}
           <div className={`flex flex-col items-center justify-center border-r ${c.border}`}>
-            <span
-              className="text-white font-semibold tabular-nums"
-              style={{ fontSize: 'clamp(3rem, 10vw, 9rem)', lineHeight: 1 }}
-            >
-              {stato.qta_prodotta}
-            </span>
-            <span className="text-gray-500 text-xs font-medium tracking-[0.2em] uppercase mt-4">
+            <div className="flex items-center justify-center" style={{ height: 'clamp(3rem, 10vw, 9rem)' }}>
+              <span
+                className={`font-semibold tabular-nums ${qtaInRitardo ? 'text-red-500' : 'text-white'}`}
+                style={{ fontSize: 'clamp(3rem, 10vw, 9rem)', lineHeight: 1 }}
+              >
+                {stato.qta_prodotta}
+              </span>
+            </div>
+            <span className="text-gray-500 font-medium tracking-[0.2em] uppercase text-center mt-4" style={{ fontSize: 'clamp(1.2rem, 2.50vw, 2.3rem)', maxWidth: '55%' }}>
               Qtà Prodotta
             </span>
           </div>
 
           {/* AVANZAMENTO PREVISTO */}
           <div className={`flex flex-col items-center justify-center border-r ${c.border}`}>
-            <span
-              className="text-white font-semibold tabular-nums"
-              style={{ fontSize: 'clamp(3rem, 10vw, 9rem)', lineHeight: 1 }}
-            >
-              {stato.turno_attivo ? stato.avanzamento_previsto : '—'}
-            </span>
-            <span className="text-gray-500 text-xs font-medium tracking-[0.2em] uppercase mt-4">
+            <div className="flex items-center justify-center" style={{ height: 'clamp(3rem, 10vw, 9rem)' }}>
+              <span
+                className="text-white font-semibold tabular-nums"
+                style={{ fontSize: 'clamp(3rem, 10vw, 9rem)', lineHeight: 1 }}
+              >
+                {stato.turno_attivo ? stato.avanzamento_previsto : '—'}
+              </span>
+            </div>
+            <span className="text-gray-500 font-medium tracking-[0.2em] uppercase text-center mt-4" style={{ fontSize: 'clamp(1.2rem, 2.50vw, 2.3rem)', maxWidth: '55%' }}>
               Avanz. Previsto
             </span>
           </div>
 
           {/* PIANO TOTALE */}
           <div className="flex flex-col items-center justify-center">
-            <span
-              className="text-white font-semibold tabular-nums"
-              style={{ fontSize: 'clamp(3rem, 10vw, 9rem)', lineHeight: 1 }}
-            >
-              {stato.turno_attivo ? stato.qta_da_produrre : '—'}
-            </span>
-            <span className="text-gray-500 text-xs font-medium tracking-[0.2em] uppercase mt-4">
+            <div className="flex items-center justify-center" style={{ height: 'clamp(3rem, 10vw, 9rem)' }}>
+              <span
+                className="text-white font-semibold tabular-nums"
+                style={{ fontSize: 'clamp(3rem, 10vw, 9rem)', lineHeight: 1 }}
+              >
+                {stato.turno_attivo ? stato.qta_da_produrre : '—'}
+              </span>
+            </div>
+            <span className="text-gray-500 font-medium tracking-[0.2em] uppercase text-center mt-4" style={{ fontSize: 'clamp(1.2rem, 2.50vw, 2.3rem)', maxWidth: '55%'  }}>
               Piano Totale
             </span>
           </div>

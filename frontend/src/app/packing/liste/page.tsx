@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { fmtDatetime } from '@/lib/utils';
@@ -107,7 +107,7 @@ export default function PackingListePage() {
     } catch (e) { console.error(e); }
   }
 
-  const visible = lists.filter(pl => pl.pallets > 0).slice(0, visibleCount);
+  const visible = lists.filter(pl => pl.total_items > 0).slice(0, visibleCount);
 
   return (
     <div>
@@ -117,7 +117,7 @@ export default function PackingListePage() {
           <p className="mt-1 text-gray-500">Storico spedizioni</p>
         </div>
         <Link href="/packing/modifica" className="btn-secondary text-sm">
-          ✏️ Modifica
+          ✏️ Modifica Packing List
         </Link>
       </div>
 
@@ -146,8 +146,8 @@ export default function PackingListePage() {
                   </td>
                 </tr>
               ) : visible.map((pl, idx) => (
-                <>
-                  <tr key={pl.id} className="border-b border-gray-100 hover:bg-gray-50">
+                <React.Fragment key={pl.id}>
+                  <tr className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-3 px-4 text-gray-500">{idx + 1}</td>
                     <td className="py-3 px-4 font-medium">{pl.destination_name || '–'}</td>
                     <td className="py-3 px-4 text-gray-500">{pl.type || '–'}</td>
@@ -169,6 +169,13 @@ export default function PackingListePage() {
                           className="btn-secondary text-xs px-3 py-1"
                         >
                           📄 PDF
+                        </Link>
+                        <Link
+                          href={`/packing/liste/${pl.id}?view=dogana`}
+                          target="_blank"
+                          className="btn-secondary text-xs px-3 py-1"
+                        >
+                          🧾 PDF Dogana
                         </Link>
                       </div>
                     </td>
@@ -193,7 +200,7 @@ export default function PackingListePage() {
                         </div>
 
                         {viewMode === 'detailed' ? (
-                          expanded.pallets.map(p => (
+                          expanded.pallets.filter(p => p.items.length > 0).map(p => (
                             <div key={p.id} className="mb-3">
                               <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1">
                                 Pallet {p.number}
@@ -230,14 +237,14 @@ export default function PackingListePage() {
                       </td>
                     </tr>
                   )}
-                </>
+                </React.Fragment>
               ))}
             </tbody>
           </table>
         </div>
       )}
 
-      {lists.filter(pl => pl.pallets > 0).length > visibleCount && (
+      {lists.filter(pl => pl.total_items > 0).length > visibleCount && (
         <div className="flex justify-center mt-4">
           <button
             className="btn-secondary"

@@ -11,6 +11,15 @@ services:
     volumes:
       - lrc-system-pgdata-dev:/var/lib/postgresql/data
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./db/migrate-tickets.sql:/docker-entrypoint-initdb.d/02_tickets.sql:ro
+      - ./db/migrate-auth.sql:/docker-entrypoint-initdb.d/03_auth.sql:ro
+      - ./db/migrate-heatmap.sql:/docker-entrypoint-initdb.d/04_heatmap.sql:ro
+      - ./db/migrate-heatmap-hourly.sql:/docker-entrypoint-initdb.d/05_heatmap_hourly.sql:ro
+      - ./db/migrate.sql:/docker-entrypoint-initdb.d/06_migrate.sql:ro
+      - ./db/migrate-dashboards.sql:/docker-entrypoint-initdb.d/07_dashboards.sql:ro
+      - ./db/migrate-webthron-cache.sql:/docker-entrypoint-initdb.d/08_webthron_cache.sql:ro
+      - ./db/migrate-system-config.sql:/docker-entrypoint-initdb.d/09_system_config.sql:ro
+      - ./db/migrate-impostazioni.sql:/docker-entrypoint-initdb.d/10_impostazioni.sql:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -30,7 +39,7 @@ services:
       NODE_ENV:            development
       PORT:                3001
       DATABASE_URL:        postgres://lrc:lrc_password@db:5432/lrc_system_dev
-      CORS_ORIGINS:        "*"
+      CORS_ORIGINS:        "http://localhost:3000"
       OPENAI_API_KEY:      ${OPENAI_API_KEY:-}
       WEBTHRON_HOST:       ${WEBTHRON_HOST:-192.168.1.12}
       WEBTHRON_PORT:       ${WEBTHRON_PORT:-3306}
@@ -42,6 +51,9 @@ services:
       BC_DATABASE:         ${BC_DATABASE:-STR}
       BC_USER:             ${BC_USER}
       BC_PASSWORD:         ${BC_PASSWORD}
+      JWT_SECRET:          ${JWT_SECRET:-dev-secret-change-in-production}
+      DELIBERA_FASI:       "DELIBERA FINALE - PROX"
+      DELIBERA_ESITO_OK:   "Accettato"
       CHOKIDAR_USEPOLLING: "true"
     ports:
       - "3001:3001"

@@ -2,8 +2,9 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
-import { queryWebthron } from '../monitor/mysql-client.js';
+import { getExecutiveCache, type ProductionRow } from '../monitor/executive-cache.js';
 import { getBufferCache } from '../buffer/cache.js';
+import { logger } from '../../lib/logger.js';
 
 export const mappaRoutes = new Hono();
 
@@ -36,7 +37,7 @@ mappaRoutes.get('/shape-monitors', async (c) => {
     return c.json(rows);
   } catch (err) {
     // Table may not exist yet — return empty array
-    process.stderr.write(`[Mappa] shape-monitors query failed: ${err}\n`);
+    logger.error(`[Mappa] shape-monitors query failed: ${err}`);
     return c.json([]);
   }
 });
@@ -75,7 +76,7 @@ mappaRoutes.delete('/shape-monitor/:tag', async (c) => {
   try {
     await db`DELETE FROM mappa_shape_monitor WHERE shape_tag = ${tag}`;
   } catch (err) {
-    process.stderr.write(`[Mappa] delete shape-monitor failed: ${err}\n`);
+    logger.error(`[Mappa] delete shape-monitor failed: ${err}`);
   }
   return c.json({ status: 'deleted' });
 });
@@ -92,7 +93,7 @@ mappaRoutes.get('/shape-buffers', async (c) => {
     `;
     return c.json(rows);
   } catch (err) {
-    process.stderr.write(`[Mappa] shape-buffers query failed: ${err}\n`);
+    logger.error(`[Mappa] shape-buffers query failed: ${err}`);
     return c.json([]);
   }
 });
@@ -130,7 +131,7 @@ mappaRoutes.delete('/shape-buffer/:tag', async (c) => {
   try {
     await db`DELETE FROM mappa_shape_buffer WHERE shape_tag = ${tag}`;
   } catch (err) {
-    process.stderr.write(`[Mappa] delete shape-buffer failed: ${err}\n`);
+    logger.error(`[Mappa] delete shape-buffer failed: ${err}`);
   }
   return c.json({ status: 'deleted' });
 });
@@ -148,7 +149,23 @@ function timeToMin(t: string) {
   return h * 60 + m;
 }
 
-async function computeColor(lineaId: number): Promise<ColorState> {
+// Trova l'ultimo evento di produzione per una linea dalla executive cache.
+// Zero query WebThron — usa solo i dati già caricati ogni 5 min.
+function latestEventFromCache(
+  fase: string,
+  combos: Array<{ modello: string; componente: string }>,
+  cacheRows: ProductionRow[],
+): Date | null {
+  let latest: Date | null = null;
+  for (const r of cacheRows) {
+    if (r.fase !== fase) continue;
+    if (!combos.some(c => c.modello === r.modello && c.componente === r.componente)) continue;
+    if (!latest || r.data_inserimento > latest) latest = r.data_inserimento;
+  }
+  return latest;
+}
+
+async function computeColor(lineaId: number, cacheRows: ProductionRow[]): Promise<ColorState> {
   const [linea] = await db`
     SELECT id, fase, attivo FROM monitor_linea WHERE id = ${lineaId}
   `;
@@ -161,7 +178,6 @@ async function computeColor(lineaId: number): Promise<ColorState> {
   const now = new Date();
   const timeStr = now.toTimeString().slice(0, 5);
 
-  // All turni for today — find the active one
   const turniOggi = await db`
     SELECT numero, ora_inizio, ora_fine
     FROM monitor_turno
@@ -175,7 +191,6 @@ async function computeColor(lineaId: number): Promise<ColorState> {
     return timeStr >= ini && timeStr <= fin;
   });
 
-  // Daily quantity
   const [qtaRow] = await db`
     SELECT quantita_giornaliera FROM monitor_quantita_giorno
     WHERE linea_id = ${lineaId} AND data = CURRENT_DATE
@@ -188,14 +203,12 @@ async function computeColor(lineaId: number): Promise<ColorState> {
   `;
   const soglieColore = soglie ?? { soglia_giallo: 50, soglia_rosso: 20 };
 
-  // Pauses today
   const pause = await db`
     SELECT ora_inizio, ora_fine FROM monitor_pausa
     WHERE linea_id = ${lineaId} AND data = CURRENT_DATE
     ORDER BY ora_inizio
   `;
 
-  // Currently in a pause → grigio
   const inPausa = pause.some(p => {
     const start = (p.ora_inizio as string).slice(0, 5);
     const end   = (p.ora_fine   as string).slice(0, 5);
@@ -203,7 +216,6 @@ async function computeColor(lineaId: number): Promise<ColorState> {
   });
   if (inPausa) return 'grigio';
 
-  // Net minutes across all turni minus pauses
   const totalTurnoMin = turniOggi.reduce((acc, t) => {
     return acc + Math.max(0, timeToMin(t.ora_fine as string) - timeToMin(t.ora_inizio as string));
   }, 0);
@@ -219,21 +231,16 @@ async function computeColor(lineaId: number): Promise<ColorState> {
     return acc + overlap;
   }, 0);
 
-  const nettoMin    = Math.max(1, totalTurnoMin - pauseMin);
+  const nettoMin     = Math.max(1, totalTurnoMin - pauseMin);
   const cycleTimeSec = Math.round((nettoMin * 60) / (qtaRow.quantita_giornaliera as number));
 
-  let rows: Array<{ Data_Inserimento: Date }> = [];
-  try {
-    rows = await queryWebthron(
-      linea.fase as string,
-      combos as unknown as Array<{ modello: string; componente: string }>
-    );
-  } catch (err) {
-    process.stderr.write(`[Mappa] WebThron non disponibile per linea ${lineaId}: ${err}\n`);
-    return 'grigio';
-  }
+  // Ultimo evento dalla executive cache — nessuna query a WebThron
+  const ultimoEvento = latestEventFromCache(
+    linea.fase as string,
+    combos as unknown as Array<{ modello: string; componente: string }>,
+    cacheRows,
+  );
 
-  const ultimoEvento = rows.length > 0 ? rows[0].Data_Inserimento : null;
   let elapsedSec: number;
   if (ultimoEvento) {
     elapsedSec = Math.floor((now.getTime() - ultimoEvento.getTime()) / 1000);
@@ -264,12 +271,13 @@ mappaRoutes.get('/stati', async (c) => {
 
   const result: Record<string, ShapeState> = {};
 
-  // Monitor shapes
+  // Monitor shapes — usa la executive cache, zero query a WebThron
+  const cacheRows = getExecutiveCache()?.rows ?? [];
   const uniqueMonitorIds = [...new Set(monitorMappings.map(m => m.monitor_id as number))];
   const colorMap = new Map<number, ColorState>();
-  await Promise.all(uniqueMonitorIds.map(async (id) => {
-    colorMap.set(id, await computeColor(id));
-  }));
+  for (const id of uniqueMonitorIds) {
+    colorMap.set(id, await computeColor(id, cacheRows));
+  }
   for (const m of monitorMappings) {
     result[m.shape_tag as string] = {
       type:  'monitor',

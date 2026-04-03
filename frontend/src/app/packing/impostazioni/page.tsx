@@ -203,6 +203,42 @@ function ScatoleSection() {
   );
 }
 
+// ─── Article autocomplete ─────────────────────────────────────────────────────
+
+let _articlesCache: string[] | null = null;
+
+function useArticles() {
+  const [articles, setArticles] = useState<string[]>(_articlesCache ?? []);
+  useEffect(() => {
+    if (_articlesCache) return;
+    api.get<string[]>('/api/pack/articles').catch(() => []).then(data => {
+      _articlesCache = data;
+      setArticles(data);
+    });
+  }, []);
+  return articles;
+}
+
+function ArticleInput({ value, onChange }: { value: string; onChange: (code: string) => void }) {
+  const articles = useArticles();
+  const listId = 'article-autocomplete-list';
+
+  return (
+    <>
+      <datalist id={listId}>
+        {articles.map(code => <option key={code} value={code} />)}
+      </datalist>
+      <input
+        className="input w-full"
+        list={listId}
+        placeholder="Codice articolo"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+      />
+    </>
+  );
+}
+
 // ─── Pesi e Prezzi articoli ───────────────────────────────────────────────────
 
 interface ArticleWeight { article_code: string; description: string | null; unit_weight_kg: number; }
@@ -237,9 +273,9 @@ function PesiSection() {
 
   return (
     <div>
-      <form onSubmit={save} className="flex gap-3 mb-4">
-        <input className="input flex-1" placeholder="Codice articolo" value={code} onChange={e => setCode(e.target.value)} />
-        <input className="input w-36" type="number" step="0.0001" placeholder="Peso unitario (kg)" value={weight} onChange={e => setWeight(e.target.value)} />
+      <form onSubmit={save} className="grid grid-cols-[minmax(0,400px)_180px_auto] gap-3 mb-4">
+        <ArticleInput value={code} onChange={setCode} />
+        <input className="input" type="number" step="0.0001" placeholder="Peso unitario (kg)" value={weight} onChange={e => setWeight(e.target.value)} />
         <button type="submit" disabled={saving || !code.trim() || !weight} className="btn btn-primary">
           {saving ? '...' : 'Salva'}
         </button>
@@ -297,9 +333,9 @@ function PrezziSection() {
 
   return (
     <div>
-      <form onSubmit={save} className="flex gap-3 mb-4">
-        <input className="input flex-1" placeholder="Codice articolo" value={code} onChange={e => setCode(e.target.value)} />
-        <input className="input w-36" type="number" step="0.0001" placeholder="Prezzo EUR" value={cost} onChange={e => setCost(e.target.value)} />
+      <form onSubmit={save} className="grid grid-cols-[minmax(0,400px)_180px_auto] gap-3 mb-4">
+        <ArticleInput value={code} onChange={setCode} />
+        <input className="input" type="number" step="0.0001" placeholder="Prezzo EUR" value={cost} onChange={e => setCost(e.target.value)} />
         <button type="submit" disabled={saving || !code.trim() || !cost} className="btn btn-primary">
           {saving ? '...' : 'Salva'}
         </button>
@@ -369,9 +405,9 @@ function AssociazioniSection() {
 
   return (
     <div>
-      <form onSubmit={save} className="flex gap-3 mb-4">
-        <input className="input flex-1" placeholder="Codice articolo" value={code} onChange={e => setCode(e.target.value)} />
-        <select className="input w-48" value={contId} onChange={e => setContId(e.target.value)}>
+      <form onSubmit={save} className="grid grid-cols-[1fr_200px_auto] gap-3 mb-4">
+        <ArticleInput value={code} onChange={setCode} />
+        <select className="input" value={contId} onChange={e => setContId(e.target.value)}>
           <option value="">Seleziona scatola...</option>
           {containers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
@@ -406,9 +442,117 @@ function AssociazioniSection() {
   );
 }
 
+// ─── Art. → Destinazioni ─────────────────────────────────────────────────────
+
+interface DispatchRule {
+  article_code:     string;
+  description:      string | null;
+  destination_id:   number;
+  destination_name: string;
+}
+
+function ArticoloDestinazioniSection() {
+  const [rules,      setRules]      = useState<DispatchRule[]>([]);
+  const [dests,      setDests]      = useState<{ id: number; name: string }[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [code,       setCode]       = useState('');
+  const [destId,     setDestId]     = useState('');
+  const [saving,     setSaving]     = useState(false);
+  const [error,      setError]      = useState('');
+
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    const [r, d] = await Promise.all([
+      api.get<DispatchRule[]>('/api/pack/article-dispatch-rules').catch(() => []),
+      api.get<{ id: number; name: string }[]>('/api/pack/dispatch-destinations').catch(() => []),
+    ]);
+    setRules(r); setDests(d); setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!code.trim() || !destId) return;
+    setSaving(true); setError('');
+    try {
+      await api.post('/api/pack/article-dispatch-rules', {
+        article_code:   code.trim().toUpperCase(),
+        destination_id: Number(destId),
+      });
+      setCode(''); setDestId(''); fetchAll();
+    } catch { setError('Errore salvataggio'); }
+    finally { setSaving(false); }
+  }
+
+  async function remove(code: string, destId: number, destName: string) {
+    if (!confirm(`Rimuovere destinazione "${destName}" per "${code}"?`)) return;
+    await api.delete(`/api/pack/article-dispatch-rules/${code}/${destId}`).catch(() => setError('Errore eliminazione'));
+    fetchAll();
+  }
+
+  // Group rules by article
+  const grouped = rules.reduce<Record<string, DispatchRule[]>>((acc, r) => {
+    if (!acc[r.article_code]) acc[r.article_code] = [];
+    acc[r.article_code].push(r);
+    return acc;
+  }, {});
+
+  return (
+    <div>
+      <p className="text-xs text-gray-500 mb-4">
+        Se un articolo ha destinazioni configurate, può essere scansionato <strong>solo</strong> per quelle destinazioni.
+        Se non ha nessuna configurazione, è permesso ovunque.
+      </p>
+      <form onSubmit={save} className="grid grid-cols-[minmax(0,400px)_200px_auto] gap-3 mb-4">
+        <ArticleInput value={code} onChange={setCode} />
+        <select className="input" value={destId} onChange={e => setDestId(e.target.value)}>
+          <option value="">Seleziona destinazione...</option>
+          {dests.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+        <button type="submit" disabled={saving || !code.trim() || !destId} className="btn btn-primary">
+          {saving ? '...' : 'Aggiungi'}
+        </button>
+      </form>
+      {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
+      {loading ? <p className="text-gray-400 text-sm">Caricamento...</p> :
+       Object.keys(grouped).length === 0 ? <p className="text-gray-400 text-sm">Nessuna regola configurata — tutti gli articoli sono permessi ovunque.</p> : (
+        <table className="w-full text-sm">
+          <thead><tr className="border-b border-gray-200 text-gray-500 text-left">
+            <th className="py-2">Articolo</th>
+            <th className="py-2">Descrizione</th>
+            <th className="py-2">Destinazioni permesse</th>
+          </tr></thead>
+          <tbody>
+            {Object.entries(grouped).map(([art, artRules]) => (
+              <tr key={art} className="border-b border-gray-100 align-top">
+                <td className="py-2 font-mono">{art}</td>
+                <td className="py-2 text-gray-500">{artRules[0].description || '–'}</td>
+                <td className="py-2">
+                  <div className="flex flex-wrap gap-1">
+                    {artRules.map(r => (
+                      <span key={r.destination_id} className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5 text-xs">
+                        {r.destination_name}
+                        <button
+                          onClick={() => remove(art, r.destination_id, r.destination_name)}
+                          className="text-blue-400 hover:text-red-500 leading-none font-bold"
+                        >×</button>
+                      </span>
+                    ))}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 // ─── Pagina principale ────────────────────────────────────────────────────────
 
-type Tab = 'operatori' | 'destinazioni' | 'articoli' | 'scatole' | 'pesi' | 'prezzi' | 'associazioni';
+type Tab = 'operatori' | 'destinazioni' | 'articoli' | 'scatole' | 'pesi' | 'prezzi' | 'associazioni' | 'dest_articoli';
 
 const TAB_LABELS: Record<Tab, string> = {
   operatori:    'Magazzinieri',
@@ -418,6 +562,7 @@ const TAB_LABELS: Record<Tab, string> = {
   pesi:         'Pesi',
   prezzi:       'Prezzi',
   associazioni: 'Art. → Scatola',
+  dest_articoli: 'Art. → Destinazioni',
 };
 
 export default function PackingImpostazioniPage() {
@@ -456,7 +601,7 @@ export default function PackingImpostazioniPage() {
         <p className="mt-1 text-gray-500">Gestisci magazzinieri, destinazioni, scatole, pesi e prezzi</p>
       </div>
 
-      <div className="card max-w-4xl">
+      <div className="card max-w-4xl mx-auto">
         <div className="flex flex-wrap gap-0 border-b border-gray-200 mb-6">
           {(Object.keys(TAB_LABELS) as Tab[]).map(t => (
             <button
@@ -477,7 +622,8 @@ export default function PackingImpostazioniPage() {
         {tab === 'scatole'      && <ScatoleSection />}
         {tab === 'pesi'         && <PesiSection />}
         {tab === 'prezzi'       && <PrezziSection />}
-        {tab === 'associazioni' && <AssociazioniSection />}
+        {tab === 'associazioni'  && <AssociazioniSection />}
+        {tab === 'dest_articoli' && <ArticoloDestinazioniSection />}
       </div>
     </div>
   );

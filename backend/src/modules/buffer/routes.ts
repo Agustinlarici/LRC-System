@@ -3,7 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
-import { getBufferCache, bufferFullRefresh } from './cache.js';
+import { getBufferCache, bufferFullRefresh, refreshSingleBuffer } from './cache.js';
 import { queryBuffer, queryFasi, queryModelliComponenti } from './mysql-client.js';
 
 export const bufferRoutes = new Hono();
@@ -76,23 +76,25 @@ bufferRoutes.get('/', async (c) => {
 bufferRoutes.post('/', async (c) => {
   const body = await parseBody(c, lineaSchema);
 
+  let newLineaId = 0;
   await db.begin(async (sql) => {
     const q = sql as unknown as typeof db;
     const [linea] = await q`INSERT INTO buffer_linea (nome) VALUES (${body.nome}) RETURNING id`;
-    const lineaId = linea.id as number;
+    newLineaId = linea.id as number;
 
     for (const fase of body.fasi) {
-      await q`INSERT INTO buffer_linea_fase (linea_id, fase) VALUES (${lineaId}, ${fase})`;
+      await q`INSERT INTO buffer_linea_fase (linea_id, fase) VALUES (${newLineaId}, ${fase})`;
     }
     await q`
       INSERT INTO buffer_soglie (linea_id, soglia_verde, soglia_giallo)
-      VALUES (${lineaId}, ${body.soglia_verde}, ${body.soglia_giallo})
+      VALUES (${newLineaId}, ${body.soglia_verde}, ${body.soglia_giallo})
     `;
     for (const combo of body.combos) {
-      await q`INSERT INTO buffer_linea_combo (linea_id, modello, componente) VALUES (${lineaId}, ${combo.modello}, ${combo.componente})`;
+      await q`INSERT INTO buffer_linea_combo (linea_id, modello, componente) VALUES (${newLineaId}, ${combo.modello}, ${combo.componente})`;
     }
   });
 
+  refreshSingleBuffer(newLineaId); // fire-and-forget: one query only for the new buffer
   return c.json({ ok: true }, 201);
 });
 
@@ -168,12 +170,47 @@ bufferRoutes.post('/refresh', async (c) => {
   return c.json({ ok: true, message: 'Refresh avviato' });
 });
 
+// ─── GET /api/buffer/debug-webthron?from=YYYY-MM-DD&to=YYYY-MM-DD ────────────
+// Conta i record in WebThron per le combo della linea 11 in un range di date.
+
+bufferRoutes.get('/debug-webthron', async (c) => {
+  const { getWebthronPool } = await import('../monitor/mysql-client.js');
+  const from = c.req.query('from') ?? '2026-03-03';
+  const to   = c.req.query('to')   ?? '2026-03-06';
+  try {
+    const [rows] = await getWebthronPool().execute({
+      sql: `
+        SELECT /*+ MAX_EXECUTION_TIME(60000) */
+          DATE(ubi.datain) AS giorno,
+          ikExtra62Tab.stringa AS fase,
+          COUNT(*) AS n
+        FROM ubidocum ubi
+        LEFT JOIN ikExtra Extra62 ON ubi.iddocu = Extra62.iddocu AND Extra62.idcampo = 62 AND Extra62.idcomm = 0 AND Extra62.seq = 0
+        LEFT JOIN ikExtra Extra43 ON ubi.iddocu = Extra43.iddocu AND Extra43.idcampo = 43 AND Extra43.idcomm = 0 AND Extra43.seq = 0
+        LEFT JOIN ikExtra Extra45 ON ubi.iddocu = Extra45.iddocu AND Extra45.idcampo = 45 AND Extra45.idcomm = 0 AND Extra45.seq = 0
+        LEFT JOIN ikExtraTab ikExtra62Tab ON ikExtra62Tab.id = Extra62.stringa
+        LEFT JOIN ikExtraTab ikExtra43Tab ON ikExtra43Tab.id = Extra43.stringa
+        LEFT JOIN ikExtraTab ikExtra45Tab ON ikExtra45Tab.id = Extra45.stringa
+        WHERE ubi.datain >= ? AND ubi.datain < DATE_ADD(?, INTERVAL 1 DAY)
+          AND ikExtra43Tab.stringa = 'F175'
+          AND ikExtra45Tab.stringa = 'PAR. POST / REAR BUMPER'
+        GROUP BY DATE(ubi.datain), ikExtra62Tab.stringa
+        ORDER BY giorno
+      `,
+      timeout: 60_000,
+    }, [from, to]) as any;
+    return c.json({ from, to, rows });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
 // ─── GET /api/buffer/ping-mysql ───────────────────────────────────────────────
 
 bufferRoutes.get('/ping-mysql', async (c) => {
   const { getWebthronPool } = await import('../monitor/mysql-client.js');
   try {
-    const [rows] = await getWebthronPool().execute({ sql: 'SELECT COUNT(*) AS cnt FROM ubidocum WHERE datain >= CURDATE() - INTERVAL 1 DAY', timeout: 10_000 }) as any;
+    const [rows] = await getWebthronPool().execute({ sql: 'SELECT /*+ MAX_EXECUTION_TIME(10000) */ COUNT(*) AS cnt FROM ubidocum WHERE datain >= CURDATE() - INTERVAL 1 DAY', timeout: 10_000 }) as any;
     return c.json({ ok: true, ubidocum_1day: rows[0].cnt });
   } catch (err) {
     return c.json({ ok: false, error: String(err) }, 500);
@@ -235,7 +272,7 @@ bufferRoutes.get('/:id/debug', async (c) => {
   const fasi   = await db`SELECT fase FROM buffer_linea_fase  WHERE linea_id = ${id} ORDER BY id`;
   const combos = await db`SELECT modello, componente FROM buffer_linea_combo WHERE linea_id = ${id} ORDER BY id`;
   const fasiArr   = fasi.map(f => f.fase as string);
-  const combosArr = combos as Array<{ modello: string; componente: string }>;
+  const combosArr = combos as unknown as Array<{ modello: string; componente: string }>;
   try {
     const items = await queryBuffer(fasiArr, combosArr);
     return c.json({ fasi: fasiArr, combos: combosArr, count: items.length, items: items.slice(0, 10) });

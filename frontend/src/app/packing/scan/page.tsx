@@ -9,10 +9,11 @@ import { api } from '@/lib/api';
 type LabelType = 'MRP' | 'commessa' | 'UDS';
 
 interface PalletItem {
-  pallet_item_id: number;
-  article_code:   string;
-  quantity:       number;
-  commessa:       string | null;
+  pallet_item_id:    number;
+  article_code:      string;
+  quantity:          number;
+  commessa:          string | null;
+  dest_error?:       boolean;  // true = destinazione non permessa
 }
 
 interface Pallet {
@@ -86,11 +87,16 @@ function ScanPage() {
   const [commessa,  setCommessa]  = useState('');
   const [uds,       setUds]       = useState('');
 
+  // Items con errore destinazione (pallet_item_id → article_code)
+  const [destErrors,           setDestErrors]            = useState<Record<number, string>>({});
+
   // Modals
-  const [articleErrorMsg,      setArticleErrorMsg]      = useState('');
+  const [articleErrorMsg,      setArticleErrorMsg]       = useState('');
   const [showArticleError,     setShowArticleError]      = useState(false);
   const [showCambiaBancale,    setShowCambiaBancale]     = useState(false);
   const [showFineScansione,    setShowFineScansione]     = useState(false);
+  const [showDestWarning,      setShowDestWarning]       = useState(false);
+  const [destWarningAction,    setDestWarningAction]     = useState<'cambia' | 'fine'>('cambia');
   const [expectedBoxes,        setExpectedBoxes]         = useState('');
   const [confirmCount,         setConfirmCount]          = useState('');
   const [alertMsg,             setAlertMsg]              = useState('');
@@ -200,12 +206,25 @@ function ScanPage() {
 
   async function saveItem(code: string, qty: number, comm: string) {
     try {
-      await api.post('/api/pack/pallet-items', {
-        palletId:    activePalletId,
+      // Check destination — non-blocking, just mark error if not allowed
+      const check = await api.post<{ allowed: boolean }>('/api/pack/check-article-dispatch', {
         articleCode: code,
-        quantity:    qty,
-        commessa:    comm || null,
-      });
+        dispatchId:  dispatchId,
+      }).catch(() => ({ allowed: true })); // if check fails, allow anyway
+
+      const [row] = await Promise.all([
+        api.post<{ id: number }>('/api/pack/pallet-items', {
+          palletId:    activePalletId,
+          articleCode: code,
+          quantity:    qty,
+          commessa:    comm || null,
+        }),
+      ]);
+
+      if (!check.allowed) {
+        setDestErrors(prev => ({ ...prev, [row.id]: code }));
+      }
+
       fetchDispatch();
     } catch {
       showAlertModal('❌ Errore durante il salvataggio dell\'articolo');
@@ -214,7 +233,55 @@ function ScanPage() {
 
   async function eliminaItem(id: number) {
     await api.delete(`/api/pack/pallet-items/${id}`);
+    setDestErrors(prev => { const n = { ...prev }; delete n[id]; return n; });
     fetchDispatch();
+  }
+
+  function getDestErrorItems(): string[] {
+    const palletItems = activePallet?.items ?? [];
+    return palletItems
+      .filter(it => destErrors[it.pallet_item_id])
+      .map(it => it.article_code)
+      .filter((v, i, a) => a.indexOf(v) === i); // unique
+  }
+
+  // ─── Dest warning → continua verso cambia/fine ──────────────────────────────
+
+  function openCambiaBancale() {
+    const errors = getDestErrorItems();
+    if (errors.length > 0) {
+      setDestWarningAction('cambia');
+      setShowDestWarning(true);
+    } else {
+      setExpectedBoxes('');
+      setShowCambiaBancale(true);
+      setTimeout(() => boxesRef.current?.focus(), 100);
+    }
+  }
+
+  function openFineScansione() {
+    const errors = getDestErrorItems();
+    if (errors.length > 0) {
+      setDestWarningAction('fine');
+      setShowDestWarning(true);
+    } else {
+      setConfirmCount('');
+      setShowFineScansione(true);
+      setTimeout(() => confirmRef.current?.focus(), 100);
+    }
+  }
+
+  function continueAfterWarning() {
+    setShowDestWarning(false);
+    if (destWarningAction === 'cambia') {
+      setExpectedBoxes('');
+      setShowCambiaBancale(true);
+      setTimeout(() => boxesRef.current?.focus(), 100);
+    } else {
+      setConfirmCount('');
+      setShowFineScansione(true);
+      setTimeout(() => confirmRef.current?.focus(), 100);
+    }
   }
 
   // ─── Cambia bancale ─────────────────────────────────────────────────────────
@@ -329,7 +396,7 @@ function ScanPage() {
                   className="w-full border border-gray-300 rounded px-3 py-2 text-gray-900 focus:outline-none focus:border-blue-500"
                   value={quantity}
                   onChange={e => setQuantity(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleSubmit(e as unknown as React.FormEvent); }}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); handleSubmit(e as unknown as React.FormEvent); } }}
                 />
               </div>
             </>}
@@ -353,7 +420,7 @@ function ScanPage() {
                   className="w-full border border-gray-300 rounded px-3 py-2 text-gray-900 focus:outline-none focus:border-blue-500"
                   value={commessa}
                   onChange={e => setCommessa(e.target.value.replace(/'/g, '-'))}
-                  onKeyDown={e => { if (e.key === 'Enter') handleSubmit(e as unknown as React.FormEvent); }}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); handleSubmit(e as unknown as React.FormEvent); } }}
                 />
               </div>
             </>}
@@ -367,7 +434,7 @@ function ScanPage() {
                   className="w-full border border-gray-300 rounded px-3 py-2 text-gray-900 focus:outline-none focus:border-blue-500"
                   value={uds}
                   onChange={e => setUds(e.target.value.replace(/'/g, '-'))}
-                  onKeyDown={e => { if (e.key === 'Enter') handleSubmit(e as unknown as React.FormEvent); }}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); handleSubmit(e as unknown as React.FormEvent); } }}
                 />
               </div>
             )}
@@ -403,29 +470,35 @@ function ScanPage() {
                   <tr>
                     <td colSpan={5} className="py-8 text-center text-gray-400">Nessun prodotto scansionato</td>
                   </tr>
-                ) : palletItems.map((item, i) => (
-                  <tr key={item.pallet_item_id} className="border-b border-gray-100 hover:bg-gray-50">
+                ) : palletItems.map((item, i) => {
+                  const hasDestError = !!destErrors[item.pallet_item_id];
+                  return (
+                  <tr key={item.pallet_item_id} className={`border-b border-gray-100 ${hasDestError ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
                     <td className="py-2 px-3 text-gray-500">{i + 1}</td>
-                    <td className="py-2 px-3 font-mono text-gray-900">{item.article_code}</td>
+                    <td className="py-2 px-3 font-mono font-medium" style={{ color: hasDestError ? '#dc2626' : undefined }}>
+                      {item.article_code}
+                      {hasDestError && <span className="ml-2 text-xs font-normal">⚠ dest. errata</span>}
+                    </td>
                     <td className="py-2 px-3 text-center text-gray-900">{item.quantity}</td>
                     <td className="py-2 px-3 text-gray-600">{item.commessa || '—'}</td>
                     <td className="py-2 px-3">
                       <button onClick={() => eliminaItem(item.pallet_item_id)} className="text-red-500 hover:text-red-700 text-lg leading-none">🗑</button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
           <div className="px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
             <button
-              onClick={() => { setExpectedBoxes(''); setShowCambiaBancale(true); setTimeout(() => boxesRef.current?.focus(), 100); }}
+              onClick={openCambiaBancale}
               className="bg-gray-500 text-white px-4 py-2 rounded font-medium hover:bg-gray-600 transition-all"
             >
               Cambia bancale
             </button>
             <button
-              onClick={() => { setConfirmCount(''); setShowFineScansione(true); setTimeout(() => confirmRef.current?.focus(), 100); }}
+              onClick={openFineScansione}
               className="bg-green-600 text-white px-4 py-2 rounded font-medium hover:bg-green-700 transition-all"
             >
               Fine scansione
@@ -479,6 +552,38 @@ function ScanPage() {
           onChange={e => setConfirmCount(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') confirmFineScansione(); }}
         />
+      </Modal>
+
+      {/* Modal: Articoli con destinazione errata */}
+      <Modal
+        show={showDestWarning}
+        title="⚠️ Articoli con destinazione errata"
+        footer={<>
+          <button
+            onClick={() => { setShowDestWarning(false); setTimeout(() => (labelType === 'UDS' ? udsRef : articleRef).current?.focus(), 50); }}
+            className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
+          >
+            Torna alla scansione
+          </button>
+          <button
+            onClick={continueAfterWarning}
+            className="px-4 py-2 rounded bg-orange-500 text-white hover:bg-orange-600"
+          >
+            Continua comunque
+          </button>
+        </>}
+      >
+        <p className="text-sm text-gray-700 mb-3">
+          I seguenti articoli <strong>non sono permessi</strong> per la destinazione <strong>"{destination}"</strong>:
+        </p>
+        <ul className="text-sm space-y-1 mb-3">
+          {getDestErrorItems().map(code => (
+            <li key={code} className="flex items-center gap-2 text-red-700 font-mono font-medium">
+              <span className="text-red-500">✕</span> {code}
+            </li>
+          ))}
+        </ul>
+        <p className="text-xs text-gray-500">Puoi tornare alla scansione e rimuoverli, oppure continuare comunque.</p>
       </Modal>
 
       {/* Modal: Articolo inesistente (bloccante) */}

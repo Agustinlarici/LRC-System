@@ -1,0 +1,171 @@
+import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import { z } from 'zod';
+import { compare, hash } from 'bcryptjs';
+import { db } from '../../db/client.js';
+import { parseBody } from '../../lib/validate.js';
+import {
+  requireAuth, requireManage, signToken, setSessionCookie, clearSessionCookie,
+  type Env, type AuthUser,
+} from '../../lib/auth.js';
+
+export const authRoutes = new Hono<Env>();
+
+// ─── Login ────────────────────────────────────────────────────────────────────
+
+authRoutes.post('/login', async (c) => {
+  const body = await parseBody(c, z.object({
+    username: z.string().min(1),
+    password: z.string().min(1),
+  }));
+
+  const [user] = await db<{ id: number; username: string; password_hash: string; display_name: string; role: string; is_active: boolean }[]>`
+    SELECT id, username, password_hash, display_name, role, is_active
+    FROM users WHERE lower(username) = ${body.username.toLowerCase()}
+  `;
+
+  if (!user || !user.is_active) {
+    throw new HTTPException(401, { message: 'Credenziali non valide' });
+  }
+
+  const valid = await compare(body.password, user.password_hash);
+  if (!valid) throw new HTTPException(401, { message: 'Credenziali non valide' });
+
+  const permissions = await db`
+    SELECT module_key, can_view, can_manage
+    FROM user_module_permissions WHERE user_id = ${user.id}
+  `;
+
+  const payload: Omit<AuthUser, 'permissions'> = {
+    id:           user.id,
+    username:     user.username,
+    display_name: user.display_name,
+    role:         user.role as AuthUser['role'],
+  };
+
+  setSessionCookie(c, signToken(payload));
+
+  return c.json({ user: { ...payload, permissions } });
+});
+
+// ─── Logout ───────────────────────────────────────────────────────────────────
+
+authRoutes.post('/logout', (c) => {
+  clearSessionCookie(c);
+  return c.json({ status: 'ok' });
+});
+
+// ─── Me ───────────────────────────────────────────────────────────────────────
+
+authRoutes.get('/me', requireAuth, (c) => {
+  return c.json({ user: c.get('user') });
+});
+
+// ─── Users list ───────────────────────────────────────────────────────────────
+
+authRoutes.get('/users', requireManage('tickets_admin'), async (c) => {
+  const users = await db`
+    SELECT id, username, display_name, email, role, is_active, created_at
+    FROM users ORDER BY display_name
+  `;
+  return c.json(users);
+});
+
+// ─── Create user ──────────────────────────────────────────────────────────────
+
+authRoutes.post('/users', requireManage('tickets_admin'), async (c) => {
+  const body = await parseBody(c, z.object({
+    username:     z.string().min(2).max(50),
+    password:     z.string().min(6),
+    display_name: z.string().min(1).max(100),
+    email:        z.string().email().optional(),
+    role:         z.enum(['guest', 'operator', 'it', 'admin']).default('operator'),
+  }));
+
+  const password_hash = await hash(body.password, 10);
+  const [created] = await db`
+    INSERT INTO users (username, password_hash, display_name, email, role)
+    VALUES (${body.username}, ${password_hash}, ${body.display_name}, ${body.email ?? null}, ${body.role ?? 'operator'})
+    RETURNING id, username, display_name, email, role, is_active, created_at
+  `;
+  return c.json(created, 201);
+});
+
+// ─── Update user ──────────────────────────────────────────────────────────────
+
+authRoutes.patch('/users/:id', requireManage('tickets_admin'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+
+  const body = await parseBody(c, z.object({
+    display_name: z.string().min(1).max(100).optional(),
+    email:        z.string().email().nullable().optional(),
+    role:         z.enum(['guest', 'operator', 'it', 'admin']).optional(),
+    is_active:    z.boolean().optional(),
+    password:     z.string().min(6).optional(),
+  }));
+
+  const updates: Record<string, any> = {};
+  if (body.display_name !== undefined) updates.display_name  = body.display_name;
+  if (body.email        !== undefined) updates.email         = body.email;
+  if (body.role         !== undefined) updates.role          = body.role;
+  if (body.is_active    !== undefined) updates.is_active     = body.is_active;
+  if (body.password     !== undefined) updates.password_hash = await hash(body.password, 10);
+
+  if (!Object.keys(updates).length) {
+    throw new HTTPException(400, { message: 'Nessun campo da aggiornare' });
+  }
+
+  const [updated] = await db`
+    UPDATE users SET ${db(updates)} WHERE id = ${id}
+    RETURNING id, username, display_name, email, role, is_active
+  `;
+  if (!updated) throw new HTTPException(404, { message: 'Utente non trovato' });
+  return c.json(updated);
+});
+
+// ─── Get user permissions ──────────────────────────────────────────────────────
+
+authRoutes.get('/users/:id/permissions', requireManage('tickets_admin'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+
+  const perms = await db`
+    SELECT module_key, can_view, can_manage
+    FROM user_module_permissions WHERE user_id = ${id}
+  `;
+  return c.json(perms);
+});
+
+// ─── Replace user permissions (bulk) ──────────────────────────────────────────
+
+authRoutes.put('/users/:id/permissions', requireManage('tickets_admin'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+
+  const body = await parseBody(c, z.object({
+    permissions: z.array(z.object({
+      module_key: z.enum(['ingresso_merci','packing','monitor','buffer','mappa','tickets','tickets_it','tickets_admin','impostazioni','dashboards']),
+      can_view:   z.boolean(),
+      can_manage: z.boolean(),
+    })),
+  }));
+
+  // Delete existing and re-insert
+  await db`DELETE FROM user_module_permissions WHERE user_id = ${id}`;
+
+  if (body.permissions.length > 0) {
+    for (const p of body.permissions) {
+      await db`
+        INSERT INTO user_module_permissions (user_id, module_key, can_view, can_manage)
+        VALUES (${id}, ${p.module_key}, ${p.can_view}, ${p.can_manage})
+      `;
+    }
+  }
+
+  const perms = await db`
+    SELECT module_key, can_view, can_manage
+    FROM user_module_permissions WHERE user_id = ${id}
+  `;
+  return c.json(perms);
+});

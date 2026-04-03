@@ -12,8 +12,17 @@ services:
     volumes:
       - lrc-system-pgdata-prod:/var/lib/postgresql/data
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./db/migrate-tickets.sql:/docker-entrypoint-initdb.d/02_tickets.sql:ro
+      - ./db/migrate-auth.sql:/docker-entrypoint-initdb.d/03_auth.sql:ro
+      - ./db/migrate-heatmap.sql:/docker-entrypoint-initdb.d/04_heatmap.sql:ro
+      - ./db/migrate-heatmap-hourly.sql:/docker-entrypoint-initdb.d/05_heatmap_hourly.sql:ro
+      - ./db/migrate.sql:/docker-entrypoint-initdb.d/06_migrate.sql:ro
+      - ./db/migrate-dashboards.sql:/docker-entrypoint-initdb.d/07_dashboards.sql:ro
+      - ./db/migrate-webthron-cache.sql:/docker-entrypoint-initdb.d/08_webthron_cache.sql:ro
+      - ./db/migrate-impostazioni.sql:/docker-entrypoint-initdb.d/09_impostazioni.sql:ro
+      - ./db/migrate-system-config.sql:/docker-entrypoint-initdb.d/10_system_config.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lrc}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lrc} -d ${POSTGRES_DB:-lrc_system}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -41,6 +50,11 @@ services:
       WEBTHRON_USER:  ${WEBTHRON_USER:-}
       WEBTHRON_PASS:  ${WEBTHRON_PASS:-}
       WEBTHRON_TZ:    ${WEBTHRON_TZ:-+01:00}
+      # JWT (Ticket IT)
+      JWT_SECRET:     ${JWT_SECRET:?JWT_SECRET is required}
+      # Delibera qualità
+      DELIBERA_FASI:     ${DELIBERA_FASI:-DELIBERA FINALE - PROX}
+      DELIBERA_ESITO_OK: ${DELIBERA_ESITO_OK:-Accettato}
       # Optional
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     ports:
@@ -64,6 +78,16 @@ services:
       - "3000:3000"
     depends_on:
       - backend
+
+  # ─── Adminer ────────────────────────────────────────────────────────────────
+  adminer:
+    image: adminer
+    restart: unless-stopped
+    ports:
+      - "8888:8080"
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   lrc-system-pgdata-prod:

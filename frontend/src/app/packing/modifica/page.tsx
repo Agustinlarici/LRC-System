@@ -274,6 +274,7 @@ export default function ModificaPackingListPage() {
                           placeholder="Q.tà"
                           value={newItems[pallet.id]?.quantity || ''}
                           onChange={e => updateNewItem(pallet.id, 'quantity', e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); addNewItem(pallet.id); } }}
                         />
                       </td>
                       <td className="py-2 px-2">
@@ -282,6 +283,7 @@ export default function ModificaPackingListPage() {
                           placeholder="Commessa (opzionale)"
                           value={newItems[pallet.id]?.commessa || ''}
                           onChange={e => updateNewItem(pallet.id, 'commessa', e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); addNewItem(pallet.id); } }}
                         />
                       </td>
                       <td className="py-2 px-2">

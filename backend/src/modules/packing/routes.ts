@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
 import { syncPackArticles } from './bc-client.js';
+import { logger } from '../../lib/logger.js';
 
 export const packingRoutes = new Hono();
 
@@ -87,13 +88,56 @@ packingRoutes.post('/check-article-dispatch', async (c) => {
     dispatchId:  z.number().int().positive(),
   }));
   const [dispatch] = await db`SELECT destination_id FROM pack_dispatch WHERE id = ${body.dispatchId}`;
-  if (!dispatch) return c.json({ allowed: false });
-  const [row] = await db`
+  if (!dispatch) return c.json({ allowed: false, reason: 'dispatch_not_found' });
+
+  // Count total rules for this article
+  const [totalRules] = await db`
+    SELECT COUNT(*)::int AS total FROM pack_article_dispatch WHERE article_code = ${body.articleCode}
+  `;
+  // No rules configured → allowed anywhere
+  if ((totalRules.total as number) === 0) return c.json({ allowed: true });
+
+  // Rules exist → check if this destination is allowed
+  const [match] = await db`
     SELECT COUNT(*)::int AS total
     FROM pack_article_dispatch
     WHERE article_code = ${body.articleCode} AND destination_id = ${dispatch.destination_id}
   `;
-  return c.json({ allowed: (row.total as number) > 0 });
+  return c.json({ allowed: (match.total as number) > 0 });
+});
+
+// ─── Article → Destination rules ──────────────────────────────────────────────
+
+packingRoutes.get('/article-dispatch-rules', async (c) => {
+  const rows = await db`
+    SELECT ad.article_code, a.description, ad.destination_id, d.name AS destination_name
+    FROM pack_article_dispatch ad
+    LEFT JOIN pack_article a ON a.code = ad.article_code
+    LEFT JOIN pack_dispatch_destination d ON d.id = ad.destination_id
+    ORDER BY ad.article_code, d.name
+  `;
+  return c.json(rows);
+});
+
+packingRoutes.post('/article-dispatch-rules', async (c) => {
+  const body = await parseBody(c, z.object({
+    article_code:   z.string().min(1),
+    destination_id: z.number().int().positive(),
+  }));
+  await db`
+    INSERT INTO pack_article_dispatch (article_code, destination_id)
+    VALUES (${body.article_code}, ${body.destination_id})
+    ON CONFLICT (article_code, destination_id) DO NOTHING
+  `;
+  return c.json({ status: 'ok' }, 201);
+});
+
+packingRoutes.delete('/article-dispatch-rules/:code/:destId', async (c) => {
+  const code   = c.req.param('code');
+  const destId = parseInt(c.req.param('destId'), 10);
+  if (isNaN(destId)) throw new HTTPException(400, { message: 'ID non valido' });
+  await db`DELETE FROM pack_article_dispatch WHERE article_code = ${code} AND destination_id = ${destId}`;
+  return c.json({ status: 'deleted' });
 });
 
 // ─── Dispatches ───────────────────────────────────────────────────────────────
@@ -346,7 +390,7 @@ packingRoutes.post('/articles/sync-from-bc', async (c) => {
     return c.json(result);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error('BC sync error:', msg);
+    logger.error(`BC sync error: ${msg}`);
     return c.json({ ok: false, error: msg }, 500);
   }
 });

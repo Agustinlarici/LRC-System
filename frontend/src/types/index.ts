@@ -1,3 +1,23 @@
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+export type ModuleKey =
+  | 'ingresso_merci' | 'packing' | 'monitor' | 'buffer'
+  | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards';
+
+export interface ModulePermission {
+  module_key: ModuleKey;
+  can_view:   boolean;
+  can_manage: boolean;
+}
+
+export interface AuthUser {
+  id:           number;
+  username:     string;
+  display_name: string;
+  role:         'guest' | 'operator' | 'it' | 'admin';
+  permissions:  ModulePermission[];
+}
+
 // ─── Ingresso Merci ───────────────────────────────────────────────────────────
 
 export interface IngressoMerci {

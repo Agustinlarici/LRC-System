@@ -46,7 +46,7 @@ async function fetchRawDocuments(componenti: string[]): Promise<RawRow[]> {
     LEFT JOIN ikExtraTab AS ikExtra43Tab ON ikExtra43Tab.id = Extra43.stringa
     LEFT JOIN ikExtraTab AS ikExtra45Tab ON ikExtra45Tab.id = Extra45.stringa
     WHERE ubi.tipdoc IN (${tipdoc})
-      AND ubi.datain >= CURDATE() - INTERVAL 60 DAY
+      AND ubi.datain >= CURDATE() - INTERVAL 14 DAY
       AND ikExtra45Tab.stringa IN (${compPh})
     LIMIT 15000
   `;
@@ -115,20 +115,33 @@ export async function queryBufferAll(linee: LineaInput[]): Promise<Map<number, B
   return result;
 }
 
-// ─── Lookup queries ───────────────────────────────────────────────────────────
+// ─── Lookup queries (con cache in memoria — TTL 24h) ─────────────────────────
+// queryFasi e queryModelliComponenti sono dati quasi-statici (lista fasi/modelli
+// da WebThron). Vengono interrogati solo ad ogni apertura delle impostazioni buffer.
+// La cache evita query ripetute a WebThron: si aggiorna al massimo una volta al giorno.
+
+const LOOKUP_TTL_MS = 24 * 60 * 60 * 1000; // 24 ore
+
+let fasiCache:     { data: string[];     ts: number } | null = null;
+let modelliCache:  { data: BufferCombo[]; ts: number } | null = null;
 
 export async function queryFasi(): Promise<string[]> {
+  if (fasiCache && Date.now() - fasiCache.ts < LOOKUP_TTL_MS) return fasiCache.data;
   const sql = `
     SELECT /*+ MAX_EXECUTION_TIME(300000) */ DISTINCT t.stringa AS fase
     FROM ikExtraTab t
     WHERE t.id IN (SELECT DISTINCT e.stringa FROM ikExtra e WHERE e.idcampo = 62)
     ORDER BY t.stringa
+    LIMIT 1000
   `;
   const [rows] = await getWebthronPool().execute({ sql, timeout: QUERY_TIMEOUT });
-  return (rows as Array<{ fase: string }>).map(r => r.fase);
+  const data = (rows as Array<{ fase: string }>).map(r => r.fase);
+  fasiCache = { data, ts: Date.now() };
+  return data;
 }
 
 export async function queryModelliComponenti(): Promise<BufferCombo[]> {
+  if (modelliCache && Date.now() - modelliCache.ts < LOOKUP_TTL_MS) return modelliCache.data;
   const sql = `
     SELECT /*+ MAX_EXECUTION_TIME(300000) */ DISTINCT t43.stringa AS modello, t45.stringa AS componente
     FROM ikExtra e43
@@ -137,10 +150,13 @@ export async function queryModelliComponenti(): Promise<BufferCombo[]> {
     JOIN ikExtraTab t45 ON t45.id = e45.stringa
     WHERE e43.idcomm = 0 AND e43.seq = 0
     ORDER BY t43.stringa, t45.stringa
+    LIMIT 1000
   `;
   const [rows] = await getWebthronPool().execute({ sql, timeout: QUERY_TIMEOUT });
-  return (rows as Array<{ modello: string; componente: string }>).map(r => ({
+  const data = (rows as Array<{ modello: string; componente: string }>).map(r => ({
     modello:    r.modello,
     componente: r.componente,
   }));
+  modelliCache = { data, ts: Date.now() };
+  return data;
 }

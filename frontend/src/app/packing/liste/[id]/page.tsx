@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { fmtDatetime } from '@/lib/utils';
@@ -124,9 +124,10 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
   const [destinatario, setDestinatario] = useState(dispatch.destination_name ?? '');
   const [destFinale,   setDestFinale]   = useState('');
 
-  const missingItems = dispatch.pallets.flatMap(p => p.items).filter(it => it.missing_weight || it.missing_container || it.missing_price);
-  const totalPallets   = dispatch.pallets.length;
-  const totalPackages  = dispatch.pallets.reduce((s, p) => s + p.items.length, 0);
+  const nonEmptyPallets = dispatch.pallets.filter(p => p.items.length > 0);
+  const missingItems = nonEmptyPallets.flatMap(p => p.items).filter(it => it.missing_weight || it.missing_container || it.missing_price);
+  const totalPallets   = nonEmptyPallets.length;
+  const totalPackages  = nonEmptyPallets.reduce((s, p) => s + p.items.length, 0);
 
   return (
     <>
@@ -179,7 +180,7 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
       </div>
 
       {/* Per-pallet tables */}
-      {dispatch.pallets.map(pallet => (
+      {nonEmptyPallets.map(pallet => (
         <div key={pallet.id} className="mb-6">
           <div className="bg-gray-100 border border-gray-300 rounded px-3 py-1 mb-1 flex justify-between items-center">
             <span className="font-bold text-sm">Bancale {pallet.number}</span>
@@ -266,8 +267,11 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function PackingListDetailPage() {
-  const { id } = useParams<{ id: string }>();
-  const [view,           setView]           = useState<View>('standard');
+  const { id }     = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
+  const [view,           setView]           = useState<View>(
+    searchParams.get('view') === 'dogana' ? 'dogana' : 'standard'
+  );
   const [summary,        setSummary]        = useState<SummaryItem[]>([]);
   const [commesseGroups, setCommesseGroups] = useState<CommessaGroup[]>([]);
   const [logistics,      setLogistics]      = useState<LogisticsDispatch | null>(null);
@@ -340,7 +344,7 @@ export default function PackingListDetailPage() {
 
         {/* Standard view */}
         {view === 'standard' && (
-          <div className="max-w-4xl">
+          <div className="max-w-4xl mx-auto">
             <p><strong>Destinazione:</strong> {logistics.destination_name || logistics.type || '–'}</p>
             <p><strong>Data creazione:</strong> {fmtDate(logistics.created_at)}</p>
             <p><strong>Totale bancali:</strong> {logistics.pallets.length}</p>
@@ -355,7 +359,7 @@ export default function PackingListDetailPage() {
 
             <div className="section-box page-break"><h2 className="section-title">Dettaglio per bancali</h2></div>
 
-            {logistics.pallets.map(pallet => (
+            {logistics.pallets.filter(p => p.items.length > 0).map(pallet => (
               <div key={pallet.id} className="mb-4">
                 <h3 className="subsection-title">Bancale #{pallet.number}</h3>
                 <table className="w-full border-collapse text-xs">

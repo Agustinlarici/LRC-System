@@ -3,7 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
-import { getWebthronCache } from './webthron-cache.js';
+import { getExecutiveCache, getDeliberaFasi, isConforming } from './executive-cache.js';
 
 export const monitorRoutes = new Hono();
 
@@ -365,9 +365,8 @@ monitorRoutes.get('/stato/:id', async (c) => {
   `;
   if (!linea) throw new HTTPException(404, { message: 'Monitor non trovato' });
 
-  const combos = await db`
-    SELECT modello, componente FROM monitor_linea_combo WHERE linea_id = ${id}
-  `;
+  const combos = await db`SELECT modello, componente FROM monitor_linea_combo WHERE linea_id = ${id}`;
+  const combosSet = new Set(combos.map(c => `${c.modello}|${c.componente}`));
 
   const { now, timeStr, dateStr } = getRomeNow();
 
@@ -452,11 +451,16 @@ monitorRoutes.get('/stato/:id', async (c) => {
   const cycleTimeSec = Math.round((nettoMinuti * 60) / (qtaRow.quantita_giornaliera as number));
 
   // ── Cache ──────────────────────────────────────────────────────────────────
-  const cached = getWebthronCache(id);
-  const turnoStartTs  = romeDt(turnoAttivo.ora_inizio as string);
+  const execCache = getExecutiveCache();
+  const allProdTimestamps = (execCache?.rows ?? [])
+    .filter(r => r.fase === (linea.fase as string) && combosSet.has(`${r.modello}|${r.componente}`))
+    .map(r => r.data_inserimento)
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  const turnoStartTs = romeDt(turnoAttivo.ora_inizio as string);
 
   // Timestamps del turno attivo (filtra eventi fuori dal turno corrente)
-  const turnoTimestamps = (cached?.timestamps ?? []).filter(
+  const turnoTimestamps = allProdTimestamps.filter(
     t => t.getTime() >= turnoStartTs.getTime() && t.getTime() <= now.getTime(),
   );
 
@@ -465,6 +469,14 @@ monitorRoutes.get('/stato/:id', async (c) => {
 
   // ── Line Stop (gap analysis su cicli passati) ──────────────────────────────
   let pastLinestopSec = 0;
+
+  // Gap dall'inizio turno al primo pezzo
+  if (turnoTimestamps.length > 0) {
+    const gapInizio = (turnoTimestamps[0].getTime() - turnoStartTs.getTime()) / 1000;
+    if (gapInizio > cycleTimeSec) pastLinestopSec += gapInizio - cycleTimeSec;
+  }
+
+  // Gap tra pezzi consecutivi
   for (let i = 1; i < turnoTimestamps.length; i++) {
     const gap = (turnoTimestamps[i].getTime() - turnoTimestamps[i - 1].getTime()) / 1000;
     if (gap > cycleTimeSec) pastLinestopSec += gap - cycleTimeSec;
@@ -551,5 +563,244 @@ monitorRoutes.get('/stato/:id', async (c) => {
     linestop_sec:         linestopSec,
     avanzamento_previsto: avanzamentoPrevisto,
     soglie:               soglieColore,
+  });
+});
+
+// ─── Executive dashboard ──────────────────────────────────────────────────────
+// GET /api/monitor/executive — all-lines daily OEE summary, single PG query + cache reads
+
+monitorRoutes.get('/executive', async (c) => {
+  const { now, dateStr } = getRomeNow();
+
+  // ONE PostgreSQL query: all active lines with their daily turni, fermi, pausa, quantita
+  // Note: midnight-crossing shifts (e.g. 22:00–06:00) not supported — TIME subtraction
+  // would yield a negative interval. Standard Italian shifts are within one calendar day.
+  const linee = await db`
+    SELECT
+      ml.id,
+      ml.nome,
+      ml.logo,
+      ml.fase,
+      COALESCE(
+        json_agg(DISTINCT jsonb_build_object('modello', mlc.modello, 'componente', mlc.componente))
+          FILTER (WHERE mlc.id IS NOT NULL),
+        '[]'::json
+      )                                                                       AS combos,
+      COALESCE(SUM(
+        EXTRACT(EPOCH FROM (mt.ora_fine::time - mt.ora_inizio::time))
+      ) FILTER (WHERE mt.id IS NOT NULL), 0) / 60.0                           AS minuti_turno,
+      MIN(mt.ora_inizio::text) FILTER (WHERE mt.id IS NOT NULL)               AS turno_inizio_min,
+      MAX(mt.ora_fine::text)   FILTER (WHERE mt.id IS NOT NULL)               AS turno_fine_max,
+      COALESCE((
+        SELECT mqg.quantita_giornaliera
+        FROM monitor_quantita_giorno mqg
+        WHERE mqg.linea_id = ml.id AND mqg.data = ${dateStr}::date
+      ), 0)                                                                    AS pezzi_pianificati,
+      COALESCE((
+        SELECT SUM(EXTRACT(EPOCH FROM (mp.ora_fine::time - mp.ora_inizio::time)))
+        FROM monitor_pausa mp
+        WHERE mp.linea_id = ml.id AND mp.data = ${dateStr}::date
+      ), 0) / 60.0                                                             AS minuti_pausa
+    FROM monitor_linea ml
+    LEFT JOIN monitor_turno       mt  ON mt.linea_id  = ml.id AND mt.data = ${dateStr}::date
+    LEFT JOIN monitor_linea_combo mlc ON mlc.linea_id = ml.id
+    WHERE ml.attivo = true
+    GROUP BY ml.id, ml.nome, ml.logo, ml.fase
+    ORDER BY ml.nome
+  `;
+
+  // In-memory cache reads (no DB/network hit)
+  const execCache    = getExecutiveCache();
+  const deliberaFasi = getDeliberaFasi();
+
+  // Build per-line summaries
+  const lineeOut = linee.map(l => {
+    const combos: Array<{ modello: string; componente: string }> = (l.combos as Array<{ modello: string; componente: string }>) ?? [];
+
+    // pezzi_reali: production rows from executive cache matching this line's fase + combos
+    const combosSet = new Set(combos.map(c => `${c.modello}|${c.componente}`));
+    const prodRows  = execCache
+      ? execCache.rows.filter(r =>
+          r.fase === (l.fase as string) && combosSet.has(`${r.modello}|${r.componente}`)
+        )
+      : [];
+    const pezzi_reali  = prodRows.length;
+
+    // quality: match delibera events to produced serials only
+    // rows are ordered ASC — last entry per serial wins
+    const prodSerials  = new Set(prodRows.map(r => r.cod_seriale));
+    const deliberaRows = (execCache && prodSerials.size > 0)
+      ? execCache.rows.filter(r =>
+          deliberaFasi.includes(r.fase) && prodSerials.has(r.cod_seriale)
+        )
+      : [];
+    const latestBySerial = new Map<string, string | null>();
+    for (const r of deliberaRows) latestBySerial.set(r.cod_seriale, r.esito_delibera);
+    const pezzi_deliberati = latestBySerial.size;
+    let pezzi_conformi = 0;
+    for (const esito of latestBySerial.values()) if (isConforming(esito)) pezzi_conformi++;
+
+    const minuti_turno      = Number(l.minuti_turno) || 0;
+    const minuti_pausa      = Number(l.minuti_pausa) || 0;
+    const pezzi_pianificati = Number(l.pezzi_pianificati) || 0;
+    const turno_oggi        = minuti_turno > 0;
+
+    // Gap-based fermo calculation — same logic as Andon /stato
+    const net_planned_pre = Math.max(1, minuti_turno - minuti_pausa);
+    const cycleTimeSec = (turno_oggi && pezzi_pianificati > 0)
+      ? Math.round(net_planned_pre * 60 / pezzi_pianificati)
+      : null;
+
+    const romeOffset = romeOffsetStr(now);
+    const turnoStartTs = (turno_oggi && l.turno_inizio_min)
+      ? new Date(`${dateStr}T${(l.turno_inizio_min as string).slice(0, 5)}:00+${romeOffset}`)
+      : null;
+    const turnoFineTs = (turno_oggi && l.turno_fine_max)
+      ? new Date(`${dateStr}T${(l.turno_fine_max as string).slice(0, 5)}:00+${romeOffset}`)
+      : null;
+
+    const prodTimestamps = prodRows
+      .map(r => r.data_inserimento)
+      .sort((a, b) => a.getTime() - b.getTime());
+
+    // Gap analysis — collect stop events + sum lost time
+    type Fermata = { inizio: string; fine: string | null; durata_min: number };
+    const fermate: Fermata[] = [];
+    let minuti_fermo = 0;
+
+    if (cycleTimeSec && turnoStartTs && prodTimestamps.length > 0) {
+      // Gap from turno start to first piece
+      const gapStart = (prodTimestamps[0].getTime() - turnoStartTs.getTime()) / 1000;
+      if (gapStart > cycleTimeSec) {
+        const dur = gapStart - cycleTimeSec;
+        fermate.push({
+          inizio: new Date(turnoStartTs.getTime() + cycleTimeSec * 1000).toISOString(),
+          fine:   prodTimestamps[0].toISOString(),
+          durata_min: Math.round(dur / 60),
+        });
+        minuti_fermo += dur / 60;
+      }
+      // Gaps between consecutive pieces
+      for (let i = 1; i < prodTimestamps.length; i++) {
+        const gap = (prodTimestamps[i].getTime() - prodTimestamps[i - 1].getTime()) / 1000;
+        if (gap > cycleTimeSec) {
+          const dur = gap - cycleTimeSec;
+          fermate.push({
+            inizio: new Date(prodTimestamps[i - 1].getTime() + cycleTimeSec * 1000).toISOString(),
+            fine:   prodTimestamps[i].toISOString(),
+            durata_min: Math.round(dur / 60),
+          });
+          minuti_fermo += dur / 60;
+        }
+      }
+    }
+    minuti_fermo = Math.round(minuti_fermo);
+
+    // Current ferma: time since last piece > cycleTimeSec and still within shift
+    const lastTs = prodTimestamps[prodTimestamps.length - 1] ?? null;
+    const inTurno = turnoStartTs && turnoFineTs
+      && now >= turnoStartTs && now <= turnoFineTs;
+    const elapsedSinceLastSec = lastTs ? (now.getTime() - lastTs.getTime()) / 1000 : null;
+    const ferma_adesso = !!(inTurno && cycleTimeSec && elapsedSinceLastSec != null && elapsedSinceLastSec > cycleTimeSec);
+    const ferma_da_min = ferma_adesso && cycleTimeSec && elapsedSinceLastSec != null
+      ? Math.round((elapsedSinceLastSec - cycleTimeSec) / 60)
+      : null;
+    // Add ongoing stop to fermate list
+    if (ferma_adesso && cycleTimeSec && lastTs) {
+      fermate.push({
+        inizio:     new Date(lastTs.getTime() + cycleTimeSec * 1000).toISOString(),
+        fine:       null,
+        durata_min: ferma_da_min ?? 0,
+      });
+    }
+
+    // Avanzamento previsto — pezzi attesi a quest'ora (stessa logica del monitor Andon)
+    let avanzamento_previsto = 0;
+    if (turno_oggi && turnoStartTs && turnoFineTs && pezzi_pianificati > 0) {
+      const totalShiftSec  = (turnoFineTs.getTime() - turnoStartTs.getTime()) / 1000;
+      const totalPausaSec  = 0; // pause non disponibili in questa query aggregata — approssimazione accettabile
+      const netShiftSec    = Math.max(1, totalShiftSec - totalPausaSec);
+      const elapsedSec     = Math.max(0, Math.min(netShiftSec, (now.getTime() - turnoStartTs.getTime()) / 1000));
+      avanzamento_previsto = Math.round(pezzi_pianificati * elapsedSec / netShiftSec);
+    }
+
+    // OEE — daily, based on total turno time for today
+    const net_planned   = net_planned_pre;
+    const disponibilita = turno_oggi
+      ? Math.max(0, Math.min(1, (net_planned - minuti_fermo) / net_planned))
+      : 0;
+    const performance = (turno_oggi && pezzi_pianificati > 0)
+      ? Math.min(1, pezzi_reali / pezzi_pianificati)
+      : 0;
+    // TODO: qualità defaults to 1.0 when no delibera data for this line's combos
+    const qualita = pezzi_deliberati > 0
+      ? Math.max(0, Math.min(1, pezzi_conformi / pezzi_deliberati))
+      : 1.0;
+    const oee = Math.round(disponibilita * performance * qualita * 1000) / 10;
+
+    let status: 'verde' | 'giallo' | 'rosso' | 'nessun_turno';
+    if (!turno_oggi)       status = 'nessun_turno';
+    else if (ferma_adesso) status = 'rosso';
+    else if (oee < 60)     status = 'giallo';
+    else                   status = 'verde';
+
+    return {
+      id:               l.id      as number,
+      nome:             l.nome    as string,
+      logo:             (l.logo ?? null) as string | null,
+      pezzi_reali,
+      pezzi_pianificati,
+      avanzamento_previsto,
+      pezzi_conformi,
+      pezzi_deliberati,
+      minuti_turno:     Math.round(minuti_turno),
+      minuti_fermo:     Math.round(minuti_fermo),
+      minuti_pausa:     Math.round(minuti_pausa),
+      disponibilita:    Math.round(disponibilita * 1000) / 10,
+      performance:      Math.round(performance * 1000) / 10,
+      qualita:          Math.round(qualita * 1000) / 10,
+      oee,
+      turno_oggi,
+      ferma_adesso,
+      ferma_da_min,
+      fermi_count:      fermate.length,
+      fermate,
+      status,
+    };
+  });
+
+  // KPI aggregates
+  const withTurno = lineeOut.filter(l => l.turno_oggi);
+
+  const produzione_reale       = lineeOut.reduce((a, l) => a + l.pezzi_reali, 0);
+  const produzione_pianificata = lineeOut.reduce((a, l) => a + l.avanzamento_previsto, 0);
+  const tempo_perso_min        = lineeOut.reduce((a, l) => a + l.minuti_fermo, 0);
+  const fermi_count_tot        = lineeOut.reduce((a, l) => a + l.fermi_count, 0);
+
+  // OEE generale: weighted average by minuti_turno
+  const totalTurnoMin = withTurno.reduce((a, l) => a + l.minuti_turno, 0);
+  const oee_generale  = totalTurnoMin > 0
+    ? Math.round(withTurno.reduce((a, l) => a + l.oee * l.minuti_turno, 0) / totalTurnoMin * 10) / 10
+    : 0;
+
+  // Qualità globale (null = no delibera data at all today)
+  const totalDeliberati = lineeOut.reduce((a, l) => a + l.pezzi_deliberati, 0);
+  const totalConformi   = lineeOut.reduce((a, l) => a + l.pezzi_conformi, 0);
+  const qualita_pct     = totalDeliberati > 0
+    ? Math.round(totalConformi / totalDeliberati * 1000) / 10
+    : null;
+
+  return c.json({
+    aggiornato_at:  new Date().toISOString(),
+    delibera_fasi:  deliberaFasi,
+    kpi: {
+      oee_generale,
+      tempo_perso_min,
+      fermi_count:           fermi_count_tot,
+      produzione_reale,
+      produzione_pianificata,
+      qualita_pct,
+    },
+    linee: lineeOut,
   });
 });
