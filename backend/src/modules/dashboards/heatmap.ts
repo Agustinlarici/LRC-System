@@ -1,18 +1,12 @@
 import { db } from '../../db/client.js';
-import { getWebthronPool } from '../monitor/mysql-client.js';
+import { queryWebthronEvents, WebthronEvent, LineaCombo as MysqlLineaCombo } from '../monitor/mysql-client.js';
 import { getDeliberaFasi, isConforming } from '../monitor/executive-cache.js';
 import { logger } from '../../lib/logger.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface HeatmapWebthronRow {
-  fase:             string;
-  modello:          string;
-  componente:       string;
-  cod_seriale:      string;
-  esito_delibera:   string | null;
-  data_inserimento: Date;
-}
+// Re-export from mysql-client so existing imports of WebthronEvent still work
+export type { WebthronEvent as WebthronEvent } from '../monitor/mysql-client.js';
 
 /** Daily OEE per line — used by the detail endpoint and the daily snapshot table. */
 export interface OeeCellResult {
@@ -47,9 +41,7 @@ export interface OeeHourCell {
   has_data:      boolean;
 }
 
-type LineaCombo = { fase: string; modello: string; componente: string };
-
-const QUERY_TIMEOUT_MS = 3 * 60 * 1000; // 3 min — MAX_EXECUTION_TIME hint matches
+type LineaCombo = MysqlLineaCombo;
 
 // ─── Timezone helpers ──────────────────────────────────────────────────────────
 
@@ -82,72 +74,9 @@ export async function queryWebthronRange(
   dateTo:       string,
   prodCombos:   LineaCombo[],
   deliberaFasi: string[],
-): Promise<HeatmapWebthronRow[]> {
+): Promise<WebthronEvent[]> {
   if (prodCombos.length === 0 || deliberaFasi.length === 0) return [];
-
-  const prodConditions = prodCombos
-    .map(() => `(ikExtra62Tab.stringa = ? AND ikExtra43Tab.stringa = ? AND ikExtra45Tab.stringa = ?)`)
-    .join(' OR ');
-  const prodParams = prodCombos.flatMap(c => [c.fase, c.modello, c.componente]);
-
-  const allModelli        = [...new Set(prodCombos.map(c => c.modello))];
-  const allComponenti     = [...new Set(prodCombos.map(c => c.componente))];
-  const delibFasiPH       = deliberaFasi.map(() => '?').join(', ');
-  const delibModelliPH    = allModelli.map(() => '?').join(', ');
-  const delibComponentiPH = allComponenti.map(() => '?').join(', ');
-
-  const sql = `
-    SELECT /*+ MAX_EXECUTION_TIME(180000) */
-      ikExtra62Tab.stringa  AS fase,
-      ikExtra43Tab.stringa  AS modello,
-      ikExtra45Tab.stringa  AS componente,
-      Extra186.stringa      AS cod_seriale,
-      ikExtra136Tab.stringa AS esito_delibera,
-      ubi.datain            AS data_inserimento
-    FROM ubidocum ubi
-    LEFT JOIN ikExtra    Extra62    ON ubi.iddocu = Extra62.iddocu    AND Extra62.idcampo  = 62  AND Extra62.idcomm = 0 AND Extra62.seq = 0
-    LEFT JOIN ikExtra    Extra43    ON ubi.iddocu = Extra43.iddocu    AND Extra43.idcampo  = 43  AND Extra43.idcomm = 0 AND Extra43.seq = 0
-    LEFT JOIN ikExtra    Extra45    ON ubi.iddocu = Extra45.iddocu    AND Extra45.idcampo  = 45  AND Extra45.idcomm = 0 AND Extra45.seq = 0
-    LEFT JOIN ikExtra    Extra186   ON ubi.iddocu = Extra186.iddocu   AND Extra186.idcampo = 186 AND Extra186.idcomm = 0 AND Extra186.seq = 0
-    LEFT JOIN ikExtra    Extra136   ON ubi.iddocu = Extra136.iddocu   AND Extra136.idcampo = 136 AND Extra136.idcomm = 0 AND Extra136.seq = 0
-    LEFT JOIN ikExtraTab ikExtra62Tab  ON ikExtra62Tab.id  = Extra62.stringa
-    LEFT JOIN ikExtraTab ikExtra43Tab  ON ikExtra43Tab.id  = Extra43.stringa
-    LEFT JOIN ikExtraTab ikExtra45Tab  ON ikExtra45Tab.id  = Extra45.stringa
-    LEFT JOIN ikExtraTab ikExtra136Tab ON ikExtra136Tab.id = Extra136.stringa
-    WHERE
-      ubi.tipdoc IN ('0480','0080','0160','1520','5004','5005','5006','5007','5010','5016','PX01','0090')
-      AND DATE(CONVERT_TZ(ubi.datain, '+00:00', '+01:00')) BETWEEN ? AND ?
-      AND Extra186.stringa IS NOT NULL
-      AND ikExtra43Tab.stringa IS NOT NULL
-      AND ikExtra45Tab.stringa IS NOT NULL
-      AND ikExtra62Tab.stringa IS NOT NULL
-      AND (
-        (${prodConditions})
-        OR (
-          ikExtra62Tab.stringa IN (${delibFasiPH})
-          AND ikExtra43Tab.stringa IN (${delibModelliPH})
-          AND ikExtra45Tab.stringa IN (${delibComponentiPH})
-        )
-      )
-    ORDER BY ubi.datain ASC
-    LIMIT 200000
-  `;
-
-  const params = [
-    dateFrom, dateTo,
-    ...prodParams,
-    ...deliberaFasi, ...allModelli, ...allComponenti,
-  ];
-
-  const [rows] = await getWebthronPool().execute({ sql, timeout: QUERY_TIMEOUT_MS }, params);
-  return (rows as Array<Record<string, unknown>>).map(r => ({
-    fase:             r.fase             as string,
-    modello:          r.modello          as string,
-    componente:       r.componente       as string,
-    cod_seriale:      r.cod_seriale      as string,
-    esito_delibera:   r.esito_delibera   as string | null,
-    data_inserimento: r.data_inserimento as Date,
-  }));
+  return queryWebthronEvents(prodCombos, deliberaFasi, { mode: 'range', from: dateFrom, to: dateTo });
 }
 
 // ─── Hourly OEE computation for one line × one day ────────────────────────────
@@ -169,7 +98,7 @@ export function computeHourlyCells(
     turno_inizio:      string | null; // "HH:MM" or "HH:MM:SS"
     turno_fine:        string | null;
   },
-  webthronRows: HeatmapWebthronRow[],
+  webthronRows: WebthronEvent[],
   dateStr:      string,
 ): OeeHourCell[] {
   const combosSet  = new Set(combos.map(c => `${c.modello}|${c.componente}`));
@@ -300,7 +229,7 @@ export function computeCellOee(
     pezzi_pianificati: number;
     turno_inizio:      string | null;
   },
-  webthronRows: HeatmapWebthronRow[],
+  webthronRows: WebthronEvent[],
   dateStr:      string,
   deliberaFasi: string[],
 ): OeeCellResult {
@@ -480,4 +409,83 @@ export async function snapshotDay(dateStr: string): Promise<void> {
   await saveOeeCells(dailyCells);
   await saveOeeHourCells(hourCells);
   logger.info(`[Heatmap] Snapshot ${dateStr} — ${dailyCells.filter(c => c.has_data).length} linee, ${hourCells.filter(c => c.has_data).length} ore`);
+}
+
+// ─── Snapshot from history (no WebThron query) ───────────────────────────────
+
+/**
+ * Same as snapshotDay() but reads events from webthron_events_history
+ * instead of querying WebThron directly. Safe to run any time — zero load on WebThron.
+ */
+export async function snapshotDayFromHistory(dateStr: string): Promise<void> {
+  const deliberaFasi = getDeliberaFasi();
+
+  const linee = await db`
+    SELECT ml.id, ml.nome, ml.fase,
+      COALESCE(
+        json_agg(DISTINCT jsonb_build_object('modello', mlc.modello, 'componente', mlc.componente))
+          FILTER (WHERE mlc.id IS NOT NULL), '[]'::json
+      ) AS combos
+    FROM monitor_linea ml
+    LEFT JOIN monitor_linea_combo mlc ON mlc.linea_id = ml.id
+    WHERE ml.attivo = true
+    GROUP BY ml.id, ml.nome, ml.fase
+  `;
+  if (linee.length === 0) return;
+
+  const [turni, quantita, pause] = await Promise.all([
+    db`SELECT linea_id,
+              SUM(EXTRACT(EPOCH FROM (ora_fine::time - ora_inizio::time))) / 60.0 AS minuti_turno,
+              MIN(ora_inizio::text) AS turno_inizio,
+              MAX(ora_fine::text)   AS turno_fine
+       FROM monitor_turno WHERE data = ${dateStr}::date GROUP BY linea_id`,
+    db`SELECT linea_id, quantita_giornaliera FROM monitor_quantita_giorno WHERE data = ${dateStr}::date`,
+    db`SELECT linea_id,
+              SUM(EXTRACT(EPOCH FROM (ora_fine::time - ora_inizio::time))) / 60.0 AS minuti_pausa
+       FROM monitor_pausa WHERE data = ${dateStr}::date GROUP BY linea_id`,
+  ]);
+
+  // Read events from PostgreSQL history table — no WebThron
+  const historyRows = await db`
+    SELECT fase, modello, componente, cod_seriale, esito_delibera, data_inserimento
+    FROM webthron_events_history
+    WHERE data_cache = ${dateStr}::date
+    ORDER BY data_inserimento ASC
+  `;
+
+  const webthronRows: WebthronEvent[] = historyRows.map(r => ({
+    fase:             r.fase             as string,
+    modello:          r.modello          as string,
+    componente:       r.componente       as string,
+    cod_seriale:      r.cod_seriale      as string,
+    commessa:         null,
+    esito_delibera:   r.esito_delibera   as string | null,
+    data_inserimento: new Date(r.data_inserimento as string),
+  }));
+
+  const dailyCells: OeeCellResult[] = [];
+  const hourCells:  OeeHourCell[]   = [];
+
+  for (const l of linee) {
+    const tRow = turni.find(t => t.linea_id === l.id);
+    const qRow = quantita.find(q => q.linea_id === l.id);
+    const pRow = pause.find(p => p.linea_id === l.id);
+    const pgDay = {
+      minuti_turno:      tRow ? Number(tRow.minuti_turno) : 0,
+      minuti_pausa:      pRow ? Number(pRow.minuti_pausa) : 0,
+      pezzi_pianificati: qRow ? Number(qRow.quantita_giornaliera) : 0,
+      turno_inizio:      tRow ? (tRow.turno_inizio as string) : null,
+      turno_fine:        tRow ? (tRow.turno_fine   as string) : null,
+    };
+    const combos = l.combos as Array<{ modello: string; componente: string }>;
+
+    dailyCells.push(computeCellOee(l.id as number, l.fase as string, combos,
+      pgDay, webthronRows, dateStr, deliberaFasi));
+    hourCells.push(...computeHourlyCells(l.id as number, l.fase as string, combos,
+      pgDay, webthronRows, dateStr));
+  }
+
+  await saveOeeCells(dailyCells);
+  await saveOeeHourCells(hourCells);
+  logger.info(`[Heatmap] Snapshot-from-history ${dateStr} — ${dailyCells.filter(c => c.has_data).length} linee`);
 }

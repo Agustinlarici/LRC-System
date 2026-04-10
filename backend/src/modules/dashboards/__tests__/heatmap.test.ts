@@ -3,8 +3,8 @@ import {
   computeCellOee,
   computeHourlyCells,
   romeOffsetForDate,
-  type HeatmapWebthronRow,
 } from '../heatmap.js';
+import type { WebthronEvent as HeatmapWebthronRow } from '../../monitor/mysql-client.js';
 
 // Mock all external dependencies — heatmap.ts computation is pure once these are mocked
 vi.mock('../../../db/client.js', () => ({ db: vi.fn() }));
@@ -31,6 +31,7 @@ function makeRow(
     modello,
     componente,
     cod_seriale: `SN-${Math.random().toString(36).slice(2, 8)}`,
+    commessa: null,
     esito_delibera: null,
     data_inserimento,
     ...overrides,

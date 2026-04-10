@@ -56,6 +56,16 @@ export const MODULES: ModuleConfig[] = [
     description: 'Heatmap OEE mensile per linea e fascia oraria',
     icon: '🌡️', sidebar: 'IconHeatmap', hidden: false, moduleKey: 'dashboards',
   },
+  {
+    href: '/dashboards/lead-time', label: 'Tempi tra fasi', group: 'Dashboard',
+    description: 'Ore lavorative nette tra fasi di produzione per commessa',
+    icon: '⏱️', sidebar: 'IconChart', hidden: false, moduleKey: 'dashboards',
+  },
+  {
+    href: '/dashboards/trends', label: 'Tendenze settimanali', group: 'Dashboard',
+    description: 'OEE, produzione e qualità aggregati per settimana per linea',
+    icon: '📈', sidebar: 'IconChart', hidden: false, moduleKey: 'dashboards',
+  },
 
   // ── IT ─────────────────────────────────────────────────────────────────────
   {
@@ -69,12 +79,13 @@ export const MODULES: ModuleConfig[] = [
     icon: '⚙️', sidebar: 'IconSettings', hidden: false, moduleKey: 'impostazioni',
   },
 
-  // ── Nascosti / in arrivo ───────────────────────────────────────────────────
   {
-    href: '/spma', label: 'SPMA', group: 'Altro',
-    description: 'Pianificazione componenti per linea di produzione',
-    icon: '📋', sidebar: 'IconClipboard', hidden: true, soon: true,
+    href: '/spma', label: 'SPMA', group: 'Logistica',
+    description: 'Pianificazione componenti per sequenza di linea',
+    icon: '📋', sidebar: 'IconClipboard', hidden: false, moduleKey: 'spma',
   },
+
+  // ── Nascosti / in arrivo ───────────────────────────────────────────────────
   {
     href: '/production', label: 'Produzione', group: 'Altro',
     description: 'Sincronizzazione e monitoraggio ordini da Business Central',

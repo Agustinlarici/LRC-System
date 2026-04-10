@@ -2,7 +2,8 @@
 
 export type ModuleKey =
   | 'ingresso_merci' | 'packing' | 'monitor' | 'buffer'
-  | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards';
+  | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
+  | 'spma';
 
 export interface ModulePermission {
   module_key: ModuleKey;
@@ -73,7 +74,59 @@ export interface PackContainer {
 
 // ─── SPMA ─────────────────────────────────────────────────────────────────────
 
-export type SpmaStatus = 'PENDING' | 'PICKED' | 'CONFIRMED' | 'SENT' | 'SKIPPED';
+export type SpmaStatus = 'PENDING' | 'PICKED' | 'CONFIRMED' | 'SENT' | 'SKIPPED' | 'NA';
+
+export interface SpmaCategory {
+  id:         number;
+  name:       string;
+  sort_order: number;
+}
+
+export interface SpmaStation {
+  id:                   number;
+  line_id:              number;
+  line_name:            string;
+  component_category_id: number;
+  category_name:        string;
+  station_index:        number;
+}
+
+export interface SpmaModelReq {
+  id:                   number;
+  model_code:           string;
+  component_category_id: number;
+  category_name:        string;
+  producer_name:        string | null;
+}
+
+export interface SpmaOverviewCell {
+  component_category_id: number;
+  status:     SpmaStatus;
+  planned_ts: string | null;
+}
+
+export interface SpmaOverviewRow {
+  commessa_id:   number;
+  commessa_code: string;
+  model_code:    string;
+  line_id:       number;
+  line_entry_ts: string | null;
+  cells:         SpmaOverviewCell[];
+}
+
+export interface SpmaPlanItem {
+  id:                   number;
+  commessa_id:          number;
+  commessa_code:        string;
+  component_category_id: number;
+  category_name:        string;
+  status:               SpmaStatus;
+  planned_ts:           string | null;
+  confirmed_item_code:  string | null;
+  picked_at:            string | null;
+  confirmed_at:         string | null;
+  sent_at:              string | null;
+}
 
 export interface SpmaLine {
   id: number;

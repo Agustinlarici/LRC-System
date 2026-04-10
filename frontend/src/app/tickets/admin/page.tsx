@@ -131,9 +131,144 @@ function AvanzataTab() {
   );
 }
 
+// ─── iKnow Tracked Lists tab ─────────────────────────────────────────────────
+
+interface TrackedItem { id: number; value: string; active: boolean }
+
+type ListKey = 'fasi' | 'modelli' | 'componenti';
+
+const LIST_META: { key: ListKey; label: string; placeholder: string; lookupKey: string }[] = [
+  { key: 'fasi',       label: 'Fasi',       placeholder: 'es. VERNICIATURA',  lookupKey: 'fasi'       },
+  { key: 'modelli',    label: 'Modelli',     placeholder: 'es. K3 PARAURTI',   lookupKey: 'modelli'    },
+  { key: 'componenti', label: 'Componenti',  placeholder: 'es. PARAURTI ANT',  lookupKey: 'componenti' },
+];
+
+function ListSection({ meta, lookup }: {
+  meta: typeof LIST_META[number];
+  lookup: string[];
+}) {
+  const [items,  setItems]  = useState<TrackedItem[]>([]);
+  const [newVal, setNewVal] = useState('');
+  const [busy,   setBusy]   = useState(false);
+  const [err,    setErr]    = useState('');
+
+  useEffect(() => {
+    apiFetch(`/api/system/iknow/${meta.key}`).then(r => r.json()).then(setItems).catch(() => {});
+  }, [meta.key]);
+
+  async function add() {
+    if (!newVal.trim()) return;
+    setBusy(true); setErr('');
+    try {
+      const res = await apiFetch(`/api/system/iknow/${meta.key}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: newVal.trim() }),
+      });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); setErr(d.message ?? 'Errore'); return; }
+      const row: TrackedItem = await res.json();
+      setItems(prev => [...prev.filter(i => i.id !== row.id), row].sort((a, b) => a.value.localeCompare(b.value)));
+      setNewVal('');
+    } catch { setErr('Errore di connessione'); }
+    finally { setBusy(false); }
+  }
+
+  async function toggleActive(id: number, active: boolean) {
+    const res = await apiFetch(`/api/system/iknow/${meta.key}/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active }),
+    });
+    if (res.ok) { const row: TrackedItem = await res.json(); setItems(prev => prev.map(i => i.id === row.id ? row : i)); }
+  }
+
+  async function del(id: number) {
+    await apiFetch(`/api/system/iknow/${meta.key}/${id}`, { method: 'DELETE' });
+    setItems(prev => prev.filter(i => i.id !== id));
+  }
+
+  const active   = items.filter(i => i.active);
+  const inactive = items.filter(i => !i.active);
+  const listId   = `lookup-${meta.key}`;
+
+  return (
+    <div className="card">
+      <h3 className="font-semibold text-gray-800 mb-3">{meta.label}</h3>
+
+      {err && <p className="text-xs text-red-600 mb-2">{err}</p>}
+
+      {/* Add */}
+      <div className="flex gap-2 mb-3">
+        <input list={listId} value={newVal} onChange={e => setNewVal(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && add()}
+          placeholder={meta.placeholder}
+          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <datalist id={listId}>{lookup.map(v => <option key={v} value={v} />)}</datalist>
+        <button onClick={add} disabled={busy || !newVal.trim()}
+          className="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          +
+        </button>
+      </div>
+
+      {/* Active items */}
+      {active.length === 0
+        ? <p className="text-xs text-gray-400 text-center py-2">Nessuna voce</p>
+        : <div className="flex flex-wrap gap-1.5">
+            {active.map(i => (
+              <span key={i.id} className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-800 rounded-full px-2.5 py-1 text-xs font-mono">
+                {i.value}
+                <button onClick={() => toggleActive(i.id, false)} className="text-blue-400 hover:text-blue-700 ml-0.5 leading-none" title="Disattiva">–</button>
+                <button onClick={() => del(i.id)} className="text-red-400 hover:text-red-600 leading-none" title="Elimina">×</button>
+              </span>
+            ))}
+          </div>
+      }
+
+      {/* Inactive */}
+      {inactive.length > 0 && (
+        <details className="mt-2">
+          <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">{inactive.length} disattivate</summary>
+          <div className="flex flex-wrap gap-1.5 mt-1.5">
+            {inactive.map(i => (
+              <span key={i.id} className="inline-flex items-center gap-1 bg-gray-100 border border-gray-200 text-gray-500 rounded-full px-2.5 py-1 text-xs font-mono opacity-70">
+                {i.value}
+                <button onClick={() => toggleActive(i.id, true)} className="text-green-500 hover:text-green-700 ml-0.5 leading-none" title="Riattiva">+</button>
+                <button onClick={() => del(i.id)} className="text-red-400 hover:text-red-600 leading-none" title="Elimina">×</button>
+              </span>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function IKnowCombosTab() {
+  const [lookup, setLookup] = useState<Record<string, string[]>>({ fasi: [], modelli: [], componenti: [] });
+
+  useEffect(() => {
+    Promise.all([
+      apiFetch('/api/system/iknow-lookup/fasi').then(r => r.json()).catch(() => []),
+      apiFetch('/api/system/iknow-lookup/modelli').then(r => r.json()).catch(() => []),
+      apiFetch('/api/system/iknow-lookup/componenti').then(r => r.json()).catch(() => []),
+    ]).then(([fasi, modelli, componenti]) => setLookup({ fasi, modelli, componenti }));
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs text-blue-700">
+        Il sistema legge da iKnow/WebThron <strong>tutte le combinazioni</strong> del prodotto cartesiano
+        tra le fasi, i modelli e i componenti elencati qui sotto. Queste combinazioni si aggiungono a quelle
+        già configurate nel monitor e nel buffer.
+      </div>
+      {LIST_META.map(meta => (
+        <ListSection key={meta.key} meta={meta} lookup={lookup[meta.lookupKey] ?? []} />
+      ))}
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-type Tab = 'permessi' | 'avanzata';
+type Tab = 'permessi' | 'avanzata' | 'iknow';
 
 export default function TicketAdminPage() {
   const [tab, setTab] = useState<Tab>('permessi');
@@ -191,6 +326,7 @@ export default function TicketAdminPage() {
   const tabClass = (t: Tab) =>
     `px-4 py-2 text-sm font-medium rounded-lg transition-colors ${tab === t ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`;
 
+
   return (
     <div className="max-w-3xl mx-auto">
       <div className="mb-6">
@@ -200,7 +336,8 @@ export default function TicketAdminPage() {
 
       <div className="flex gap-2 mb-6 flex-wrap">
         <button className={tabClass('permessi')} onClick={() => setTab('permessi')}>Permessi</button>
-        <button className={tabClass('avanzata')} onClick={() => setTab('avanzata')}>⚙ Avanzata</button>
+        <button className={tabClass('avanzata')} onClick={() => setTab('avanzata')}>Avanzata</button>
+        <button className={tabClass('iknow')}    onClick={() => setTab('iknow')}>Fasi iKnow</button>
       </div>
 
       {/* ── PERMISSIONS ── */}
@@ -277,6 +414,9 @@ export default function TicketAdminPage() {
 
       {/* ── AVANZATA ── */}
       {tab === 'avanzata' && <AvanzataTab />}
+
+      {/* ── FASI IKNOW ── */}
+      {tab === 'iknow' && <IKnowCombosTab />}
     </div>
   );
 }

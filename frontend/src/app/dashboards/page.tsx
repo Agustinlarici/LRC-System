@@ -51,6 +51,8 @@ type KPI = {
 
 type DashboardData = {
   aggiornato_at: string;
+  date:          string;
+  is_historical: boolean;
   delibera_fasi: string[];
   kpi:           KPI;
   linee:         LineaSummary[];
@@ -116,10 +118,13 @@ export default function ExecutiveDashboardPage() {
   const [data,    setData]    = useState<DashboardData | null>(null);
   const [error,   setError]   = useState('');
   const [loading, setLoading] = useState(true);
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Rome' });
+  const [selectedDate, setSelectedDate] = useState(todayStr);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (date: string) => {
     try {
-      const r = await fetch(`${BACKEND}/api/monitor/executive`, { credentials: 'include' });
+      const params = date !== todayStr ? `?date=${date}` : '';
+      const r = await fetch(`${BACKEND}/api/monitor/executive${params}`, { credentials: 'include' });
       if (!r.ok) throw new Error(`${r.status}`);
       const d: DashboardData = await r.json();
       setData(d);
@@ -129,13 +134,16 @@ export default function ExecutiveDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [todayStr]);
 
   useEffect(() => {
-    fetchData();
-    const id = setInterval(fetchData, 10 * 60_000);
-    return () => clearInterval(id);
-  }, [fetchData]);
+    fetchData(selectedDate);
+    // Auto-refresh only for today
+    if (selectedDate === todayStr) {
+      const id = setInterval(() => fetchData(selectedDate), 10 * 60_000);
+      return () => clearInterval(id);
+    }
+  }, [fetchData, selectedDate, todayStr]);
 
   if (loading) {
     return <div className="text-sm text-gray-400 py-16 text-center">Caricamento…</div>;
@@ -223,9 +231,19 @@ export default function ExecutiveDashboardPage() {
           </div>
         )}
         </div>
-        <div className="text-right shrink-0 pt-1">
-          <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">Aggiornato alle</p>
-          <p className="text-sm font-mono font-semibold text-gray-700">{fmtTime(aggiornato_at)}</p>
+        <div className="shrink-0 flex flex-col items-end gap-2">
+          <input
+            type="date"
+            value={selectedDate}
+            max={todayStr}
+            onChange={e => { setSelectedDate(e.target.value); setLoading(true); }}
+            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {data?.is_historical ? (
+            <p className="text-xs text-blue-500 font-medium">Storico — {selectedDate}</p>
+          ) : (
+            <p className="text-xs text-gray-400">Aggiornato alle {fmtTime(aggiornato_at)}</p>
+          )}
         </div>
       </div>
 

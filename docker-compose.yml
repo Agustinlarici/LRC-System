@@ -19,8 +19,13 @@ services:
       - ./db/migrate.sql:/docker-entrypoint-initdb.d/06_migrate.sql:ro
       - ./db/migrate-dashboards.sql:/docker-entrypoint-initdb.d/07_dashboards.sql:ro
       - ./db/migrate-webthron-cache.sql:/docker-entrypoint-initdb.d/08_webthron_cache.sql:ro
-      - ./db/migrate-impostazioni.sql:/docker-entrypoint-initdb.d/09_impostazioni.sql:ro
-      - ./db/migrate-system-config.sql:/docker-entrypoint-initdb.d/10_system_config.sql:ro
+      - ./db/migrate-system-config.sql:/docker-entrypoint-initdb.d/09_system_config.sql:ro
+      - ./db/migrate-impostazioni.sql:/docker-entrypoint-initdb.d/10_impostazioni.sql:ro
+      - ./db/migrate-spma.sql:/docker-entrypoint-initdb.d/11_spma.sql:ro
+      - ./db/migrate-spma-import-log.sql:/docker-entrypoint-initdb.d/12_spma_import_log.sql:ro
+      - ./db/migrate-lead-time.sql:/docker-entrypoint-initdb.d/13_lead_time.sql:ro
+      - ./db/migrate-unified-sync.sql:/docker-entrypoint-initdb.d/14_unified_sync.sql:ro
+      - ./db/migrate-iknow-tracking.sql:/docker-entrypoint-initdb.d/15_iknow_tracking.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lrc} -d ${POSTGRES_DB:-lrc_system}"]
       interval: 5s

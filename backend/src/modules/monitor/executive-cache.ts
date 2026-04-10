@@ -57,16 +57,15 @@ export async function executiveRefresh(): Promise<void> {
 }
 
 /**
- * Initial load (at startup, delayed 2 min):
- * 1. Full day query to WebThron → saves to PostgreSQL (~60 sec lock, once/day)
- * 2. Reads from PostgreSQL → populates cache
+ * Initial cache population at startup.
+ * Reads from PostgreSQL only — no WebThron query at startup.
+ * The first WebThron sync happens at the first 5-min tick.
  */
 export async function startExecutiveCache(): Promise<void> {
   try {
-    await syncWebthronToPostgres(true);   // fullLoad=true → fetches all of today
     const rows = await getProdRowsFromPG();
     cache = { rows, updatedAt: new Date() };
-    logger.info(`[ExecutiveCache] Cache iniziale — ${rows.length} righe`);
+    logger.info(`[ExecutiveCache] Cache iniziale da PG — ${rows.length} righe`);
   } catch (err) {
     logger.error(`[ExecutiveCache] Errore avvio: ${err}`);
   }

@@ -17,6 +17,10 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+-- Add 'spma' and 'dashboards' to the enum
+ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'spma';
+ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'dashboards';
+
 -- ─── Per-user module permissions ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS user_module_permissions (
   id          SERIAL PRIMARY KEY,
@@ -48,7 +52,8 @@ CROSS JOIN (VALUES
   ('monitor'::module_key_enum),
   ('buffer'::module_key_enum),
   ('mappa'::module_key_enum),
-  ('tickets'::module_key_enum)
+  ('tickets'::module_key_enum),
+  ('spma'::module_key_enum)
 ) AS k(key)
 WHERE u.username = 'guest'
 ON CONFLICT (user_id, module_key) DO NOTHING;
@@ -66,7 +71,9 @@ CROSS JOIN (VALUES
   ('tickets'::module_key_enum),
   ('tickets_it'::module_key_enum),
   ('tickets_admin'::module_key_enum),
-  ('impostazioni'::module_key_enum)
+  ('impostazioni'::module_key_enum),
+  ('spma'::module_key_enum),
+  ('dashboards'::module_key_enum)
 ) AS k(key)
 WHERE u.username = 'Alarici'
 ON CONFLICT (user_id, module_key)

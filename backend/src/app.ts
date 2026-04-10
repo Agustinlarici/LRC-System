@@ -11,6 +11,7 @@ import { ticketRoutes } from './modules/tickets/routes.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { dashboardsRoutes } from './modules/dashboards/routes.js';
 import { systemRoutes } from './modules/system/routes.js';
+import { spmaRoutes } from './modules/spma/routes.js';
 import { logger } from './lib/logger.js';
 import { db } from './db/client.js';
 import { getWebthronPool } from './modules/monitor/mysql-client.js';
@@ -81,13 +82,13 @@ app.route('/api/tickets', ticketRoutes);
 app.route('/api/dashboards', dashboardsRoutes);
 app.route('/api/system', systemRoutes);
 
+app.route('/api/spma', spmaRoutes);
+
 // Stub para módulos aún no migrados
 const stub = (module: string) =>
   new Hono().all('*', (c) =>
     c.json({ error: `Module '${module}' not yet migrated` }, 501)
   );
-
-app.route('/api/spma', stub('spma'));
 app.route('/api/prod', stub('production'));
 app.route('/api/ask-ai', stub('assistant'));
 

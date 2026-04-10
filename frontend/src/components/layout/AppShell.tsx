@@ -20,6 +20,7 @@ function getModuleForPath(pathname: string): { key: ModuleKey; needsManage?: boo
   if (pathname.startsWith('/buffer'))                return { key: 'buffer' };
   if (pathname.startsWith('/mappa'))                 return { key: 'mappa' };
   if (pathname.startsWith('/dashboards'))            return { key: 'dashboards' };
+  if (pathname.startsWith('/spma'))                  return { key: 'spma' };
   return null;
 }
 

@@ -2,6 +2,7 @@ import { db } from '../../db/client.js';
 import { queryBufferAll, type BufferItem, type BufferCombo } from './mysql-client.js';
 import { logger } from '../../lib/logger.js';
 import { isIKnowEnabled } from '../../lib/system-flags.js';
+import { startRun, endRun, failRun } from '../../lib/sync-stats.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,9 +45,11 @@ async function runFullRefresh() {
     logger.debug('[BufferCache] iKnow Buffer disabilitato — skip');
     return;
   }
+  startRun('buffer_refresh');
   try {
     const linee = await getActiveLinee();
     if (linee.length === 0) {
+      endRun('buffer_refresh', 0);
       logger.info('[BufferCache] Nessun buffer attivo');
       return;
     }
@@ -55,11 +58,15 @@ async function runFullRefresh() {
       fasi:   l.fasi   as string[],
       combos: l.combos as BufferCombo[],
     })));
+    let total = 0;
     for (const [lineaId, items] of results) {
       cache.set(lineaId, { items, updatedAt: new Date() });
+      total += items.length;
     }
-    logger.info(`[BufferCache] Refresh completato — ${linee.length} buffer`);
+    endRun('buffer_refresh', total);
+    logger.info(`[BufferCache] Refresh completato — ${linee.length} buffer, ${total} seriali`);
   } catch (err) {
+    failRun('buffer_refresh', err);
     logger.error(`[BufferCache] Errore refresh globale: ${err}`);
   }
 }

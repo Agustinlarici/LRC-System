@@ -18,7 +18,8 @@ const COOKIE_MAX_AGE      = 60 * 60 * 8; // 8 hours
 
 export type ModuleKey =
   | 'ingresso_merci' | 'packing' | 'monitor' | 'buffer'
-  | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards';
+  | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
+  | 'spma';
 
 export type ModulePermission = {
   module_key: ModuleKey;

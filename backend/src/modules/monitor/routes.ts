@@ -570,7 +570,11 @@ monitorRoutes.get('/stato/:id', async (c) => {
 // GET /api/monitor/executive — all-lines daily OEE summary, single PG query + cache reads
 
 monitorRoutes.get('/executive', async (c) => {
-  const { now, dateStr } = getRomeNow();
+  const { now, dateStr: todayStr } = getRomeNow();
+  const dateParam  = c.req.query('date');
+  const isValidDate = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam);
+  const dateStr    = (isValidDate && dateParam! < todayStr) ? dateParam! : todayStr;
+  const isHistorical = dateStr < todayStr;
 
   // ONE PostgreSQL query: all active lines with their daily turni, fermi, pausa, quantita
   // Note: midnight-crossing shifts (e.g. 22:00–06:00) not supported — TIME subtraction
@@ -609,28 +613,44 @@ monitorRoutes.get('/executive', async (c) => {
     ORDER BY ml.nome
   `;
 
-  // In-memory cache reads (no DB/network hit)
-  const execCache    = getExecutiveCache();
+  // Production rows — history table for past dates, in-memory cache for today
   const deliberaFasi = getDeliberaFasi();
+  let allRows: Array<{ fase: string; modello: string; componente: string; cod_seriale: string; esito_delibera: string | null; data_inserimento: Date }>;
+  if (isHistorical) {
+    const histRows = await db`
+      SELECT fase, modello, componente, cod_seriale, esito_delibera, data_inserimento
+      FROM webthron_events_history
+      WHERE data_cache = ${dateStr}::date
+      ORDER BY data_inserimento ASC
+    `;
+    allRows = histRows.map(r => ({
+      fase:             r.fase             as string,
+      modello:          r.modello          as string,
+      componente:       r.componente       as string,
+      cod_seriale:      r.cod_seriale      as string,
+      esito_delibera:   r.esito_delibera   as string | null,
+      data_inserimento: new Date(r.data_inserimento as string),
+    }));
+  } else {
+    allRows = getExecutiveCache()?.rows ?? [];
+  }
 
   // Build per-line summaries
   const lineeOut = linee.map(l => {
     const combos: Array<{ modello: string; componente: string }> = (l.combos as Array<{ modello: string; componente: string }>) ?? [];
 
-    // pezzi_reali: production rows from executive cache matching this line's fase + combos
+    // pezzi_reali: production rows matching this line's fase + combos
     const combosSet = new Set(combos.map(c => `${c.modello}|${c.componente}`));
-    const prodRows  = execCache
-      ? execCache.rows.filter(r =>
-          r.fase === (l.fase as string) && combosSet.has(`${r.modello}|${r.componente}`)
-        )
-      : [];
+    const prodRows  = allRows.filter(r =>
+      r.fase === (l.fase as string) && combosSet.has(`${r.modello}|${r.componente}`)
+    );
     const pezzi_reali  = prodRows.length;
 
     // quality: match delibera events to produced serials only
     // rows are ordered ASC — last entry per serial wins
     const prodSerials  = new Set(prodRows.map(r => r.cod_seriale));
-    const deliberaRows = (execCache && prodSerials.size > 0)
-      ? execCache.rows.filter(r =>
+    const deliberaRows = prodSerials.size > 0
+      ? allRows.filter(r =>
           deliberaFasi.includes(r.fase) && prodSerials.has(r.cod_seriale)
         )
       : [];
@@ -696,16 +716,16 @@ monitorRoutes.get('/executive', async (c) => {
     }
     minuti_fermo = Math.round(minuti_fermo);
 
-    // Current ferma: time since last piece > cycleTimeSec and still within shift
+    // Current ferma: only meaningful for today (historical dates always = false)
     const lastTs = prodTimestamps[prodTimestamps.length - 1] ?? null;
-    const inTurno = turnoStartTs && turnoFineTs
+    const inTurno = !isHistorical && turnoStartTs && turnoFineTs
       && now >= turnoStartTs && now <= turnoFineTs;
-    const elapsedSinceLastSec = lastTs ? (now.getTime() - lastTs.getTime()) / 1000 : null;
+    const elapsedSinceLastSec = (!isHistorical && lastTs) ? (now.getTime() - lastTs.getTime()) / 1000 : null;
     const ferma_adesso = !!(inTurno && cycleTimeSec && elapsedSinceLastSec != null && elapsedSinceLastSec > cycleTimeSec);
     const ferma_da_min = ferma_adesso && cycleTimeSec && elapsedSinceLastSec != null
       ? Math.round((elapsedSinceLastSec - cycleTimeSec) / 60)
       : null;
-    // Add ongoing stop to fermate list
+    // Add ongoing stop to fermate list (only for today)
     if (ferma_adesso && cycleTimeSec && lastTs) {
       fermate.push({
         inizio:     new Date(lastTs.getTime() + cycleTimeSec * 1000).toISOString(),
@@ -714,11 +734,13 @@ monitorRoutes.get('/executive', async (c) => {
       });
     }
 
-    // Avanzamento previsto — pezzi attesi a quest'ora (stessa logica del monitor Andon)
+    // Avanzamento previsto — for historical dates use pezzi_pianificati (full day)
     let avanzamento_previsto = 0;
-    if (turno_oggi && turnoStartTs && turnoFineTs && pezzi_pianificati > 0) {
+    if (isHistorical) {
+      avanzamento_previsto = pezzi_pianificati;
+    } else if (turno_oggi && turnoStartTs && turnoFineTs && pezzi_pianificati > 0) {
       const totalShiftSec  = (turnoFineTs.getTime() - turnoStartTs.getTime()) / 1000;
-      const totalPausaSec  = 0; // pause non disponibili in questa query aggregata — approssimazione accettabile
+      const totalPausaSec  = 0;
       const netShiftSec    = Math.max(1, totalShiftSec - totalPausaSec);
       const elapsedSec     = Math.max(0, Math.min(netShiftSec, (now.getTime() - turnoStartTs.getTime()) / 1000));
       avanzamento_previsto = Math.round(pezzi_pianificati * elapsedSec / netShiftSec);
@@ -739,10 +761,10 @@ monitorRoutes.get('/executive', async (c) => {
     const oee = Math.round(disponibilita * performance * qualita * 1000) / 10;
 
     let status: 'verde' | 'giallo' | 'rosso' | 'nessun_turno';
-    if (!turno_oggi)       status = 'nessun_turno';
-    else if (ferma_adesso) status = 'rosso';
-    else if (oee < 60)     status = 'giallo';
-    else                   status = 'verde';
+    if (!turno_oggi)                      status = 'nessun_turno';
+    else if (!isHistorical && ferma_adesso) status = 'rosso';
+    else if (oee < 60)                    status = 'giallo';
+    else                                  status = 'verde';
 
     return {
       id:               l.id      as number,
@@ -792,6 +814,8 @@ monitorRoutes.get('/executive', async (c) => {
 
   return c.json({
     aggiornato_at:  new Date().toISOString(),
+    date:           dateStr,
+    is_historical:  isHistorical,
     delibera_fasi:  deliberaFasi,
     kpi: {
       oee_generale,

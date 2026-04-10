@@ -28,15 +28,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch(`${BACKEND}/api/auth/me`, { credentials: 'include' });
+      const res = await fetch(`${BACKEND}/api/auth/me`, {
+        credentials: 'include',
+        signal: AbortSignal.timeout(10_000),
+      });
       if (res.ok) {
         const data = await res.json();
         setUser(data.user);
-      } else {
+      } else if (res.status === 401) {
+        // Explicit 401 = not logged in
         setUser(null);
       }
+      // Other HTTP errors (5xx, network issues): preserve existing user state
     } catch {
-      setUser(null);
+      // Network error or timeout: do not log out, just stop loading
     } finally {
       setLoading(false);
     }

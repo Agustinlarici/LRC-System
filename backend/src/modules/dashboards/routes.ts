@@ -7,9 +7,12 @@ import {
   computeCellOee,
   romeOffsetForDate,
   OeeHourCell,
-  HeatmapWebthronRow,
   snapshotDay,
+  snapshotDayFromHistory,
+  queryWebthronRange,
 } from './heatmap.js';
+import type { WebthronEvent as HeatmapWebthronRow } from '../monitor/mysql-client.js';
+import { getAvailableFasi, getAvailableComponenti, computeLeadTime, SPMA_PIANO_FASE } from './lead-time.js';
 import { logger } from '../../lib/logger.js';
 
 export const dashboardsRoutes = new Hono();
@@ -87,6 +90,34 @@ dashboardsRoutes.get('/heatmap', async (c) => {
 
   // ── Giorni passati → monitor_oee_hourly (PostgreSQL, nessuna query WebThron) ──
   if (pastDays.length > 0) {
+    // Find which days are missing from the snapshot table
+    const existingDays = new Set(
+      (await db`
+        SELECT DISTINCT data::text AS data FROM monitor_oee_hourly
+        WHERE data BETWEEN ${pastDays[0]}::date AND ${pastDays[pastDays.length - 1]}::date
+      `).map(r => (r.data as string).slice(0, 10))
+    );
+
+    // For missing days with history data, compute from history (no WebThron)
+    const missingDays = pastDays.filter(d => !existingDays.has(d));
+    if (missingDays.length > 0) {
+      const historyDates = new Set(
+        (await db`
+          SELECT DISTINCT data_cache::text AS d FROM webthron_events_history
+          WHERE data_cache BETWEEN ${pastDays[0]}::date AND ${pastDays[pastDays.length - 1]}::date
+        `).map(r => (r.d as string).slice(0, 10))
+      );
+      for (const day of missingDays) {
+        if (historyDates.has(day)) {
+          try {
+            await snapshotDayFromHistory(day);
+          } catch (e) {
+            logger.warn(`[Heatmap] snapshotDayFromHistory ${day} failed: ${e}`);
+          }
+        }
+      }
+    }
+
     const snapRows = await db`
       SELECT
         linea_id, data::text AS data, ora,
@@ -350,4 +381,412 @@ dashboardsRoutes.get('/heatmap/backfill', async (c) => {
     running: backfillRunning,
     status:  backfillStatus,
   });
+});
+
+// ─── Lead Time ────────────────────────────────────────────────────────────────
+
+// ─── POST /lead-time/backfill?from=YYYY-MM-DD&to=YYYY-MM-DD ──────────────────
+// Popola webthron_events_history per i giorni nel range.
+// Un giorno alla volta con pausa configurabile → nessun blocco prolungato su WebThron.
+// Risponde 202 subito; stato leggibile via GET /lead-time/backfill.
+
+let historyBackfillRunning = false;
+let historyBackfillStatus: { done: number; total: number; current: string; errors: string[] } | null = null;
+
+dashboardsRoutes.post('/lead-time/backfill', async (c) => {
+  if (historyBackfillRunning) {
+    return c.json({ error: 'Backfill già in corso', status: historyBackfillStatus }, 409);
+  }
+
+  const fromStr  = c.req.query('from');
+  const toStr    = c.req.query('to');
+  const pauseSec = Math.max(30, parseInt(c.req.query('pause_sec') ?? '120', 10)); // default 2 min
+
+  if (!fromStr || !toStr || !/^\d{4}-\d{2}-\d{2}$/.test(fromStr) || !/^\d{4}-\d{2}-\d{2}$/.test(toStr)) {
+    throw new HTTPException(400, { message: 'Parametri from/to richiesti (YYYY-MM-DD)' });
+  }
+
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
+
+  // Build day list (today is allowed — served from local cache, not MySQL)
+  const days: string[] = [];
+  const cur = new Date(`${fromStr}T12:00:00Z`);
+  const end = new Date(`${toStr}T12:00:00Z`);
+  while (cur <= end) {
+    const ds = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(cur);
+    if (ds <= todayStr) days.push(ds);
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  if (days.length === 0) throw new HTTPException(400, { message: 'Nessun giorno valido nel range' });
+
+  // Ensure history table exists (run migration if needed)
+  await db`
+    CREATE TABLE IF NOT EXISTS webthron_events_history (
+      id               SERIAL       PRIMARY KEY,
+      fase             VARCHAR(200) NOT NULL,
+      modello          VARCHAR(200) NOT NULL,
+      componente       VARCHAR(200) NOT NULL,
+      cod_seriale      VARCHAR(200) NOT NULL,
+      esito_delibera   VARCHAR(200),
+      data_inserimento TIMESTAMPTZ  NOT NULL,
+      data_cache       DATE         NOT NULL
+    )
+  `;
+  await db`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_weh_dedup
+      ON webthron_events_history (fase, cod_seriale, data_inserimento)
+  `;
+  await db`CREATE INDEX IF NOT EXISTS idx_weh_data_cache ON webthron_events_history (data_cache)`;
+  await db`CREATE INDEX IF NOT EXISTS idx_weh_seriale_fase ON webthron_events_history (cod_seriale, fase)`;
+  await db`CREATE INDEX IF NOT EXISTS idx_weh_fase_componente ON webthron_events_history (fase, componente)`;
+
+  historyBackfillRunning = true;
+  historyBackfillStatus  = { done: 0, total: days.length, current: '', errors: [] };
+
+  type LineaCombo = { fase: string; modello: string; componente: string };
+  const combos = (await db`
+    SELECT DISTINCT ml.fase, mlc.modello, mlc.componente
+    FROM monitor_linea ml
+    JOIN monitor_linea_combo mlc ON mlc.linea_id = ml.id
+    WHERE ml.attivo = true
+  `) as unknown as LineaCombo[];
+  const deliberaFasi = (process.env.DELIBERA_FASI ?? 'DELIBERA FINALE,DELIBERA FINALE PROX')
+    .split(',').map(s => s.trim()).filter(Boolean);
+
+  if (combos.length === 0) {
+    historyBackfillRunning = false;
+    return c.json({ message: 'Nessuna linea attiva configurata', days: 0 }, 200);
+  }
+
+  (async () => {
+    for (const day of days) {
+      historyBackfillStatus!.current = day;
+      try {
+        // Skip only if all records for this day already have commessa populated
+        const [existing] = await db`
+          SELECT
+            COUNT(*)::int         AS n,
+            COUNT(commessa)::int  AS with_commessa
+          FROM webthron_events_history
+          WHERE data_cache = ${day}::date
+        `;
+        if (existing && (existing.n as number) > 0 && (existing.n as number) === (existing.with_commessa as number)) {
+          logger.info(`[HistoryBackfill] ${day} già completo (${existing.n} eventi con commessa) — skip`);
+          historyBackfillStatus!.done++;
+          continue;
+        }
+
+        let insertedCount = 0;
+        if (day === todayStr) {
+          // Today: copy from local cache — no MySQL query needed
+          const result = await db`
+            INSERT INTO webthron_events_history (fase, modello, componente, cod_seriale, commessa, esito_delibera, data_inserimento, data_cache)
+            SELECT fase, modello, componente, cod_seriale, commessa, esito_delibera, data_inserimento, ${day}::date
+            FROM webthron_prod_cache
+            WHERE data_cache = ${day}::date
+            ON CONFLICT (fase, cod_seriale, data_inserimento) DO NOTHING
+          `;
+          insertedCount = result.count;
+          logger.info(`[HistoryBackfill] ${day} (da cache locale) — +${insertedCount} eventi`);
+        } else {
+          // Past day: query MySQL (lightweight — one day, timeout, zombie protections in place)
+          const rows = await queryWebthronRange(
+            day, day,
+            combos as Array<{ fase: string; modello: string; componente: string }>,
+            deliberaFasi,
+          );
+          if (rows.length > 0) {
+            const records = rows.map((r: HeatmapWebthronRow) => ({
+              fase:             r.fase,
+              modello:          r.modello,
+              componente:       r.componente,
+              cod_seriale:      r.cod_seriale,
+              commessa:         r.commessa ?? null,
+              esito_delibera:   r.esito_delibera ?? null,
+              data_inserimento: r.data_inserimento,
+              data_cache:       day,
+            }));
+            const result = await db`
+              INSERT INTO webthron_events_history ${db(records)}
+              ON CONFLICT (fase, cod_seriale, data_inserimento)
+              DO UPDATE SET commessa = EXCLUDED.commessa
+              WHERE webthron_events_history.commessa IS NULL
+            `;
+            insertedCount = result.count;
+          }
+          logger.info(`[HistoryBackfill] ${day} — +${insertedCount} eventi`);
+        }
+
+        historyBackfillStatus!.done++;
+      } catch (err) {
+        const msg = `${day}: ${(err as Error).message}`;
+        historyBackfillStatus!.errors.push(msg);
+        logger.error(`[HistoryBackfill] ${msg}`);
+        historyBackfillStatus!.done++;
+      }
+
+      if (historyBackfillStatus!.done < days.length) {
+        await new Promise(r => setTimeout(r, pauseSec * 1000));
+      }
+    }
+    historyBackfillRunning = false;
+    historyBackfillStatus!.current = '';
+    logger.info(`[HistoryBackfill] Completato — ${historyBackfillStatus!.done} giorni, ${historyBackfillStatus!.errors.length} errori`);
+  })();
+
+  return c.json({ message: 'Backfill avviato', days: days.length, from: fromStr, to: toStr, pause_sec: pauseSec }, 202);
+});
+
+dashboardsRoutes.get('/lead-time/backfill', async (c) => {
+  return c.json({ running: historyBackfillRunning, status: historyBackfillStatus });
+});
+
+// ─── POST /lead-time/patch-commessa?date=YYYY-MM-DD ───────────────────────────
+// Queries MySQL for (cod_seriale, commessa, data_inserimento) for a single day,
+// then UPDATE webthron_events_history SET commessa WHERE commessa IS NULL.
+// Lightweight — only 3 fields, no combo conditions.
+// Does NOT trigger or depend on the iKnow Andon sync scheduler.
+
+dashboardsRoutes.post('/lead-time/patch-commessa', async (c) => {
+  const dateStr = c.req.query('date');
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    throw new HTTPException(400, { message: 'Parametro date richiesto (YYYY-MM-DD)' });
+  }
+
+  // Check how many rows need patching
+  const [need] = await db`
+    SELECT COUNT(*)::int AS n
+    FROM webthron_events_history
+    WHERE data_cache = ${dateStr}::date AND commessa IS NULL
+  `;
+  const toFix = (need?.n as number) ?? 0;
+  if (toFix === 0) {
+    return c.json({ message: `Nessuna riga da aggiornare per ${dateStr}`, updated: 0 });
+  }
+
+  // Minimal MySQL query — only the fields needed to patch commessa.
+  // No combo filter (no model/component conditions) — just date + NOT NULL guards.
+  // MAX_EXECUTION_TIME(60000) = 1 min server-side kill.
+  // Driver timeout: 90 sec. Connection pool: limit 2, wait_timeout=300.
+  const sql = `
+    SELECT /*+ MAX_EXECUTION_TIME(60000) */
+      Extra186.stringa AS cod_seriale,
+      Extra30.stringa  AS commessa,
+      ubi.datain       AS data_inserimento
+    FROM ubidocum ubi
+    LEFT JOIN ikExtra Extra186 ON ubi.iddocu = Extra186.iddocu AND Extra186.idcampo = 186 AND Extra186.idcomm = 0 AND Extra186.seq = 0
+    LEFT JOIN ikExtra Extra30  ON ubi.iddocu = Extra30.iddocu  AND Extra30.idcampo  = 30  AND Extra30.idcomm  = 0 AND Extra30.seq  = 0
+    WHERE ubi.tipdoc IN ('0480','0080','0160','1520','5004','5005','5006','5007','5010','5016','PX01','0090')
+      AND DATE(CONVERT_TZ(ubi.datain, '+00:00', '+01:00')) = ?
+      AND Extra186.stringa IS NOT NULL
+      AND Extra30.stringa  IS NOT NULL
+    LIMIT 50000
+  `;
+
+  const { getWebthronPool } = await import('../monitor/mysql-client.js');
+  const [rows] = await getWebthronPool().execute(
+    { sql, timeout: 90_000 },
+    [dateStr],
+  ) as [Array<{ cod_seriale: string; commessa: string; data_inserimento: Date }>, unknown];
+
+  if (rows.length === 0) {
+    return c.json({ message: `Nessun evento trovato su WebThron per ${dateStr}`, updated: 0 });
+  }
+
+  // Bulk UPDATE using unnest arrays — single query, no nested template issues
+  const codSeriali    = rows.map(r => r.cod_seriale);
+  const commesse      = rows.map(r => r.commessa);
+  const dataInserimenti = rows.map(r => r.data_inserimento);
+
+  const result = await db`
+    UPDATE webthron_events_history AS h
+    SET commessa = v.commessa
+    FROM unnest(
+      ${db.array(codSeriali)}::text[],
+      ${db.array(commesse)}::text[],
+      ${db.array(dataInserimenti)}::timestamptz[]
+    ) AS v(cod_seriale, commessa, data_inserimento)
+    WHERE h.cod_seriale      = v.cod_seriale
+      AND h.data_inserimento = v.data_inserimento
+      AND h.commessa IS NULL
+  `;
+  const updated = result.count;
+
+  logger.info(`[PatchCommessa] ${dateStr} — aggiornate ${updated}/${toFix} righe`);
+  return c.json({ message: `Patch completato per ${dateStr}`, updated, total_mysql: rows.length });
+});
+
+// GET /lead-time/models — distinct model_code values in spma_commessa
+dashboardsRoutes.get('/lead-time/models', async (c) => {
+  const rows = await db`
+    SELECT DISTINCT model_code FROM spma_commessa WHERE model_code IS NOT NULL ORDER BY model_code
+  `;
+  return c.json(rows.map(r => r.model_code as string));
+});
+
+// GET /lead-time/fasi — distinct fasi available in history
+dashboardsRoutes.get('/lead-time/fasi', async (c) => {
+  const fasi = await getAvailableFasi();
+  return c.json(fasi);
+});
+
+// GET /lead-time/componenti — distinct componenti in history
+dashboardsRoutes.get('/lead-time/componenti', async (c) => {
+  const comp = await getAvailableComponenti();
+  return c.json(comp);
+});
+
+// GET /lead-time?fase_a=X&fase_b=Y&date_from=YYYY-MM-DD&date_to=YYYY-MM-DD&category_id=N[&line_id=N]
+// category_id: SPMA component_category_id — resolved to iKnow componente names via spma_componente_map
+dashboardsRoutes.get('/lead-time', async (c) => {
+  const fase_a      = c.req.query('fase_a')      ?? '';
+  const fase_b      = c.req.query('fase_b')      ?? '';
+  const date_from   = c.req.query('date_from')   ?? '';
+  const date_to     = c.req.query('date_to')     ?? '';
+  const category_id = c.req.query('category_id') ? parseInt(c.req.query('category_id')!, 10) : undefined;
+  const line_id     = c.req.query('line_id')     ? parseInt(c.req.query('line_id')!,     10) : undefined;
+
+  if (!fase_a || !fase_b || !date_from || !date_to) {
+    throw new HTTPException(400, { message: 'fase_a, fase_b, date_from, date_to richiesti' });
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date_from) || !/^\d{4}-\d{2}-\d{2}$/.test(date_to)) {
+    throw new HTTPException(400, { message: 'date_from e date_to devono essere YYYY-MM-DD' });
+  }
+  if (!category_id) {
+    throw new HTTPException(400, { message: 'category_id richiesto' });
+  }
+
+  // Resolve iKnow componente names for this SPMA category
+  // (not needed when both fasi are SPMA_PIANO, but always load for filtering WebThron events)
+  const mappings = await db`
+    SELECT componente_iknow
+    FROM spma_componente_map
+    WHERE component_category_id = ${category_id} AND active = TRUE
+  `;
+  const componenteNames = mappings.map(r => r.componente_iknow as string);
+
+  // Warn only when a WebThron fase is selected but no mapping exists
+  const needsMapping = fase_a !== SPMA_PIANO_FASE || fase_b !== SPMA_PIANO_FASE;
+  if (needsMapping && componenteNames.length === 0) {
+    return c.json({ points: [], count: 0, warning: `Nessuna equivalenza iKnow configurata per la categoria ${category_id}. Aggiungila nella sezione "Equivalenze" sopra.` });
+  }
+
+  const points = await computeLeadTime({ fase_a, fase_b, date_from, date_to, category_id, componenteNames, line_id });
+  return c.json({ points, count: points.length });
+});
+
+// GET /lead-time/zones?category_id=N&fase_a=X&fase_b=Y
+dashboardsRoutes.get('/lead-time/zones', async (c) => {
+  const category_id = c.req.query('category_id') ? parseInt(c.req.query('category_id')!, 10) : undefined;
+  const fase_a      = c.req.query('fase_a') ?? '';
+  const fase_b      = c.req.query('fase_b') ?? '';
+  if (!category_id || !fase_a || !fase_b) {
+    throw new HTTPException(400, { message: 'category_id, fase_a, fase_b richiesti' });
+  }
+  const rows = await db`
+    SELECT verde_max, amarillo_max, direction
+    FROM lead_time_zones
+    WHERE category_id = ${category_id} AND fase_a = ${fase_a} AND fase_b = ${fase_b}
+  `;
+  if (!rows[0]) return c.json(null);
+  return c.json({
+    verde_max:    parseFloat(rows[0].verde_max as string),
+    amarillo_max: parseFloat(rows[0].amarillo_max as string),
+    direction:    rows[0].direction as string,
+  });
+});
+
+// PUT /lead-time/zones
+dashboardsRoutes.put('/lead-time/zones', async (c) => {
+  const body = await c.req.json();
+  const { category_id, fase_a, fase_b, verde_max, amarillo_max, direction } = body;
+  if (!category_id || !fase_a || !fase_b || verde_max == null || amarillo_max == null) {
+    throw new HTTPException(400, { message: 'category_id, fase_a, fase_b, verde_max, amarillo_max richiesti' });
+  }
+  if (Number(verde_max) >= Number(amarillo_max)) {
+    throw new HTTPException(400, { message: 'La soglia verde deve essere minore della soglia gialla' });
+  }
+  const dir = direction === 'higher_better' ? 'higher_better' : 'higher_worse';
+  const rows = await db`
+    INSERT INTO lead_time_zones (category_id, fase_a, fase_b, verde_max, amarillo_max, direction, updated_at)
+    VALUES (${category_id}, ${fase_a}, ${fase_b}, ${Number(verde_max)}, ${Number(amarillo_max)}, ${dir}, NOW())
+    ON CONFLICT (category_id, fase_a, fase_b) DO UPDATE
+      SET verde_max    = EXCLUDED.verde_max,
+          amarillo_max = EXCLUDED.amarillo_max,
+          direction    = EXCLUDED.direction,
+          updated_at   = NOW()
+    RETURNING verde_max, amarillo_max, direction
+  `;
+  return c.json({
+    verde_max:    parseFloat(rows[0].verde_max as string),
+    amarillo_max: parseFloat(rows[0].amarillo_max as string),
+    direction:    rows[0].direction as string,
+  });
+});
+
+// ─── GET /weekly-oee?weeks=8 ─────────────────────────────────────────────────
+// Aggregazione OEE settimanale da monitor_oee_daily (PostgreSQL only, nessuna
+// query WebThron). Ritorna una riga per (linea × settimana) con OEE medio,
+// produzione reale vs piano, pezzi conformi vs deliberati e fermate.
+
+dashboardsRoutes.get('/weekly-oee', async (c) => {
+  const weeks = Math.min(52, Math.max(1, parseInt(c.req.query('weeks') ?? '8', 10)));
+
+  const rows = await db`
+    SELECT
+      d.linea_id,
+      ml.nome,
+      DATE_TRUNC('week', d.data)::date                                          AS week_start,
+      COUNT(*) FILTER (WHERE d.pezzi_reali > 0)                                 AS giorni,
+      ROUND(AVG(d.oee::numeric)          FILTER (WHERE d.pezzi_reali > 0),  1) AS oee_avg,
+      ROUND(AVG(d.disponibilita::numeric) FILTER (WHERE d.pezzi_reali > 0), 1) AS disp_avg,
+      ROUND(AVG(d.performance::numeric)   FILTER (WHERE d.pezzi_reali > 0), 1) AS perf_avg,
+      ROUND(AVG(d.qualita::numeric) FILTER (WHERE d.pezzi_deliberati > 0),  1) AS qual_avg,
+      SUM(d.pezzi_reali)        AS pezzi_reali,
+      SUM(d.pezzi_pianificati)  AS pezzi_piano,
+      SUM(d.pezzi_deliberati)   AS pezzi_deliberati,
+      SUM(d.pezzi_conformi)     AS pezzi_conformi,
+      SUM(d.minuti_fermo)       AS fermi_min,
+      SUM(d.fermi_count)        AS fermi_count
+    FROM monitor_oee_daily d
+    JOIN monitor_linea ml ON ml.id = d.linea_id AND ml.attivo = true
+    WHERE d.data >= CURRENT_DATE - (${weeks} * 7)::integer
+    GROUP BY d.linea_id, ml.nome, DATE_TRUNC('week', d.data)
+    ORDER BY ml.nome, week_start
+  `;
+
+  return c.json({
+    weeks,
+    data: rows.map(r => ({
+      linea_id:         r.linea_id         as number,
+      nome:             r.nome             as string,
+      week_start:       (r.week_start as string).slice(0, 10),
+      giorni:           Number(r.giorni),
+      oee_avg:          r.oee_avg   != null ? Number(r.oee_avg)   : null,
+      disp_avg:         r.disp_avg  != null ? Number(r.disp_avg)  : null,
+      perf_avg:         r.perf_avg  != null ? Number(r.perf_avg)  : null,
+      qual_avg:         r.qual_avg  != null ? Number(r.qual_avg)  : null,
+      pezzi_reali:      Number(r.pezzi_reali),
+      pezzi_piano:      Number(r.pezzi_piano),
+      pezzi_deliberati: Number(r.pezzi_deliberati),
+      pezzi_conformi:   Number(r.pezzi_conformi),
+      fermi_min:        Number(r.fermi_min),
+      fermi_count:      Number(r.fermi_count),
+    })),
+  });
+});
+
+// DELETE /lead-time/zones?category_id=N&fase_a=X&fase_b=Y
+dashboardsRoutes.delete('/lead-time/zones', async (c) => {
+  const category_id = c.req.query('category_id') ? parseInt(c.req.query('category_id')!, 10) : undefined;
+  const fase_a      = c.req.query('fase_a') ?? '';
+  const fase_b      = c.req.query('fase_b') ?? '';
+  if (!category_id || !fase_a || !fase_b) {
+    throw new HTTPException(400, { message: 'category_id, fase_a, fase_b richiesti' });
+  }
+  await db`
+    DELETE FROM lead_time_zones
+    WHERE category_id = ${category_id} AND fase_a = ${fase_a} AND fase_b = ${fase_b}
+  `;
+  return c.json({ ok: true });
 });

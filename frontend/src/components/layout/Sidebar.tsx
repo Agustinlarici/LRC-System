@@ -146,8 +146,10 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/mappa':              'mappa',
   '/tickets':            'tickets',
   '/tickets/admin':      'tickets_admin',
-  '/dashboards':         'dashboards',
-  '/dashboards/heatmap': 'dashboards',
+  '/dashboards':              'dashboards',
+  '/dashboards/heatmap':      'dashboards',
+  '/dashboards/lead-time':    'dashboards',
+  '/dashboards/trends':       'dashboards',
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
