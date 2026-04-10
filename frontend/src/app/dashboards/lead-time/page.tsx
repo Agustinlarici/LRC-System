@@ -40,7 +40,7 @@ function movingAvg(data: Array<{ hours_net: number }>, window: number) {
 // ─── Custom X tick (idx + date) ───────────────────────────────────────────────
 
 function XTick({ x, y, payload, data }: {
-  x?: number; y?: number;
+  x?: number | string; y?: number | string;
   payload?: { value: number };
   data: Array<{ line_entry_ts: string | null }>;
 }) {
