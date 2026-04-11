@@ -736,7 +736,7 @@ dashboardsRoutes.get('/weekly-oee', async (c) => {
     SELECT
       d.linea_id,
       ml.nome,
-      DATE_TRUNC('week', d.data)::date                                          AS week_start,
+      TO_CHAR(DATE_TRUNC('week', d.data), 'YYYY-MM-DD')                         AS week_start,
       COUNT(*) FILTER (WHERE d.pezzi_reali > 0)                                 AS giorni,
       ROUND(AVG(d.oee::numeric)          FILTER (WHERE d.pezzi_reali > 0),  1) AS oee_avg,
       ROUND(AVG(d.disponibilita::numeric) FILTER (WHERE d.pezzi_reali > 0), 1) AS disp_avg,
