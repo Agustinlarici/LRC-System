@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { syncPackArticles } from './modules/packing/bc-client.js';
-import { snapshotDay } from './modules/dashboards/heatmap.js';
-import { refreshLookupTables } from './modules/monitor/pg-webthron-sync.js';
+import { snapshotDayFromHistory } from './modules/dashboards/heatmap.js';
+import { syncFullDayToHistory, refreshLookupTables } from './modules/monitor/pg-webthron-sync.js';
 import { setNextRun } from './lib/sync-stats.js';
 import { logger } from './lib/logger.js';
 
@@ -14,18 +14,36 @@ function nextOccurrence(hour: number, minute = 0): Date {
 }
 
 export function startScheduler() {
-  // 01:00 — snapshot OEE di ieri → monitor_oee_hourly / monitor_oee_daily
+  // 01:00 — rilettura completa WebThron di ieri + snapshot OEE
+  //
+  // Flusso:
+  //   1. Legge TUTTI gli eventi di ieri da WebThron → upsert in webthron_events_history
+  //      (cattura correzioni, ritardi o dati arrivati dopo il sync incrementale)
+  //   2. Calcola OEE da history (già aggiornata) → monitor_oee_daily / monitor_oee_hourly
+  //
+  // Così se WebThron corregge un dato durante la notte, il giorno dopo è già corretto
+  // anche nei dashboard storici.
   cron.schedule('0 1 * * *', async () => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(yesterday);
-    logger.info(`[scheduler] Snapshot OEE heatmap per ${dateStr}...`);
+
+    logger.info(`[scheduler] Rilettura completa WebThron per ${dateStr}...`);
     try {
-      await snapshotDay(dateStr);
-      logger.info(`[scheduler] Snapshot heatmap ${dateStr} completato`);
+      await syncFullDayToHistory(dateStr);
     } catch (e) {
-      logger.error(`[scheduler] Snapshot heatmap fallito: ${e instanceof Error ? e.message : e}`);
+      logger.error(`[scheduler] syncFullDayToHistory fallito: ${e instanceof Error ? e.message : e}`);
+      // Continua comunque con il snapshot — meglio dati parziali che nessun dato
     }
+
+    logger.info(`[scheduler] Snapshot OEE per ${dateStr}...`);
+    try {
+      await snapshotDayFromHistory(dateStr);
+      logger.info(`[scheduler] Snapshot OEE ${dateStr} completato`);
+    } catch (e) {
+      logger.error(`[scheduler] Snapshot OEE fallito: ${e instanceof Error ? e.message : e}`);
+    }
+
     setNextRun('heatmap_snapshot', nextOccurrence(1));
   }, { timezone: 'Europe/Rome' });
 

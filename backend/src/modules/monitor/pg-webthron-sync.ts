@@ -141,6 +141,59 @@ export async function syncWebthronToPostgres(): Promise<void> {
   }
 }
 
+// ─── Full-day sync to history ─────────────────────────────────────────────────
+//
+// Reads ALL events for a given date from WebThron and upserts them into
+// webthron_events_history. Run once at end-of-day to catch late entries,
+// corrections, or anything missed by the incremental sync during the day.
+// Uses the same 'range' query as the manual backfill — one day, no lock.
+
+export async function syncFullDayToHistory(dateStr: string): Promise<number> {
+  if (!process.env.WEBTHRON_HOST) return 0;
+
+  const combos       = await getActiveLineeWithCombos();
+  const deliberaFasi = getDeliberaFasi();
+  if (combos.length === 0) return 0;
+
+  startRun('sync_full_day');
+  try {
+    const rows = await queryWebthronEvents(combos, deliberaFasi, {
+      mode: 'range', from: dateStr, to: dateStr,
+    });
+
+    if (rows.length === 0) {
+      endRun('sync_full_day', 0);
+      return 0;
+    }
+
+    const records = rows.map(r => ({
+      fase:             r.fase,
+      modello:          r.modello,
+      componente:       r.componente,
+      cod_seriale:      r.cod_seriale,
+      commessa:         r.commessa ?? null,
+      esito_delibera:   r.esito_delibera ?? null,
+      data_inserimento: r.data_inserimento,
+      data_cache:       dateStr,
+    }));
+
+    const result = await db`
+      INSERT INTO webthron_events_history ${db(records)}
+      ON CONFLICT (fase, cod_seriale, data_inserimento) DO UPDATE SET
+        esito_delibera = EXCLUDED.esito_delibera,
+        commessa       = COALESCE(EXCLUDED.commessa, webthron_events_history.commessa)
+    `;
+
+    endRun('sync_full_day', rows.length);
+    logger.info(`[FullDaySync] ${dateStr} — ${rows.length} eventi da WebThron, ${result.count} modificati in history`);
+    return rows.length;
+  } catch (err) {
+    failRun('sync_full_day', err);
+    logger.error(`[FullDaySync] Errore per ${dateStr}: ${err}`);
+    return 0;
+  }
+}
+
 // ─── Executive read ───────────────────────────────────────────────────────────
 
 export async function getProdRowsFromPG(): Promise<ProdRow[]> {
