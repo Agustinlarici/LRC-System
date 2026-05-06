@@ -16,9 +16,11 @@ export function addDays(d: string, n: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
-/** Format ISO timestamp → DD/MM/YYYY HH:MM (UTC) */
+/** Format ISO timestamp → DD/MM/YYYY HH:MM (Europe/Rome) */
 export function fmtDatetime(raw: string): string {
-  const d = new Date(raw);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+  return new Date(raw).toLocaleString('it-IT', {
+    timeZone: 'Europe/Rome',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
 }

@@ -54,6 +54,7 @@ services:
       WEBTHRON_DB:    ${WEBTHRON_DB:-WebThron}
       WEBTHRON_USER:  ${WEBTHRON_USER:-}
       WEBTHRON_PASS:  ${WEBTHRON_PASS:-}
+      TZ:             Europe/Rome
       WEBTHRON_TZ:    ${WEBTHRON_TZ:-+01:00}
       # JWT (Ticket IT)
       JWT_SECRET:     ${JWT_SECRET:?JWT_SECRET is required}

@@ -133,17 +133,66 @@ export async function computeLeadTime(params: LeadTimeParams): Promise<LeadTimeP
   const catB = fase_b === SPMA_PIANO_FASE ? category_id : null;
   const tbl  = await eventTable();
 
-  // 1. Commesse in range, ordered by entry time
-  const commesse = await db`
-    SELECT id, commessa_code, line_entry_ts, model_code
-    FROM spma_commessa
-    WHERE DATE(line_entry_ts AT TIME ZONE 'Europe/Rome') BETWEEN ${date_from} AND ${date_to}
-      ${line_id != null ? db`AND line_id = ${line_id}` : db``}
-    ORDER BY line_entry_ts ASC NULLS LAST, id ASC
-  `;
+  // 1. Commesse in range.
+  //    When both fases are WebThron events (not SPMA_PIANO), anchor the date filter on
+  //    webthron_events_history.data_cache — because spma_commessa.line_entry_ts is the
+  //    *scheduled* date and gets updated on every SPMA import, so historical commesse
+  //    end up with recent line_entry_ts values and disappear from the 30-day window.
+  //    When either fase is SPMA_PIANO_FASE, we still need spma_commessa as the anchor.
+
+  interface CommessaRow { commessa_code: string; line_entry_ts: string | null; model_code: string | null }
+  let commesse: CommessaRow[];
+
+  if (catA === null && catB === null) {
+    // Both fases are WebThron → anchor on the fase_a event date in history
+    const histRows = await db`
+      SELECT DISTINCT commessa
+      FROM ${db(tbl)}
+      WHERE fase = ${fase_a}
+        AND data_cache BETWEEN ${date_from}::date AND ${date_to}::date
+        ${componenteNames?.length ? db`AND componente = ANY(${componenteNames})` : db``}
+    `;
+    const historyCodes = histRows.map(r => r.commessa as string).filter(Boolean);
+    if (historyCodes.length === 0) return [];
+
+    // Join spma_commessa for model/line info (left join: keep commesse even if not in SPMA)
+    const spmaRows = await db`
+      SELECT commessa_code, line_entry_ts, model_code, line_id AS spma_line_id
+      FROM spma_commessa
+      WHERE commessa_code = ANY(${historyCodes})
+    `;
+    const spmaMap = new Map(spmaRows.map(r => [r.commessa_code as string, r]));
+
+    commesse = historyCodes
+      .filter(code => line_id == null || (spmaMap.get(code)?.spma_line_id as number | null) === line_id)
+      .map(code => {
+        const s = spmaMap.get(code);
+        return {
+          commessa_code: code,
+          line_entry_ts: s?.line_entry_ts as string | null ?? null,
+          model_code:    s?.model_code as string | null ?? null,
+        };
+      })
+      .sort((a, b) => (a.line_entry_ts ?? '') < (b.line_entry_ts ?? '') ? -1 : 1);
+  } else {
+    // One or both fases are SPMA_PIANO → anchor on spma_commessa.line_entry_ts
+    const rows = await db`
+      SELECT id, commessa_code, line_entry_ts, model_code
+      FROM spma_commessa
+      WHERE DATE(line_entry_ts AT TIME ZONE 'Europe/Rome') BETWEEN ${date_from} AND ${date_to}
+        ${line_id != null ? db`AND line_id = ${line_id}` : db``}
+      ORDER BY line_entry_ts ASC NULLS LAST, id ASC
+    `;
+    commesse = rows.map(r => ({
+      commessa_code: r.commessa_code as string,
+      line_entry_ts: r.line_entry_ts as string | null,
+      model_code:    r.model_code as string | null,
+    }));
+  }
+
   if (commesse.length === 0) return [];
 
-  const codes = commesse.map(c => c.commessa_code as string);
+  const codes = commesse.map(c => c.commessa_code);
 
   // 2. Fetch timestamps for fase_a
   const tsMapA = new Map<string, Date>(); // commessa_code → earliest event ts
@@ -243,6 +292,10 @@ export async function computeLeadTime(params: LeadTimeParams): Promise<LeadTimeP
       componente:     compMapA.get(code) ?? compMapB.get(code) ?? null,
     });
   }
+
+  // Sort by ts_a so the chart X-axis reflects the actual production sequence,
+  // not the SPMA scheduled date (which gets updated on every import).
+  results.sort((a, b) => a.ts_a < b.ts_a ? -1 : a.ts_a > b.ts_a ? 1 : 0);
 
   return results;
 }

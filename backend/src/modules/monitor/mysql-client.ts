@@ -17,7 +17,7 @@ export function getWebthronPool(): mysql.Pool {
       waitForConnections: true,
       connectionLimit:  1,   // mai più di 1 query parallela su WebThron
       queueLimit:       2,   // al massimo 2 in coda, poi rifiuta
-      timezone:         process.env.WEBTHRON_TZ ?? '+01:00',
+      timezone:         'local',
       connectTimeout:   8000,
     });
     // Libera la connessione in 5 min di inattività invece degli 8h di default MySQL.

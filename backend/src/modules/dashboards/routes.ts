@@ -7,7 +7,6 @@ import {
   computeCellOee,
   romeOffsetForDate,
   OeeHourCell,
-  snapshotDay,
   snapshotDayFromHistory,
   queryWebthronRange,
 } from './heatmap.js';
@@ -180,11 +179,32 @@ dashboardsRoutes.get('/heatmap', async (c) => {
     }
   }
 
+  // ── Daily OEE (for "Giorno" view — same source as tendenze settimanali) ──────
+  const dailyRows = pastDays.length > 0 ? await db`
+    SELECT linea_id, data::text AS data, oee::float AS oee,
+           pezzi_reali, pezzi_pianificati, disponibilita::float, performance::float, qualita::float
+    FROM monitor_oee_daily
+    WHERE data BETWEEN ${pastDays[0]}::date AND ${pastDays[pastDays.length - 1]}::date
+    ORDER BY data, linea_id
+  ` : [];
+
+  const dailyCells = dailyRows.map(r => ({
+    linea_id:       r.linea_id      as number,
+    data:           (r.data as string).slice(0, 10),
+    oee:            Number(r.oee),
+    pezzi_reali:    r.pezzi_reali   as number,
+    pezzi_pianificati: r.pezzi_pianificati as number,
+    disponibilita:  Number(r.disponibilita),
+    performance:    Number(r.performance),
+    qualita:        Number(r.qualita),
+  }));
+
   return c.json({
     year, month,
     linee: linee.map(l => ({ id: l.id as number, nome: l.nome as string })),
     days:  Array.from({ length: lastDay }, (_, i) => i + 1),
     cells,
+    dailyCells,
   });
   } finally {
     heatmapRunning = false;
@@ -334,7 +354,6 @@ dashboardsRoutes.post('/heatmap/backfill', async (c) => {
   backfillStatus  = { done: 0, total: days.length, current: '', errors: [] };
 
   (async () => {
-    const PAUSE_MS = 2 * 60 * 1000; // 2 min tra ogni giorno
     for (const day of days) {
       backfillStatus!.current = day;
       try {
@@ -349,7 +368,7 @@ dashboardsRoutes.post('/heatmap/backfill', async (c) => {
         }
 
         logger.info(`[Backfill] Snapshot ${day}...`);
-        await snapshotDay(day);
+        await snapshotDayFromHistory(day);
         backfillStatus!.done++;
         logger.info(`[Backfill] ${day} completato (${backfillStatus!.done}/${backfillStatus!.total})`);
       } catch (e) {
@@ -358,16 +377,10 @@ dashboardsRoutes.post('/heatmap/backfill', async (c) => {
         backfillStatus!.errors.push(`${day}: ${msg}`);
         backfillStatus!.done++;
       }
-
-      // Pausa solo se non è l'ultimo giorno
-      if (backfillStatus!.done < days.length) {
-        logger.info(`[Backfill] Pausa 2 min prima del prossimo giorno...`);
-        await new Promise(r => setTimeout(r, PAUSE_MS));
-      }
     }
-    backfillRunning        = false;
+    backfillRunning         = false;
     backfillStatus!.current = '';
-    logger.info(`[Backfill] Completato — ${backfillStatus!.done} giorni, ${backfillStatus!.errors.length} errori`);
+    logger.info(`[Backfill] Completato — ${backfillStatus!.done} giorni processati, ${backfillStatus!.errors.length} errori`);
   })();
 
   return c.json({ message: 'Backfill avviato', days: days.length, from: fromStr, to: toStr }, 202);
@@ -401,6 +414,7 @@ dashboardsRoutes.post('/lead-time/backfill', async (c) => {
   const fromStr  = c.req.query('from');
   const toStr    = c.req.query('to');
   const pauseSec = Math.max(30, parseInt(c.req.query('pause_sec') ?? '120', 10)); // default 2 min
+  const force    = c.req.query('force') === 'true'; // bypass completeness check
 
   if (!fromStr || !toStr || !/^\d{4}-\d{2}-\d{2}$/.test(fromStr) || !/^\d{4}-\d{2}-\d{2}$/.test(toStr)) {
     throw new HTTPException(400, { message: 'Parametri from/to richiesti (YYYY-MM-DD)' });
@@ -470,7 +484,7 @@ dashboardsRoutes.post('/lead-time/backfill', async (c) => {
           FROM webthron_events_history
           WHERE data_cache = ${day}::date
         `;
-        if (existing && (existing.n as number) > 0 && (existing.n as number) === (existing.with_commessa as number)) {
+        if (!force && existing && (existing.n as number) > 0 && (existing.n as number) === (existing.with_commessa as number)) {
           logger.info(`[HistoryBackfill] ${day} già completo (${existing.n} eventi con commessa) — skip`);
           historyBackfillStatus!.done++;
           continue;

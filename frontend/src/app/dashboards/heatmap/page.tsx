@@ -23,12 +23,24 @@ type OeeHourCell = {
   has_data:      boolean;
 };
 
+type OeeDayCell = {
+  linea_id:          number;
+  data:              string;
+  oee:               number;
+  pezzi_reali:       number;
+  pezzi_pianificati: number;
+  disponibilita:     number;
+  performance:       number;
+  qualita:           number;
+};
+
 type HeatmapData = {
-  year:  number;
-  month: number;
-  linee: Array<{ id: number; nome: string }>;
-  days:  number[];
-  cells: OeeHourCell[];
+  year:       number;
+  month:      number;
+  linee:      Array<{ id: number; nome: string }>;
+  days:       number[];
+  cells:      OeeHourCell[];
+  dailyCells: OeeDayCell[];
 };
 
 type DetailData = {
@@ -54,8 +66,8 @@ type DetailData = {
 
 function oeeColor(oee: number): string {
   if (oee >= 80) return 'bg-green-500';
-  if (oee >= 60) return 'bg-yellow-400';
-  if (oee >= 40) return 'bg-orange-400';
+  if (oee >= 65) return 'bg-yellow-400';
+  if (oee >= 50) return 'bg-orange-400';
   return 'bg-red-500';
 }
 
@@ -75,6 +87,25 @@ function fmtDate(dateStr: string) {
   return `${d}/${m}/${y}`;
 }
 
+// ─── Merge N hour cells (4h→8h or all→day) ────────────────────────────────────
+
+function mergeHourCells(
+  inputs: (OeeHourCell | undefined)[],
+  startOra: number,
+): OeeHourCell | null {
+  const cells = inputs.filter((c): c is OeeHourCell => !!c && c.has_data);
+  if (cells.length === 0) return null;
+  const pezzi_reali   = cells.reduce((s, c) => s + c.pezzi_reali,  0);
+  const pezzi_attesi  = cells.reduce((s, c) => s + c.pezzi_attesi, 0);
+  const minuti_fermo  = cells.reduce((s, c) => s + c.minuti_fermo, 0);
+  const fermi_count   = cells.reduce((s, c) => s + c.fermi_count,  0);
+  const disponibilita = cells.reduce((s, c) => s + c.disponibilita, 0) / cells.length;
+  const performance   = pezzi_attesi > 0 ? Math.min(100, (pezzi_reali / pezzi_attesi) * 100) : 0;
+  const oee           = disponibilita * performance / 100;
+  return { ...cells[0], ora: startOra, pezzi_reali, pezzi_attesi, minuti_fermo, fermi_count,
+           disponibilita, performance, oee, has_data: true };
+}
+
 // ─── Main component ────────────────────────────────────────────────────────────
 
 export default function HeatmapPage() {
@@ -87,6 +118,8 @@ export default function HeatmapPage() {
   const [data,    setData]    = useState<HeatmapData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState('');
+
+  const [blockSize, setBlockSize] = useState<4 | 8 | 'day'>(4);
 
   const [detail,        setDetail]        = useState<DetailData | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -153,6 +186,8 @@ export default function HeatmapPage() {
 
   // Fast lookup: "lineaId-YYYY-MM-DD-HH" → OeeHourCell
   const cellMap = new Map<string, OeeHourCell>();
+  // Fast lookup: "lineaId-YYYY-MM-DD" → OeeDayCell
+  const dailyCellMap = new Map<string, OeeDayCell>();
   // Hours with data per line
   const lineaHoursMap = new Map<number, number[]>();
 
@@ -165,6 +200,9 @@ export default function HeatmapPage() {
       if (!hrs.includes(cell.ora)) hrs.push(cell.ora);
     }
     for (const [, hrs] of lineaHoursMap) hrs.sort((a, b) => a - b);
+    for (const dc of data.dailyCells) {
+      dailyCellMap.set(`${dc.linea_id}-${dc.data}`, dc);
+    }
   }
 
   // ─── Summary cards ─────────────────────────────────────────────────────────
@@ -204,7 +242,7 @@ export default function HeatmapPage() {
     <div className="space-y-5">
 
       {/* ── Month selector ────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <button onClick={prevMonth}
           className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 text-lg">
           ‹
@@ -217,6 +255,20 @@ export default function HeatmapPage() {
           ›
         </button>
         {loading && <span className="text-xs text-gray-400 ml-1">Caricamento…</span>}
+
+        {/* ── Block-size toggle ──────────────────────────────────────────── */}
+        <div className="ml-auto flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+          {([4, 8, 'day'] as const).map(size => (
+            <button key={size}
+              onClick={() => setBlockSize(size)}
+              className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors
+                ${blockSize === size
+                  ? 'bg-white text-gray-800 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'}`}>
+              {size === 'day' ? 'Giorno' : `${size}h`}
+            </button>
+          ))}
+        </div>
       </div>
 
       {error && (
@@ -312,48 +364,72 @@ export default function HeatmapPage() {
                     })}
                   </div>
 
-                  {/* Hour rows */}
-                  {hours.map(ora => (
-                    <div key={ora} className="flex items-center mb-px">
-                      <div className="w-[120px] shrink-0" />
-                      {/* Block label: "08-12" */}
-                      <div className="w-9 shrink-0 text-[10px] text-gray-400 text-right pr-1.5 select-none">
-                        {pad(ora)}-{pad(ora + 4)}
-                      </div>
-                      {/* Day cells */}
-                      {data.days.map(d => {
-                        const ds       = `${year}-${pad(month)}-${pad(d)}`;
-                        const cell     = cellMap.get(`${linea.id}-${ds}-${ora}`);
-                        const selected = selectedCell?.lineaId === linea.id && selectedCell?.date === ds;
+                  {/* Hour rows — 4h, 8h or day */}
+                  {(blockSize === 'day'
+                    ? [hours[0] ?? 6]                          // single row
+                    : blockSize === 8
+                      ? hours.filter(h => h === 6 || h === 14) // two rows
+                      : hours                                   // four rows
+                  ).map(ora => {
+                    const cellHeight = blockSize === 'day' ? 'h-10' : blockSize === 8 ? 'h-8' : 'h-6';
+                    const blockEnd   = blockSize === 'day' ? 24 : ora + blockSize;
 
-                        return (
-                          <div key={d}
-                            className={`w-8 h-6 shrink-0 mx-px rounded-sm flex items-center justify-center
-                              transition-all select-none
-                              ${cell ? oeeColor(cell.oee) : 'bg-gray-100'}
-                              ${selected ? 'ring-2 ring-blue-500 ring-offset-1 z-10' : ''}
-                              ${cell ? 'cursor-pointer hover:opacity-75' : ''}`}
-                            onClick={() => cell && openDetail(linea.id, ds)}
-                            onMouseEnter={e => {
-                              if (!cell) return;
-                              if (ttTimeout.current) clearTimeout(ttTimeout.current);
-                              const r = e.currentTarget.getBoundingClientRect();
-                              setTooltip({ cell, lineName: linea.nome, x: r.left, y: r.bottom + 6 });
-                            }}
-                            onMouseLeave={() => {
-                              ttTimeout.current = setTimeout(() => setTooltip(null), 100);
-                            }}
-                          >
-                            {cell && (
-                              <span className="text-[9px] font-bold text-white leading-none">
-                                {Math.round(cell.oee)}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))}
+                    return (
+                      <div key={ora} className="flex items-center mb-px">
+                        <div className="w-[120px] shrink-0" />
+                        <div className="w-9 shrink-0 text-[10px] text-gray-400 text-right pr-1.5 select-none">
+                          {blockSize === 'day' ? 'giorno' : `${pad(ora)}-${pad(blockEnd)}`}
+                        </div>
+                        {data.days.map(d => {
+                          const ds = `${year}-${pad(month)}-${pad(d)}`;
+
+                          // In day mode use monitor_oee_daily directly (same source as tendenze)
+                          const dayCell = blockSize === 'day' ? dailyCellMap.get(`${linea.id}-${ds}`) : undefined;
+                          const cell =
+                            blockSize === 4
+                              ? cellMap.get(`${linea.id}-${ds}-${ora}`)
+                              : blockSize === 8
+                                ? mergeHourCells([
+                                    cellMap.get(`${linea.id}-${ds}-${ora}`),
+                                    cellMap.get(`${linea.id}-${ds}-${ora + 4}`),
+                                  ], ora) ?? undefined
+                                : dayCell
+                                  ? { linea_id: linea.id, data: ds, ora, has_data: true,
+                                      oee: dayCell.oee, disponibilita: dayCell.disponibilita,
+                                      performance: dayCell.performance, pezzi_reali: dayCell.pezzi_reali,
+                                      pezzi_attesi: dayCell.pezzi_pianificati, minuti_fermo: 0, fermi_count: 0 }
+                                  : undefined;
+                          const selected = selectedCell?.lineaId === linea.id && selectedCell?.date === ds;
+
+                          return (
+                            <div key={d}
+                              className={`w-8 shrink-0 mx-px rounded-sm flex items-center justify-center
+                                transition-all select-none ${cellHeight}
+                                ${cell ? oeeColor(cell.oee) : 'bg-gray-100'}
+                                ${selected ? 'ring-2 ring-blue-500 ring-offset-1 z-10' : ''}
+                                ${cell ? 'cursor-pointer hover:opacity-75' : ''}`}
+                              onClick={() => cell && openDetail(linea.id, ds)}
+                              onMouseEnter={e => {
+                                if (!cell) return;
+                                if (ttTimeout.current) clearTimeout(ttTimeout.current);
+                                const r = e.currentTarget.getBoundingClientRect();
+                                setTooltip({ cell, lineName: linea.nome, x: r.left, y: r.bottom + 6 });
+                              }}
+                              onMouseLeave={() => {
+                                ttTimeout.current = setTimeout(() => setTooltip(null), 100);
+                              }}
+                            >
+                              {cell && (
+                                <span className="text-[9px] font-bold text-white leading-none">
+                                  {Math.round(cell.oee)}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
@@ -399,7 +475,7 @@ export default function HeatmapPage() {
           className="fixed z-50 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-xl pointer-events-none"
           style={{ left: tooltip.x, top: tooltip.y }}>
           <p className="font-semibold mb-1">
-            {tooltip.lineName} — {fmtDate(tooltip.cell.data)} {pad(tooltip.cell.ora)}h-{pad(tooltip.cell.ora + 4)}h
+            {tooltip.lineName} — {fmtDate(tooltip.cell.data)}{blockSize !== 'day' ? ` ${pad(tooltip.cell.ora)}h-${pad(tooltip.cell.ora + (blockSize as number))}h` : ''}
           </p>
           <p className="text-sm font-bold">{tooltip.cell.oee.toFixed(1)}% OEE</p>
           <div className="mt-1 space-y-0.5 text-gray-300">

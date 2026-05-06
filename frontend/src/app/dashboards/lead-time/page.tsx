@@ -42,17 +42,17 @@ function movingAvg(data: Array<{ hours_net: number }>, window: number) {
 function XTick({ x, y, payload, data }: {
   x?: number | string; y?: number | string;
   payload?: { value: number };
-  data: Array<{ line_entry_ts: string | null }>;
+  data: Array<{ ts_a: string }>;
 }) {
   const idx  = payload?.value ?? 0;
   const pt   = data[idx - 1];
   const prev = data[idx - 2];
 
-  const toDate = (ts: string | null) =>
+  const toDate = (ts: string | null | undefined) =>
     ts ? new Date(ts).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' }) : '';
 
-  const date     = toDate(pt?.line_entry_ts ?? null);
-  const prevDate = toDate(prev?.line_entry_ts ?? null);
+  const date     = toDate(pt?.ts_a);
+  const prevDate = toDate(prev?.ts_a);
   const showDate = date && date !== prevDate;
 
   return (
@@ -649,7 +649,16 @@ export default function LeadTimePage() {
                 <Line type="monotone" dataKey="hours_net" stroke="#3b82f6" strokeWidth={1.5}
                   dot={(props) => {
                     const { cx, cy, payload } = props;
-                    const color = (payload as LeadTimePoint).hours_net < 0 ? '#ef4444' : '#3b82f6';
+                    const h = (payload as LeadTimePoint).hours_net;
+                    let color = '#3b82f6';
+                    if (zone) {
+                      const hw = zone.direction === 'higher_worse';
+                      if (h <= zone.verde_max)    color = hw ? '#16a34a' : '#dc2626';
+                      else if (h <= zone.amarillo_max) color = '#ca8a04';
+                      else                         color = hw ? '#dc2626' : '#16a34a';
+                    } else if (h < 0) {
+                      color = '#ef4444';
+                    }
                     return <circle key={`dot-${(payload as LeadTimePoint & { idx: number }).idx}`} cx={cx} cy={cy} r={3} fill={color} />;
                   }}
                   activeDot={{ r: 5 }} name="Ore nette" />
