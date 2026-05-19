@@ -161,8 +161,6 @@ export async function checkSpmaDelays(): Promise<DelayItem[]> {
     const commCode    = String(item.commessa_code);
     const modelCode   = item.model_code ? String(item.model_code) : null;
     const catName     = String(item.category_name);
-    const alertKey    = `spma_delay_${commCode}_${catId}`;
-
     const phases  = phasesByCategory.get(catId);
     if (!phases || phases.length === 0) continue;
 
