@@ -86,6 +86,8 @@ MIGRATIONS=(
   "db/migrate-system-config.sql"
   "db/migrate-alerts.sql"
   "db/migrate-resumen.sql"
+  "db/migrate-spma-alerts.sql"
+  "db/migrate-spma-telegram.sql"
 )
 for f in "${MIGRATIONS[@]}"; do
   if [ -f "$f" ]; then
