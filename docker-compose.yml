@@ -66,8 +66,10 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # ─── Alerting ──────────────────────────────────────────────────────────
       # Telegram Bot (crea bot con @BotFather → ottieni TOKEN e CHAT_ID)
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_CHAT_ID:   ${TELEGRAM_CHAT_ID:-}
+      TELEGRAM_BOT_TOKEN:      ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID:        ${TELEGRAM_CHAT_ID:-}
+      SPMA_TELEGRAM_BOT_TOKEN: ${SPMA_TELEGRAM_BOT_TOKEN:-}
+      SPMA_TELEGRAM_CHAT_ID:   ${SPMA_TELEGRAM_CHAT_ID:-}
       # Email (SMTP, opzionale)
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
       SMTP_HOST:      ${SMTP_HOST:-}
