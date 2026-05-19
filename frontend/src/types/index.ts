@@ -159,6 +159,50 @@ export interface SpmaPlanItem {
   updatedAt: string;
 }
 
+export interface SpmaCalendarDefault {
+  id:          number;
+  day_of_week: number;
+  shift_start: string | null;
+  shift_end:   string | null;
+  is_working:  boolean;
+}
+
+export interface SpmaCalendarEntry {
+  id:            number;
+  line_id:       number;
+  work_date:     string;
+  start_time:    string;
+  end_time:      string;
+  auto_generated: boolean;
+}
+
+export interface SpmaFaseSequence {
+  id:                     number;
+  component_category_id:  number;
+  order_index:            number;
+  fase_name:              string;
+  duration_minutes:       number;
+}
+
+export interface SpmaAlertConfig {
+  warning_pct:      number;
+  critical_pct:     number;
+  telegram_chat_id: string | null;
+}
+
+export interface SpmaDelayItem {
+  commessa_code:     string;
+  model_code:        string | null;
+  category_id:       number;
+  category_name:     string;
+  planned_ts:        string;
+  current_fase:      string | null;
+  delay_pct:         number;
+  delay_minutes:     number;
+  remaining_minutes: number;
+  severity:          'ok' | 'warning' | 'critical';
+}
+
 // ─── Monitor ──────────────────────────────────────────────────────────────────
 
 export interface MonitorLinea {
@@ -190,6 +234,27 @@ export interface MonitorSoglie {
   linea_id: number;
   soglia_giallo: number;
   soglia_rosso: number;
+}
+
+export interface MonitorResumen {
+  id: number;
+  nome: string;
+  linea_count: number;
+  created_at: string;
+}
+
+export interface MonitorResumenLinea {
+  linea_id: number;
+  nome: string;
+  fase: string;
+  attivo: boolean;
+}
+
+export interface MonitorResumenDettaglio {
+  id: number;
+  nome: string;
+  created_at: string;
+  linee: MonitorResumenLinea[];
 }
 
 export interface MonitorStato {

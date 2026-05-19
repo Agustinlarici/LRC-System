@@ -185,6 +185,21 @@ packingRoutes.post('/pallets', async (c) => {
   return c.json({ status: 'created', dispatchId: body.dispatchId, ...result }, 201);
 });
 
+packingRoutes.delete('/pallets/:id', async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+
+  await db.begin(async (txRaw) => {
+    const tx = txRaw as unknown as typeof db;
+    await tx`DELETE FROM pack_pallet_item WHERE pallet_id = ${id}`;
+    await tx`DELETE FROM pack_dispatch_pallet WHERE pallet_id = ${id}`;
+    const [deleted] = await tx`DELETE FROM pack_pallet WHERE id = ${id} RETURNING id`;
+    if (!deleted) throw new HTTPException(404, { message: 'Bancale non trovato' });
+  });
+
+  return c.json({ status: 'deleted' });
+});
+
 // ─── Pallet Items ─────────────────────────────────────────────────────────────
 
 packingRoutes.post('/pallet-items', async (c) => {
@@ -380,6 +395,52 @@ packingRoutes.get('/packing-lists/:id/commesse-by-group', async (c) => {
   } catch {
     return c.json([]);
   }
+});
+
+// ─── Commessa Groups CRUD ─────────────────────────────────────────────────────
+
+packingRoutes.get('/commessa-groups', async (c) => {
+  const rows = await db`SELECT id, name FROM pack_commessa_group ORDER BY name`;
+  return c.json(rows);
+});
+
+packingRoutes.post('/commessa-groups', async (c) => {
+  const { name } = await c.req.json<{ name: string }>();
+  if (!name?.trim()) throw new HTTPException(400, { message: 'Nome obbligatorio' });
+  const [row] = await db`INSERT INTO pack_commessa_group (name) VALUES (${name.trim()}) RETURNING id, name`;
+  return c.json(row, 201);
+});
+
+packingRoutes.delete('/commessa-groups/:id', async (c) => {
+  const id = parseInt(c.req.param('id'), 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  await db`DELETE FROM pack_commessa_group WHERE id = ${id}`;
+  return c.json({ ok: true });
+});
+
+// ─── Article → Commessa Group mapping ────────────────────────────────────────
+
+packingRoutes.get('/article-groups', async (c) => {
+  const rows = await db`
+    SELECT pa.code AS article_code, pa.description, pa.commessa_group AS group_id, cg.name AS group_name
+    FROM pack_article pa
+    JOIN pack_commessa_group cg ON pa.commessa_group = cg.id
+    ORDER BY cg.name, pa.code
+  `;
+  return c.json(rows);
+});
+
+packingRoutes.post('/article-group/map', async (c) => {
+  const { article_code, group_id } = await c.req.json<{ article_code: string; group_id: number }>();
+  if (!article_code?.trim() || !group_id) throw new HTTPException(400, { message: 'Dati obbligatori' });
+  await db`UPDATE pack_article SET commessa_group = ${group_id} WHERE code = ${article_code.trim().toUpperCase()}`;
+  return c.json({ ok: true });
+});
+
+packingRoutes.delete('/article-group/:code', async (c) => {
+  const code = c.req.param('code');
+  await db`UPDATE pack_article SET commessa_group = NULL WHERE code = ${code.toUpperCase()}`;
+  return c.json({ ok: true });
 });
 
 // ─── Sync from BC ─────────────────────────────────────────────────────────────

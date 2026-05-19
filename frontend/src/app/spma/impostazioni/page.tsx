@@ -3,9 +3,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import type { SpmaLine, SpmaCategory, SpmaModelReq, SpmaStation } from '@/types';
+import type {
+  SpmaLine, SpmaCategory, SpmaModelReq, SpmaStation,
+  SpmaCalendarDefault, SpmaFaseSequence, SpmaAlertConfig,
+} from '@/types';
 
-type Tab = 'Linee' | 'Categorie' | 'Modelli' | 'Stazioni' | 'Mapping iKnow';
+type Tab = 'Linee' | 'Categorie' | 'Modelli' | 'Stazioni' | 'Mapping iKnow' | 'Calendario' | 'Sequenza Fasi' | 'Alert';
 
 // ─── Linee ────────────────────────────────────────────────────────────────────
 
@@ -403,9 +406,412 @@ function TabMapping() {
   );
 }
 
+// ─── Calendario defaults ──────────────────────────────────────────────────────
+
+const DAY_NAMES = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
+
+function TabCalendario() {
+  const [rows,    setRows]    = useState<SpmaCalendarDefault[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy,    setBusy]    = useState(false);
+  const [saved,   setSaved]   = useState(false);
+
+  useEffect(() => {
+    api.get<SpmaCalendarDefault[]>('/api/spma/calendar-defaults')
+      .then(setRows)
+      .finally(() => setLoading(false));
+  }, []);
+
+  function update(dow: number, field: keyof SpmaCalendarDefault, value: unknown) {
+    setRows(prev => prev.map(r => r.day_of_week === dow ? { ...r, [field]: value } : r));
+  }
+
+  async function save() {
+    setBusy(true); setSaved(false);
+    try {
+      const updated = await api.put<SpmaCalendarDefault[]>('/api/spma/calendar-defaults', rows);
+      setRows(updated);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } finally { setBusy(false); }
+  }
+
+  if (loading) return <p className="text-gray-400">Caricamento...</p>;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500">
+        Orari di lavoro predefiniti per giorno della settimana. Applicati automaticamente ai giorni presenti nei nuovi Excel importati (solo se il giorno non esiste già nel calendario).
+      </p>
+      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-200 bg-gray-50 text-gray-500">
+              <th className="py-2.5 px-4 text-left font-medium">Giorno</th>
+              <th className="py-2.5 px-4 text-center font-medium">Lavorativo</th>
+              <th className="py-2.5 px-4 text-left font-medium">Inizio turno</th>
+              <th className="py-2.5 px-4 text-left font-medium">Fine turno</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.day_of_week} className="border-b border-gray-100">
+                <td className="py-2 px-4 font-medium text-gray-700">{DAY_NAMES[r.day_of_week]}</td>
+                <td className="py-2 px-4 text-center">
+                  <input type="checkbox" checked={r.is_working}
+                    onChange={e => update(r.day_of_week, 'is_working', e.target.checked)}
+                    className="w-4 h-4 accent-blue-600" />
+                </td>
+                <td className="py-2 px-4">
+                  <input type="time" value={r.shift_start ?? ''} disabled={!r.is_working}
+                    onChange={e => update(r.day_of_week, 'shift_start', e.target.value || null)}
+                    className="border border-gray-200 rounded px-2 py-1 text-sm disabled:opacity-40" />
+                </td>
+                <td className="py-2 px-4">
+                  <input type="time" value={r.shift_end ?? ''} disabled={!r.is_working}
+                    onChange={e => update(r.day_of_week, 'shift_end', e.target.value || null)}
+                    className="border border-gray-200 rounded px-2 py-1 text-sm disabled:opacity-40" />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex items-center gap-3">
+        <button onClick={save} disabled={busy}
+          className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          {busy ? 'Salvataggio...' : 'Salva defaults'}
+        </button>
+        {saved && <span className="text-sm text-green-600">Salvato</span>}
+      </div>
+      <p className="text-xs text-gray-400">
+        Per visualizzare e modificare il calendario giornaliero →{' '}
+        <Link href="/spma/calendario" className="text-blue-600 hover:underline">Calendario SPMA</Link>
+      </p>
+    </div>
+  );
+}
+
+// ─── Sequenza fasi ────────────────────────────────────────────────────────────
+
+function TabSequenzaFasi() {
+  const [cats,    setCats]    = useState<SpmaCategory[]>([]);
+  const [catId,   setCatId]   = useState('');
+  const [phases,  setPhases]  = useState<SpmaFaseSequence[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy,    setBusy]    = useState(false);
+  const [faseName,    setFaseName]    = useState('');
+  const [orderIndex,  setOrderIndex]  = useState('');
+  const [durationMin, setDurationMin] = useState('');
+  const [faseAll,     setFaseAll]     = useState<string[]>([]);
+
+  useEffect(() => {
+    Promise.all([
+      api.get<SpmaCategory[]>('/api/spma/categories'),
+      api.get<string[]>('/api/dashboards/lead-time/fasi').catch(() => []),
+    ]).then(([c, f]) => { setCats(c); setFaseAll(f); })
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!catId) { setPhases([]); return; }
+    api.get<SpmaFaseSequence[]>(`/api/spma/fase-sequence?category_id=${catId}`)
+      .then(setPhases);
+  }, [catId]);
+
+  async function add() {
+    if (!catId || !faseName.trim() || !orderIndex || !durationMin) return;
+    setBusy(true);
+    try {
+      const row = await api.post<SpmaFaseSequence>('/api/spma/fase-sequence', {
+        componentCategoryId: parseInt(catId),
+        orderIndex:          parseInt(orderIndex),
+        faseName:            faseName.trim(),
+        durationMinutes:     parseInt(durationMin),
+      });
+      setPhases(prev => {
+        const without = prev.filter(p => p.id !== row.id && p.fase_name !== row.fase_name);
+        return [...without, row].sort((a, b) => a.order_index - b.order_index);
+      });
+      setFaseName(''); setOrderIndex(''); setDurationMin('');
+    } finally { setBusy(false); }
+  }
+
+  async function del(id: number) {
+    await api.delete(`/api/spma/fase-sequence/${id}`);
+    setPhases(prev => prev.filter(p => p.id !== id));
+  }
+
+  if (loading) return <p className="text-gray-400">Caricamento...</p>;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500">
+        Configura le fasi iKnow in ordine per ogni categoria di componente, con la durata stimata in minuti di lavoro.
+        Il sistema usa queste fasi per calcolare dove dovrebbe essere ogni componente rispetto al montaggio.
+      </p>
+      <select value={catId} onChange={e => setCatId(e.target.value)}
+        className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <option value="">Seleziona categoria</option>
+        {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+
+      {catId && (
+        <>
+          {phases.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50 text-gray-500">
+                    <th className="py-2.5 px-4 text-left font-medium">Ordine</th>
+                    <th className="py-2.5 px-4 text-left font-medium">Fase iKnow</th>
+                    <th className="py-2.5 px-4 text-left font-medium">Durata (min)</th>
+                    <th className="py-2.5 px-4" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {phases.map(p => (
+                    <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-2 px-4 text-gray-500">{p.order_index}</td>
+                      <td className="py-2 px-4 font-medium">{p.fase_name}</td>
+                      <td className="py-2 px-4 text-gray-600">{p.duration_minutes} min</td>
+                      <td className="py-2 px-4 text-right">
+                        <button onClick={() => del(p.id)}
+                          className="text-xs text-red-500 hover:text-red-700 transition-colors">
+                          Elimina
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="flex gap-2 flex-wrap items-end">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500">Ordine</label>
+              <input value={orderIndex} onChange={e => setOrderIndex(e.target.value)}
+                type="number" min="1" placeholder="1"
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div className="flex flex-col gap-1 flex-1 min-w-52">
+              <label className="text-xs text-gray-500">Fase iKnow</label>
+              <input value={faseName} onChange={e => setFaseName(e.target.value)}
+                list="fasi-list" placeholder="es. DELIBERA VERNICIATURA"
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <datalist id="fasi-list">{faseAll.map(f => <option key={f} value={f} />)}</datalist>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-500">Durata (min)</label>
+              <input value={durationMin} onChange={e => setDurationMin(e.target.value)}
+                type="number" min="1" placeholder="240"
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <button onClick={add} disabled={busy || !faseName.trim() || !orderIndex || !durationMin}
+              className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+              Aggiungi
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Alert config ─────────────────────────────────────────────────────────────
+
+interface TelegramChat { chat_id: number; type: string; title: string | null; username: string | null }
+
+function TabAlert() {
+  const [config,    setConfig]    = useState<SpmaAlertConfig>({ warning_pct: 15, critical_pct: 30, telegram_chat_id: null });
+  const [chatInput, setChatInput] = useState('');
+  const [loading,   setLoading]   = useState(true);
+  const [busy,      setBusy]      = useState(false);
+  const [saved,     setSaved]     = useState(false);
+  const [discovering,  setDiscovering]  = useState(false);
+  const [foundChats,   setFoundChats]   = useState<TelegramChat[] | null>(null);
+  const [discoverErr,  setDiscoverErr]  = useState<string | null>(null);
+  const [testing,      setTesting]      = useState(false);
+  const [testResult,   setTestResult]   = useState<string | null>(null);
+  const [reporting,    setReporting]    = useState(false);
+  const [reportResult, setReportResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get<SpmaAlertConfig>('/api/spma/alert-config')
+      .then(cfg => { setConfig(cfg); setChatInput(cfg.telegram_chat_id ?? ''); })
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function save() {
+    setBusy(true); setSaved(false);
+    try {
+      const updated = await api.put<SpmaAlertConfig>('/api/spma/alert-config', {
+        warningPct:     config.warning_pct,
+        criticalPct:    config.critical_pct,
+        telegramChatId: chatInput.trim() || null,
+      });
+      setConfig(updated);
+      setChatInput(updated.telegram_chat_id ?? '');
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } finally { setBusy(false); }
+  }
+
+  async function discoverChats() {
+    setDiscovering(true); setFoundChats(null); setDiscoverErr(null);
+    try {
+      const chats = await api.get<TelegramChat[]>('/api/spma/telegram-updates');
+      setFoundChats(chats);
+    } catch (e) {
+      setDiscoverErr((e as Error).message);
+    } finally { setDiscovering(false); }
+  }
+
+  async function sendTest() {
+    setTesting(true); setTestResult(null);
+    try {
+      await api.post('/api/spma/telegram-test', {});
+      setTestResult('ok');
+    } catch (e) {
+      setTestResult((e as Error).message);
+    } finally { setTesting(false); }
+  }
+
+  async function sendReportNow() {
+    setReporting(true); setReportResult(null);
+    try {
+      const r = await api.post<{ delayed: number }>('/api/spma/telegram-report-now', {});
+      setReportResult(r.delayed > 0 ? `Report inviato (${r.delayed} ritardi)` : 'Nessun ritardo attivo');
+    } catch (e) {
+      setReportResult((e as Error).message);
+    } finally { setReporting(false); }
+  }
+
+  if (loading) return <p className="text-gray-400">Caricamento...</p>;
+
+  return (
+    <div className="space-y-6 max-w-lg">
+      <p className="text-sm text-gray-500">
+        Soglie di ritardo calcolate come percentuale del tempo lavorativo rimanente fino al montaggio.
+        Più il componente è vicino al montaggio, più il sistema è sensibile.
+      </p>
+
+      <div className="space-y-4">
+        <div className="space-y-1">
+          <label className="text-sm font-medium text-yellow-700">Soglia avviso (warning)</label>
+          <div className="flex items-center gap-3">
+            <input type="number" min="1" max="99" value={config.warning_pct}
+              onChange={e => setConfig(prev => ({ ...prev, warning_pct: parseInt(e.target.value) || prev.warning_pct }))}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+            <span className="text-sm text-gray-500">% del tempo rimanente</span>
+          </div>
+          <p className="text-xs text-gray-400">Notifica Telegram con avviso (arancione)</p>
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-sm font-medium text-red-700">Soglia critica</label>
+          <div className="flex items-center gap-3">
+            <input type="number" min="1" max="100" value={config.critical_pct}
+              onChange={e => setConfig(prev => ({ ...prev, critical_pct: parseInt(e.target.value) || prev.critical_pct }))}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-red-400" />
+            <span className="text-sm text-gray-500">% del tempo rimanente</span>
+          </div>
+          <p className="text-xs text-gray-400">Notifica Telegram con allarme critico (rosso)</p>
+        </div>
+      </div>
+
+      {/* Telegram group */}
+      <div className="space-y-2 border-t border-gray-100 pt-4">
+        <label className="text-sm font-medium text-gray-700">Gruppo Telegram (Chat ID)</label>
+        <p className="text-xs text-gray-400">
+          ID del gruppo dove inviare gli avvisi. Configura <code className="bg-gray-100 px-1 rounded">SPMA_TELEGRAM_BOT_TOKEN</code> nel server per abilitare le notifiche.
+        </p>
+        <div className="flex gap-2">
+          <input
+            value={chatInput}
+            onChange={e => setChatInput(e.target.value)}
+            placeholder="es. -1001234567890"
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button onClick={discoverChats} disabled={discovering}
+            className="border border-gray-200 text-sm px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors whitespace-nowrap">
+            {discovering ? 'Ricerca...' : 'Scopri Chat ID'}
+          </button>
+        </div>
+
+        {discoverErr && (
+          <p className="text-xs text-red-600">{discoverErr}</p>
+        )}
+
+        {foundChats !== null && (
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            {foundChats.length === 0 ? (
+              <p className="text-xs text-gray-400 p-3">
+                Nessun gruppo trovato. Aggiungi il bot al gruppo e invia almeno un messaggio, poi riprova.
+              </p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 text-xs">
+                    <th className="py-2 px-3 text-left font-medium">Chat ID</th>
+                    <th className="py-2 px-3 text-left font-medium">Nome / Username</th>
+                    <th className="py-2 px-3 text-left font-medium">Tipo</th>
+                    <th className="py-2 px-3" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {foundChats.map(chat => (
+                    <tr key={chat.chat_id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-2 px-3 font-mono text-xs text-gray-600">{chat.chat_id}</td>
+                      <td className="py-2 px-3 text-gray-700">{chat.title ?? chat.username ?? '–'}</td>
+                      <td className="py-2 px-3 text-gray-400 text-xs">{chat.type}</td>
+                      <td className="py-2 px-3 text-right">
+                        <button
+                          onClick={() => { setChatInput(String(chat.chat_id)); setFoundChats(null); }}
+                          className="text-xs text-blue-600 hover:text-blue-800 transition-colors">
+                          Usa
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-500 space-y-1">
+        <p><strong>Esempio:</strong> Montaggio tra 8h lavorative, ritardo stimato 2h.</p>
+        <p>Ritardo = 2/8 = 25% → supera entrambe le soglie (15% e 30%?) → critico se ≥30%.</p>
+      </div>
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <button onClick={save} disabled={busy}
+          className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          {busy ? 'Salvataggio...' : 'Salva'}
+        </button>
+        <button onClick={sendTest} disabled={testing}
+          className="border border-gray-200 px-4 py-2 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
+          {testing ? 'Invio...' : 'Test messaggio'}
+        </button>
+        <button onClick={sendReportNow} disabled={reporting}
+          className="border border-gray-200 px-4 py-2 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
+          {reporting ? 'Calcolo...' : 'Invia report ora'}
+        </button>
+        {saved && <span className="text-sm text-green-600">Salvato</span>}
+        {testResult === 'ok' && <span className="text-sm text-green-600">Messaggio inviato</span>}
+        {testResult && testResult !== 'ok' && <span className="text-sm text-red-600">{testResult}</span>}
+        {reportResult && <span className={`text-sm ${reportResult.startsWith('Nessun') ? 'text-gray-500' : reportResult.includes('inviato') ? 'text-green-600' : 'text-red-600'}`}>{reportResult}</span>}
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-const TABS: Tab[] = ['Linee', 'Categorie', 'Modelli', 'Stazioni', 'Mapping iKnow'];
+const TABS: Tab[] = ['Linee', 'Categorie', 'Modelli', 'Stazioni', 'Mapping iKnow', 'Calendario', 'Sequenza Fasi', 'Alert'];
 
 export default function SpmaImpostazioniPage() {
   const [tab, setTab] = useState<Tab>('Linee');
@@ -436,11 +842,14 @@ export default function SpmaImpostazioniPage() {
       </div>
 
       <div className="max-w-3xl">
-        {tab === 'Linee'         && <TabLinee />}
-        {tab === 'Categorie'     && <TabCategorie />}
-        {tab === 'Modelli'       && <TabModelli />}
-        {tab === 'Stazioni'      && <TabStazioni />}
-        {tab === 'Mapping iKnow' && <TabMapping />}
+        {tab === 'Linee'          && <TabLinee />}
+        {tab === 'Categorie'      && <TabCategorie />}
+        {tab === 'Modelli'        && <TabModelli />}
+        {tab === 'Stazioni'       && <TabStazioni />}
+        {tab === 'Mapping iKnow'  && <TabMapping />}
+        {tab === 'Calendario'     && <TabCalendario />}
+        {tab === 'Sequenza Fasi'  && <TabSequenzaFasi />}
+        {tab === 'Alert'          && <TabAlert />}
       </div>
     </div>
   );

@@ -165,14 +165,12 @@ export default function PackingListePage() {
                         </button>
                         <Link
                           href={`/packing/liste/${pl.id}`}
-                          target="_blank"
                           className="btn-secondary text-xs px-3 py-1"
                         >
                           📄 PDF
                         </Link>
                         <Link
                           href={`/packing/liste/${pl.id}?view=dogana`}
-                          target="_blank"
                           className="btn-secondary text-xs px-3 py-1"
                         >
                           🧾 PDF Dogana

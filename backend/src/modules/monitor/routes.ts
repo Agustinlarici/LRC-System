@@ -326,11 +326,15 @@ monitorRoutes.put('/linee/:id/giorno', async (c) => {
 // Usa sempre Europe/Rome — gestisce automaticamente CET (UTC+1) e CEST (UTC+2)
 
 // Ritorna l'offset Rome come stringa ISO (es. "01:00" o "02:00") per costruire Date corretti
+// Usa Intl per evitare il bug quando TZ=Europe/Rome nel container (toLocaleString restituisce 0)
 function romeOffsetStr(d: Date): string {
-  const utcMs   = d.getTime();
-  const romeMs  = new Date(d.toLocaleString('en-US', { timeZone: 'Europe/Rome' })).getTime();
-  const offsetH = Math.round((romeMs - utcMs) / 3_600_000);
-  return offsetH >= 0 ? `${String(offsetH).padStart(2, '0')}:00` : `-${String(-offsetH).padStart(2, '0')}:00`;
+  const tzName = new Intl.DateTimeFormat('en', {
+    timeZone: 'Europe/Rome', timeZoneName: 'shortOffset',
+  }).formatToParts(d).find(p => p.type === 'timeZoneName')?.value ?? 'GMT+1';
+  const match = tzName.match(/GMT([+-])(\d+)/);
+  if (!match) return '01:00';
+  const h = String(Number(match[2])).padStart(2, '0');
+  return match[1] === '+' ? `${h}:00` : `-${h}:00`;
 }
 
 function getRomeNow(): { now: Date; timeStr: string; dateStr: string } {
@@ -514,7 +518,7 @@ monitorRoutes.get('/stato/:id', async (c) => {
 
   const elapsedFromStartSec = Math.max(0, (refNow.getTime() - turnoStartTs.getTime()) / 1000);
   const netElapsedSec       = Math.max(0, Math.min(netShiftSec, elapsedFromStartSec - completedPausaSec));
-  const avanzamentoPrevisto = Math.round((qtaRow.quantita_giornaliera as number) * netElapsedSec / netShiftSec);
+  const avanzamentoPrevisto = Math.floor(netElapsedSec / cycleTimeSec);
 
   // ── Risposta durante pausa ─────────────────────────────────────────────────
   if (inPausa) {
@@ -827,4 +831,81 @@ monitorRoutes.get('/executive', async (c) => {
     },
     linee: lineeOut,
   });
+});
+
+// ─── Resumen: gruppi configurabili di linee andon ─────────────────────────────
+
+const resumenSchema = z.object({
+  nome: z.string().min(1).max(100),
+});
+
+const resumenLineeSchema = z.object({
+  linea_ids: z.array(z.number().int().positive()),
+});
+
+monitorRoutes.get('/resumen', async (c) => {
+  const rows = await db`
+    SELECT r.id, r.nome, r.created_at,
+           COUNT(rl.linea_id)::int AS linea_count
+    FROM monitor_resumen r
+    LEFT JOIN monitor_resumen_linee rl ON rl.resumen_id = r.id
+    GROUP BY r.id, r.nome, r.created_at
+    ORDER BY r.nome
+  `;
+  return c.json(rows);
+});
+
+monitorRoutes.get('/resumen/:id', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const [row] = await db`SELECT id, nome, created_at FROM monitor_resumen WHERE id = ${id}`;
+  if (!row) throw new HTTPException(404, { message: 'Resumen non trovato' });
+  const linee = await db`
+    SELECT rl.linea_id, ml.nome, ml.fase, ml.attivo
+    FROM monitor_resumen_linee rl
+    JOIN monitor_linea ml ON ml.id = rl.linea_id
+    WHERE rl.resumen_id = ${id}
+    ORDER BY rl.ordine, ml.nome
+  `;
+  return c.json({ ...row, linee });
+});
+
+monitorRoutes.post('/resumen', async (c) => {
+  const body = await parseBody(c, resumenSchema);
+  const [row] = await db`
+    INSERT INTO monitor_resumen (nome) VALUES (${body.nome}) RETURNING *
+  `;
+  return c.json(row, 201);
+});
+
+monitorRoutes.patch('/resumen/:id', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const body = await parseBody(c, resumenSchema);
+  const [row] = await db`
+    UPDATE monitor_resumen SET nome = ${body.nome} WHERE id = ${id} RETURNING *
+  `;
+  if (!row) throw new HTTPException(404, { message: 'Resumen non trovato' });
+  return c.json(row);
+});
+
+monitorRoutes.delete('/resumen/:id', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const [deleted] = await db`DELETE FROM monitor_resumen WHERE id = ${id} RETURNING id`;
+  if (!deleted) throw new HTTPException(404, { message: 'Resumen non trovato' });
+  return c.body(null, 204);
+});
+
+monitorRoutes.put('/resumen/:id/linee', async (c) => {
+  const id = parseId(c.req.param('id'));
+  const body = await parseBody(c, resumenLineeSchema);
+  await db.begin(async (sql) => {
+    const q = sql as unknown as typeof db;
+    await q`DELETE FROM monitor_resumen_linee WHERE resumen_id = ${id}`;
+    for (let i = 0; i < body.linea_ids.length; i++) {
+      await q`
+        INSERT INTO monitor_resumen_linee (resumen_id, linea_id, ordine)
+        VALUES (${id}, ${body.linea_ids[i]}, ${i})
+      `;
+    }
+  });
+  return c.body(null, 204);
 });

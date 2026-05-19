@@ -163,7 +163,7 @@ export default function MonitorDisplayPage() {
           </div>
 
           {/* Nome linea + logo marca */}
-          <div className="flex flex-col items-center justify-center gap-3 px-6" style={{ backgroundColor: '#facf5a' }}>
+          <div className="flex flex-col items-center justify-center gap-3 px-6 overflow-hidden" style={{ backgroundColor: '#facf5a' }}>
             <span className="text-black font-medium tracking-[0.3em] uppercase" style={{ fontSize: 'clamp(1.2rem, 2.50vw, 2.3rem)' }}>
               Linea
             </span>
@@ -177,7 +177,7 @@ export default function MonitorDisplayPage() {
               <img
                 src={logoSrc(stato.linea.logo)}
                 alt={stato.linea.logo}
-                className="w-full max-w-[324px] object-contain"
+                className="w-full max-w-[324px] object-contain flex-shrink"
                 style={{ maxHeight: 'clamp(5.4rem, 14.4vh, 12.6rem)', filter: 'brightness(0)' }}
               />
             )}

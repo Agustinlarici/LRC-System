@@ -5,14 +5,15 @@
  */
 
 export interface RunStats {
-  lastStartedAt:   string | null;   // ISO
-  lastFinishedAt:  string | null;
-  lastDurationMs:  number | null;
-  lastRowCount:    number | null;
-  lastError:       string | null;
-  runCount:        number;
-  nextScheduledAt: string | null;
-  status:          'idle' | 'running' | 'ok' | 'error';
+  lastStartedAt:    string | null;   // ISO
+  lastFinishedAt:   string | null;
+  lastDurationMs:   number | null;
+  lastRowCount:     number | null;
+  lastError:        string | null;
+  runCount:         number;
+  consecutiveErrors: number;
+  nextScheduledAt:  string | null;
+  status:           'idle' | 'running' | 'ok' | 'error';
 }
 
 const stats: Record<string, RunStats> = {};
@@ -22,7 +23,7 @@ function ensure(job: string): RunStats {
     stats[job] = {
       lastStartedAt: null, lastFinishedAt: null,
       lastDurationMs: null, lastRowCount: null,
-      lastError: null, runCount: 0,
+      lastError: null, runCount: 0, consecutiveErrors: 0,
       nextScheduledAt: null, status: 'idle',
     };
   }
@@ -42,22 +43,24 @@ export function startRun(job: string): void {
 export function endRun(job: string, rows: number): void {
   const s = ensure(job);
   const ms = Date.now() - (runStartMs[job] ?? Date.now());
-  s.lastFinishedAt = new Date().toISOString();
-  s.lastDurationMs = ms;
-  s.lastRowCount   = rows;
-  s.lastError      = null;
-  s.status         = 'ok';
+  s.lastFinishedAt   = new Date().toISOString();
+  s.lastDurationMs   = ms;
+  s.lastRowCount     = rows;
+  s.lastError        = null;
+  s.status           = 'ok';
   s.runCount++;
+  s.consecutiveErrors = 0;
 }
 
 export function failRun(job: string, err: unknown): void {
   const s = ensure(job);
   const ms = Date.now() - (runStartMs[job] ?? Date.now());
-  s.lastFinishedAt = new Date().toISOString();
-  s.lastDurationMs = ms;
-  s.lastError      = err instanceof Error ? err.message : String(err);
-  s.status         = 'error';
+  s.lastFinishedAt   = new Date().toISOString();
+  s.lastDurationMs   = ms;
+  s.lastError        = err instanceof Error ? err.message : String(err);
+  s.status           = 'error';
   s.runCount++;
+  s.consecutiveErrors = (s.consecutiveErrors ?? 0) + 1;
 }
 
 export function setNextRun(job: string, at: Date): void {

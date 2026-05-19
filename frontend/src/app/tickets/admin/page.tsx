@@ -7,7 +7,7 @@ const BACKEND = typeof window !== 'undefined'
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
 type User      = { id: number; username: string; display_name: string };
-type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni';
+type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma';
 type Permission = { module_key: ModuleKey; can_view: boolean; can_manage: boolean };
 
 const ALL_MODULES: { key: ModuleKey; label: string }[] = [
@@ -16,6 +16,8 @@ const ALL_MODULES: { key: ModuleKey; label: string }[] = [
   { key: 'monitor',        label: 'Monitor' },
   { key: 'buffer',         label: 'Buffer' },
   { key: 'mappa',          label: 'Mappa' },
+  { key: 'spma',           label: 'SPMA' },
+  { key: 'dashboards',     label: 'Dashboard' },
   { key: 'tickets',        label: 'Ticket IT' },
   { key: 'tickets_it',     label: 'Ticket IT — Dashboard' },
   { key: 'tickets_admin',  label: 'Ticket IT — Admin' },

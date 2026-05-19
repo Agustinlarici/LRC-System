@@ -25,6 +25,10 @@ services:
       - ./db/migrate-lead-time.sql:/docker-entrypoint-initdb.d/13_lead_time.sql:ro
       - ./db/migrate-unified-sync.sql:/docker-entrypoint-initdb.d/14_unified_sync.sql:ro
       - ./db/migrate-iknow-tracking.sql:/docker-entrypoint-initdb.d/15_iknow_tracking.sql:ro
+      - ./db/migrate-alerts.sql:/docker-entrypoint-initdb.d/16_alerts.sql:ro
+      - ./db/migrate-spma-alerts.sql:/docker-entrypoint-initdb.d/17_spma_alerts.sql:ro
+      - ./db/migrate-spma-telegram.sql:/docker-entrypoint-initdb.d/18_spma_telegram.sql:ro
+      - ./db/migrate-resumen.sql:/docker-entrypoint-initdb.d/19_resumen.sql:ro
     ports:
       - "5432:5432"
     healthcheck:

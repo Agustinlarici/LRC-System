@@ -84,6 +84,8 @@ MIGRATIONS=(
   "db/migrate-dashboards.sql"
   "db/migrate-webthron-cache.sql"
   "db/migrate-system-config.sql"
+  "db/migrate-alerts.sql"
+  "db/migrate-resumen.sql"
 )
 for f in "${MIGRATIONS[@]}"; do
   if [ -f "$f" ]; then

@@ -26,6 +26,7 @@ services:
       - ./db/migrate-lead-time.sql:/docker-entrypoint-initdb.d/13_lead_time.sql:ro
       - ./db/migrate-unified-sync.sql:/docker-entrypoint-initdb.d/14_unified_sync.sql:ro
       - ./db/migrate-iknow-tracking.sql:/docker-entrypoint-initdb.d/15_iknow_tracking.sql:ro
+      - ./db/migrate-alerts.sql:/docker-entrypoint-initdb.d/16_alerts.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lrc} -d ${POSTGRES_DB:-lrc_system}"]
       interval: 5s
@@ -63,6 +64,17 @@ services:
       DELIBERA_ESITO_OK: ${DELIBERA_ESITO_OK:-Accettato}
       # Optional
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # ─── Alerting ──────────────────────────────────────────────────────────
+      # Telegram Bot (crea bot con @BotFather → ottieni TOKEN e CHAT_ID)
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID:   ${TELEGRAM_CHAT_ID:-}
+      # Email (SMTP, opzionale)
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      SMTP_HOST:      ${SMTP_HOST:-}
+      SMTP_PORT:      ${SMTP_PORT:-587}
+      SMTP_USER:      ${SMTP_USER:-}
+      SMTP_PASS:      ${SMTP_PASS:-}
+      SMTP_FROM:      ${SMTP_FROM:-}
     ports:
       - "3001:3001"
     depends_on:

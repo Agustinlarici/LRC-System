@@ -35,6 +35,11 @@ export const MODULES: ModuleConfig[] = [
     icon: '🖥️', sidebar: 'IconMonitor', hidden: false, moduleKey: 'monitor',
   },
   {
+    href: '/monitor/resumen', label: 'Riepilogo', group: 'Produzione',
+    description: 'Vista riepilogativa di tutti i monitor andon in tempo reale',
+    icon: '📋', sidebar: 'IconList', hidden: false, moduleKey: 'monitor',
+  },
+  {
     href: '/buffer', label: 'Buffer', group: 'Produzione',
     description: 'Monitoraggio seriali in pre-area di produzione per fase',
     icon: '📦', sidebar: 'IconArchive', hidden: false, moduleKey: 'buffer',
@@ -77,6 +82,11 @@ export const MODULES: ModuleConfig[] = [
     href: '/tickets/admin', label: 'Impostazioni', group: 'IT',
     description: 'Gestione utenti, permessi e configurazioni',
     icon: '⚙️', sidebar: 'IconSettings', hidden: false, moduleKey: 'impostazioni',
+  },
+  {
+    href: '/admin/system', label: 'Sistema', group: 'IT',
+    description: 'Stato servizi, sync jobs, alert e diagnostica',
+    icon: '🖥️', sidebar: 'IconMonitor', hidden: false, moduleKey: 'impostazioni',
   },
 
   {

@@ -111,6 +111,13 @@ function IconHeatmap() {
     </svg>
   );
 }
+function IconList() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-5 h-5 shrink-0">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+    </svg>
+  );
+}
 function IconChevron({ open }: { open: boolean }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
@@ -124,7 +131,7 @@ function IconChevron({ open }: { open: boolean }) {
 
 const ICON_MAP: Record<string, () => React.ReactElement> = {
   IconBox, IconTruck, IconMonitor, IconArchive, IconMap,
-  IconClipboard, IconFactory, IconSettings, IconTicket, IconChart, IconHeatmap,
+  IconClipboard, IconFactory, IconSettings, IconTicket, IconChart, IconHeatmap, IconList,
 };
 
 // ─── Group representative icons ───────────────────────────────────────────────
@@ -142,10 +149,12 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/ingresso-merci':     'ingresso_merci',
   '/packing':            'packing',
   '/monitor':            'monitor',
+  '/monitor/resumen':    'monitor',
   '/buffer':             'buffer',
   '/mappa':              'mappa',
   '/tickets':            'tickets',
   '/tickets/admin':      'tickets_admin',
+  '/admin/system':       'impostazioni',
   '/dashboards':              'dashboards',
   '/dashboards/heatmap':      'dashboards',
   '/dashboards/lead-time':    'dashboards',

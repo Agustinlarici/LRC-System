@@ -6,6 +6,8 @@ import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
 import { requireModule, requireManage } from '../../lib/auth.js';
 import { rebuildSpma } from './plan.js';
+import { checkSpmaDelays } from './delay-checker.js';
+import { fetchRecentChats, spmaTokenConfigured, sendTestMessage, sendDelayReport } from './spma-notifier.js';
 import { logger } from '../../lib/logger.js';
 
 export const spmaRoutes = new Hono();
@@ -268,7 +270,8 @@ spmaRoutes.post('/import', requireManage(MODULE), async (c) => {
   const sheets = workbook.SheetNames;
   let totalRows = 0, upserted = 0, skipped = 0;
   const warnings: string[] = [];
-  const importedCodes = new Set<string>();
+  const importedCodes      = new Set<string>();
+  const calendarDatesToFill = new Map<string, { lineId: number; dateStr: string }>();
 
   for (const sheetName of sheets) {
     const sheet = workbook.Sheets[sheetName];
@@ -368,11 +371,37 @@ spmaRoutes.post('/import', requireManage(MODULE), async (c) => {
             pos_index     = EXCLUDED.pos_index
         `;
         importedCodes.add(commCode);
+
+        // Collect (lineId, date) for calendar auto-populate
+        const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(dt);
+        const calKey  = `${lineId}:${dateStr}`;
+        if (!calendarDatesToFill.has(calKey)) calendarDatesToFill.set(calKey, { lineId, dateStr });
+
         upserted++;
       } catch (err) {
         skipped++;
         warnings.push(`Foglio "${sheetName}", riga ${i + 2}: ${(err as Error).message}`);
       }
+    }
+  }
+
+  // ─── Auto-populate calendar from imported dates ───────────────────────────
+  if (calendarDatesToFill.size > 0) {
+    try {
+      const defaults = await db`SELECT day_of_week, shift_start, shift_end, is_working FROM spma_calendar_defaults`;
+      const defByDay = new Map(defaults.map(d => [Number(d.day_of_week), d]));
+      for (const { lineId, dateStr } of calendarDatesToFill.values()) {
+        const dow = new Date(`${dateStr}T12:00:00`).getDay();
+        const def = defByDay.get(dow);
+        if (!def || !def.is_working) continue;
+        await db`
+          INSERT INTO spma_line_calendar (line_id, work_date, start_time, end_time, auto_generated)
+          VALUES (${lineId}, ${dateStr}, ${String(def.shift_start)}, ${String(def.shift_end)}, TRUE)
+          ON CONFLICT (line_id, work_date) DO NOTHING
+        `.catch(err => logger.warn({ err, lineId, dateStr }, 'spma: calendar insert failed'));
+      }
+    } catch (err) {
+      logger.warn({ err }, 'spma: calendar auto-populate failed');
     }
   }
 
@@ -710,4 +739,222 @@ spmaRoutes.get('/models', requireModule(MODULE), async (c) => {
     ORDER BY model_code
   `;
   return c.json(rows.map(r => r.model_code as string));
+});
+
+// ─── Calendar defaults ────────────────────────────────────────────────────────
+
+spmaRoutes.get('/calendar-defaults', requireModule(MODULE), async (c) => {
+  const rows = await db`SELECT id, day_of_week, shift_start, shift_end, is_working FROM spma_calendar_defaults ORDER BY day_of_week`;
+  return c.json(rows);
+});
+
+spmaRoutes.put('/calendar-defaults', requireManage(MODULE), async (c) => {
+  const body = await parseBody(c, z.array(z.object({
+    day_of_week: z.number().int().min(0).max(6),
+    shift_start: z.string().nullable().optional(),
+    shift_end:   z.string().nullable().optional(),
+    is_working:  z.boolean(),
+  })));
+  for (const row of body) {
+    await db`
+      INSERT INTO spma_calendar_defaults (day_of_week, shift_start, shift_end, is_working)
+      VALUES (${row.day_of_week}, ${row.shift_start ?? null}, ${row.shift_end ?? null}, ${row.is_working})
+      ON CONFLICT (day_of_week) DO UPDATE SET
+        shift_start = EXCLUDED.shift_start,
+        shift_end   = EXCLUDED.shift_end,
+        is_working  = EXCLUDED.is_working
+    `;
+  }
+  const rows = await db`SELECT id, day_of_week, shift_start, shift_end, is_working FROM spma_calendar_defaults ORDER BY day_of_week`;
+  return c.json(rows);
+});
+
+// ─── Calendar entries ─────────────────────────────────────────────────────────
+
+spmaRoutes.get('/calendar', requireModule(MODULE), async (c) => {
+  const lineId = c.req.query('line_id') ? parseInt(c.req.query('line_id')!, 10) : null;
+  const from   = c.req.query('from') ?? null;
+  const to     = c.req.query('to')   ?? null;
+  if (!lineId) throw new HTTPException(400, { message: 'line_id richiesto' });
+
+  const rows = await db`
+    SELECT id, line_id, work_date::text, start_time::text, end_time::text, auto_generated
+    FROM spma_line_calendar
+    WHERE line_id = ${lineId}
+      ${from ? db`AND work_date >= ${from}` : db``}
+      ${to   ? db`AND work_date <= ${to}`   : db``}
+    ORDER BY work_date
+  `;
+  return c.json(rows);
+});
+
+spmaRoutes.post('/calendar', requireManage(MODULE), async (c) => {
+  const body = await parseBody(c, z.object({
+    lineId:     z.number().int().positive(),
+    workDate:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    startTime:  z.string(),
+    endTime:    z.string(),
+  }));
+  const [row] = await db`
+    INSERT INTO spma_line_calendar (line_id, work_date, start_time, end_time, auto_generated)
+    VALUES (${body.lineId}, ${body.workDate}, ${body.startTime}, ${body.endTime}, FALSE)
+    ON CONFLICT (line_id, work_date) DO UPDATE SET
+      start_time     = EXCLUDED.start_time,
+      end_time       = EXCLUDED.end_time,
+      auto_generated = FALSE
+    RETURNING id, line_id, work_date::text, start_time::text, end_time::text, auto_generated
+  `;
+  return c.json(row, 201);
+});
+
+spmaRoutes.put('/calendar/:id', requireManage(MODULE), async (c) => {
+  const id   = parseId(c.req.param('id'));
+  const body = await parseBody(c, z.object({
+    startTime: z.string(),
+    endTime:   z.string(),
+  }));
+  const [row] = await db`
+    UPDATE spma_line_calendar
+    SET start_time = ${body.startTime}, end_time = ${body.endTime}, auto_generated = FALSE
+    WHERE id = ${id}
+    RETURNING id, line_id, work_date::text, start_time::text, end_time::text, auto_generated
+  `;
+  if (!row) throw new HTTPException(404, { message: 'Voce non trovata' });
+  return c.json(row);
+});
+
+spmaRoutes.delete('/calendar/:id', requireManage(MODULE), async (c) => {
+  const id = parseId(c.req.param('id'));
+  await db`DELETE FROM spma_line_calendar WHERE id = ${id}`;
+  return c.json({ status: 'deleted' });
+});
+
+// ─── Phase sequence ───────────────────────────────────────────────────────────
+
+spmaRoutes.get('/fase-sequence', requireModule(MODULE), async (c) => {
+  const catId = c.req.query('category_id') ? parseInt(c.req.query('category_id')!, 10) : null;
+  const rows = catId != null
+    ? await db`SELECT id, component_category_id, order_index, fase_name, duration_minutes FROM spma_fase_sequence WHERE component_category_id = ${catId} ORDER BY order_index`
+    : await db`SELECT id, component_category_id, order_index, fase_name, duration_minutes FROM spma_fase_sequence ORDER BY component_category_id, order_index`;
+  return c.json(rows);
+});
+
+spmaRoutes.post('/fase-sequence', requireManage(MODULE), async (c) => {
+  const body = await parseBody(c, z.object({
+    componentCategoryId: z.number().int().positive(),
+    orderIndex:          z.number().int().min(1),
+    faseName:            z.string().min(1),
+    durationMinutes:     z.number().int().min(1),
+  }));
+  const [row] = await db`
+    INSERT INTO spma_fase_sequence (component_category_id, order_index, fase_name, duration_minutes)
+    VALUES (${body.componentCategoryId}, ${body.orderIndex}, ${body.faseName}, ${body.durationMinutes})
+    ON CONFLICT (component_category_id, fase_name) DO UPDATE SET
+      order_index      = EXCLUDED.order_index,
+      duration_minutes = EXCLUDED.duration_minutes
+    RETURNING id, component_category_id, order_index, fase_name, duration_minutes
+  `;
+  return c.json(row, 201);
+});
+
+spmaRoutes.put('/fase-sequence/:id', requireManage(MODULE), async (c) => {
+  const id   = parseId(c.req.param('id'));
+  const body = await parseBody(c, z.object({
+    orderIndex:      z.number().int().min(1).optional(),
+    durationMinutes: z.number().int().min(1).optional(),
+  }));
+  const [row] = await db`
+    UPDATE spma_fase_sequence SET
+      order_index      = COALESCE(${body.orderIndex      ?? null}, order_index),
+      duration_minutes = COALESCE(${body.durationMinutes ?? null}, duration_minutes)
+    WHERE id = ${id}
+    RETURNING id, component_category_id, order_index, fase_name, duration_minutes
+  `;
+  if (!row) throw new HTTPException(404, { message: 'Fase non trovata' });
+  return c.json(row);
+});
+
+spmaRoutes.delete('/fase-sequence/:id', requireManage(MODULE), async (c) => {
+  const id = parseId(c.req.param('id'));
+  await db`DELETE FROM spma_fase_sequence WHERE id = ${id}`;
+  return c.json({ status: 'deleted' });
+});
+
+// ─── Alert config ─────────────────────────────────────────────────────────────
+
+spmaRoutes.get('/alert-config', requireModule(MODULE), async (c) => {
+  const [row] = await db`SELECT warning_pct, critical_pct, telegram_chat_id FROM spma_alert_config WHERE id = 1`;
+  return c.json(row ?? { warning_pct: 15, critical_pct: 30, telegram_chat_id: null });
+});
+
+spmaRoutes.put('/alert-config', requireManage(MODULE), async (c) => {
+  const body = await parseBody(c, z.object({
+    warningPct:     z.number().int().min(1).max(99),
+    criticalPct:    z.number().int().min(1).max(100),
+    telegramChatId: z.string().nullable().optional(),
+  }));
+  const chatId = body.telegramChatId !== undefined ? (body.telegramChatId ?? null) : null;
+  const [row] = await db`
+    INSERT INTO spma_alert_config (id, warning_pct, critical_pct, telegram_chat_id)
+    VALUES (1, ${body.warningPct}, ${body.criticalPct}, ${chatId})
+    ON CONFLICT (id) DO UPDATE SET
+      warning_pct      = EXCLUDED.warning_pct,
+      critical_pct     = EXCLUDED.critical_pct,
+      telegram_chat_id = EXCLUDED.telegram_chat_id
+    RETURNING warning_pct, critical_pct, telegram_chat_id
+  `;
+  return c.json(row);
+});
+
+// ─── SPMA Telegram helpers ────────────────────────────────────────────────────
+
+spmaRoutes.get('/telegram-updates', requireManage(MODULE), async (c) => {
+  if (!spmaTokenConfigured()) {
+    throw new HTTPException(400, { message: 'SPMA_TELEGRAM_BOT_TOKEN non configurato nel server' });
+  }
+  try {
+    const chats = await fetchRecentChats();
+    return c.json(chats);
+  } catch (err) {
+    logger.warn({ err }, 'spma: fetchRecentChats failed');
+    throw new HTTPException(500, { message: (err as Error).message });
+  }
+});
+
+spmaRoutes.post('/telegram-test', requireManage(MODULE), async (c) => {
+  if (!spmaTokenConfigured()) {
+    throw new HTTPException(400, { message: 'SPMA_TELEGRAM_BOT_TOKEN non configurato nel server' });
+  }
+  const [cfg] = await db`SELECT telegram_chat_id FROM spma_alert_config WHERE id = 1`;
+  const chatId = cfg?.telegram_chat_id ? String(cfg.telegram_chat_id) : null;
+  if (!chatId) {
+    throw new HTTPException(400, { message: 'Chat ID non configurato — salvalo prima nel tab Alert' });
+  }
+  await sendTestMessage(chatId);
+  return c.json({ ok: true, chat_id: chatId });
+});
+
+spmaRoutes.post('/telegram-report-now', requireManage(MODULE), async (c) => {
+  if (!spmaTokenConfigured()) {
+    throw new HTTPException(400, { message: 'SPMA_TELEGRAM_BOT_TOKEN non configurato nel server' });
+  }
+  const [cfg] = await db`SELECT telegram_chat_id FROM spma_alert_config WHERE id = 1`;
+  const chatId = cfg?.telegram_chat_id ? String(cfg.telegram_chat_id) : null;
+  if (!chatId) throw new HTTPException(400, { message: 'Chat ID non configurato' });
+  const results = await checkSpmaDelays();
+  const delayed = results.filter(r => r.severity !== 'ok');
+  await sendDelayReport(results, chatId);
+  return c.json({ ok: true, delayed: delayed.length });
+});
+
+// ─── Delay status ─────────────────────────────────────────────────────────────
+
+spmaRoutes.get('/delay-status', requireModule(MODULE), async (c) => {
+  try {
+    const results = await checkSpmaDelays();
+    return c.json(results);
+  } catch (err) {
+    logger.error({ err }, 'spma: delay-status error');
+    throw new HTTPException(500, { message: 'Errore calcolo ritardi' });
+  }
 });

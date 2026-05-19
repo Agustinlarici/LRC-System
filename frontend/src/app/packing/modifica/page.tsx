@@ -51,6 +51,7 @@ export default function ModificaPackingListPage() {
   const [loadingDetail,     setLoadingDetail]     = useState(false);
   const [savingItemId,      setSavingItemId]      = useState<number | null>(null);
   const [deletingItemId,    setDeletingItemId]    = useState<number | null>(null);
+  const [deletingPalletId,  setDeletingPalletId]  = useState<number | null>(null);
   const [newItems,          setNewItems]          = useState<Record<number, NewItemState>>({});
 
   // Local edits buffer
@@ -138,6 +139,19 @@ export default function ModificaPackingListPage() {
     } catch (e) { console.error(e); alert("Errore nell'inserimento"); }
   }
 
+  async function deletePallet(palletId: number) {
+    if (!confirm('Sei sicuro di voler eliminare questo bancale e tutti i suoi articoli?')) return;
+    setDeletingPalletId(palletId);
+    try {
+      await api.delete(`/api/pack/pallets/${palletId}`);
+      setDetail(prev => prev ? {
+        ...prev,
+        pallets: prev.pallets.filter(p => p.id !== palletId),
+      } : null);
+    } catch (e) { console.error(e); alert('Errore nella cancellazione del bancale'); }
+    finally { setDeletingPalletId(null); }
+  }
+
   async function addPallet() {
     if (!detail) return;
     try {
@@ -189,8 +203,16 @@ export default function ModificaPackingListPage() {
 
           {detail.pallets.map(pallet => (
             <div key={pallet.id} className="card mb-4">
-              <div className="font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-100">
-                Bancale {pallet.number}
+              <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
+                <span className="font-semibold text-gray-700">Bancale {pallet.number}</span>
+                <button
+                  className="text-gray-400 hover:text-red-500 text-xs px-2 py-1 transition-colors disabled:opacity-50"
+                  onClick={() => deletePallet(pallet.id)}
+                  disabled={deletingPalletId === pallet.id}
+                  title="Elimina bancale"
+                >
+                  {deletingPalletId === pallet.id ? '...' : '🗑 Elimina bancale'}
+                </button>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">

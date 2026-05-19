@@ -5,7 +5,83 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { fmtDatetime } from '@/lib/utils';
 import { SkeletonTable } from '@/components/ui/Skeleton';
-import type { SpmaOverviewRow, SpmaCategory, SpmaLine } from '@/types';
+import type { SpmaOverviewRow, SpmaCategory, SpmaLine, SpmaDelayItem } from '@/types';
+
+// ─── Delay banner ─────────────────────────────────────────────────────────────
+
+function DelayBanner() {
+  const [items,   setItems]   = useState<SpmaDelayItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [open,    setOpen]    = useState(false);
+
+  useEffect(() => {
+    api.get<SpmaDelayItem[]>('/api/spma/delay-status')
+      .then(data => {
+        setItems(data.filter(d => d.severity !== 'ok').sort((a, b) => b.delay_pct - a.delay_pct));
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading || items.length === 0) return null;
+
+  const criticals = items.filter(i => i.severity === 'critical').length;
+  const warnings  = items.filter(i => i.severity === 'warning').length;
+
+  return (
+    <div className="mb-5">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`w-full text-left flex items-center justify-between px-4 py-3 rounded-xl border text-sm font-medium transition-colors ${
+          criticals > 0
+            ? 'bg-red-50 border-red-200 text-red-800 hover:bg-red-100'
+            : 'bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100'
+        }`}
+      >
+        <span>
+          {criticals > 0 && `🔴 ${criticals} ritardo${criticals > 1 ? 'i' : ''} critic${criticals > 1 ? 'i' : 'o'}  `}
+          {warnings  > 0 && `🟡 ${warnings} avviso${warnings > 1 ? 'i' : ''}  `}
+        </span>
+        <span className="text-xs">{open ? '▲ Nascondi' : '▼ Dettagli'}</span>
+      </button>
+
+      {open && (
+        <div className="mt-1 bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50 text-gray-500">
+                <th className="py-2.5 px-4 text-left font-medium">Commessa</th>
+                <th className="py-2.5 px-4 text-left font-medium">Categoria</th>
+                <th className="py-2.5 px-4 text-left font-medium">Fase attuale</th>
+                <th className="py-2.5 px-4 text-right font-medium">Ritardo</th>
+                <th className="py-2.5 px-4 text-left font-medium">Montaggio</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item, i) => (
+                <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="py-2 px-4 font-mono font-medium">{item.commessa_code}</td>
+                  <td className="py-2 px-4 text-gray-600">{item.category_name}</td>
+                  <td className="py-2 px-4 text-gray-500">{item.current_fase ?? '–'}</td>
+                  <td className="py-2 px-4 text-right">
+                    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                      item.severity === 'critical' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {item.delay_pct}%
+                    </span>
+                  </td>
+                  <td className="py-2 px-4 text-gray-500 whitespace-nowrap text-xs">
+                    {new Date(item.planned_ts).toLocaleString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
@@ -92,9 +168,9 @@ export default function SpmaPage() {
             className="flex items-center gap-1.5 text-sm bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors">
             ⬆ Importa Excel
           </Link>
-          <Link href="/spma/confirm"
+          <Link href="/spma/calendario"
             className="flex items-center gap-1.5 text-sm border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
-            Conferma
+            Calendario
           </Link>
           <Link href="/spma/impostazioni"
             className="flex items-center gap-1.5 text-sm border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
@@ -102,6 +178,8 @@ export default function SpmaPage() {
           </Link>
         </div>
       </div>
+
+      <DelayBanner />
 
       {/* Filters */}
       <div className="flex gap-3 mb-5 flex-wrap">

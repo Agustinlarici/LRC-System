@@ -60,7 +60,14 @@
       "Bash(npm test:*)",
       "Bash(npm audit:*)",
       "Bash(echo \"EXIT:$?\")",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(2>&1)",
+      "Bash(curl -s \"http://localhost:3001/api/dashboards/lead-time?category_id=1&fase_a=DELIBERA+FINALE+-+PROX&fase_b=SPMA_PIANO&date_from=2026-03-01&date_to=2026-04-04\")",
+      "Bash(ls c:/LRC-System/docker-compose*.yml)",
+      "Bash(curl -s -X POST \"http://localhost:3001/api/dashboards/lead-time/backfill?from=2026-03-01&to=2026-04-02&pause_sec=90\")",
+      "Bash(curl -s -X POST \"http://localhost:3001/api/dashboards/lead-time/patch-commessa?date=2026-04-03\")",
+      "Bash(curl -s -X POST \"http://localhost:3001/api/dashboards/lead-time/patch-commessa?date=2026-04-04\")",
+      "Bash(docker cp:*)"
     ]
   }
 }

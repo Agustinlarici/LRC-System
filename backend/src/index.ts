@@ -5,6 +5,8 @@ import { startBufferCache, bufferFullRefresh } from './modules/buffer/cache.js';
 import { startExecutiveCache, executiveRefresh } from './modules/monitor/executive-cache.js';
 import { refreshLookupTables } from './modules/monitor/pg-webthron-sync.js';
 import { setNextRun } from './lib/sync-stats.js';
+import { startWatchdog } from './lib/watchdog.js';
+import { startTelegramBot } from './lib/telegram-bot.js';
 import { logger } from './lib/logger.js';
 import { db } from './db/client.js';
 
@@ -30,6 +32,9 @@ process.on('SIGINT',  shutdown);
 serve({ fetch: app.fetch, port }, async (info) => {
   logger.info(`LRC-System backend running on http://localhost:${info.port}`);
   startScheduler();
+
+  // Telegram bot: parte subito, non dipende dal sync
+  startTelegramBot();
 
   // ─── Startup ritardato di 2 min — non blocca WebThron all'avvio ──────────────
   setTimeout(async () => {
@@ -69,28 +74,24 @@ serve({ fetch: app.fetch, port }, async (info) => {
     setNextRun('buffer_refresh', new Date(Date.now() + 15 * 60_000));
 
     // 4. Lookup tables: refresh se vuote.
-    //    Gira DOPO executive + buffer (sequential) e solo se necessario.
-    //    Non blocca il resto — se fallisce lo scheduler ci riprova alle 02:00.
     const [{ count }] = await db`SELECT COUNT(*) AS count FROM webthron_lookup_fasi`;
     if (Number(count) === 0) {
       logger.info('[Startup] Lookup tables vuote — refresh iniziale (bassa priorità)...');
       refreshLookupTables().catch(e => logger.warn(`[Startup] Lookup refresh: ${e}`));
-      // Non awaited: gira in background, non blocca il timer principale
     }
 
     // 5. Primo sync WebThron: parte dopo 10 minuti dall'avvio.
-    //    Se LRC parte a un orario di produzione intensa, il primo sync
-    //    arriva 10 min dopo, non immediatamente.
     setNextRun('sync_incremental', new Date(Date.now() + 10 * 60_000));
+
+    // 6. Watchdog: parte solo dopo che il sync è operativo (10 min + margine)
+    setTimeout(() => startWatchdog(executiveRefresh), 12 * 60_000);
 
     let cycle = 0;
     setInterval(async () => {
       cycle++;
-      // Sync incrementale: usa indice su datain → ~2-5 sec WebThron
       await executiveRefresh();
       setNextRun('sync_incremental', new Date(Date.now() + 10 * 60_000));
 
-      // Buffer ogni 30 min (ogni 3° ciclo) — legge solo da PG, < 100ms
       if (cycle % 3 === 0) {
         await bufferFullRefresh();
         setNextRun('buffer_refresh', new Date(Date.now() + 30 * 60_000));
