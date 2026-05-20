@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server';
 import app from './app.js';
 import { startScheduler } from './scheduler.js';
+import { startWatcher } from './watcher/watcher.service.js';
 import { startBufferCache, bufferFullRefresh } from './modules/buffer/cache.js';
 import { startExecutiveCache, executiveRefresh } from './modules/monitor/executive-cache.js';
 import { refreshLookupTables } from './modules/monitor/pg-webthron-sync.js';
@@ -32,6 +33,7 @@ process.on('SIGINT',  shutdown);
 serve({ fetch: app.fetch, port }, async (info) => {
   logger.info(`LRC-System backend running on http://localhost:${info.port}`);
   startScheduler();
+  startWatcher();
 
   // Telegram bot: parte subito, non dipende dal sync
   startTelegramBot();

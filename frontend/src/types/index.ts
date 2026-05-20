@@ -3,7 +3,7 @@
 export type ModuleKey =
   | 'ingresso_merci' | 'packing' | 'monitor' | 'buffer'
   | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
-  | 'spma';
+  | 'spma' | 'recepciones';
 
 export interface ModulePermission {
   module_key: ModuleKey;
@@ -101,8 +101,9 @@ export interface SpmaModelReq {
 
 export interface SpmaOverviewCell {
   component_category_id: number;
-  status:     SpmaStatus;
-  planned_ts: string | null;
+  status:       SpmaStatus;
+  planned_ts:   string | null;
+  current_fase: string | null;
 }
 
 export interface SpmaOverviewRow {
@@ -305,4 +306,20 @@ export interface ProdOrder {
   lastSeenAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// ─── Recepciones DDT ─────────────────────────────────────────────────────────
+
+export interface Recepcion {
+  id_ddt:        number;
+  pdf_path:      string;
+  proveedor:     string | null;
+  numero_ddt:    string | null;
+  fecha_ddt:     string | null;
+  destinatario:  string | null;
+  confianza_ia:  'alta' | 'media' | 'baja' | null;
+  estado:        'confirmado' | 'revision_manual';
+  escaner_id:    string;
+  creado_at:     string;
+  confirmado_at: string | null;
 }

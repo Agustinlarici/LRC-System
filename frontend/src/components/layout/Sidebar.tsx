@@ -111,6 +111,14 @@ function IconHeatmap() {
     </svg>
   );
 }
+function IconScan() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-5 h-5 shrink-0">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 2H5a2 2 0 00-2 2v2M17 2h2a2 2 0 012 2v2M7 22H5a2 2 0 01-2-2v-2M17 22h2a2 2 0 002-2v-2" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h18" />
+    </svg>
+  );
+}
 function IconList() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-5 h-5 shrink-0">
@@ -131,7 +139,7 @@ function IconChevron({ open }: { open: boolean }) {
 
 const ICON_MAP: Record<string, () => React.ReactElement> = {
   IconBox, IconTruck, IconMonitor, IconArchive, IconMap,
-  IconClipboard, IconFactory, IconSettings, IconTicket, IconChart, IconHeatmap, IconList,
+  IconClipboard, IconFactory, IconSettings, IconTicket, IconChart, IconHeatmap, IconList, IconScan,
 };
 
 // ─── Group representative icons ───────────────────────────────────────────────
@@ -159,6 +167,7 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/dashboards/heatmap':      'dashboards',
   '/dashboards/lead-time':    'dashboards',
   '/dashboards/trends':       'dashboards',
+  '/recepciones':             'recepciones',
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────

@@ -94,6 +94,11 @@ export const MODULES: ModuleConfig[] = [
     description: 'Pianificazione componenti per sequenza di linea',
     icon: '📋', sidebar: 'IconClipboard', hidden: false, moduleKey: 'spma',
   },
+  {
+    href: '/recepciones', label: 'Ricezione DDT', group: 'Logistica',
+    description: 'Ricezione e archiviazione automatica documenti di trasporto via scanner',
+    icon: '📄', sidebar: 'IconScan', hidden: false, moduleKey: 'recepciones',
+  },
 
   // ── Nascosti / in arrivo ───────────────────────────────────────────────────
   {

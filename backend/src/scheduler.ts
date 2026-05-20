@@ -7,6 +7,7 @@ import { sendDelayReport, spmaTokenConfigured } from './modules/spma/spma-notifi
 import { db } from './db/client.js';
 import { startRun, endRun, failRun, setNextRun } from './lib/sync-stats.js';
 import { logger } from './lib/logger.js';
+import { recepcionesEmitter } from './gateway/recepciones-emitter.js';
 
 function nextOccurrence(hour: number, minute = 0): Date {
   const now  = new Date();
@@ -91,10 +92,29 @@ export function startScheduler() {
     }
   }, { timezone: 'Europe/Rome' });
 
+  // Every 5 min — promemoria ricezioni DDT in revisione da più di 30 min
+  cron.schedule('*/5 * * * *', async () => {
+    try {
+      const rows = await db`
+        SELECT COUNT(*) AS cnt
+        FROM recepciones
+        WHERE estado = 'revision_manual'
+          AND creado_at < NOW() - INTERVAL '30 minutes'
+      `;
+      const count = Number(rows[0]?.cnt ?? 0);
+      if (count > 0) {
+        recepcionesEmitter.emit('evento', { tipo: 'recordatorio', count });
+        logger.info(`[recepciones] Promemoria: ${count} DDT in attesa da >30 min`);
+      }
+    } catch (e) {
+      logger.error(`[recepciones] Promemoria fallito: ${e instanceof Error ? e.message : e}`);
+    }
+  }, { timezone: 'Europe/Rome' });
+
   // Registra prossime esecuzioni all'avvio
   setNextRun('heatmap_snapshot', nextOccurrence(1));
   setNextRun('lookup_refresh',   nextOccurrence(2));
   setNextRun('bc_sync',          nextOccurrence(3));
 
-  logger.info('Scheduler avviato — snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18 (Europe/Rome)');
+  logger.info('Scheduler avviato — snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, promemoria DDT ogni 5 min (Europe/Rome)');
 }

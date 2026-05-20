@@ -529,6 +529,24 @@ spmaRoutes.get('/overview', requireModule(MODULE), async (c) => {
     });
   }
 
+  // Last recorded production phase per (commessa_code, category_id) from WebThron
+  const commCodes = commesse.map(c => String(c.commessa_code));
+  const phaseRows = commCodes.length > 0 && catIds.length > 0 ? await db`
+    SELECT DISTINCT ON (weh.commessa, m.component_category_id)
+      weh.commessa, m.component_category_id, weh.fase AS fase_name
+    FROM webthron_events_history weh
+    JOIN spma_componente_map m
+      ON m.componente_iknow = weh.componente AND m.active = TRUE
+    WHERE weh.commessa = ANY(${commCodes})
+      AND m.component_category_id = ANY(${catIds})
+    ORDER BY weh.commessa, m.component_category_id, weh.data_inserimento DESC, weh.id DESC
+  ` : [];
+
+  const currentFaseMap = new Map<string, string>();
+  for (const r of phaseRows) {
+    currentFaseMap.set(`${r.commessa}:${r.component_category_id}`, String(r.fase_name));
+  }
+
   const rows = commesse.map(cm => {
     const required = reqMap.get(cm.model_code as string) ?? new Set<number>();
     return {
@@ -539,12 +557,13 @@ spmaRoutes.get('/overview', requireModule(MODULE), async (c) => {
       line_entry_ts:  cm.line_entry_ts,
       cells: categories.map(cat => {
         const cid = Number(cat.id);
-        if (!required.has(cid)) return { component_category_id: cid, status: 'NA', planned_ts: null };
+        if (!required.has(cid)) return { component_category_id: cid, status: 'NA', planned_ts: null, current_fase: null };
         const p = planMap.get(`${cm.id}:${cid}`);
         return {
           component_category_id: cid,
           status:                p?.status ?? 'PENDING',
           planned_ts:            p?.planned_ts ?? null,
+          current_fase:          currentFaseMap.get(`${cm.commessa_code}:${cid}`) ?? null,
         };
       }),
     };

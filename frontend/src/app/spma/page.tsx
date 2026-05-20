@@ -102,7 +102,7 @@ const STATUS_LABEL: Record<string, string> = {
   NA:        '',
 };
 
-function StatusCell({ status, plannedTs }: { status: string; plannedTs: string | null }) {
+function StatusCell({ status, plannedTs, currentFase }: { status: string; plannedTs: string | null; currentFase: string | null }) {
   if (status === 'NA') return <td className="py-2 px-3 text-center text-gray-200">–</td>;
   const color = STATUS_COLORS[status] ?? 'bg-gray-100';
   return (
@@ -113,6 +113,9 @@ function StatusCell({ status, plannedTs }: { status: string; plannedTs: string |
         </span>
         {plannedTs && (
           <span className="text-[10px] text-gray-400">{fmtDatetime(plannedTs)}</span>
+        )}
+        {currentFase && (
+          <span className="text-[10px] text-blue-500 italic truncate max-w-[80px]" title={currentFase}>{currentFase}</span>
         )}
       </div>
     </td>
@@ -243,6 +246,7 @@ export default function SpmaPage() {
                       key={cell.component_category_id}
                       status={cell.status}
                       plannedTs={cell.planned_ts}
+                      currentFase={cell.current_fase}
                     />
                   ))}
                 </tr>
