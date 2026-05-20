@@ -54,6 +54,11 @@ for var in "${required_vars[@]}"; do
 done
 [ "$missing" -eq 1 ] && error "Compila le variabili obbligatorie nel .env prima di continuare."
 
+# ─── Cartelle necessarie ──────────────────────────────────────────
+SCAN_HOST="${SCAN_FOLDER_HOST:-./test-scansioni}"
+DOCS_HOST="${DOCS_FOLDER_HOST:-./test-documentos}"
+mkdir -p "$SCAN_HOST" "$DOCS_HOST"
+
 # ─── Build e avvio ────────────────────────────────────────────────
 info "Build e avvio dello stack LRC System..."
 docker compose up --build -d
@@ -88,6 +93,7 @@ MIGRATIONS=(
   "db/migrate-resumen.sql"
   "db/migrate-spma-alerts.sql"
   "db/migrate-spma-telegram.sql"
+  "db/migrate-recepciones.sql"
 )
 for f in "${MIGRATIONS[@]}"; do
   if [ -f "$f" ]; then
