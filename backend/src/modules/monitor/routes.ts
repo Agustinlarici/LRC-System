@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
 import { getExecutiveCache, getDeliberaFasi, isConforming } from './executive-cache.js';
+import { syncFullDayToHistory } from './pg-webthron-sync.js';
 
 export const monitorRoutes = new Hono();
 
@@ -940,4 +941,15 @@ monitorRoutes.put('/resumen/:id/linee', async (c) => {
     }
   });
   return c.body(null, 204);
+});
+
+// ─── Sync manuale WebThron ────────────────────────────────────────────────────
+
+monitorRoutes.post('/admin/sync-day', async (c) => {
+  const date = c.req.query('date');
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new HTTPException(400, { message: 'Parametro date mancante o non valido (YYYY-MM-DD)' });
+  }
+  const count = await syncFullDayToHistory(date);
+  return c.json({ ok: true, date, rows_synced: count });
 });
