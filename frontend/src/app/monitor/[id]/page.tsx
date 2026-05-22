@@ -60,6 +60,12 @@ export default function MonitorDisplayPage() {
   const [localRemaining, setLocalRemaining] = useState<number | null>(null);
   const [blink, setBlink] = useState(true);
   const [lineStopSec, setLineStopSec] = useState(0);
+  const [blinkOn, setBlinkOn] = useState(true);
+
+  useEffect(() => {
+    const t = setInterval(() => setBlinkOn(v => !v), 700);
+    return () => clearInterval(t);
+  }, []);
 
   // Fetch ogni 5 secondi + refetch immediato quando la tab torna visibile
   useEffect(() => { document.title = 'Andon — STR'; }, []);
@@ -192,7 +198,7 @@ export default function MonitorDisplayPage() {
           <div className={`flex flex-col items-center justify-center border-r ${c.border}`}>
             <div className="flex flex-col items-center justify-center gap-1" style={{ height: 'clamp(3rem, 10vw, 9rem)' }}>
               {stato.commesse.length === 0
-                ? <span className="text-gray-500 italic" style={{ fontSize: 'clamp(1rem, 2vw, 1.8rem)' }}>In attesa di picking</span>
+                ? <span className={`font-bold text-red-500 text-center transition-opacity duration-100 ${blinkOn ? 'opacity-100' : 'opacity-0'}`} style={{ fontSize: 'clamp(1.4rem, 3vw, 3rem)' }}>In attesa<br />di picking</span>
                 : stato.commesse.map(cm => (
                     <span key={cm} className="text-white font-semibold text-center" style={{ fontSize: 'clamp(1.4rem, 4vw, 4rem)', lineHeight: 1 }}>{cm}</span>
                   ))

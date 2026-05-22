@@ -77,6 +77,12 @@ export default function ResumenDisplayPage() {
   const [linee, setLinee]     = useState<MonitorResumenLinea[]>([]);
   const [rows, setRows]       = useState<Record<number, RowState>>({});
   const [error, setError]     = useState<string | null>(null);
+  const [blinkOn, setBlinkOn] = useState(true);
+
+  useEffect(() => {
+    const t = setInterval(() => setBlinkOn(v => !v), 700);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => { document.title = 'Riepilogo Andon — STR'; }, []);
 
@@ -238,7 +244,7 @@ export default function ResumenDisplayPage() {
               {/* Commesse */}
               <div className="flex flex-col items-center justify-center gap-0.5 px-2">
                 {row.stato.commesse.length === 0
-                  ? <span className="text-lg text-zinc-500 italic">In attesa di picking</span>
+                  ? <span className={`text-2xl font-bold text-red-500 transition-opacity duration-100 ${blinkOn ? 'opacity-100' : 'opacity-0'}`}>In attesa di picking</span>
                   : row.stato.commesse.map(c => (
                       <span key={c} className="text-2xl font-semibold text-white leading-tight">{c}</span>
                     ))
