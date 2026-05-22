@@ -251,7 +251,7 @@ export default function ResumenDisplayPage() {
                 }
               </div>
 
-              {/* Timer + barra + elapsed */}
+              {/* Timer + barra */}
               <div className="flex flex-col items-center gap-1.5 px-2">
                 <span className={`text-4xl font-semibold tabular-nums ${TIMER_COLOR[colorState]}`}>
                   {timeDisplay}
@@ -262,11 +262,6 @@ export default function ResumenDisplayPage() {
                     style={{ width: `${progressPct}%` }}
                   />
                 </div>
-                <span className="text-xl text-zinc-400 tabular-nums font-normal">
-                  {hasBar && row.remaining !== null
-                    ? `${formatTimer(Math.max(0, cycleTime! - row.remaining!))} / ${formatTimer(cycleTime!)}`
-                    : ' '}
-                </span>
               </div>
 
               {/* Line Stop */}
