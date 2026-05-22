@@ -396,6 +396,7 @@ monitorRoutes.get('/stato/:id', async (c) => {
             AND mlc.modello = weh.modello
             AND mlc.componente = weh.componente
         )
+        AND weh.data_cache >= (NOW() AT TIME ZONE 'Europe/Rome')::date - INTERVAL '1 day'
         AND weh.commessa NOT IN (
           SELECT DISTINCT weh2.commessa
           FROM webthron_events_history weh2
