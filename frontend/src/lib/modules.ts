@@ -99,6 +99,11 @@ export const MODULES: ModuleConfig[] = [
     description: 'Ricezione e archiviazione automatica documenti di trasporto via scanner',
     icon: '📄', sidebar: 'IconScan', hidden: false, moduleKey: 'recepciones',
   },
+  {
+    href: '/edi', label: 'EDI', group: 'Logistica',
+    description: 'Generazione automatica file Electronic Data Interchange per le spedizioni',
+    icon: '📡', sidebar: 'IconEdi', hidden: false, moduleKey: 'edi',
+  },
 
   // ── Nascosti / in arrivo ───────────────────────────────────────────────────
   {

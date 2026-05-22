@@ -13,6 +13,7 @@ import { dashboardsRoutes } from './modules/dashboards/routes.js';
 import { systemRoutes } from './modules/system/routes.js';
 import { spmaRoutes } from './modules/spma/routes.js';
 import { recepcionesRoutes } from './modules/recepciones/routes.js';
+import { ediRoutes } from './modules/edi/routes.js';
 import { logger } from './lib/logger.js';
 import { db } from './db/client.js';
 import { getWebthronPool } from './modules/monitor/mysql-client.js';
@@ -85,6 +86,7 @@ app.route('/api/system', systemRoutes);
 
 app.route('/api/spma', spmaRoutes);
 app.route('/api/recepciones', recepcionesRoutes);
+app.route('/api/edi', ediRoutes);
 
 // Stub para módulos aún no migrados
 const stub = (module: string) =>

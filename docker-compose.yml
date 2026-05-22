@@ -64,17 +64,20 @@ services:
       DELIBERA_FASI:     ${DELIBERA_FASI:-DELIBERA FINALE - PROX}
       DELIBERA_ESITO_OK: ${DELIBERA_ESITO_OK:-Accettato}
       # ─── Ricezione DDT (scanner) ───────────────────────────────────────────
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # ANTHROPIC_API_KEY disabilitato — integrazione Claude sospesa (sicurezza informatica)
+      # Per riabilitare: decommentare e impostare il valore nel .env
+      # ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # Percorsi interni al container (fissi — il bind mount mappa l'host)
       SCAN_FOLDER:  /scansioni
       DOCS_FOLDER:  /documentos
       # Optional
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # ─── Alerting ──────────────────────────────────────────────────────────
-      # Telegram Bot (crea bot con @BotFather → ottieni TOKEN e CHAT_ID)
-      TELEGRAM_BOT_TOKEN:      ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_CHAT_ID:        ${TELEGRAM_CHAT_ID:-}
-      SPMA_TELEGRAM_BOT_TOKEN: ${SPMA_TELEGRAM_BOT_TOKEN:-}
+      # Telegram disabilitato — integrazione sospesa (sicurezza informatica)
+      # Per riabilitare: decommentare le righe e impostare i valori nel .env
+      # TELEGRAM_BOT_TOKEN:      ${TELEGRAM_BOT_TOKEN:-}
+      # TELEGRAM_CHAT_ID:        ${TELEGRAM_CHAT_ID:-}
+      # SPMA_TELEGRAM_BOT_TOKEN: ${SPMA_TELEGRAM_BOT_TOKEN:-}
       # Email (SMTP, opzionale)
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
       SMTP_HOST:      ${SMTP_HOST:-}

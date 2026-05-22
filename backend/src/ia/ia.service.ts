@@ -1,6 +1,16 @@
+/**
+ * NOTA: integrazione Claude (Anthropic) disabilitata in attesa di approvazione sicurezza.
+ * Il codice originale è preservato integralmente. Per riabilitare:
+ *   1. Rimuovere il flag IA_DISABLED qui sotto
+ *   2. Impostare ANTHROPIC_API_KEY nell'ambiente
+ */
+
 import Anthropic from '@anthropic-ai/sdk';
 import { readFile } from 'fs/promises';
 import { logger } from '../lib/logger.js';
+
+// Flag di disabilitazione — rimuovere quando l'API Claude verrà approvata
+const IA_DISABLED = true;
 
 export interface DatosDDT {
   proveedor:    string | null;
@@ -35,6 +45,11 @@ function getClient(): Anthropic {
 }
 
 export async function extraerDatosDDT(pdfPath: string): Promise<DatosDDT> {
+  if (IA_DISABLED) {
+    logger.info(`[ia] Estrazione IA disabilitata — ${pdfPath} inviato a revisione manuale`);
+    return { proveedor: null, numero_ddt: null, fecha: null, destinatario: null, confianza: 'baja' };
+  }
+
   const data   = await readFile(pdfPath);
   const base64 = data.toString('base64');
 

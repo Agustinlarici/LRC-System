@@ -1,10 +1,16 @@
 /**
  * SPMA Telegram notifier — uses a dedicated bot (SPMA_TELEGRAM_BOT_TOKEN)
  * to send alerts to a configured group chat.
+ *
+ * NOTA: integrazione Telegram SPMA disabilitata in attesa di approvazione sicurezza.
+ * Il codice originale è preservato. Per riabilitare rimuovere SPMA_DISABLED.
  */
 
 import type { DelayItem } from './delay-checker.js';
 import { logger } from '../../lib/logger.js';
+
+// Flag di disabilitazione — rimuovere quando l'API Telegram verrà approvata
+const SPMA_DISABLED = true;
 
 const SPMA_TOKEN  = process.env.SPMA_TELEGRAM_BOT_TOKEN ?? '';
 
@@ -14,6 +20,10 @@ const REPORT_DEBOUNCE_MS = 30 * 60_000; // 30 min between repeated reports
 // ─── Core send ────────────────────────────────────────────────────────────────
 
 async function sendToGroup(chatId: string, text: string): Promise<void> {
+  if (SPMA_DISABLED) {
+    logger.debug(`[SpmaNotifier] Telegram disabilitato — messaggio non inviato a ${chatId}`);
+    return;
+  }
   if (!SPMA_TOKEN || !chatId) return;
   try {
     const res = await fetch(`https://api.telegram.org/bot${SPMA_TOKEN}/sendMessage`, {
@@ -82,6 +92,7 @@ export interface TelegramChatInfo {
 }
 
 export async function fetchRecentChats(): Promise<TelegramChatInfo[]> {
+  if (SPMA_DISABLED) return [];
   if (!SPMA_TOKEN) throw new Error('SPMA_TELEGRAM_BOT_TOKEN non configurato nel server');
 
   const res = await fetch(
@@ -113,5 +124,6 @@ export async function fetchRecentChats(): Promise<TelegramChatInfo[]> {
 }
 
 export function spmaTokenConfigured(): boolean {
+  if (SPMA_DISABLED) return false;
   return Boolean(SPMA_TOKEN);
 }

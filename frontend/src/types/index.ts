@@ -3,7 +3,7 @@
 export type ModuleKey =
   | 'ingresso_merci' | 'packing' | 'monitor' | 'buffer'
   | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
-  | 'spma' | 'recepciones';
+  | 'spma' | 'recepciones' | 'edi';
 
 export interface ModulePermission {
   module_key: ModuleKey;
@@ -270,6 +270,7 @@ export interface MonitorStato {
   remaining_sec: number | null;
   linestop_sec: number;
   avanzamento_previsto: number;
+  commessa: string | null;
   soglie: { soglia_giallo: number; soglia_rosso: number };
 }
 
@@ -306,6 +307,65 @@ export interface ProdOrder {
   lastSeenAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// ─── EDI ─────────────────────────────────────────────────────────────────────
+
+export interface EdiClient {
+  id:                         number;
+  customer_account:           string;
+  description:                string;
+  edi_type:                   string;
+  cdt_company_name:           string;
+  cdt_vat:                    string;
+  cdt_address_1:              string | null;
+  cdt_address_2:              string | null;
+  cdt_address_3:              string | null;
+  cdt_address_4:              string | null;
+  sdt_vat:                    string;
+  sdt_ferrari_supplier_code:  string;
+  csg_establishment_code:     '021' | '023' | '025' | '029' | '030' | 'SSF';
+  csg_company_name:           string;
+  csg_address_1:              string | null;
+  csg_address_2:              string | null;
+  csg_address_3:              string | null;
+  csg_address_4:              string | null;
+  csg_supply_point:           string | null;
+  output_folder:              string;
+  created_at:                 string;
+  updated_at:                 string;
+}
+
+export interface EdiShipment {
+  shipment_id:      string;
+  shipment_date:    string;
+  customer_account: string;
+  document_number:  string;
+  document_date:    string;
+  is_extra_cee:     boolean;
+  line_count:       number;
+  edi_type:         string;
+  edi_status:       'sent' | 'error' | 'pending';
+}
+
+export interface EdiLine {
+  article_code:    string;
+  description:     string;
+  quantity:        number;
+  unit_of_measure: string;
+  contract_number: string | null;
+}
+
+export interface EdiHistoryEntry {
+  id:               number;
+  shipment_id:      string;
+  customer_account: string;
+  edi_type:         string;
+  filename:         string;
+  generated_at:     string;
+  status:           'sent' | 'error';
+  error_message:    string | null;
+  is_regeneration:  boolean;
 }
 
 // ─── Recepciones DDT ─────────────────────────────────────────────────────────

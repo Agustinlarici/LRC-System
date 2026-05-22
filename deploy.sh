@@ -94,6 +94,7 @@ MIGRATIONS=(
   "db/migrate-spma-alerts.sql"
   "db/migrate-spma-telegram.sql"
   "db/migrate-recepciones.sql"
+  "db/migrate-edi.sql"
 )
 for f in "${MIGRATIONS[@]}"; do
   if [ -f "$f" ]; then

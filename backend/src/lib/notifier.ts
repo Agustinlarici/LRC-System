@@ -2,10 +2,16 @@
  * Multi-channel notifier — Telegram Bot + Email (SMTP, optional).
  * Uses native fetch for Telegram — zero extra deps.
  * Email fires only when SMTP_HOST is configured.
+ *
+ * NOTA: canale Telegram disabilitato in attesa di approvazione sicurezza.
+ * Il codice originale è preservato. Per riabilitare rimuovere TELEGRAM_DISABLED.
  */
 
 import { createTransport } from 'nodemailer';
 import { logger } from './logger.js';
+
+// Flag di disabilitazione — rimuovere quando l'API Telegram verrà approvata
+const TELEGRAM_DISABLED = true;
 
 const TELEGRAM_TOKEN   = process.env.TELEGRAM_BOT_TOKEN  ?? '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID    ?? '';
@@ -34,6 +40,10 @@ export function clearDebounce(key: string): void {
 // ─── Telegram ─────────────────────────────────────────────────────────────────
 
 export async function sendTelegram(text: string, debounceKey?: string): Promise<void> {
+  if (TELEGRAM_DISABLED) {
+    logger.debug(`[Notifier] Telegram disabilitato — messaggio non inviato: ${text.slice(0, 80)}`);
+    return;
+  }
   if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
   if (debounceKey && !canSend(debounceKey)) return;
 

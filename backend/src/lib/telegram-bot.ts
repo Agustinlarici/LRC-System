@@ -7,11 +7,19 @@
  *   /health  — alert attivi
  *   /alerts  — alert attivi con durata
  *   /restart — riavvia il backend (Docker lo rilancia automaticamente)
+ *
+ * NOTA: integrazione Telegram disabilitata in attesa di approvazione sicurezza.
+ * Il codice originale è preservato integralmente. Per riabilitare:
+ *   1. Rimuovere il flag TELEGRAM_DISABLED qui sotto
+ *   2. Impostare TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID nell'ambiente
  */
 
 import { logger } from './logger.js';
 import { getAllStats } from './sync-stats.js';
 import { getActiveAlerts } from './alert-manager.js';
+
+// Flag di disabilitazione — rimuovere quando l'API Telegram verrà approvata
+const TELEGRAM_DISABLED = true;
 
 const TOKEN   = process.env.TELEGRAM_BOT_TOKEN ?? '';
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID   ?? '';
@@ -19,7 +27,7 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID   ?? '';
 // ─── Telegram API ─────────────────────────────────────────────────────────────
 
 async function tgPost(method: string, body: unknown): Promise<void> {
-  if (!TOKEN) return;
+  if (TELEGRAM_DISABLED || !TOKEN) return;
   try {
     await fetch(`https://api.telegram.org/bot${TOKEN}/${method}`, {
       method:  'POST',
@@ -133,6 +141,10 @@ function scheduleNextPoll(): void {
 }
 
 export function startTelegramBot(): void {
+  if (TELEGRAM_DISABLED) {
+    logger.info('[TelegramBot] Disabilitato — integrazione Telegram sospesa (approvazione sicurezza)');
+    return;
+  }
   if (!TOKEN) {
     logger.info('[TelegramBot] TELEGRAM_BOT_TOKEN non configurato — bot disabilitato');
     return;

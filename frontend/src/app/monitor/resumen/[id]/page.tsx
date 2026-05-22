@@ -30,8 +30,7 @@ function getColorState(stato: MonitorStato, remaining: number | null): ColorStat
   if (remaining <= 0) return 'rosso';
   const pct = (remaining / stato.cycle_time_sec) * 100;
   if (pct > stato.soglie.soglia_giallo) return 'verde';
-  if (pct > stato.soglie.soglia_rosso)  return 'giallo';
-  return 'rosso';
+  return 'giallo';
 }
 
 const DOT_COLOR: Record<ColorState, string> = {
@@ -39,6 +38,12 @@ const DOT_COLOR: Record<ColorState, string> = {
   giallo: 'bg-yellow-400',
   rosso:  'bg-red-500',
   grigio: 'bg-zinc-600',
+};
+const BAR_COLOR: Record<ColorState, string> = {
+  verde:  'bg-emerald-500',
+  giallo: 'bg-yellow-400',
+  rosso:  'bg-red-500',
+  grigio: 'bg-zinc-700',
 };
 const TIMER_COLOR: Record<ColorState, string> = {
   verde:  'text-emerald-400',
@@ -161,20 +166,20 @@ export default function ResumenDisplayPage() {
         {/* Header */}
         <div className="mb-3">
           <h1 className="text-2xl font-semibold text-white tracking-wide">{resumen!.nome}</h1>
-          <p className="text-sm text-zinc-500 mt-0.5">{loadedLinee.length} linee attive</p>
         </div>
 
         {/* Intestazioni colonne */}
         {loadedLinee.length > 0 && (
           <div
-            className="grid px-5 mb-1 text-sm font-semibold text-zinc-600 uppercase tracking-widest"
-            style={{ gridTemplateColumns: '2fr 1fr 1.5fr 1fr 1fr 1fr' }}
+            className="grid px-5 mb-1 text-lg font-semibold text-white uppercase tracking-widest"
+            style={{ gridTemplateColumns: '2fr 1.5fr 1.5fr 1.5fr 1fr 1fr 1fr' }}
           >
             <span>Linea</span>
+            <span className="text-center">Commessa</span>
             <span className="text-center">Timer</span>
             <span className="text-center">Line Stop</span>
-            <span className="text-center">Qtà Prodotta</span>
-            <span className="text-center">Avanz. Previsto</span>
+            <span className="text-center leading-tight">Qtà<br />Prodotta</span>
+            <span className="text-center leading-tight">Avanz.<br />Previsto</span>
             <span className="text-center">Piano Totale</span>
           </div>
         )}
@@ -198,7 +203,15 @@ export default function ResumenDisplayPage() {
 
           const timeDisplay = isPausa || !row.stato.turno_attivo || row.remaining === null
             ? '--:--'
-            : formatTimer(row.remaining);
+            : row.remaining <= 0
+              ? `-${formatTimer(Math.abs(row.remaining))}`
+              : formatTimer(row.remaining);
+
+          const cycleTime = row.stato.cycle_time_sec;
+          const hasBar = cycleTime !== null && row.remaining !== null && row.stato.turno_attivo && !isPausa;
+          const progressPct = hasBar
+            ? Math.max(0, Math.min(100, ((cycleTime! - row.remaining!) / cycleTime!) * 100))
+            : 0;
 
           const qtaInRitardo = row.stato.turno_attivo &&
             row.stato.avanzamento_previsto != null &&
@@ -209,23 +222,41 @@ export default function ResumenDisplayPage() {
               key={linea.linea_id}
               className={`grid items-center rounded-xl border border-zinc-800 border-l-4
                 ${LEFT_BORDER[colorState]} ${rowBg} px-5 py-5 transition-colors duration-300`}
-              style={{ gridTemplateColumns: '2fr 1fr 1.5fr 1fr 1fr 1fr' }}
+              style={{ gridTemplateColumns: '2fr 1.5fr 1.5fr 1.5fr 1fr 1fr 1fr' }}
             >
               {/* Linea */}
               <div className="flex items-center gap-4 min-w-0">
                 <div className={`w-3 h-3 rounded-full shrink-0 ${DOT_COLOR[colorState]}`} />
                 <div className="min-w-0">
-                  <p className="font-semibold text-white text-xl leading-tight truncate">{linea.nome}</p>
+                  <p className="font-semibold text-white text-3xl leading-tight truncate">{linea.nome}</p>
                   {linea.fase && <p className="text-sm text-zinc-500 mt-0.5 truncate">{linea.fase}</p>}
                   {isPausa && <span className="text-sm text-zinc-400 font-medium uppercase tracking-widest">Pausa</span>}
                   {!row.stato.turno_attivo && <span className="text-sm text-zinc-600 uppercase tracking-widest">Nessun turno</span>}
                 </div>
               </div>
 
-              {/* Timer */}
-              <div className="text-center">
+              {/* Commessa */}
+              <div className="text-center px-2">
+                <span className="text-3xl font-semibold text-white tabular-nums truncate block">
+                  {row.stato.commessa ?? '—'}
+                </span>
+              </div>
+
+              {/* Timer + barra + elapsed */}
+              <div className="flex flex-col items-center gap-1.5 px-2">
                 <span className={`text-4xl font-semibold tabular-nums ${TIMER_COLOR[colorState]}`}>
                   {timeDisplay}
+                </span>
+                <div className="w-1/2 bg-zinc-800 rounded-full h-2 overflow-hidden">
+                  <div
+                    className={`h-2 rounded-full transition-all duration-700 ${BAR_COLOR[colorState]}`}
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+                <span className="text-xl text-zinc-400 tabular-nums font-normal">
+                  {hasBar && row.remaining !== null
+                    ? `${formatTimer(Math.max(0, cycleTime! - row.remaining!))} / ${formatTimer(cycleTime!)}`
+                    : ' '}
                 </span>
               </div>
 

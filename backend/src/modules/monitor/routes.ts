@@ -372,6 +372,35 @@ monitorRoutes.get('/stato/:id', async (c) => {
   const combos = await db`SELECT modello, componente FROM monitor_linea_combo WHERE linea_id = ${id}`;
   const combosSet = new Set(combos.map(c => `${c.modello}|${c.componente}`));
 
+  // Ultima commessa dalla fase precedente nella sequenza SPMA
+  const [prevFaseRow] = await db`
+    SELECT fs2.fase_name AS prev_fase
+    FROM spma_fase_sequence fs1
+    JOIN spma_fase_sequence fs2
+      ON fs2.component_category_id = fs1.component_category_id
+      AND fs2.order_index = fs1.order_index - 1
+    WHERE fs1.fase_name = ${linea.fase}
+    LIMIT 1
+  `;
+  let commessa: string | null = null;
+  if (prevFaseRow) {
+    const [commessaRow] = await db`
+      SELECT weh.commessa
+      FROM webthron_events_history weh
+      WHERE weh.fase = ${prevFaseRow.prev_fase}
+        AND weh.commessa IS NOT NULL AND weh.commessa != ''
+        AND EXISTS (
+          SELECT 1 FROM monitor_linea_combo mlc
+          WHERE mlc.linea_id = ${id}
+            AND mlc.modello = weh.modello
+            AND mlc.componente = weh.componente
+        )
+      ORDER BY weh.data_inserimento DESC
+      LIMIT 1
+    `;
+    commessa = (commessaRow?.commessa as string) ?? null;
+  }
+
   const { now, timeStr, dateStr } = getRomeNow();
 
   // Get all turni for today (data in orario Europe/Rome)
@@ -413,6 +442,7 @@ monitorRoutes.get('/stato/:id', async (c) => {
       remaining_sec:        null,
       linestop_sec:         0,
       avanzamento_previsto: 0,
+      commessa:             commessa,
       soglie:               soglieColore,
     });
   }
@@ -534,6 +564,7 @@ monitorRoutes.get('/stato/:id', async (c) => {
       remaining_sec:        null,
       linestop_sec:         Math.floor(pastLinestopSec),
       avanzamento_previsto: avanzamentoPrevisto,
+      commessa:             commessa,
       soglie:               soglieColore,
     });
   }
@@ -566,6 +597,7 @@ monitorRoutes.get('/stato/:id', async (c) => {
     remaining_sec:        cycleTimeSec - elapsedSec,
     linestop_sec:         linestopSec,
     avanzamento_previsto: avanzamentoPrevisto,
+    commessa:             commessa,
     soglie:               soglieColore,
   });
 });

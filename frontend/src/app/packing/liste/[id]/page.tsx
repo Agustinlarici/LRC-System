@@ -93,11 +93,11 @@ function SummaryTable({ rows }: { rows: SummaryItem[] }) {
     <table className="w-full border-collapse text-xs mb-4">
       <thead>
         <tr className="border-b border-gray-300 bg-gray-100">
-          <th className="py-1.5 px-2 text-left">Modello</th>
-          <th className="py-1.5 px-2 text-left">Codice articolo</th>
-          <th className="py-1.5 px-2 text-left">Descrizione</th>
-          <th className="py-1.5 px-2 text-left">Commessa</th>
-          <th className="py-1.5 px-2 text-right">Q.tà tot.</th>
+          <th className="py-1.5 px-2 text-left">Model</th>
+          <th className="py-1.5 px-2 text-left">Article code</th>
+          <th className="py-1.5 px-2 text-left">Description</th>
+          <th className="py-1.5 px-2 text-left">Job order</th>
+          <th className="py-1.5 px-2 text-right">Total qty.</th>
         </tr>
       </thead>
       <tbody>
@@ -257,7 +257,7 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
       {/* Missing data warning */}
       {missingItems.length > 0 && (
         <div className="no-print mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-800">
-          ⚠ {missingItems.length} articol{missingItems.length === 1 ? 'o manca' : 'i mancano'} di peso/scatola/prezzo — i totali saranno parziali.
+          ⚠ {missingItems.length} item{missingItems.length === 1 ? '' : 's'} missing weight/box/price — totals will be partial.
         </div>
       )}
 
@@ -265,19 +265,19 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
       <div className="no-print mb-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
         <div className="grid grid-cols-3 gap-4 text-xs mb-3">
           <div>
-            <div className="font-semibold text-gray-500 uppercase mb-1">N° Fattura</div>
-            <input className="dogana-input w-full" value={invoiceNo} onChange={e => setInvoiceNo(e.target.value)} placeholder="es. 2025/001" />
-            <div className="font-semibold text-gray-500 uppercase mb-1 mt-2">N° Ordine</div>
-            <input className="dogana-input w-full" value={orderNo} onChange={e => setOrderNo(e.target.value)} placeholder="es. ORD-12345" />
+            <div className="font-semibold text-gray-500 uppercase mb-1">Invoice No.</div>
+            <input className="dogana-input w-full" value={invoiceNo} onChange={e => setInvoiceNo(e.target.value)} placeholder="e.g. 2025/001" />
+            <div className="font-semibold text-gray-500 uppercase mb-1 mt-2">Order No.</div>
+            <input className="dogana-input w-full" value={orderNo} onChange={e => setOrderNo(e.target.value)} placeholder="e.g. ORD-12345" />
           </div>
           <div>
-            <div className="font-semibold text-gray-500 uppercase mb-1">Mittente</div>
+            <div className="font-semibold text-gray-500 uppercase mb-1">Sender</div>
             <textarea className="dogana-input w-full" rows={3} value={mittente} onChange={e => setMittente(e.target.value)} />
           </div>
           <div>
-            <div className="font-semibold text-gray-500 uppercase mb-1">Destinatario</div>
+            <div className="font-semibold text-gray-500 uppercase mb-1">Consignee</div>
             <textarea className="dogana-input w-full" rows={2} value={destinatario} onChange={e => setDestinatario(e.target.value)} />
-            <div className="font-semibold text-gray-500 uppercase mb-1 mt-2">Destinazione finale</div>
+            <div className="font-semibold text-gray-500 uppercase mb-1 mt-2">Final destination</div>
             <textarea className="dogana-input w-full" rows={2} value={destFinale} onChange={e => setDestFinale(e.target.value)} />
           </div>
         </div>
@@ -285,12 +285,12 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
 
       {/* Printed header */}
       <div className="mb-3">
-        <div className="font-bold uppercase mb-0.5">FATTURA N.: {invoiceNo || '—'}</div>
-        <div className="mb-2">ORDINE N.: {orderNo || '—'}</div>
+        <div className="font-bold uppercase mb-0.5">INVOICE NO.: {invoiceNo || '—'}</div>
+        <div className="mb-2">ORDER NO.: {orderNo || '—'}</div>
         <div className="border border-gray-300 bg-gray-50 rounded px-3 py-2">
-          <div><span className="font-semibold inline-block w-36">Mittente:</span>{mittente || '—'}</div>
-          <div><span className="font-semibold inline-block w-36">Destinatario:</span>{destinatario || '—'}</div>
-          <div><span className="font-semibold inline-block w-36">Destinazione finale:</span>{destFinale || '—'}</div>
+          <div><span className="font-semibold inline-block w-36">Sender:</span>{mittente || '—'}</div>
+          <div><span className="font-semibold inline-block w-36">Consignee:</span>{destinatario || '—'}</div>
+          <div><span className="font-semibold inline-block w-36">Final destination:</span>{destFinale || '—'}</div>
         </div>
       </div>
 
@@ -309,23 +309,14 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
         return (
           <div key={pallet.id} className="mb-5">
             {/* Pallet header */}
-            <div className="bg-gray-100 border border-gray-300 rounded px-3 py-1.5 mb-1 flex justify-between items-start flex-wrap gap-2">
-              <div>
-                <span className="font-bold">Bancale {pallet.number}</span>
-                {!hasDims ? (
-                  <div className="text-xs mt-0.5">
-                    Dimensioni: <span className="inline-block min-w-[140px] border-b border-dashed border-gray-400">&nbsp;</span> mm
-                  </div>
-                ) : (
-                  <div className="text-xs">Dimensioni: {dimsText}</div>
-                )}
-              </div>
+            <div className="bg-gray-100 border border-gray-300 rounded px-3 py-1.5 mb-1 flex justify-between items-center flex-wrap gap-2">
+              <span className="font-bold">Pallet {pallet.number}</span>
               <div className="text-right">
                 {/* Screen-only dimension + tare inputs */}
                 <div className="no-print flex flex-wrap gap-2 mb-1 justify-end">
                   {(['L', 'W', 'H'] as const).map(k => (
                     <div key={k}>
-                      <div className="text-xs text-gray-400">Bancale {k} (mm)</div>
+                      <div className="text-xs text-gray-400">Pallet {k} (mm)</div>
                       <input
                         type="number" min="0"
                         className="border border-gray-300 rounded px-1 py-0.5 text-xs w-20"
@@ -335,7 +326,7 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
                     </div>
                   ))}
                   <div>
-                    <div className="text-xs text-gray-400">Tara bancale (kg)</div>
+                    <div className="text-xs text-gray-400">Pallet tare (kg)</div>
                     <input
                       type="number" min="0" step="0.001"
                       className="border border-gray-300 rounded px-1 py-0.5 text-xs w-24"
@@ -345,11 +336,16 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
                   </div>
                 </div>
                 <div className="text-xs space-x-3">
-                  <span><b>Tara bancale:</b> {palletTare.toFixed(3)} kg</span>
-                  <span><b>Colli:</b> {pallet.items.length}</span>
-                  <span><b>Netto:</b> {pNet.toFixed(3)} kg</span>
-                  <span><b>Lordo:</b> {pGross.toFixed(3)} kg</span>
-                  <span><b>Valore:</b> {currency} {pCost.toFixed(2)}</span>
+                  {!hasDims ? (
+                    <span><b>Dims:</b> <span className="inline-block min-w-[100px] border-b border-dashed border-gray-400">&nbsp;</span> mm</span>
+                  ) : (
+                    <span><b>Dims:</b> {dimsText}</span>
+                  )}
+                  <span><b>Pallet tare:</b> {palletTare.toFixed(3)} kg</span>
+                  <span><b>Packages:</b> {pallet.items.length}</span>
+                  <span><b>Net:</b> {pNet.toFixed(3)} kg</span>
+                  <span><b>Gross:</b> {pGross.toFixed(3)} kg</span>
+                  <span><b>Value:</b> {currency} {pCost.toFixed(2)}</span>
                 </div>
               </div>
             </div>
@@ -359,18 +355,17 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
               <thead>
                 <tr>
                   <th className="col-nx">Nx</th>
-                  <th className="col-code">Codice</th>
-                  <th className="col-desc">Descrizione</th>
-                  <th className="col-comm">Commessa</th>
-                  <th className="col-qty">Q.tà</th>
-                  <th className="col-cont">Scatola</th>
-                  <th className="col-dims">L×W×H (mm)</th>
-                  <th className="col-ucost">P.Unit {currency}</th>
-                  <th className="col-unitkg">P.Unit (kg)</th>
-                  <th className="col-tare">Tara cont. (kg)</th>
-                  <th className="col-lnet">P.Netto (kg)</th>
-                  <th className="col-lgross">P.Lordo (kg)</th>
-                  <th className="col-lcost">Totale {currency}</th>
+                  <th className="col-code">Item Code</th>
+                  <th className="col-desc">Description</th>
+                  <th className="col-qty">Qty</th>
+                  <th className="col-cont">Container</th>
+                  <th className="col-dims">Dimensions (mm)</th>
+                  <th className="col-ucost">Unit Cost (EUR)</th>
+                  <th className="col-unitkg">Unit weight (kg)</th>
+                  <th className="col-tare">Tare weight (kg)</th>
+                  <th className="col-lnet">Net weight (kg)</th>
+                  <th className="col-lgross">Gross weight (kg)</th>
+                  <th className="col-lcost">Total Cost (EUR)</th>
                 </tr>
               </thead>
               <tbody>
@@ -383,7 +378,6 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
                       <td className="c col-nx">{g.count}x</td>
                       <td className="col-code" style={{ fontFamily: 'monospace' }}>{it.article_code}</td>
                       <td className="col-desc">{it.description || '–'}</td>
-                      <td className="col-comm">{it.commessa || '–'}</td>
                       <td className="r col-qty">{it.quantity}</td>
                       <td className="col-cont">{it.container_name ?? <span style={{ color: '#f87171' }}>!</span>}</td>
                       <td className="c col-dims">{dims}</td>
@@ -402,32 +396,13 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
         );
       })}
 
-      {/* Summary box (right-aligned, narrow) */}
-      <div className="border-2 border-gray-400 rounded p-3 mt-4 ml-auto" style={{ maxWidth: '44%' }}>
-        <table className="w-full">
-          <tbody>
-            <tr className="border-b border-gray-200">
-              <td className="font-semibold py-1">Numero bancali</td>
-              <td className="text-right font-bold py-1">{totalPallets}</td>
-            </tr>
-            <tr className="border-b border-gray-200">
-              <td className="font-semibold py-1">Colli totali</td>
-              <td className="text-right font-bold py-1">{totalPackages}</td>
-            </tr>
-            <tr className="border-b border-gray-200">
-              <td className="font-semibold py-1">Peso netto tot. (kg)</td>
-              <td className="text-right font-bold py-1">{totalNetKg.toFixed(3)}</td>
-            </tr>
-            <tr className="border-b border-gray-200">
-              <td className="font-semibold py-1">Peso lordo tot. (kg)</td>
-              <td className="text-right font-bold py-1">{totalGrossKg.toFixed(3)}</td>
-            </tr>
-            <tr>
-              <td className="font-semibold py-1">Valore totale ({currency})</td>
-              <td className="text-right font-bold py-1">{totalCost.toFixed(2)}</td>
-            </tr>
-          </tbody>
-        </table>
+      {/* Summary box */}
+      <div className="border border-gray-400 rounded px-3 py-1.5 mt-3 ml-auto text-xs" style={{ width: 'fit-content' }}>
+        <span className="mr-4"><b>Pallets:</b> {totalPallets}</span>
+        <span className="mr-4"><b>Packages:</b> {totalPackages}</span>
+        <span className="mr-4"><b>Net:</b> {totalNetKg.toFixed(3)} kg</span>
+        <span className="mr-4"><b>Gross:</b> {totalGrossKg.toFixed(3)} kg</span>
+        <span><b>Total value:</b> {currency} {totalCost.toFixed(2)}</span>
       </div>
 
       </div>{/* end dogana-doc */}
@@ -462,7 +437,7 @@ export default function PackingListDetailPage() {
   }, [id]);
 
   if (loading) return <PageLoader />;
-  if (!logistics) return <div className="p-8 text-center text-red-500">Spedizione non trovata.</div>;
+  if (!logistics) return <div className="p-8 text-center text-red-500">Shipment not found.</div>;
 
   const withCommessa    = summary.filter(it => (it.commessa ?? '').trim() !== '');
   const withoutCommessa = summary.filter(it => (it.commessa ?? '').trim() === '');
@@ -486,7 +461,7 @@ export default function PackingListDetailPage() {
         <div className="flex justify-between items-center mb-4 no-print">
           <div>
             <Link href="/packing/liste" className="text-sm text-blue-600 hover:text-blue-800 mb-1 inline-block">
-              ← Torna alle liste
+              ← Back to lists
             </Link>
             <h1 className="text-2xl font-bold text-gray-900">
               Packing List #{logistics.id}
@@ -505,10 +480,10 @@ export default function PackingListDetailPage() {
               onClick={() => setView('dogana')}
               className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${view === 'dogana' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 text-gray-600 hover:bg-gray-100'}`}
             >
-              🧾 Dogana / PDF
+              🧾 Customs / PDF
             </button>
             <button onClick={() => window.print()} className="btn-secondary text-sm">
-              🖨 Stampa
+              🖨 Print
             </button>
           </div>
         </div>
@@ -516,30 +491,30 @@ export default function PackingListDetailPage() {
         {/* Standard view */}
         {view === 'standard' && (
           <div className="max-w-4xl mx-auto">
-            <p><strong>Destinazione:</strong> {logistics.destination_name || logistics.type || '–'}</p>
-            <p><strong>Data creazione:</strong> {fmtDate(logistics.created_at)}</p>
-            <p><strong>Totale bancali:</strong> {logistics.pallets.length}</p>
+            <p><strong>Destination:</strong> {logistics.destination_name || logistics.type || '–'}</p>
+            <p><strong>Creation date:</strong> {fmtDate(logistics.created_at)}</p>
+            <p><strong>Total pallets:</strong> {logistics.pallets.length}</p>
 
-            <div className="section-box"><h2 className="section-title">Riepilogo articoli</h2></div>
+            <div className="section-box"><h2 className="section-title">Articles summary</h2></div>
 
-            <h3 className="subsection-title">Articoli commessati</h3>
+            <h3 className="subsection-title">Commissioned articles</h3>
             <SummaryTable rows={withCommessa} />
 
-            <h3 className="subsection-title">Articoli MRP</h3>
+            <h3 className="subsection-title">MRP articles</h3>
             <SummaryTable rows={withoutCommessa} />
 
-            <div className="section-box page-break"><h2 className="section-title">Dettaglio per bancali</h2></div>
+            <div className="section-box page-break"><h2 className="section-title">Detail by pallet</h2></div>
 
             {logistics.pallets.filter(p => p.items.length > 0).map(pallet => (
               <div key={pallet.id} className="mb-4">
-                <h3 className="subsection-title">Bancale #{pallet.number}</h3>
+                <h3 className="subsection-title">Pallet #{pallet.number}</h3>
                 <table className="w-full border-collapse text-xs">
                   <thead>
                     <tr className="border-b border-gray-300 bg-gray-100">
-                      <th className="py-1.5 px-2 text-left">Articolo</th>
-                      <th className="py-1.5 px-2 text-left">Descrizione</th>
-                      <th className="py-1.5 px-2 text-right">Q.tà</th>
-                      <th className="py-1.5 px-2 text-left">Commessa</th>
+                      <th className="py-1.5 px-2 text-left">Article</th>
+                      <th className="py-1.5 px-2 text-left">Description</th>
+                      <th className="py-1.5 px-2 text-right">Qty</th>
+                      <th className="py-1.5 px-2 text-left">Job order</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -558,11 +533,11 @@ export default function PackingListDetailPage() {
 
             {commesseGroups.length > 0 && (
               <div className="no-print mt-6">
-                <h3 className="subsection-title">Commesse raggruppate per gruppo</h3>
+                <h3 className="subsection-title">Job orders grouped by group</h3>
                 <ul className="text-xs space-y-1">
                   {commesseGroups.map((g, i) => (
                     <li key={i}>
-                      <strong>{g.group_name || `Gruppo ${g.commessa_group}`}:</strong> {g.commesse}
+                      <strong>{g.group_name || `Group ${g.commessa_group}`}:</strong> {g.commesse}
                     </li>
                   ))}
                 </ul>

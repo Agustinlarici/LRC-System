@@ -29,8 +29,7 @@ function getColorState(stato: MonitorStato, remaining: number | null): ColorStat
   if (remaining <= 0) return 'rosso';
   const pct = (remaining / stato.cycle_time_sec) * 100;
   if (pct > stato.soglie.soglia_giallo) return 'verde';
-  if (pct > stato.soglie.soglia_rosso) return 'giallo';
-  return 'rosso';
+  return 'giallo';
 }
 
 const COLORS: Record<ColorState, { bg: string; text: string; sub: string; border: string }> = {
@@ -134,7 +133,9 @@ export default function MonitorDisplayPage() {
   const c = COLORS[colorState];
   const timeDisplay = isPausa || !stato.turno_attivo || localRemaining === null
     ? '--:--'
-    : formatTime(localRemaining);
+    : localRemaining <= 0
+      ? `-${formatTime(Math.abs(localRemaining))}`
+      : formatTime(localRemaining);
 
   const qtaInRitardo = stato.turno_attivo &&
     stato.avanzamento_previsto != null &&
@@ -187,18 +188,18 @@ export default function MonitorDisplayPage() {
         {/* ── Riga inferiore ─────────────────────────────────────────────── */}
         <div className="grid grid-cols-4">
 
-          {/* LINE STOP */}
+          {/* COMMESSA */}
           <div className={`flex flex-col items-center justify-center border-r ${c.border}`}>
             <div className="flex items-center justify-center" style={{ height: 'clamp(3rem, 10vw, 9rem)' }}>
               <span
-                className="text-white font-semibold tabular-nums"
+                className="text-white font-semibold text-center break-all"
                 style={{ fontSize: 'clamp(1.6rem, 5.5vw, 5rem)', lineHeight: 1 }}
               >
-                {formatLinestop(lineStopSec)}
+                {stato.commessa ?? '—'}
               </span>
             </div>
             <span className="text-gray-500 font-medium tracking-[0.2em] uppercase text-center mt-4" style={{ fontSize: 'clamp(1.2rem, 2.50vw, 2.3rem)', maxWidth: '55%' }}>
-              Line Stop
+              Commessa
             </span>
           </div>
 

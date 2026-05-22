@@ -209,12 +209,17 @@ packingRoutes.post('/pallet-items', async (c) => {
     quantity:    z.number().int().positive(),
     commessa:    z.string().optional().nullable(),
   }));
-  const [row] = await db`
-    INSERT INTO pack_pallet_item (pallet_id, article_code, quantity, commessa)
-    VALUES (${body.palletId}, ${body.articleCode}, ${body.quantity}, ${body.commessa ?? null})
-    RETURNING id
-  `;
-  return c.json({ id: row.id }, 201);
+  try {
+    const [row] = await db`
+      INSERT INTO pack_pallet_item (pallet_id, article_code, quantity, commessa)
+      VALUES (${body.palletId}, ${body.articleCode}, ${body.quantity}, ${body.commessa ?? null})
+      RETURNING id
+    `;
+    return c.json({ id: row.id }, 201);
+  } catch (err: any) {
+    if (err?.code === '23503') throw new HTTPException(400, { message: `Article code "${body.articleCode}" not found in the article catalog` });
+    throw err;
+  }
 });
 
 const patchItemSchema = z.object({
