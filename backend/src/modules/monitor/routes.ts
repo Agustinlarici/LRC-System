@@ -400,7 +400,14 @@ monitorRoutes.get('/stato/:id', async (c) => {
         AND weh.commessa NOT IN (
           SELECT DISTINCT weh2.commessa
           FROM webthron_events_history weh2
-          WHERE weh2.fase = ${linea.fase}
+          WHERE weh2.fase IN (
+            SELECT fs_later.fase_name
+            FROM spma_fase_sequence fs_curr
+            JOIN spma_fase_sequence fs_later
+              ON fs_later.component_category_id = fs_curr.component_category_id
+             AND fs_later.order_index >= fs_curr.order_index
+            WHERE fs_curr.fase_name = ${linea.fase}
+          )
             AND weh2.commessa IS NOT NULL AND weh2.commessa != ''
             AND EXISTS (
               SELECT 1 FROM monitor_linea_combo mlc2
