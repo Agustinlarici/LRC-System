@@ -235,11 +235,14 @@ export default function ResumenDisplayPage() {
                 </div>
               </div>
 
-              {/* Commessa */}
-              <div className="text-center px-2">
-                <span className="text-3xl font-semibold text-white tabular-nums truncate block">
-                  {row.stato.commessa ?? '—'}
-                </span>
+              {/* Commesse */}
+              <div className="flex flex-col items-center justify-center gap-0.5 px-2">
+                {row.stato.commesse.length === 0
+                  ? <span className="text-lg text-zinc-500 italic">In attesa di picking</span>
+                  : row.stato.commesse.map(c => (
+                      <span key={c} className="text-2xl font-semibold text-white leading-tight">{c}</span>
+                    ))
+                }
               </div>
 
               {/* Timer + barra + elapsed */}

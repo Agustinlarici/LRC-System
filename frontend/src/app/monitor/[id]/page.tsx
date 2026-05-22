@@ -190,13 +190,13 @@ export default function MonitorDisplayPage() {
 
           {/* COMMESSA */}
           <div className={`flex flex-col items-center justify-center border-r ${c.border}`}>
-            <div className="flex items-center justify-center" style={{ height: 'clamp(3rem, 10vw, 9rem)' }}>
-              <span
-                className="text-white font-semibold text-center break-all"
-                style={{ fontSize: 'clamp(1.6rem, 5.5vw, 5rem)', lineHeight: 1 }}
-              >
-                {stato.commessa ?? '—'}
-              </span>
+            <div className="flex flex-col items-center justify-center gap-1" style={{ height: 'clamp(3rem, 10vw, 9rem)' }}>
+              {stato.commesse.length === 0
+                ? <span className="text-gray-500 italic" style={{ fontSize: 'clamp(1rem, 2vw, 1.8rem)' }}>In attesa di picking</span>
+                : stato.commesse.map(cm => (
+                    <span key={cm} className="text-white font-semibold text-center" style={{ fontSize: 'clamp(1.4rem, 4vw, 4rem)', lineHeight: 1 }}>{cm}</span>
+                  ))
+              }
             </div>
             <span className="text-gray-500 font-medium tracking-[0.2em] uppercase text-center mt-4" style={{ fontSize: 'clamp(1.2rem, 2.50vw, 2.3rem)', maxWidth: '55%' }}>
               Commessa

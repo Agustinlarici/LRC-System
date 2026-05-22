@@ -383,10 +383,10 @@ monitorRoutes.get('/stato/:id', async (c) => {
     WHERE fs1.fase_name = ${linea.fase}
     LIMIT 1
   `;
-  let commessa: string | null = null;
+  let commesse: string[] = [];
   if (prevFaseRow) {
-    const [commessaRow] = await db`
-      SELECT weh.commessa
+    const rows = await db`
+      SELECT DISTINCT weh.commessa
       FROM webthron_events_history weh
       WHERE weh.fase = ${prevFaseRow.prev_fase}
         AND weh.commessa IS NOT NULL AND weh.commessa != ''
@@ -396,10 +396,21 @@ monitorRoutes.get('/stato/:id', async (c) => {
             AND mlc.modello = weh.modello
             AND mlc.componente = weh.componente
         )
-      ORDER BY weh.data_inserimento DESC
-      LIMIT 1
+        AND weh.commessa NOT IN (
+          SELECT DISTINCT weh2.commessa
+          FROM webthron_events_history weh2
+          WHERE weh2.fase = ${linea.fase}
+            AND weh2.commessa IS NOT NULL AND weh2.commessa != ''
+            AND EXISTS (
+              SELECT 1 FROM monitor_linea_combo mlc2
+              WHERE mlc2.linea_id = ${id}
+                AND mlc2.modello = weh2.modello
+                AND mlc2.componente = weh2.componente
+            )
+        )
+      ORDER BY weh.commessa
     `;
-    commessa = (commessaRow?.commessa as string) ?? null;
+    commesse = rows.map(r => r.commessa as string);
   }
 
   const { now, timeStr, dateStr } = getRomeNow();
@@ -443,7 +454,7 @@ monitorRoutes.get('/stato/:id', async (c) => {
       remaining_sec:        null,
       linestop_sec:         0,
       avanzamento_previsto: 0,
-      commessa:             commessa,
+      commesse:             commesse,
       soglie:               soglieColore,
     });
   }
@@ -565,7 +576,7 @@ monitorRoutes.get('/stato/:id', async (c) => {
       remaining_sec:        null,
       linestop_sec:         Math.floor(pastLinestopSec),
       avanzamento_previsto: avanzamentoPrevisto,
-      commessa:             commessa,
+      commesse:             commesse,
       soglie:               soglieColore,
     });
   }
@@ -598,7 +609,7 @@ monitorRoutes.get('/stato/:id', async (c) => {
     remaining_sec:        cycleTimeSec - elapsedSec,
     linestop_sec:         linestopSec,
     avanzamento_previsto: avanzamentoPrevisto,
-    commessa:             commessa,
+    commesse:             commesse,
     soglie:               soglieColore,
   });
 });

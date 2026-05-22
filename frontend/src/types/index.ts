@@ -270,7 +270,7 @@ export interface MonitorStato {
   remaining_sec: number | null;
   linestop_sec: number;
   avanzamento_previsto: number;
-  commessa: string | null;
+  commesse: string[];
   soglie: { soglia_giallo: number; soglia_rosso: number };
 }
 
