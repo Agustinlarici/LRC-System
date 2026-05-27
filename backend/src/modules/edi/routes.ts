@@ -28,9 +28,9 @@ const EdiClientSchema = z.object({
   cdt_address_2:             z.string().max(35).nullish(),
   cdt_address_3:             z.string().max(35).nullish(),
   cdt_address_4:             z.string().max(35).nullish(),
-  sdt_vat:                   z.string().max(20).default(''),
-  sdt_ferrari_supplier_code: z.string().regex(/^\d{6}$/, 'Deve essere esattamente 6 cifre numeriche'),
-  csg_establishment_code:    z.enum(['021', '023', '025', '029', '030', 'SSF']),
+  sdt_vat:          z.string().max(20).default(''),
+  supplier_code:    z.string().min(1).max(9).regex(/^\d+$/, 'Solo cifre numeriche'),
+  csg_establishment_code: z.enum(['021', '023', '025', '029', '030', 'SSF']),
   csg_company_name:          z.string().max(35).default(''),
   csg_address_1:             z.string().max(35).nullish(),
   csg_address_2:             z.string().max(35).nullish(),
@@ -106,7 +106,7 @@ ediRoutes.post('/clients', requireManage(MODULE), async (c) => {
       customer_account, description, edi_type,
       cdt_company_name, cdt_vat,
       cdt_address_1, cdt_address_2, cdt_address_3, cdt_address_4,
-      sdt_vat, sdt_ferrari_supplier_code,
+      sdt_vat, supplier_code,
       csg_establishment_code, csg_company_name,
       csg_address_1, csg_address_2, csg_address_3, csg_address_4,
       csg_supply_point, output_folder
@@ -115,7 +115,7 @@ ediRoutes.post('/clients', requireManage(MODULE), async (c) => {
       ${b.cdt_company_name ?? ''}, ${b.cdt_vat ?? ''},
       ${b.cdt_address_1 ?? null}, ${b.cdt_address_2 ?? null},
       ${b.cdt_address_3 ?? null}, ${b.cdt_address_4 ?? null},
-      ${b.sdt_vat ?? ''}, ${b.sdt_ferrari_supplier_code},
+      ${b.sdt_vat ?? ''}, ${b.supplier_code},
       ${b.csg_establishment_code}, ${b.csg_company_name ?? ''},
       ${b.csg_address_1 ?? null}, ${b.csg_address_2 ?? null},
       ${b.csg_address_3 ?? null}, ${b.csg_address_4 ?? null},
@@ -152,7 +152,7 @@ ediRoutes.put('/clients/:id', requireManage(MODULE), async (c) => {
       cdt_address_3           = ${b.cdt_address_3 ?? null},
       cdt_address_4           = ${b.cdt_address_4 ?? null},
       sdt_vat                 = ${b.sdt_vat ?? ''},
-      sdt_ferrari_supplier_code = ${b.sdt_ferrari_supplier_code},
+      supplier_code           = ${b.supplier_code},
       csg_establishment_code  = ${b.csg_establishment_code},
       csg_company_name        = ${b.csg_company_name ?? ''},
       csg_address_1           = ${b.csg_address_1 ?? null},
@@ -302,7 +302,7 @@ ediRoutes.post('/generate', requireManage(MODULE), async (c) => {
     String(now.getSeconds()).padStart(2, '0'),
   ].join('');
   const seqPadded = String(sequence).padStart(11, '0');
-  const filename  = `AVIEXP_${client.sdt_ferrari_supplier_code as string}_${seqPadded}_${ts}.txt`;
+  const filename  = `${client.edi_type as string}_${client.supplier_code as string}_${seqPadded}_${ts}.txt`;
 
   // Generate content
   let fileContent: string;

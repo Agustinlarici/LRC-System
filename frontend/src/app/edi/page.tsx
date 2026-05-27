@@ -72,7 +72,7 @@ const EMPTY_CLIENT: Omit<EdiClient, 'id' | 'created_at' | 'updated_at'> = {
   customer_account: '', description: '', edi_type: '',
   cdt_company_name: '', cdt_vat: '',
   cdt_address_1: '', cdt_address_2: '', cdt_address_3: '', cdt_address_4: '',
-  sdt_vat: '', sdt_ferrari_supplier_code: '',
+  sdt_vat: '', supplier_code: '',
   csg_establishment_code: '021', csg_company_name: '',
   csg_address_1: '', csg_address_2: '', csg_address_3: '', csg_address_4: '',
   csg_supply_point: '', output_folder: '',
@@ -192,7 +192,7 @@ function ClientModal({
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">SDT — Venditore/Fornitore</h3>
             <div className="grid grid-cols-2 gap-3">
               <Field label="P.IVA venditore" value={form.sdt_vat} onChange={set('sdt_vat')} maxLen={20} mono />
-              <Field label="Codice Fornitore Ferrari (6 cifre)" value={form.sdt_ferrari_supplier_code} onChange={set('sdt_ferrari_supplier_code')} required maxLen={6} mono placeholder="001234" />
+              <Field label="Codice Fornitore (max 9 cifre)" value={form.supplier_code} onChange={set('supplier_code')} required maxLen={9} mono placeholder="001234" />
             </div>
           </section>
 
@@ -310,7 +310,7 @@ function TabClienti({ generators }: { generators: string[] }) {
                       {c.edi_type}
                     </span>
                   </td>
-                  <td className="px-4 py-3 font-mono text-gray-600">{c.sdt_ferrari_supplier_code}</td>
+                  <td className="px-4 py-3 font-mono text-gray-600">{c.supplier_code}</td>
                   <td className="px-4 py-3 text-gray-500 text-xs truncate max-w-[200px]">{c.output_folder}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2 justify-end">
@@ -433,7 +433,7 @@ function ShipmentDetailModal({
           <div className="px-6 py-3 bg-gray-50 border-b shrink-0">
             <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-600">
               <span><span className="font-medium">Tipo EDI:</span> {client.edi_type}</span>
-              <span><span className="font-medium">Fornitore:</span> {client.sdt_ferrari_supplier_code}</span>
+              <span><span className="font-medium">Fornitore:</span> {client.supplier_code}</span>
               <span><span className="font-medium">Stabilimento:</span> {client.csg_establishment_code}</span>
               <span><span className="font-medium">Output:</span> <span className="font-mono">{client.output_folder}</span></span>
             </div>

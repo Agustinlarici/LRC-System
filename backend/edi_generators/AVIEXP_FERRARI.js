@@ -58,7 +58,7 @@ export function generate(shipment, client, sequence) {
   const now = new Date();
 
   // Numero avviso: codice fornitore (6 dig.) + sequenza anno (11 dig.)
-  const supplierCode = String(client.sdt_ferrari_supplier_code || '').padStart(6, '0');
+  const supplierCode = String(client.supplier_code || '').padStart(6, '0');
   const seqStr       = String(sequence).padStart(11, '0');
   const noticeNumber = supplierCode + seqStr; // 17 chars
 
