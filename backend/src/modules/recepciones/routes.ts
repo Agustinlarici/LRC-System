@@ -4,14 +4,18 @@ import { streamSSE }             from 'hono/streaming';
 import { z }                     from 'zod';
 import { createReadStream }      from 'fs';
 import { stat }                  from 'fs/promises';
+import { resolve }               from 'path';
 import { Readable }              from 'stream';
 import { db }                    from '../../db/client.js';
 import { parseBody }             from '../../lib/validate.js';
 import { recepcionesEmitter }    from '../../gateway/recepciones-emitter.js';
+import { auditLog }              from '../../lib/audit.js';
 import {
   archivedPath,
   moverArchivo,
 } from '../../storage/storage.service.js';
+
+const DOCS_ROOT = resolve(process.env.DOCS_FOLDER ?? '/documentos');
 
 export const recepcionesRoutes = new Hono();
 
@@ -88,6 +92,8 @@ recepcionesRoutes.patch('/:id', async (c) => {
 
   const [updated] = await db`SELECT * FROM recepciones WHERE id_ddt = ${id}`;
   recepcionesEmitter.emit('evento', { tipo: 'recepcion:actualizada', data: updated });
+  const ip = c.req.header('x-forwarded-for')?.split(',')[0].trim() ?? c.req.header('x-real-ip') ?? null;
+  auditLog({ action: 'recepcion_confirmada', entity: 'recepciones', entityId: id, ip, details: { numero_ddt, proveedor } });
 
   return c.json(updated);
 });
@@ -101,14 +107,18 @@ recepcionesRoutes.get('/:id/pdf', async (c) => {
   const [row] = await db`SELECT pdf_path FROM recepciones WHERE id_ddt = ${id}`;
   if (!row) throw new HTTPException(404, { message: 'Recepcion non trovata' });
 
-  const pdfPath = row.pdf_path as string;
+  const pdfPath     = row.pdf_path as string;
+  const resolvedPath = resolve(pdfPath);
+  if (!resolvedPath.startsWith(DOCS_ROOT + '/') && resolvedPath !== DOCS_ROOT) {
+    throw new HTTPException(403, { message: 'Accesso negato' });
+  }
   try {
-    await stat(pdfPath);
+    await stat(resolvedPath);
   } catch {
     throw new HTTPException(404, { message: 'File PDF non trovato' });
   }
 
-  const nodeStream = createReadStream(pdfPath);
+  const nodeStream = createReadStream(resolvedPath);
   const webStream  = Readable.toWeb(nodeStream) as ReadableStream;
 
   return new Response(webStream, {

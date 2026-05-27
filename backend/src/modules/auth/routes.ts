@@ -8,12 +8,16 @@ import {
   requireAuth, requireManage, signToken, setSessionCookie, clearSessionCookie,
   type Env, type AuthUser,
 } from '../../lib/auth.js';
+import { loginRateLimit } from '../../middleware/rate-limit.js';
+import { auditLog } from '../../lib/audit.js';
 
 export const authRoutes = new Hono<Env>();
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 
-authRoutes.post('/login', async (c) => {
+authRoutes.post('/login', loginRateLimit, async (c) => {
+  const ip = c.req.header('x-forwarded-for')?.split(',')[0].trim() ?? c.req.header('x-real-ip') ?? null;
+
   const body = await parseBody(c, z.object({
     username: z.string().min(1),
     password: z.string().min(1),
@@ -25,11 +29,15 @@ authRoutes.post('/login', async (c) => {
   `;
 
   if (!user || !user.is_active) {
+    await auditLog({ username: body.username, action: 'login_failed', ip, details: { reason: 'user_not_found_or_inactive' } });
     throw new HTTPException(401, { message: 'Credenziali non valide' });
   }
 
   const valid = await compare(body.password, user.password_hash);
-  if (!valid) throw new HTTPException(401, { message: 'Credenziali non valide' });
+  if (!valid) {
+    await auditLog({ userId: user.id, username: user.username, action: 'login_failed', ip, details: { reason: 'wrong_password' } });
+    throw new HTTPException(401, { message: 'Credenziali non valide' });
+  }
 
   const permissions = await db`
     SELECT module_key, can_view, can_manage
@@ -44,14 +52,18 @@ authRoutes.post('/login', async (c) => {
   };
 
   setSessionCookie(c, signToken(payload));
+  await auditLog({ userId: user.id, username: user.username, action: 'login_success', ip });
 
   return c.json({ user: { ...payload, permissions } });
 });
 
 // ─── Logout ───────────────────────────────────────────────────────────────────
 
-authRoutes.post('/logout', (c) => {
+authRoutes.post('/logout', requireAuth, async (c) => {
+  const user = c.get('user');
+  const ip   = c.req.header('x-forwarded-for')?.split(',')[0].trim() ?? c.req.header('x-real-ip') ?? null;
   clearSessionCookie(c);
+  await auditLog({ userId: user.id, username: user.username, action: 'logout', ip });
   return c.json({ status: 'ok' });
 });
 
@@ -88,6 +100,8 @@ authRoutes.post('/users', requireManage('tickets_admin'), async (c) => {
     VALUES (${body.username}, ${password_hash}, ${body.display_name}, ${body.email ?? null}, ${body.role ?? 'operator'})
     RETURNING id, username, display_name, email, role, is_active, created_at
   `;
+  const actor = c.get('user');
+  await auditLog({ userId: actor.id, username: actor.username, action: 'user_created', entity: 'users', entityId: created.id, details: { new_username: body.username, role: body.role } });
   return c.json(created, 201);
 });
 
@@ -121,6 +135,9 @@ authRoutes.patch('/users/:id', requireManage('tickets_admin'), async (c) => {
     RETURNING id, username, display_name, email, role, is_active
   `;
   if (!updated) throw new HTTPException(404, { message: 'Utente non trovato' });
+  const actor = c.get('user');
+  const changedFields = Object.keys(updates).filter(k => k !== 'password_hash');
+  await auditLog({ userId: actor.id, username: actor.username, action: 'user_updated', entity: 'users', entityId: id, details: { changed_fields: changedFields } });
   return c.json(updated);
 });
 
@@ -145,7 +162,7 @@ authRoutes.put('/users/:id/permissions', requireManage('tickets_admin'), async (
 
   const body = await parseBody(c, z.object({
     permissions: z.array(z.object({
-      module_key: z.enum(['ingresso_merci','packing','monitor','buffer','mappa','tickets','tickets_it','tickets_admin','impostazioni','dashboards','spma']),
+      module_key: z.enum(['ingresso_merci','packing','monitor','monitor_resumen','buffer','mappa','tickets','tickets_it','tickets_admin','impostazioni','dashboards','spma','recepciones','edi']),
       can_view:   z.boolean(),
       can_manage: z.boolean(),
     })),

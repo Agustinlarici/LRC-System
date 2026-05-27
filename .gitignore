@@ -32,3 +32,8 @@ docker-compose.override.yml
 # Credenziali locali
 Contras.txt
 .claude/worktrees/
+
+# Test data / local artifacts
+test-documentos/
+test-scansioni/
+*.tar

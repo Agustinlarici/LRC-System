@@ -10,14 +10,16 @@ import { db } from '../db/client.js';
 
 const { sign, verify } = jwt;
 
-export const JWT_SECRET   = process.env.JWT_SECRET ?? 'change-me-in-production';
+const _JWT_SECRET = process.env.JWT_SECRET;
+if (!_JWT_SECRET) throw new Error('JWT_SECRET env var is required — server cannot start without it');
+export const JWT_SECRET = _JWT_SECRET;
 export const COOKIE_NAME  = 'lrc_session';
 const COOKIE_MAX_AGE      = 60 * 60 * 8; // 8 hours
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ModuleKey =
-  | 'ingresso_merci' | 'packing' | 'monitor' | 'buffer'
+  | 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer'
   | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
   | 'spma' | 'recepciones' | 'edi';
 

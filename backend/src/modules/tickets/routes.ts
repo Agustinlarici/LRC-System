@@ -9,6 +9,7 @@ import { computeSLADeadlines, slaStatus } from './sla.js';
 import { writeFile, mkdir } from 'fs/promises';
 import { join, extname } from 'path';
 import { randomBytes } from 'crypto';
+import { validateTicketFile } from '../../lib/mime-check.js';
 
 export const ticketRoutes = new Hono<Env>();
 
@@ -98,11 +99,13 @@ ticketRoutes.post('/', async (c) => {
     const file = form.get('attachment') as File | null;
     if (file && file.size > 0) {
       if (file.size > 10 * 1024 * 1024) throw new HTTPException(400, { message: 'File troppo grande (max 10MB)' });
+      const bytes = await file.arrayBuffer();
+      const buf   = Buffer.from(bytes);
+      validateTicketFile(buf, file.name);
       await mkdir(UPLOAD_DIR, { recursive: true });
       const ext = extname(file.name) || '';
       const filename = `${randomBytes(16).toString('hex')}${ext}`;
-      const bytes = await file.arrayBuffer();
-      await writeFile(join(UPLOAD_DIR, filename), Buffer.from(bytes));
+      await writeFile(join(UPLOAD_DIR, filename), buf);
       attachmentPath = filename;
       attachmentName = file.name;
     }
@@ -182,44 +185,44 @@ ticketRoutes.get('/numero/:number', async (c) => {
 
 ticketRoutes.get('/', requireIT, async (c) => {
   const { status, priority, assigned_to, q, page = '1', per_page = '25' } = c.req.query();
-  const offset = (parseInt(page, 10) - 1) * parseInt(per_page, 10);
+  const pageNum    = Math.max(1, parseInt(page, 10));
+  const perPageNum = Math.min(100, Math.max(1, parseInt(per_page, 10)));
+  const offset     = (pageNum - 1) * perPageNum;
 
-  const conditions: string[] = [];
-  const params: any[] = [];
+  const statuses = status ? status.split(',').map(s => s.trim()).filter(Boolean) : [];
 
-  if (status) {
-    const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
-    if (statuses.length === 1) {
-      params.push(statuses[0]); conditions.push(`t.status = $${params.length}`);
-    } else if (statuses.length > 1) {
-      params.push(statuses); conditions.push(`t.status = ANY($${params.length})`);
-    }
-  }
-  if (priority)    { params.push(priority);    conditions.push(`t.priority = $${params.length}`); }
-  if (assigned_to === 'null') {
-    conditions.push(`t.assigned_to IS NULL`);
-  } else if (assigned_to) {
-    params.push(parseInt(assigned_to, 10)); conditions.push(`t.assigned_to = $${params.length}`);
-  }
-  if (q)           { params.push(`%${q}%`);   conditions.push(`(t.title ILIKE $${params.length} OR t.ticket_number ILIKE $${params.length} OR t.caller_name ILIKE $${params.length})`); }
+  const statusFilter =
+    statuses.length === 1 ? db`AND t.status = ${statuses[0]}` :
+    statuses.length  >  1 ? db`AND t.status = ANY(${statuses})` :
+    db``;
 
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const priorityFilter = priority ? db`AND t.priority = ${priority}` : db``;
 
-  const tickets = await db.unsafe(`
+  const assignedFilter =
+    assigned_to === 'null' ? db`AND t.assigned_to IS NULL` :
+    assigned_to            ? db`AND t.assigned_to = ${parseInt(assigned_to, 10)}` :
+    db``;
+
+  const searchFilter = q
+    ? db`AND (t.title ILIKE ${'%' + q + '%'} OR t.ticket_number ILIKE ${'%' + q + '%'} OR t.caller_name ILIKE ${'%' + q + '%'})`
+    : db``;
+
+  const tickets = await db`
     SELECT t.*, d.name AS department_name, u.display_name AS assigned_to_name
     FROM tickets t
     LEFT JOIN ticket_departments d ON d.id = t.department_id
     LEFT JOIN users u ON u.id = t.assigned_to
-    ${where}
+    WHERE 1=1 ${statusFilter} ${priorityFilter} ${assignedFilter} ${searchFilter}
     ORDER BY t.created_at DESC
-    LIMIT ${parseInt(per_page, 10)} OFFSET ${offset}
-  `, params);
+    LIMIT ${perPageNum} OFFSET ${offset}
+  `;
 
-  const [{ count }] = await db.unsafe(
-    `SELECT COUNT(*) AS count FROM tickets t ${where}`, params
-  );
+  const [{ count }] = await db`
+    SELECT COUNT(*) AS count FROM tickets t
+    WHERE 1=1 ${statusFilter} ${priorityFilter} ${assignedFilter} ${searchFilter}
+  `;
 
-  return c.json({ tickets: tickets.map(withSLAStatus), total: parseInt(count, 10), page: parseInt(page, 10), per_page: parseInt(per_page, 10) });
+  return c.json({ tickets: tickets.map(withSLAStatus), total: parseInt(count, 10), page: pageNum, per_page: perPageNum });
 });
 
 // ─── IT: GET single ticket ─────────────────────────────────────────────────
