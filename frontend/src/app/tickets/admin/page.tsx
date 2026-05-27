@@ -7,21 +7,23 @@ const BACKEND = typeof window !== 'undefined'
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
 type User      = { id: number; username: string; display_name: string };
-type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma';
+type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'edi';
 type Permission = { module_key: ModuleKey; can_view: boolean; can_manage: boolean };
 
 const ALL_MODULES: { key: ModuleKey; label: string }[] = [
-  { key: 'ingresso_merci', label: 'Ingresso Merci' },
-  { key: 'packing',        label: 'Packing' },
-  { key: 'monitor',        label: 'Monitor' },
-  { key: 'buffer',         label: 'Buffer' },
-  { key: 'mappa',          label: 'Mappa' },
-  { key: 'spma',           label: 'SPMA' },
-  { key: 'dashboards',     label: 'Dashboard' },
-  { key: 'tickets',        label: 'Ticket IT' },
-  { key: 'tickets_it',     label: 'Ticket IT — Dashboard' },
-  { key: 'tickets_admin',  label: 'Ticket IT — Admin' },
-  { key: 'impostazioni',   label: 'Impostazioni' },
+  { key: 'ingresso_merci',  label: 'Ingresso Merci' },
+  { key: 'packing',         label: 'Packing' },
+  { key: 'spma',            label: 'SPMA' },
+  { key: 'edi',             label: 'EDI' },
+  { key: 'monitor',         label: 'Andon' },
+  { key: 'monitor_resumen', label: 'Riepilogo Andon' },
+  { key: 'buffer',          label: 'Buffer' },
+  { key: 'mappa',           label: 'Mappa' },
+  { key: 'dashboards',      label: 'Dashboard' },
+  { key: 'tickets',         label: 'Ticket IT' },
+  { key: 'tickets_it',      label: 'Ticket IT — Dashboard' },
+  { key: 'tickets_admin',   label: 'Ticket IT — Admin' },
+  { key: 'impostazioni',    label: 'Impostazioni' },
 ];
 
 async function apiFetch(path: string, opts?: RequestInit) {

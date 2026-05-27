@@ -165,6 +165,13 @@ export default function ResumenDisplayPage() {
 
   const loadedLinee = linee.filter(l => rows[l.linea_id]);
 
+  const count = loadedLinee.length;
+  const sz = count <= 2
+    ? { nome: 'text-3xl', commessa: 'text-2xl', timer: 'text-4xl', linestop: 'text-3xl', num: 'text-4xl', sub: 'text-base' }
+    : count <= 5
+    ? { nome: 'text-xl',  commessa: 'text-lg',  timer: 'text-3xl', linestop: 'text-2xl', num: 'text-3xl', sub: 'text-sm'  }
+    : { nome: 'text-lg',  commessa: 'text-base', timer: 'text-2xl', linestop: 'text-xl',  num: 'text-2xl', sub: 'text-xs'  };
+
   return (
     <div className="fixed inset-0 bg-[#111] text-white overflow-auto">
       <div className="p-4 flex flex-col gap-2 min-h-full">
@@ -210,7 +217,7 @@ export default function ResumenDisplayPage() {
           const timeDisplay = isPausa || !row.stato.turno_attivo || row.remaining === null
             ? '--:--'
             : row.remaining <= 0
-              ? `-${formatTimer(Math.abs(row.remaining))}`
+              ? `+${formatTimer(Math.abs(row.remaining))}`
               : formatTimer(row.remaining);
 
           const cycleTime = row.stato.cycle_time_sec;
@@ -234,26 +241,26 @@ export default function ResumenDisplayPage() {
               <div className="flex items-center gap-4 min-w-0">
                 <div className={`w-3 h-3 rounded-full shrink-0 ${DOT_COLOR[colorState]}`} />
                 <div className="min-w-0">
-                  <p className="font-semibold text-white text-3xl leading-tight truncate">{linea.nome}</p>
-                  {linea.fase && <p className="text-sm text-zinc-500 mt-0.5 truncate">{linea.fase}</p>}
-                  {isPausa && <span className="text-sm text-zinc-400 font-medium uppercase tracking-widest">Pausa</span>}
-                  {!row.stato.turno_attivo && <span className="text-sm text-zinc-600 uppercase tracking-widest">Nessun turno</span>}
+                  <p className={`font-semibold text-white ${sz.nome} leading-tight truncate`}>{linea.nome}</p>
+                  {linea.fase && <p className={`${sz.sub} text-zinc-500 mt-0.5 truncate`}>{linea.fase}</p>}
+                  {isPausa && <span className={`${sz.sub} text-zinc-400 font-medium uppercase tracking-widest`}>Pausa</span>}
+                  {!row.stato.turno_attivo && <span className={`${sz.sub} text-zinc-600 uppercase tracking-widest`}>Nessun turno</span>}
                 </div>
               </div>
 
               {/* Commesse */}
               <div className="flex flex-col items-center justify-center gap-0.5 px-2">
                 {row.stato.commesse.length === 0
-                  ? <span className={`text-2xl font-bold text-red-500 transition-opacity duration-100 ${blinkOn ? 'opacity-100' : 'opacity-0'}`}>In attesa di picking</span>
+                  ? <span className={`${sz.commessa} font-bold text-red-500 transition-opacity duration-100 ${blinkOn ? 'opacity-100' : 'opacity-0'}`}>In attesa di picking</span>
                   : row.stato.commesse.map(c => (
-                      <span key={c} className="text-2xl font-semibold text-white leading-tight">{c}</span>
+                      <span key={c} className={`${sz.commessa} font-semibold text-white leading-tight`}>{c}</span>
                     ))
                 }
               </div>
 
               {/* Timer + barra */}
               <div className="flex flex-col items-center gap-1.5 px-2">
-                <span className={`text-4xl font-semibold tabular-nums ${TIMER_COLOR[colorState]}`}>
+                <span className={`${sz.timer} font-semibold tabular-nums ${TIMER_COLOR[colorState]}`}>
                   {timeDisplay}
                 </span>
                 <div className="w-1/2 bg-zinc-800 rounded-full h-2 overflow-hidden">
@@ -266,14 +273,14 @@ export default function ResumenDisplayPage() {
 
               {/* Line Stop */}
               <div className="text-center">
-                <span className="text-3xl font-semibold tabular-nums text-white">
+                <span className={`${sz.linestop} font-semibold tabular-nums text-white`}>
                   {formatLinestop(row.lineStop)}
                 </span>
               </div>
 
               {/* Qtà Prodotta */}
               <div className="text-center">
-                <span className={`text-4xl font-semibold tabular-nums ${qtaInRitardo ? 'text-red-500' : 'text-white'}`}>
+                <span className={`${sz.num} font-semibold tabular-nums ${qtaInRitardo ? 'text-red-500' : 'text-white'}`}>
                   {row.stato.qta_prodotta}
                 </span>
               </div>

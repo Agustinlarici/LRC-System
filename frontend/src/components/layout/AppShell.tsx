@@ -16,12 +16,14 @@ function getModuleForPath(pathname: string): { key: ModuleKey; needsManage?: boo
   if (pathname.startsWith('/ingresso-merci'))        return { key: 'ingresso_merci' };
   if (pathname.startsWith('/packing/impostazioni'))  return { key: 'packing', needsManage: true };
   if (pathname.startsWith('/packing'))               return { key: 'packing' };
+  if (pathname.startsWith('/monitor/resumen'))        return { key: 'monitor_resumen' };
   if (pathname.startsWith('/monitor'))               return { key: 'monitor' };
   if (pathname.startsWith('/buffer'))                return { key: 'buffer' };
   if (pathname.startsWith('/mappa'))                 return { key: 'mappa' };
   if (pathname.startsWith('/dashboards'))            return { key: 'dashboards' };
   if (pathname.startsWith('/spma'))                  return { key: 'spma' };
   if (pathname.startsWith('/recepciones'))           return { key: 'recepciones' };
+  if (pathname.startsWith('/edi'))                   return { key: 'edi' };
   return null;
 }
 

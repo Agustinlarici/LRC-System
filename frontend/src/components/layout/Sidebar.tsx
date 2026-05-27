@@ -167,7 +167,7 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/ingresso-merci':     'ingresso_merci',
   '/packing':            'packing',
   '/monitor':            'monitor',
-  '/monitor/resumen':    'monitor',
+  '/monitor/resumen':    'monitor_resumen',
   '/buffer':             'buffer',
   '/mappa':              'mappa',
   '/tickets':            'tickets',
@@ -177,6 +177,7 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/dashboards/heatmap':      'dashboards',
   '/dashboards/lead-time':    'dashboards',
   '/dashboards/trends':       'dashboards',
+  '/spma':                    'spma',
   '/recepciones':             'recepciones',
   '/edi':                     'edi',
 };
