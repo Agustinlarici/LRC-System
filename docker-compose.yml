@@ -28,6 +28,8 @@ services:
       - ./db/migrate-iknow-tracking.sql:/docker-entrypoint-initdb.d/15_iknow_tracking.sql:ro
       - ./db/migrate-alerts.sql:/docker-entrypoint-initdb.d/16_alerts.sql:ro
       - ./db/migrate-recepciones.sql:/docker-entrypoint-initdb.d/17_recepciones.sql:ro
+      - ./db/migrate-spma-onedrive.sql:/docker-entrypoint-initdb.d/18_spma_onedrive.sql:ro
+      - ./db/migrate-audit-log.sql:/docker-entrypoint-initdb.d/19_audit_log.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lrc} -d ${POSTGRES_DB:-lrc_system}"]
       interval: 5s
@@ -72,6 +74,8 @@ services:
       DOCS_FOLDER:  /documentos
       # Optional
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # SPMA — OneDrive folder polling (set to sharing URL to enable)
+      SPMA_ONEDRIVE_SHARE_URL: ${SPMA_ONEDRIVE_SHARE_URL:-}
       # ─── Alerting ──────────────────────────────────────────────────────────
       # Telegram disabilitato — integrazione sospesa (sicurezza informatica)
       # Per riabilitare: decommentare le righe e impostare i valori nel .env

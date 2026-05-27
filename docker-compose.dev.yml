@@ -28,7 +28,9 @@ services:
       - ./db/migrate-alerts.sql:/docker-entrypoint-initdb.d/16_alerts.sql:ro
       - ./db/migrate-spma-alerts.sql:/docker-entrypoint-initdb.d/17_spma_alerts.sql:ro
       - ./db/migrate-spma-telegram.sql:/docker-entrypoint-initdb.d/18_spma_telegram.sql:ro
+      - ./db/migrate-spma-email.sql:/docker-entrypoint-initdb.d/21_spma_email.sql:ro
       - ./db/migrate-resumen.sql:/docker-entrypoint-initdb.d/19_resumen.sql:ro
+      - ./db/migrate-spma-onedrive.sql:/docker-entrypoint-initdb.d/20_spma_onedrive.sql:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -63,14 +65,18 @@ services:
       JWT_SECRET:          ${JWT_SECRET:-dev-secret-change-in-production}
       DELIBERA_FASI:       "DELIBERA FINALE - PROX"
       DELIBERA_ESITO_OK:   "Accettato"
+      SPMA_ONEDRIVE_SHARE_URL: ${SPMA_ONEDRIVE_SHARE_URL:-}
       CHOKIDAR_USEPOLLING: "true"
     ports:
       - "3001:3001"
     volumes:
-      - ./backend/src:/app/src          # solo fuente → polling detecta cambios
+      - ./backend/src:/app/src                       # solo fuente → polling detecta cambios
+      - ./backend/edi_generators:/app/edi_generators  # generatori EDI (rilevati dinamicamente)
       - ./backend/package.json:/app/package.json
       - ./backend/tsconfig.json:/app/tsconfig.json
       - backend_nm:/app/node_modules    # node_modules en volumen interno (rápido)
+      - ./test-scansioni:/scansioni:ro
+      - ./test-documentos:/documentos
     depends_on:
       db:
         condition: service_healthy

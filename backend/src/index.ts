@@ -32,6 +32,26 @@ process.on('SIGINT',  shutdown);
 
 serve({ fetch: app.fetch, port }, async (info) => {
   logger.info(`LRC-System backend running on http://localhost:${info.port}`);
+
+  // ─── Migraciones automáticas (idempotentes) ────────────────────────────────
+  await db`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id          BIGSERIAL PRIMARY KEY,
+      user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      username    TEXT,
+      action      TEXT        NOT NULL,
+      entity      TEXT,
+      entity_id   TEXT,
+      ip          TEXT,
+      details     JSONB,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `.catch((e: unknown) => logger.warn(`[Startup] audit_log: ${e}`));
+  await db`CREATE INDEX IF NOT EXISTS audit_log_created_at_idx ON audit_log (created_at DESC)`.catch(() => {});
+  await db`CREATE INDEX IF NOT EXISTS audit_log_user_id_idx    ON audit_log (user_id)`.catch(() => {});
+  await db`CREATE INDEX IF NOT EXISTS audit_log_action_idx     ON audit_log (action)`.catch(() => {});
+  logger.info('[Startup] audit_log OK');
+
   startScheduler();
   startWatcher();
 
