@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -165,6 +165,8 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
   const [palletExtras, setPalletExtras] = useState<PalletExtras>(() => {
     try { return JSON.parse(localStorage.getItem(`plExtras:${id}`) || '{}'); } catch { return {}; }
   });
+  const [savedFlash, setSavedFlash] = useState(false);
+  const isFirstRender = useRef(true);
 
   useEffect(() => { localStorage.setItem(`inv:${id}`,       invoiceNo);    }, [id, invoiceNo]);
   useEffect(() => { localStorage.setItem(`order:${id}`,     orderNo);      }, [id, orderNo]);
@@ -172,6 +174,13 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
   useEffect(() => { localStorage.setItem(`consignee:${id}`, destinatario); }, [id, destinatario]);
   useEffect(() => { localStorage.setItem(`finalDest:${id}`, destFinale);   }, [id, destFinale]);
   useEffect(() => { localStorage.setItem(`plExtras:${id}`,  JSON.stringify(palletExtras)); }, [id, palletExtras]);
+
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
+    setSavedFlash(true);
+    const t = setTimeout(() => setSavedFlash(false), 2000);
+    return () => clearTimeout(t);
+  }, [invoiceNo, orderNo, mittente, destinatario, destFinale, palletExtras]);
 
   function handleExtraChange(palletId: number, key: string, value: string) {
     setPalletExtras(prev => ({ ...prev, [palletId]: { ...prev[palletId], [key]: value } }));
@@ -212,10 +221,10 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
 
         @media print {
           .no-print { display: none !important; }
-          html, body { margin: 0 !important; padding: 0 !important; overflow: visible !important; height: auto !important; }
-          main { max-width: 100% !important; padding: 0 !important; margin: 0 !important; overflow: visible !important; height: auto !important; }
+          html, body { margin: 0 !important; padding: 0 !important; overflow: visible !important; height: auto !important; background: white !important; }
+          main { max-width: 100% !important; padding: 0 !important; margin: 0 !important; overflow: visible !important; height: auto !important; background: white !important; }
+          .dogana-doc { font-size: 8.5pt; background: white !important; }
           input.dogana-input, textarea.dogana-input { border: none !important; background: transparent !important; padding: 0 !important; }
-          .dogana-doc { font-size: 8.5pt; }
         }
 
         input.dogana-input, textarea.dogana-input {
@@ -263,6 +272,9 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
 
       {/* Screen-only editable header */}
       <div className="no-print mb-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
+        <div className="flex justify-end mb-1 h-4">
+          {savedFlash && <span className="text-green-600 text-xs">✓ Salvato automaticamente</span>}
+        </div>
         <div className="grid grid-cols-3 gap-4 text-xs mb-3">
           <div>
             <div className="font-semibold text-gray-500 uppercase mb-1">Invoice No.</div>
