@@ -212,8 +212,8 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
 
         @media print {
           .no-print { display: none !important; }
-          html, body { margin: 0 !important; padding: 0 !important; }
-          main { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+          html, body { margin: 0 !important; padding: 0 !important; overflow: visible !important; height: auto !important; }
+          main { max-width: 100% !important; padding: 0 !important; margin: 0 !important; overflow: visible !important; height: auto !important; }
           input.dogana-input, textarea.dogana-input { border: none !important; background: transparent !important; padding: 0 !important; }
           .dogana-doc { font-size: 8.5pt; }
         }
@@ -450,8 +450,8 @@ export default function PackingListDetailPage() {
         .subsection-title { margin: 10px 0 6px 0; font-size: 12.5px; font-weight: 600; }
         @media print {
           .no-print, aside, nav { display: none !important; }
-          html, body { margin: 0 !important; padding: 0 !important; }
-          main { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+          html, body { margin: 0 !important; padding: 0 !important; overflow: visible !important; height: auto !important; }
+          main { max-width: 100% !important; padding: 0 !important; margin: 0 !important; overflow: visible !important; height: auto !important; }
           .page-break { break-before: page; page-break-before: always; }
         }
       `}</style>
