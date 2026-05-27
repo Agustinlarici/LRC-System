@@ -242,7 +242,7 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
         table.dog-table td.c { text-align: center; }
         .col-nx    { width: 30px; }
         .col-code  { width: 105px; white-space: nowrap; }
-        .col-desc  { width: 145px; }
+        .col-desc  { width: 195px; font-size: 9px; }
         .col-comm  { width: 75px; }
         .col-qty   { width: 40px; }
         .col-cont  { width: 98px; }
