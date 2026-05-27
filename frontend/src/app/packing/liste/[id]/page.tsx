@@ -391,15 +391,15 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
                       <td className="c col-nx">{g.count}x</td>
                       <td className="col-code" style={{ fontFamily: 'monospace' }}>{it.article_code}</td>
                       <td className="col-desc">{it.description || '–'}</td>
-                      <td className="r col-qty">{it.quantity}</td>
-                      <td className="col-cont">{it.container_name ?? <span style={{ color: '#f87171' }}>!</span>}</td>
+                      <td className="c col-qty">{it.quantity}</td>
+                      <td className="c col-cont">{it.container_name ?? <span style={{ color: '#f87171' }}>!</span>}</td>
                       <td className="c col-dims">{dims}</td>
-                      <td className="r col-ucost">{it.unit_cost != null ? it.unit_cost.toFixed(2) : '–'}</td>
-                      <td className="r col-unitkg">{it.unit_weight_kg != null ? it.unit_weight_kg.toFixed(4) : <span style={{ color: '#f87171' }}>-</span>}</td>
-                      <td className="r col-tare">{g.sumContTare.toFixed(3)}</td>
-                      <td className="r col-lnet">{g.sumNet.toFixed(3)}</td>
-                      <td className="r col-lgross" style={{ fontWeight: 600 }}>{g.sumGross.toFixed(3)}</td>
-                      <td className="r col-lcost">{g.missingCost ? '–' : g.sumCost.toFixed(2)}</td>
+                      <td className="c col-ucost">{it.unit_cost != null ? it.unit_cost.toFixed(2) : '–'}</td>
+                      <td className="c col-unitkg">{it.unit_weight_kg != null ? it.unit_weight_kg.toFixed(4) : <span style={{ color: '#f87171' }}>-</span>}</td>
+                      <td className="c col-tare">{g.sumContTare.toFixed(3)}</td>
+                      <td className="c col-lnet">{g.sumNet.toFixed(3)}</td>
+                      <td className="c col-lgross" style={{ fontWeight: 600 }}>{g.sumGross.toFixed(3)}</td>
+                      <td className="c col-lcost">{g.missingCost ? '–' : g.sumCost.toFixed(2)}</td>
                     </tr>
                   );
                 })}
