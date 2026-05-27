@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 
+const SESSION_KEY = 'packing_active_session';
+interface SavedSession { dispatch: number; session: number; pallet: number; operator: string; destination: string; }
+
 interface Operatore { id: number; name: string; }
 interface Destinazione { id: number; name: string; }
 
@@ -16,8 +19,18 @@ export default function OperatorePage() {
   const [loading,      setLoading]      = useState(true);
   const [avvio,        setAvvio]        = useState(false);
   const [errore,       setErrore]       = useState('');
+  const [savedSession, setSavedSession] = useState<SavedSession | null>(null);
 
   useEffect(() => { document.title = 'Packing — STR'; }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      if (raw) setSavedSession(JSON.parse(raw));
+    } catch {
+      localStorage.removeItem(SESSION_KEY);
+    }
+  }, []);
 
   useEffect(() => {
     Promise.allSettled([
@@ -46,6 +59,13 @@ export default function OperatorePage() {
         dispatchId,
         sessionId,
       });
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        dispatch:    dispatchId,
+        session:     sessionId,
+        pallet:      palletId,
+        operator:    selOp.name,
+        destination: dest.name,
+      }));
       router.push(`/packing/scan?dispatch=${dispatchId}&session=${sessionId}&pallet=${palletId}&operator=${encodeURIComponent(selOp.name)}&destination=${encodeURIComponent(dest.name)}`);
     } catch {
       setErrore('Errore durante l\'avvio della sessione');
@@ -71,6 +91,30 @@ export default function OperatorePage() {
   if (!selOp) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
+
+        {savedSession && (
+          <div className="w-full max-w-2xl mb-8 bg-amber-50 border border-amber-300 rounded-xl p-5">
+            <p className="font-semibold text-amber-900 mb-1">Sessione interrotta rilevata</p>
+            <p className="text-amber-800 text-sm mb-4">
+              Operatore: <strong>{savedSession.operator}</strong> — Spedizione: <strong>{savedSession.destination}</strong>
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => router.push(`/packing/scan?dispatch=${savedSession.dispatch}&session=${savedSession.session}&pallet=${savedSession.pallet}&operator=${encodeURIComponent(savedSession.operator)}&destination=${encodeURIComponent(savedSession.destination)}`)}
+                className="px-5 py-2 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition-colors"
+              >
+                Riprendi sessione
+              </button>
+              <button
+                onClick={() => { localStorage.removeItem(SESSION_KEY); setSavedSession(null); }}
+                className="px-5 py-2 bg-white border border-amber-300 text-amber-800 rounded-lg font-medium hover:bg-amber-50 transition-colors"
+              >
+                Nuova sessione
+              </button>
+            </div>
+          </div>
+        )}
+
         <h2 className="text-3xl font-bold text-gray-900 text-center mb-8">
           Seleziona magazziniere
         </h2>

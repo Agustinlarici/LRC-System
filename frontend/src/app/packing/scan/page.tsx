@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 
+const SESSION_KEY = 'packing_active_session';
+
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 type LabelType = 'MRP' | 'commessa' | 'UDS';
@@ -125,15 +127,53 @@ function ScanPage() {
       .finally(() => setCatalogLoading(false));
   }, []);
 
+  // Session recovery: on mount, restore from localStorage if no URL params; else save current session
+  useEffect(() => {
+    if (!dispatchId) {
+      try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const s = JSON.parse(raw) as { dispatch: number; session: number; pallet: number; operator: string; destination: string };
+          router.replace(`/packing/scan?dispatch=${s.dispatch}&session=${s.session}&pallet=${s.pallet}&operator=${encodeURIComponent(s.operator)}&destination=${encodeURIComponent(s.destination)}`);
+        } else {
+          router.push('/packing/operatore');
+        }
+      } catch {
+        router.push('/packing/operatore');
+      }
+      return;
+    }
+    localStorage.setItem(SESSION_KEY, JSON.stringify({
+      dispatch:    dispatchId,
+      session:     sessionId,
+      pallet:      activePalletId,
+      operator:    operatore,
+      destination,
+    }));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep active pallet in localStorage up to date
+  useEffect(() => {
+    if (!dispatchId) return;
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    try {
+      const s = JSON.parse(raw);
+      if (s.dispatch === dispatchId) {
+        localStorage.setItem(SESSION_KEY, JSON.stringify({ ...s, pallet: activePalletId }));
+      }
+    } catch { /* ignore */ }
+  }, [activePalletId, dispatchId]);
+
   // Load dispatch
   const fetchDispatch = useCallback(async () => {
-    if (!dispatchId) { router.push('/packing/operatore'); return; }
+    if (!dispatchId) return;
     try {
       const d = await api.get<DispatchDetail>(`/api/pack/packing-lists/${dispatchId}`);
       setDispatch(d);
     } catch { /* ignore */ }
     finally { setLoading(false); }
-  }, [dispatchId, router]);
+  }, [dispatchId]);
 
   useEffect(() => { fetchDispatch(); }, [fetchDispatch]);
 
@@ -322,6 +362,7 @@ function ScanPage() {
     setIsSaving(true);
     try {
       setShowFineScansione(false);
+      localStorage.removeItem(SESSION_KEY);
       window.open(`/packing/liste/${dispatchId}`, '_blank');
       router.push('/packing/operatore');
     } finally {
