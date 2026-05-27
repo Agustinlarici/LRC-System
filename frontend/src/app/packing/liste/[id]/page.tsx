@@ -241,8 +241,8 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
         table.dog-table td.r { text-align: right; }
         table.dog-table td.c { text-align: center; }
         .col-nx    { width: 30px; }
-        .col-code  { width: 78px; }
-        .col-desc  { width: 195px; }
+        .col-code  { width: 105px; white-space: nowrap; }
+        .col-desc  { width: 145px; }
         .col-comm  { width: 75px; }
         .col-qty   { width: 40px; }
         .col-cont  { width: 98px; }
@@ -258,6 +258,7 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
             padding: 2px 3px !important;
             white-space: normal !important; word-break: break-word; overflow: visible !important;
           }
+          table.dog-table td.col-code { white-space: nowrap !important; word-break: keep-all !important; }
         }
       `}</style>
 
@@ -473,7 +474,7 @@ export default function PackingListDetailPage() {
         <div className="flex justify-between items-center mb-4 no-print">
           <div>
             <Link href="/packing/liste" className="text-sm text-blue-600 hover:text-blue-800 mb-1 inline-block">
-              ← Back to lists
+              ← Torna alle liste
             </Link>
             <h1 className="text-2xl font-bold text-gray-900">
               Packing List #{logistics.id}
@@ -495,7 +496,7 @@ export default function PackingListDetailPage() {
               🧾 Customs / PDF
             </button>
             <button onClick={() => window.print()} className="btn-secondary text-sm">
-              🖨 Print
+              🖨 Stampa
             </button>
           </div>
         </div>
