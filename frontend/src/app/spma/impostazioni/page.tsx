@@ -376,7 +376,7 @@ function TabMapping() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
-        Collega il nome del componente in iKnow/WebThron alla categoria SPMA corrispondente.
+        Collega il nome del componente in iKnow/WebThron alla categoria Avanzamento Prod corrispondente.
         Usato dal grafico Lead Time per filtrare e abbinare le fasi.
       </p>
       <div className="flex gap-2 flex-wrap">
@@ -389,7 +389,7 @@ function TabMapping() {
         <datalist id="iknow-list">{compAll.map(c => <option key={c} value={c} />)}</datalist>
         <select value={catId} onChange={e => setCatId(e.target.value)}
           className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <option value="">Categoria SPMA</option>
+          <option value="">Categoria Avanzamento Prod</option>
           {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <button onClick={add} disabled={busy || !iknow.trim() || !catId}
@@ -398,7 +398,7 @@ function TabMapping() {
         </button>
       </div>
       <TableList
-        headers={['ID', 'Componente iKnow', 'Categoria SPMA']}
+        headers={['ID', 'Componente iKnow', 'Categoria Avanzamento Prod']}
         rows={maps.map(m => ({ id: m.id, cells: [m.id, m.componente_iknow, m.category_name] }))}
         onDelete={del}
       />
@@ -486,7 +486,7 @@ function TabCalendario() {
       </div>
       <p className="text-xs text-gray-400">
         Per visualizzare e modificare il calendario giornaliero →{' '}
-        <Link href="/spma/calendario" className="text-blue-600 hover:underline">Calendario SPMA</Link>
+        <Link href="/spma/calendario" className="text-blue-600 hover:underline">Calendario Avanzamento Prod</Link>
       </p>
     </div>
   );
@@ -748,7 +748,7 @@ function TabAlert() {
           <div className="col-span-2 space-y-1">
             <label className="text-xs text-gray-500">Da (opzionale, default = utente)</label>
             <input value={config.smtp_from ?? ''} onChange={field('smtp_from')}
-              placeholder="SPMA Alerts <alerts@azienda.it>" className={`${inp} w-full`} />
+              placeholder="Avanzamento Prod Alerts <alerts@azienda.it>" className={`${inp} w-full`} />
           </div>
           <div className="col-span-2 space-y-1">
             <label className="text-xs text-gray-500">A (destinatari, separati da virgola)</label>
@@ -789,8 +789,8 @@ export default function SpmaImpostazioniPage() {
   return (
     <div>
       <div className="mb-6">
-        <Link href="/spma" className="text-sm text-gray-500 hover:text-gray-700">← SPMA</Link>
-        <h1 className="text-3xl font-bold text-gray-900 mt-2">Impostazioni SPMA</h1>
+        <Link href="/spma" className="text-sm text-gray-500 hover:text-gray-700">← Avanzamento Prod</Link>
+        <h1 className="text-3xl font-bold text-gray-900 mt-2">Impostazioni Avanzamento Prod</h1>
         <p className="mt-1 text-gray-500">
           Configura linee, categorie di componenti, requisiti per modello e stazioni di montaggio.
         </p>

@@ -90,8 +90,8 @@ export const MODULES: ModuleConfig[] = [
   },
 
   {
-    href: '/spma', label: 'SPMA', group: 'Logistica',
-    description: 'Pianificazione componenti per sequenza di linea',
+    href: '/spma', label: 'Avanzamento Prod', group: 'Logistica',
+    description: 'Avanzamento produzione — pianificazione componenti per sequenza di linea',
     icon: '📋', sidebar: 'IconClipboard', hidden: false, moduleKey: 'spma',
   },
   {

@@ -103,7 +103,7 @@ export default function SpmaConfirmPage() {
     <div>
       <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
         <div>
-          <Link href="/spma" className="text-sm text-gray-500 hover:text-gray-700">← SPMA</Link>
+          <Link href="/spma" className="text-sm text-gray-500 hover:text-gray-700">← Avanzamento Prod</Link>
           <h1 className="text-3xl font-bold text-gray-900 mt-1">Conferma componenti</h1>
           <p className="mt-1 text-gray-500">Gestisci lo stato dei componenti del piano</p>
         </div>

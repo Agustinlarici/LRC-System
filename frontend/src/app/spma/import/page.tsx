@@ -87,7 +87,7 @@ export default function SpmaImportPage() {
       {/* ── Main form ── */}
       <div className="flex-1 min-w-0 max-w-2xl">
         <div className="mb-6">
-          <Link href="/spma" className="text-sm text-gray-500 hover:text-gray-700">← SPMA</Link>
+          <Link href="/spma" className="text-sm text-gray-500 hover:text-gray-700">← Avanzamento Prod</Link>
           <h1 className="text-3xl font-bold text-gray-900 mt-2">Importa Sequenza Excel</h1>
           <p className="mt-1 text-gray-500">
             Carica il file Excel del cliente. Ogni foglio = una linea di produzione.

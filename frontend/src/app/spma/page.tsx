@@ -163,8 +163,8 @@ export default function SpmaPage() {
       {/* Header */}
       <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">SPMA — Sequenza Piano</h1>
-          <p className="mt-1 text-gray-500">Pianificazione componenti per sequenza di linea</p>
+          <h1 className="text-3xl font-bold text-gray-900">Avanzamento Prod — Sequenza Piano</h1>
+          <p className="mt-1 text-gray-500">Avanzamento produzione — pianificazione componenti per sequenza di linea</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <Link href="/spma/import"

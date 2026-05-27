@@ -122,14 +122,14 @@ function MappingManager({ categories }: { categories: SpmaCategory[] }) {
         onClick={() => setOpen(v => !v)}
         className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-sm font-medium text-gray-700"
       >
-        <span>Equivalenze componenti (iKnow ↔ SPMA)</span>
+        <span>Equivalenze componenti (iKnow ↔ Avanzamento Prod)</span>
         <span className="text-gray-400">{open ? '▲' : '▼'}</span>
       </button>
 
       {open && (
         <div className="p-4 space-y-3 bg-white">
           <p className="text-xs text-gray-500">
-            Collega il nome del componente in iKnow/WebThron alla categoria SPMA.
+            Collega il nome del componente in iKnow/WebThron alla categoria Avanzamento Prod.
             Puoi aggiungere più equivalenze per la stessa categoria.
           </p>
 
@@ -147,7 +147,7 @@ function MappingManager({ categories }: { categories: SpmaCategory[] }) {
             </datalist>
             <select value={catId} onChange={e => setCatId(e.target.value)}
               className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="">Categoria SPMA</option>
+              <option value="">Categoria Avanzamento Prod</option>
               {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <button onClick={add} disabled={busy || !iknow.trim() || !catId}
@@ -165,7 +165,7 @@ function MappingManager({ categories }: { categories: SpmaCategory[] }) {
                 <thead>
                   <tr className="bg-gray-50 text-gray-500 border-b border-gray-100">
                     <th className="py-2 px-3 text-left font-medium">Componente iKnow</th>
-                    <th className="py-2 px-3 text-left font-medium">Categoria SPMA</th>
+                    <th className="py-2 px-3 text-left font-medium">Categoria Avanzamento Prod</th>
                     <th className="py-2 px-3" />
                   </tr>
                 </thead>
@@ -338,7 +338,7 @@ export default function LeadTimePage() {
             <select value={fase_a} onChange={e => setFaseA(e.target.value)}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">Seleziona</option>
-              <option value="SPMA_PIANO">📋 Montaggio componente (SPMA)</option>
+              <option value="SPMA_PIANO">📋 Montaggio componente (Avanzamento Prod)</option>
               {fasi.map(f => <option key={f} value={f}>{f}</option>)}
             </select>
           </div>
@@ -351,7 +351,7 @@ export default function LeadTimePage() {
             <select value={fase_b} onChange={e => setFaseB(e.target.value)}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">Seleziona</option>
-              <option value="SPMA_PIANO">📋 Montaggio componente (SPMA)</option>
+              <option value="SPMA_PIANO">📋 Montaggio componente (Avanzamento Prod)</option>
               {fasi.map(f => <option key={f} value={f}>{f}</option>)}
             </select>
           </div>

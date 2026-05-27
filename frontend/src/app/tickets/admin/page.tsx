@@ -13,7 +13,7 @@ type Permission = { module_key: ModuleKey; can_view: boolean; can_manage: boolea
 const ALL_MODULES: { key: ModuleKey; label: string }[] = [
   { key: 'ingresso_merci',  label: 'Ingresso Merci' },
   { key: 'packing',         label: 'Packing' },
-  { key: 'spma',            label: 'SPMA' },
+  { key: 'spma',            label: 'Avanzamento Prod' },
   { key: 'edi',             label: 'EDI' },
   { key: 'monitor',         label: 'Andon' },
   { key: 'monitor_resumen', label: 'Riepilogo Andon' },

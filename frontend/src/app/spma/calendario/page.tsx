@@ -121,7 +121,7 @@ export default function SpmaCalendarioPage() {
     <div>
       <div className="mb-6">
         <Link href="/spma/impostazioni" className="text-sm text-gray-500 hover:text-gray-700">← Impostazioni</Link>
-        <h1 className="text-3xl font-bold text-gray-900 mt-2">Calendario SPMA</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mt-2">Calendario Avanzamento Prod</h1>
         <p className="mt-1 text-gray-500">Orari di lavoro giornalieri per linea. Le voci generate automaticamente dall'import non vengono sovrascritte.</p>
       </div>
 
