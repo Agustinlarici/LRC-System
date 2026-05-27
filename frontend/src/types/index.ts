@@ -1,7 +1,7 @@
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export type ModuleKey =
-  | 'ingresso_merci' | 'packing' | 'monitor' | 'buffer'
+  | 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer'
   | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
   | 'spma' | 'recepciones' | 'edi';
 
@@ -186,9 +186,14 @@ export interface SpmaFaseSequence {
 }
 
 export interface SpmaAlertConfig {
-  warning_pct:      number;
-  critical_pct:     number;
-  telegram_chat_id: string | null;
+  warning_pct:  number;
+  critical_pct: number;
+  smtp_host:    string | null;
+  smtp_port:    number | null;
+  smtp_secure:  boolean | null;
+  smtp_user:    string | null;
+  smtp_from:    string | null;
+  smtp_to:      string | null;
 }
 
 export interface SpmaDelayItem {
@@ -322,8 +327,8 @@ export interface EdiClient {
   cdt_address_2:              string | null;
   cdt_address_3:              string | null;
   cdt_address_4:              string | null;
-  sdt_vat:                    string;
-  sdt_ferrari_supplier_code:  string;
+  sdt_vat:       string;
+  supplier_code: string;
   csg_establishment_code:     '021' | '023' | '025' | '029' | '030' | 'SSF';
   csg_company_name:           string;
   csg_address_1:              string | null;

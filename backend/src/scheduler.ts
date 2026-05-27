@@ -3,11 +3,12 @@ import { syncPackArticles } from './modules/packing/bc-client.js';
 import { snapshotDayFromHistory } from './modules/dashboards/heatmap.js';
 import { syncFullDayToHistory, refreshLookupTables } from './modules/monitor/pg-webthron-sync.js';
 import { checkSpmaDelays } from './modules/spma/delay-checker.js';
-import { sendDelayReport, spmaTokenConfigured } from './modules/spma/spma-notifier.js';
+import { sendDelayReportEmail, emailConfigured, type SmtpConfig } from './modules/spma/spma-email-notifier.js';
 import { db } from './db/client.js';
 import { startRun, endRun, failRun, setNextRun } from './lib/sync-stats.js';
 import { logger } from './lib/logger.js';
 import { recepcionesEmitter } from './gateway/recepciones-emitter.js';
+import { pollOneDriveFolder } from './modules/spma/onedrive-watcher.js';
 
 function nextOccurrence(hour: number, minute = 0): Date {
   const now  = new Date();
@@ -82,13 +83,32 @@ export function startScheduler() {
       const results = await checkSpmaDelays();
       const delayed = results.filter(r => r.severity !== 'ok').length;
       logger.info(`[scheduler] SPMA delay check: ${results.length} piani, ${delayed} ritardi`);
-      if (delayed > 0 && spmaTokenConfigured()) {
-        const [cfg] = await db`SELECT telegram_chat_id FROM spma_alert_config WHERE id = 1`;
-        const chatId = cfg?.telegram_chat_id ? String(cfg.telegram_chat_id) : '';
-        await sendDelayReport(results, chatId);
+      if (delayed > 0) {
+        const [row] = await db`SELECT smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, smtp_from, smtp_to FROM spma_alert_config WHERE id = 1`;
+        if (row && emailConfigured(row as Partial<SmtpConfig>)) {
+          const cfg: SmtpConfig = {
+            smtp_host:   String(row.smtp_host),
+            smtp_port:   Number(row.smtp_port ?? 587),
+            smtp_secure: Boolean(row.smtp_secure),
+            smtp_user:   String(row.smtp_user),
+            smtp_pass:   String(row.smtp_pass),
+            smtp_from:   row.smtp_from ? String(row.smtp_from) : String(row.smtp_user),
+            smtp_to:     String(row.smtp_to),
+          };
+          await sendDelayReportEmail(results, cfg);
+        }
       }
     } catch (e) {
       logger.error(`[scheduler] SPMA delay check fallito: ${e instanceof Error ? e.message : e}`);
+    }
+  }, { timezone: 'Europe/Rome' });
+
+  // Every 10 min — poll OneDrive folder for new SPMA Excel files
+  cron.schedule('*/10 * * * *', async () => {
+    try {
+      await pollOneDriveFolder();
+    } catch (e) {
+      logger.error(`[scheduler] SPMA OneDrive poll fallito: ${e instanceof Error ? e.message : e}`);
     }
   }, { timezone: 'Europe/Rome' });
 
@@ -116,5 +136,5 @@ export function startScheduler() {
   setNextRun('lookup_refresh',   nextOccurrence(2));
   setNextRun('bc_sync',          nextOccurrence(3));
 
-  logger.info('Scheduler avviato — snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, promemoria DDT ogni 5 min (Europe/Rome)');
+  logger.info('Scheduler avviato — snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
 }

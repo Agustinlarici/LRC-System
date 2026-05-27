@@ -35,9 +35,9 @@ export const MODULES: ModuleConfig[] = [
     icon: '🖥️', sidebar: 'IconMonitor', hidden: false, moduleKey: 'monitor',
   },
   {
-    href: '/monitor/resumen', label: 'Riepilogo', group: 'Produzione',
+    href: '/monitor/resumen', label: 'Riepilogo Andon', group: 'Produzione',
     description: 'Vista riepilogativa di tutti i monitor andon in tempo reale',
-    icon: '📋', sidebar: 'IconList', hidden: false, moduleKey: 'monitor',
+    icon: '📋', sidebar: 'IconList', hidden: false, moduleKey: 'monitor_resumen',
   },
   {
     href: '/buffer', label: 'Buffer', group: 'Produzione',

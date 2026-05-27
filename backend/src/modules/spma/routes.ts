@@ -1,14 +1,17 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import * as XLSX from 'xlsx';
 import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
 import { requireModule, requireManage } from '../../lib/auth.js';
 import { rebuildSpma } from './plan.js';
 import { checkSpmaDelays } from './delay-checker.js';
-import { fetchRecentChats, spmaTokenConfigured, sendTestMessage, sendDelayReport } from './spma-notifier.js';
+import { fetchRecentChats, spmaTokenConfigured } from './spma-notifier.js';
+import { sendDelayReportEmail, sendTestEmail, emailConfigured, type SmtpConfig } from './spma-email-notifier.js';
 import { logger } from '../../lib/logger.js';
+import { runSpmaImport } from './import-logic.js';
+import { pollOneDriveFolder } from './onedrive-watcher.js';
+import { validateSpmaFile } from '../../lib/mime-check.js';
 
 export const spmaRoutes = new Hono();
 
@@ -27,101 +30,6 @@ function parseId(raw: string | undefined): number {
   return id;
 }
 
-function normHeader(s: string): string {
-  return String(s)
-    .replace(/\u00A0/g, ' ')
-    .replace(/\s*\/\s*/g, '/')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
-
-function normBasic(s: string): string {
-  return String(s ?? '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[-_]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function pickCol(headers: string[], ...candidates: string[]): string | null {
-  const normMap = new Map(headers.map(h => [normHeader(h), h]));
-  for (const c of candidates) {
-    const key = normHeader(c);
-    if (normMap.has(key)) return normMap.get(key)!;
-  }
-  // contains fallback
-  for (const c of candidates) {
-    const key = normHeader(c);
-    if (!key) continue;
-    for (const [norm, orig] of normMap) {
-      if (norm.includes(key)) return orig;
-    }
-  }
-  return null;
-}
-
-function normalizeCommessa(val: unknown): string | null {
-  if (val == null) return null;
-  if (typeof val === 'number') {
-    if (!isFinite(val)) return null;
-    return String(Math.round(val));
-  }
-  const s = String(val).replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
-  if (!s) return null;
-  const m = s.match(/^(-?\d+)\.0+$/);
-  if (m) return m[1];
-  return s;
-}
-
-function combineDateTime(dateVal: unknown, timeVal: unknown): Date | null {
-  if (dateVal == null) return null;
-  let date: Date;
-  if (dateVal instanceof Date) {
-    date = dateVal;
-  } else {
-    date = new Date(String(dateVal));
-    if (isNaN(date.getTime())) return null;
-  }
-
-  if (timeVal == null) return date;
-
-  let h = 0, m = 0, s = 0;
-  if (timeVal instanceof Date) {
-    // xlsx with cellDates:true puts time-only as 1899-12-30 base
-    h = timeVal.getHours(); m = timeVal.getMinutes(); s = timeVal.getSeconds();
-  } else {
-    const match = String(timeVal).match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-    if (match) { h = +match[1]; m = +match[2]; s = match[3] ? +match[3] : 0; }
-  }
-
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), h, m, s);
-}
-
-async function findOrCreateLine(name: string): Promise<number> {
-  const trimmed = name.trim();
-  const existing = await db`SELECT id FROM spma_line WHERE LOWER(name) = LOWER(${trimmed}) LIMIT 1`;
-  if (existing.length > 0) return Number(existing[0].id);
-  const [row] = await db`INSERT INTO spma_line (name) VALUES (${trimmed}) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id`;
-  return Number(row.id);
-}
-
-async function bestAliasMatch(sheetName: string): Promise<number | null> {
-  const norm = normBasic(sheetName);
-  if (!norm) return null;
-  const aliases = await db`SELECT alias_norm, line_id FROM spma_line_alias WHERE active = TRUE`;
-  let best: { lineId: number; len: number } | null = null;
-  for (const a of aliases) {
-    const an = String(a.alias_norm);
-    if (an && norm.includes(an)) {
-      if (!best || an.length > best.len) best = { lineId: Number(a.line_id), len: an.length };
-    }
-  }
-  return best ? best.lineId : null;
-}
 
 // ─── Catalogs ─────────────────────────────────────────────────────────────────
 
@@ -260,192 +168,9 @@ spmaRoutes.post('/import', requireManage(MODULE), async (c) => {
   if (!file) throw new HTTPException(400, { message: 'File mancante (campo "file")' });
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  let workbook: XLSX.WorkBook;
-  try {
-    workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
-  } catch {
-    throw new HTTPException(400, { message: 'File non leggibile (non è un Excel/CSV valido)' });
-  }
-
-  const sheets = workbook.SheetNames;
-  let totalRows = 0, upserted = 0, skipped = 0;
-  const warnings: string[] = [];
-  const importedCodes      = new Set<string>();
-  const calendarDatesToFill = new Map<string, { lineId: number; dateStr: string }>();
-
-  for (const sheetName of sheets) {
-    const sheet = workbook.Sheets[sheetName];
-    if (!sheet) continue;
-
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-      raw: false,
-      defval: null,
-      cellDates: true,
-    } as XLSX.Sheet2JSONOpts);
-
-    if (rows.length === 0) continue;
-
-    const headers = Object.keys(rows[0] ?? {});
-    const colFecha = pickCol(headers, 'Data Ingresso Linea', 'Data Ingresso', 'Data');
-    const colOra   = pickCol(headers, 'Ora Ingresso Linea',  'Ora Ingresso',  'Ora');
-    const colComm  = pickCol(headers, 'Commessa/Ordine', 'Commessa', 'Ordine');
-    const colModel = pickCol(headers, 'Modello', 'Model', 'Tipo Vettura', 'Modello/Tipo');
-    const colLine  = pickCol(headers, 'Linea di Montaggio', 'Linea', 'Line');
-    const colPos   = headers.find(h => normHeader(h) === 'posizione') ?? null;
-    const colStato = pickCol(headers, 'Stato', 'Status');
-
-    if (!colFecha || !colComm) {
-      warnings.push(`Foglio "${sheetName}": colonne minime mancanti (Commessa, Data). Saltato.`);
-      continue;
-    }
-
-    // Resolve line for this sheet
-    const sheetLineId = await bestAliasMatch(sheetName);
-
-    for (let i = 0; i < rows.length; i++) {
-      totalRows++;
-      const row = rows[i];
-
-      try {
-        // Filter by Stato if present
-        if (colStato && row[colStato] != null) {
-          const stato = String(row[colStato]).trim().toLowerCase();
-          if (!['avviato', 'in sequenza'].includes(stato)) { skipped++; continue; }
-        }
-
-        // Commessa
-        const commCode = normalizeCommessa(row[colComm!]);
-        if (!commCode) { skipped++; continue; }
-
-        // Date + time
-        const dt = combineDateTime(
-          row[colFecha!],
-          colOra ? row[colOra] : null,
-        );
-        if (!dt) {
-          warnings.push(`Foglio "${sheetName}", riga ${i + 2}: data/ora non valida.`);
-          skipped++; continue;
-        }
-
-        // Model
-        const modelCode = (colModel && row[colModel] != null)
-          ? String(row[colModel]).trim() || '-'
-          : '-';
-
-        // Line
-        let lineId: number;
-        if (colLine && row[colLine] != null) {
-          lineId = await findOrCreateLine(String(row[colLine]));
-        } else if (sheetLineId != null) {
-          lineId = sheetLineId;
-        } else {
-          lineId = await findOrCreateLine(sheetName);
-          // Auto-register alias
-          const norm = normBasic(sheetName);
-          if (norm) {
-            await db`
-              INSERT INTO spma_line_alias (alias, alias_norm, line_id, active)
-              VALUES (${sheetName}, ${norm}, ${lineId}, TRUE)
-              ON CONFLICT (alias_norm) DO UPDATE SET line_id = EXCLUDED.line_id, active = TRUE
-            `;
-          }
-        }
-
-        // Position
-        let posIndex: number | null = null;
-        if (colPos && row[colPos] != null) {
-          const pv = parseFloat(String(row[colPos]));
-          if (!isNaN(pv)) posIndex = Math.round(pv);
-        }
-
-        // Upsert commessa
-        await db`
-          INSERT INTO spma_commessa
-            (commessa_code, model_code, line_id, line_entry_ts, pos_index)
-          VALUES
-            (${commCode}, ${modelCode}, ${lineId}, ${dt.toISOString()}, ${posIndex})
-          ON CONFLICT (commessa_code) DO UPDATE SET
-            model_code    = EXCLUDED.model_code,
-            line_id       = EXCLUDED.line_id,
-            line_entry_ts = EXCLUDED.line_entry_ts,
-            pos_index     = EXCLUDED.pos_index
-        `;
-        importedCodes.add(commCode);
-
-        // Collect (lineId, date) for calendar auto-populate
-        const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(dt);
-        const calKey  = `${lineId}:${dateStr}`;
-        if (!calendarDatesToFill.has(calKey)) calendarDatesToFill.set(calKey, { lineId, dateStr });
-
-        upserted++;
-      } catch (err) {
-        skipped++;
-        warnings.push(`Foglio "${sheetName}", riga ${i + 2}: ${(err as Error).message}`);
-      }
-    }
-  }
-
-  // ─── Auto-populate calendar from imported dates ───────────────────────────
-  if (calendarDatesToFill.size > 0) {
-    try {
-      const defaults = await db`SELECT day_of_week, shift_start, shift_end, is_working FROM spma_calendar_defaults`;
-      const defByDay = new Map(defaults.map(d => [Number(d.day_of_week), d]));
-      for (const { lineId, dateStr } of calendarDatesToFill.values()) {
-        const dow = new Date(`${dateStr}T12:00:00`).getDay();
-        const def = defByDay.get(dow);
-        if (!def || !def.is_working) continue;
-        await db`
-          INSERT INTO spma_line_calendar (line_id, work_date, start_time, end_time, auto_generated)
-          VALUES (${lineId}, ${dateStr}, ${String(def.shift_start)}, ${String(def.shift_end)}, TRUE)
-          ON CONFLICT (line_id, work_date) DO NOTHING
-        `.catch(err => logger.warn({ err, lineId, dateStr }, 'spma: calendar insert failed'));
-      }
-    } catch (err) {
-      logger.warn({ err }, 'spma: calendar auto-populate failed');
-    }
-  }
-
-  // ─── Cleanup: delete future commesse absent from import ───────────────────
-  let deleted = 0;
-  if (importedCodes.size > 0) {
-    const horizon = new Date();
-    horizon.setDate(horizon.getDate() + 10);
-    const toDelete = await db`
-      SELECT id, commessa_code FROM spma_commessa
-      WHERE line_entry_ts > ${horizon.toISOString()}
-        AND commessa_code != ALL(${[...importedCodes]})
-    `;
-    if (toDelete.length > 0) {
-      const ids = toDelete.map(r => Number(r.id));
-      await db`DELETE FROM spma_commessa WHERE id = ANY(${ids})`;
-      deleted = ids.length;
-    }
-  }
-
-  // ─── Rebuild plan ─────────────────────────────────────────────────────────
-  let planResult: Awaited<ReturnType<typeof rebuildSpma>> | null = null;
-  try {
-    planResult = await rebuildSpma();
-  } catch (err) {
-    logger.error({ err }, 'spma: plan rebuild failed after import');
-    warnings.push(`Rebuild piano fallito: ${(err as Error).message}`);
-  }
-
-  // ─── Log import ───────────────────────────────────────────────────────────
-  await db`
-    INSERT INTO spma_import_log (file_name, total_rows, upserts, skipped, deleted_stale, sheets)
-    VALUES (${file.name}, ${totalRows}, ${upserted}, ${skipped}, ${deleted}, ${sheets})
-  `.catch(err => logger.warn({ err }, 'spma: failed to save import log'));
-
-  return c.json({
-    sheets,
-    total_rows_seen: totalRows,
-    upserts:         upserted,
-    skipped,
-    deleted_stale:   deleted,
-    warnings:        warnings.slice(0, 100),
-    plan:            planResult,
-  });
+  validateSpmaFile(buffer, file.name);
+  const result = await runSpmaImport(buffer, file.name);
+  return c.json(result);
 });
 
 // ─── Import history ───────────────────────────────────────────────────────────
@@ -458,6 +183,16 @@ spmaRoutes.get('/import-history', requireModule(MODULE), async (c) => {
     LIMIT 50
   `;
   return c.json(rows);
+});
+
+// ─── OneDrive manual poll ─────────────────────────────────────────────────────
+
+spmaRoutes.post('/onedrive-poll', requireManage(MODULE), async (c) => {
+  if (!process.env.SPMA_ONEDRIVE_SHARE_URL) {
+    return c.json({ error: 'SPMA_ONEDRIVE_SHARE_URL non configurato' }, 400);
+  }
+  await pollOneDriveFolder();
+  return c.json({ status: 'ok' });
 });
 
 // ─── Plan rebuild (manual) ────────────────────────────────────────────────────
@@ -902,30 +637,84 @@ spmaRoutes.delete('/fase-sequence/:id', requireManage(MODULE), async (c) => {
 // ─── Alert config ─────────────────────────────────────────────────────────────
 
 spmaRoutes.get('/alert-config', requireModule(MODULE), async (c) => {
-  const [row] = await db`SELECT warning_pct, critical_pct, telegram_chat_id FROM spma_alert_config WHERE id = 1`;
-  return c.json(row ?? { warning_pct: 15, critical_pct: 30, telegram_chat_id: null });
+  const [row] = await db`
+    SELECT warning_pct, critical_pct,
+           smtp_host, smtp_port, smtp_secure, smtp_user, smtp_from, smtp_to
+    FROM spma_alert_config WHERE id = 1
+  `;
+  return c.json(row ?? { warning_pct: 15, critical_pct: 30 });
 });
 
 spmaRoutes.put('/alert-config', requireManage(MODULE), async (c) => {
   const body = await parseBody(c, z.object({
-    warningPct:     z.number().int().min(1).max(99),
-    criticalPct:    z.number().int().min(1).max(100),
-    telegramChatId: z.string().nullable().optional(),
+    warningPct:  z.number().int().min(1).max(99),
+    criticalPct: z.number().int().min(1).max(100),
+    smtpHost:    z.string().nullable().optional(),
+    smtpPort:    z.number().int().min(1).max(65535).nullable().optional(),
+    smtpSecure:  z.boolean().nullable().optional(),
+    smtpUser:    z.string().nullable().optional(),
+    smtpPass:    z.string().nullable().optional(),
+    smtpFrom:    z.string().nullable().optional(),
+    smtpTo:      z.string().nullable().optional(),
   }));
-  const chatId = body.telegramChatId !== undefined ? (body.telegramChatId ?? null) : null;
   const [row] = await db`
-    INSERT INTO spma_alert_config (id, warning_pct, critical_pct, telegram_chat_id)
-    VALUES (1, ${body.warningPct}, ${body.criticalPct}, ${chatId})
+    INSERT INTO spma_alert_config (id, warning_pct, critical_pct, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, smtp_from, smtp_to)
+    VALUES (1, ${body.warningPct}, ${body.criticalPct},
+            ${body.smtpHost ?? null}, ${body.smtpPort ?? null}, ${body.smtpSecure ?? null},
+            ${body.smtpUser ?? null}, ${body.smtpPass ?? null}, ${body.smtpFrom ?? null}, ${body.smtpTo ?? null})
     ON CONFLICT (id) DO UPDATE SET
-      warning_pct      = EXCLUDED.warning_pct,
-      critical_pct     = EXCLUDED.critical_pct,
-      telegram_chat_id = EXCLUDED.telegram_chat_id
-    RETURNING warning_pct, critical_pct, telegram_chat_id
+      warning_pct  = EXCLUDED.warning_pct,
+      critical_pct = EXCLUDED.critical_pct,
+      smtp_host    = COALESCE(EXCLUDED.smtp_host,    spma_alert_config.smtp_host),
+      smtp_port    = COALESCE(EXCLUDED.smtp_port,    spma_alert_config.smtp_port),
+      smtp_secure  = COALESCE(EXCLUDED.smtp_secure,  spma_alert_config.smtp_secure),
+      smtp_user    = COALESCE(EXCLUDED.smtp_user,    spma_alert_config.smtp_user),
+      smtp_pass    = COALESCE(EXCLUDED.smtp_pass,    spma_alert_config.smtp_pass),
+      smtp_from    = COALESCE(EXCLUDED.smtp_from,    spma_alert_config.smtp_from),
+      smtp_to      = COALESCE(EXCLUDED.smtp_to,      spma_alert_config.smtp_to)
+    RETURNING warning_pct, critical_pct, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_from, smtp_to
   `;
   return c.json(row);
 });
 
-// ─── SPMA Telegram helpers ────────────────────────────────────────────────────
+// ─── SPMA email helpers ───────────────────────────────────────────────────────
+
+async function loadSmtpConfig(): Promise<SmtpConfig | null> {
+  const [row] = await db`
+    SELECT smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, smtp_from, smtp_to
+    FROM spma_alert_config WHERE id = 1
+  `;
+  if (!row || !emailConfigured(row as Partial<SmtpConfig>)) return null;
+  return {
+    smtp_host:   String(row.smtp_host),
+    smtp_port:   Number(row.smtp_port ?? 587),
+    smtp_secure: Boolean(row.smtp_secure),
+    smtp_user:   String(row.smtp_user),
+    smtp_pass:   String(row.smtp_pass),
+    smtp_from:   row.smtp_from ? String(row.smtp_from) : String(row.smtp_user),
+    smtp_to:     String(row.smtp_to),
+  };
+}
+
+spmaRoutes.post('/email-test', requireManage(MODULE), async (c) => {
+  const cfg = await loadSmtpConfig();
+  if (!cfg) throw new HTTPException(400, { message: 'Configurazione SMTP incompleta — compila tutti i campi e salva' });
+  try {
+    await sendTestEmail(cfg);
+    return c.json({ ok: true, to: cfg.smtp_to });
+  } catch (e) {
+    throw new HTTPException(500, { message: (e as Error).message });
+  }
+});
+
+spmaRoutes.post('/email-report-now', requireManage(MODULE), async (c) => {
+  const cfg = await loadSmtpConfig();
+  if (!cfg) throw new HTTPException(400, { message: 'Configurazione SMTP incompleta' });
+  const results = await checkSpmaDelays();
+  const delayed = results.filter(r => r.severity !== 'ok');
+  if (delayed.length > 0) await sendDelayReportEmail(results, cfg);
+  return c.json({ ok: true, delayed: delayed.length });
+});
 
 spmaRoutes.get('/telegram-updates', requireManage(MODULE), async (c) => {
   if (!spmaTokenConfigured()) {
@@ -938,32 +727,6 @@ spmaRoutes.get('/telegram-updates', requireManage(MODULE), async (c) => {
     logger.warn({ err }, 'spma: fetchRecentChats failed');
     throw new HTTPException(500, { message: (err as Error).message });
   }
-});
-
-spmaRoutes.post('/telegram-test', requireManage(MODULE), async (c) => {
-  if (!spmaTokenConfigured()) {
-    throw new HTTPException(400, { message: 'SPMA_TELEGRAM_BOT_TOKEN non configurato nel server' });
-  }
-  const [cfg] = await db`SELECT telegram_chat_id FROM spma_alert_config WHERE id = 1`;
-  const chatId = cfg?.telegram_chat_id ? String(cfg.telegram_chat_id) : null;
-  if (!chatId) {
-    throw new HTTPException(400, { message: 'Chat ID non configurato — salvalo prima nel tab Alert' });
-  }
-  await sendTestMessage(chatId);
-  return c.json({ ok: true, chat_id: chatId });
-});
-
-spmaRoutes.post('/telegram-report-now', requireManage(MODULE), async (c) => {
-  if (!spmaTokenConfigured()) {
-    throw new HTTPException(400, { message: 'SPMA_TELEGRAM_BOT_TOKEN non configurato nel server' });
-  }
-  const [cfg] = await db`SELECT telegram_chat_id FROM spma_alert_config WHERE id = 1`;
-  const chatId = cfg?.telegram_chat_id ? String(cfg.telegram_chat_id) : null;
-  if (!chatId) throw new HTTPException(400, { message: 'Chat ID non configurato' });
-  const results = await checkSpmaDelays();
-  const delayed = results.filter(r => r.severity !== 'ok');
-  await sendDelayReport(results, chatId);
-  return c.json({ ok: true, delayed: delayed.length });
 });
 
 // ─── Delay status ─────────────────────────────────────────────────────────────

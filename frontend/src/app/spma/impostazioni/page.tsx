@@ -621,17 +621,12 @@ function TabSequenzaFasi() {
 
 // ─── Alert config ─────────────────────────────────────────────────────────────
 
-interface TelegramChat { chat_id: number; type: string; title: string | null; username: string | null }
-
 function TabAlert() {
-  const [config,    setConfig]    = useState<SpmaAlertConfig>({ warning_pct: 15, critical_pct: 30, telegram_chat_id: null });
-  const [chatInput, setChatInput] = useState('');
-  const [loading,   setLoading]   = useState(true);
-  const [busy,      setBusy]      = useState(false);
-  const [saved,     setSaved]     = useState(false);
-  const [discovering,  setDiscovering]  = useState(false);
-  const [foundChats,   setFoundChats]   = useState<TelegramChat[] | null>(null);
-  const [discoverErr,  setDiscoverErr]  = useState<string | null>(null);
+  const [config,  setConfig]  = useState<SpmaAlertConfig>({ warning_pct: 15, critical_pct: 30, smtp_host: null, smtp_port: 587, smtp_secure: false, smtp_user: null, smtp_from: null, smtp_to: null });
+  const [pass,    setPass]    = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy,    setBusy]    = useState(false);
+  const [saved,   setSaved]   = useState(false);
   const [testing,      setTesting]      = useState(false);
   const [testResult,   setTestResult]   = useState<string | null>(null);
   const [reporting,    setReporting]    = useState(false);
@@ -639,170 +634,145 @@ function TabAlert() {
 
   useEffect(() => {
     api.get<SpmaAlertConfig>('/api/spma/alert-config')
-      .then(cfg => { setConfig(cfg); setChatInput(cfg.telegram_chat_id ?? ''); })
+      .then(setConfig)
       .finally(() => setLoading(false));
   }, []);
+
+  function field(key: keyof SpmaAlertConfig) {
+    return (e: React.ChangeEvent<HTMLInputElement>) =>
+      setConfig(prev => ({ ...prev, [key]: e.target.value || null }));
+  }
 
   async function save() {
     setBusy(true); setSaved(false);
     try {
       const updated = await api.put<SpmaAlertConfig>('/api/spma/alert-config', {
-        warningPct:     config.warning_pct,
-        criticalPct:    config.critical_pct,
-        telegramChatId: chatInput.trim() || null,
+        warningPct:  config.warning_pct,
+        criticalPct: config.critical_pct,
+        smtpHost:    config.smtp_host   || null,
+        smtpPort:    config.smtp_port   ?? 587,
+        smtpSecure:  config.smtp_secure ?? false,
+        smtpUser:    config.smtp_user   || null,
+        smtpPass:    pass               || null,
+        smtpFrom:    config.smtp_from   || null,
+        smtpTo:      config.smtp_to     || null,
       });
-      setConfig(updated);
-      setChatInput(updated.telegram_chat_id ?? '');
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setConfig(updated); setPass('');
+      setSaved(true); setTimeout(() => setSaved(false), 2000);
     } finally { setBusy(false); }
-  }
-
-  async function discoverChats() {
-    setDiscovering(true); setFoundChats(null); setDiscoverErr(null);
-    try {
-      const chats = await api.get<TelegramChat[]>('/api/spma/telegram-updates');
-      setFoundChats(chats);
-    } catch (e) {
-      setDiscoverErr((e as Error).message);
-    } finally { setDiscovering(false); }
   }
 
   async function sendTest() {
     setTesting(true); setTestResult(null);
     try {
-      await api.post('/api/spma/telegram-test', {});
-      setTestResult('ok');
-    } catch (e) {
-      setTestResult((e as Error).message);
-    } finally { setTesting(false); }
+      const r = await api.post<{ to: string }>('/api/spma/email-test', {});
+      setTestResult(`Email inviata a ${r.to}`);
+    } catch (e) { setTestResult((e as Error).message); }
+    finally { setTesting(false); }
   }
 
   async function sendReportNow() {
     setReporting(true); setReportResult(null);
     try {
-      const r = await api.post<{ delayed: number }>('/api/spma/telegram-report-now', {});
+      const r = await api.post<{ delayed: number }>('/api/spma/email-report-now', {});
       setReportResult(r.delayed > 0 ? `Report inviato (${r.delayed} ritardi)` : 'Nessun ritardo attivo');
-    } catch (e) {
-      setReportResult((e as Error).message);
-    } finally { setReporting(false); }
+    } catch (e) { setReportResult((e as Error).message); }
+    finally { setReporting(false); }
   }
 
   if (loading) return <p className="text-gray-400">Caricamento...</p>;
 
+  const inp = 'border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+
   return (
     <div className="space-y-6 max-w-lg">
-      <p className="text-sm text-gray-500">
-        Soglie di ritardo calcolate come percentuale del tempo lavorativo rimanente fino al montaggio.
-        Più il componente è vicino al montaggio, più il sistema è sensibile.
-      </p>
 
+      {/* Soglie */}
       <div className="space-y-4">
+        <h3 className="text-sm font-semibold text-gray-700">Soglie di ritardo</h3>
         <div className="space-y-1">
-          <label className="text-sm font-medium text-yellow-700">Soglia avviso (warning)</label>
+          <label className="text-sm font-medium text-yellow-700">Soglia avviso</label>
           <div className="flex items-center gap-3">
             <input type="number" min="1" max="99" value={config.warning_pct}
               onChange={e => setConfig(prev => ({ ...prev, warning_pct: parseInt(e.target.value) || prev.warning_pct }))}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+              className={`${inp} w-24`} />
             <span className="text-sm text-gray-500">% del tempo rimanente</span>
           </div>
-          <p className="text-xs text-gray-400">Notifica Telegram con avviso (arancione)</p>
         </div>
-
         <div className="space-y-1">
           <label className="text-sm font-medium text-red-700">Soglia critica</label>
           <div className="flex items-center gap-3">
             <input type="number" min="1" max="100" value={config.critical_pct}
               onChange={e => setConfig(prev => ({ ...prev, critical_pct: parseInt(e.target.value) || prev.critical_pct }))}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-red-400" />
+              className={`${inp} w-24`} />
             <span className="text-sm text-gray-500">% del tempo rimanente</span>
           </div>
-          <p className="text-xs text-gray-400">Notifica Telegram con allarme critico (rosso)</p>
         </div>
       </div>
 
-      {/* Telegram group */}
-      <div className="space-y-2 border-t border-gray-100 pt-4">
-        <label className="text-sm font-medium text-gray-700">Gruppo Telegram (Chat ID)</label>
-        <p className="text-xs text-gray-400">
-          ID del gruppo dove inviare gli avvisi. Configura <code className="bg-gray-100 px-1 rounded">SPMA_TELEGRAM_BOT_TOKEN</code> nel server per abilitare le notifiche.
-        </p>
-        <div className="flex gap-2">
-          <input
-            value={chatInput}
-            onChange={e => setChatInput(e.target.value)}
-            placeholder="es. -1001234567890"
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button onClick={discoverChats} disabled={discovering}
-            className="border border-gray-200 text-sm px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors whitespace-nowrap">
-            {discovering ? 'Ricerca...' : 'Scopri Chat ID'}
-          </button>
-        </div>
+      {/* SMTP */}
+      <div className="space-y-3 border-t border-gray-100 pt-5">
+        <h3 className="text-sm font-semibold text-gray-700">Configurazione email (SMTP)</h3>
 
-        {discoverErr && (
-          <p className="text-xs text-red-600">{discoverErr}</p>
-        )}
-
-        {foundChats !== null && (
-          <div className="border border-gray-200 rounded-lg overflow-hidden">
-            {foundChats.length === 0 ? (
-              <p className="text-xs text-gray-400 p-3">
-                Nessun gruppo trovato. Aggiungi il bot al gruppo e invia almeno un messaggio, poi riprova.
-              </p>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 text-xs">
-                    <th className="py-2 px-3 text-left font-medium">Chat ID</th>
-                    <th className="py-2 px-3 text-left font-medium">Nome / Username</th>
-                    <th className="py-2 px-3 text-left font-medium">Tipo</th>
-                    <th className="py-2 px-3" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {foundChats.map(chat => (
-                    <tr key={chat.chat_id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="py-2 px-3 font-mono text-xs text-gray-600">{chat.chat_id}</td>
-                      <td className="py-2 px-3 text-gray-700">{chat.title ?? chat.username ?? '–'}</td>
-                      <td className="py-2 px-3 text-gray-400 text-xs">{chat.type}</td>
-                      <td className="py-2 px-3 text-right">
-                        <button
-                          onClick={() => { setChatInput(String(chat.chat_id)); setFoundChats(null); }}
-                          className="text-xs text-blue-600 hover:text-blue-800 transition-colors">
-                          Usa
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2 space-y-1">
+            <label className="text-xs text-gray-500">Server SMTP</label>
+            <input value={config.smtp_host ?? ''} onChange={field('smtp_host')}
+              placeholder="smtp.office365.com" className={`${inp} w-full`} />
           </div>
-        )}
+          <div className="space-y-1">
+            <label className="text-xs text-gray-500">Porta</label>
+            <input type="number" value={config.smtp_port ?? 587}
+              onChange={e => setConfig(prev => ({ ...prev, smtp_port: parseInt(e.target.value) || 587 }))}
+              className={`${inp} w-full`} />
+          </div>
+          <div className="space-y-1 flex flex-col justify-end">
+            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer pb-2">
+              <input type="checkbox" checked={config.smtp_secure ?? false}
+                onChange={e => setConfig(prev => ({ ...prev, smtp_secure: e.target.checked }))}
+                className="w-4 h-4 accent-blue-600" />
+              SSL/TLS
+            </label>
+          </div>
+          <div className="col-span-2 space-y-1">
+            <label className="text-xs text-gray-500">Utente (email mittente)</label>
+            <input value={config.smtp_user ?? ''} onChange={field('smtp_user')}
+              placeholder="alerts@azienda.it" className={`${inp} w-full`} />
+          </div>
+          <div className="col-span-2 space-y-1">
+            <label className="text-xs text-gray-500">Password</label>
+            <input type="password" value={pass} onChange={e => setPass(e.target.value)}
+              placeholder="Lascia vuoto per non modificare"
+              className={`${inp} w-full`} />
+          </div>
+          <div className="col-span-2 space-y-1">
+            <label className="text-xs text-gray-500">Da (opzionale, default = utente)</label>
+            <input value={config.smtp_from ?? ''} onChange={field('smtp_from')}
+              placeholder="SPMA Alerts <alerts@azienda.it>" className={`${inp} w-full`} />
+          </div>
+          <div className="col-span-2 space-y-1">
+            <label className="text-xs text-gray-500">A (destinatari, separati da virgola)</label>
+            <input value={config.smtp_to ?? ''} onChange={field('smtp_to')}
+              placeholder="responsabile@azienda.it, capo@azienda.it" className={`${inp} w-full`} />
+          </div>
+        </div>
       </div>
 
-      <div className="p-3 bg-gray-50 rounded-lg text-xs text-gray-500 space-y-1">
-        <p><strong>Esempio:</strong> Montaggio tra 8h lavorative, ritardo stimato 2h.</p>
-        <p>Ritardo = 2/8 = 25% → supera entrambe le soglie (15% e 30%?) → critico se ≥30%.</p>
-      </div>
-
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-3 flex-wrap pt-1">
         <button onClick={save} disabled={busy}
           className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
           {busy ? 'Salvataggio...' : 'Salva'}
         </button>
         <button onClick={sendTest} disabled={testing}
           className="border border-gray-200 px-4 py-2 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
-          {testing ? 'Invio...' : 'Test messaggio'}
+          {testing ? 'Invio...' : 'Test email'}
         </button>
         <button onClick={sendReportNow} disabled={reporting}
           className="border border-gray-200 px-4 py-2 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors">
           {reporting ? 'Calcolo...' : 'Invia report ora'}
         </button>
         {saved && <span className="text-sm text-green-600">Salvato</span>}
-        {testResult === 'ok' && <span className="text-sm text-green-600">Messaggio inviato</span>}
-        {testResult && testResult !== 'ok' && <span className="text-sm text-red-600">{testResult}</span>}
+        {testResult && <span className={`text-sm ${testResult.startsWith('Email') ? 'text-green-600' : 'text-red-600'}`}>{testResult}</span>}
         {reportResult && <span className={`text-sm ${reportResult.startsWith('Nessun') ? 'text-gray-500' : reportResult.includes('inviato') ? 'text-green-600' : 'text-red-600'}`}>{reportResult}</span>}
       </div>
     </div>
