@@ -55,11 +55,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const canView   = useCallback((module: ModuleKey) =>
-    user?.permissions.some(p => p.module_key === module && p.can_view)   ?? false,
+    user?.role === 'admin' || (user?.permissions.some(p => p.module_key === module && p.can_view)   ?? false),
   [user]);
 
   const canManage = useCallback((module: ModuleKey) =>
-    user?.permissions.some(p => p.module_key === module && p.can_manage) ?? false,
+    user?.role === 'admin' || (user?.permissions.some(p => p.module_key === module && p.can_manage) ?? false),
   [user]);
 
   return (

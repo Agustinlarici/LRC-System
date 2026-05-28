@@ -94,9 +94,11 @@ export function requireModule(moduleKey: ModuleKey) {
   return async function (c: Context<Env>, next: Next) {
     await requireAuth(c, async () => {});
     const user = c.get('user');
-    const perm = user.permissions.find(p => p.module_key === moduleKey);
-    if (!perm?.can_view) {
-      throw new HTTPException(403, { message: `Accesso al modulo '${moduleKey}' negato` });
+    if (user.role !== 'admin') {
+      const perm = user.permissions.find(p => p.module_key === moduleKey);
+      if (!perm?.can_view) {
+        throw new HTTPException(403, { message: `Accesso al modulo '${moduleKey}' negato` });
+      }
     }
     await next();
   };
@@ -106,9 +108,11 @@ export function requireManage(moduleKey: ModuleKey) {
   return async function (c: Context<Env>, next: Next) {
     await requireAuth(c, async () => {});
     const user = c.get('user');
-    const perm = user.permissions.find(p => p.module_key === moduleKey);
-    if (!perm?.can_manage) {
-      throw new HTTPException(403, { message: `Permessi di gestione per '${moduleKey}' negati` });
+    if (user.role !== 'admin') {
+      const perm = user.permissions.find(p => p.module_key === moduleKey);
+      if (!perm?.can_manage) {
+        throw new HTTPException(403, { message: `Permessi di gestione per '${moduleKey}' negati` });
+      }
     }
     await next();
   };
