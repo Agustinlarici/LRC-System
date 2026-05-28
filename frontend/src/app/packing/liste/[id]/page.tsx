@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import * as XLSX from 'xlsx';
 import { api } from '@/lib/api';
 import { fmtDatetime } from '@/lib/utils';
 import { PageLoader } from '@/components/ui/Skeleton';
@@ -96,7 +97,7 @@ function SummaryTable({ rows }: { rows: SummaryItem[] }) {
           <th className="py-1.5 px-2 text-left">Model</th>
           <th className="py-1.5 px-2 text-left">Article code</th>
           <th className="py-1.5 px-2 text-left">Description</th>
-          <th className="py-1.5 px-2 text-left">Job order</th>
+          <th className="py-1.5 px-2 text-left">Commessa</th>
           <th className="py-1.5 px-2 text-right">Total qty.</th>
         </tr>
       </thead>
@@ -191,6 +192,80 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
   const totalPallets    = nonEmptyPallets.length;
   const totalPackages   = nonEmptyPallets.reduce((s, p) => s + p.items.length, 0);
 
+  function downloadExcel() {
+    const rows: (string | number)[][] = [];
+
+    rows.push(['PACKING LIST — SPEDIZIONE DOGANA']);
+    rows.push([]);
+    rows.push(['Invoice No.:', invoiceNo || '—', '', 'Order No.:', orderNo || '—']);
+    rows.push(['Sender:', mittente || '—']);
+    rows.push(['Consignee:', destinatario || '—']);
+    rows.push(['Final destination:', destFinale || '—']);
+    rows.push([]);
+
+    for (const pallet of nonEmptyPallets) {
+      const extra      = palletExtras[pallet.id] || {};
+      const palletTare = extra.palletTareKg !== undefined && extra.palletTareKg !== '' ? Number(extra.palletTareKg) : 6;
+      const hasDims    = !!(extra.L || extra.W || extra.H);
+      const dimsText   = hasDims ? `${extra.L || 0}×${extra.W || 0}×${extra.H || 0} mm` : '—';
+      const pNet       = pallet.items.reduce((s, it) => s + (it.net_kg            ?? 0), 0);
+      const pContTare  = pallet.items.reduce((s, it) => s + (it.container_tare_kg ?? 0), 0);
+      const pGross     = pNet + pContTare + palletTare;
+      const pCost      = pallet.items.reduce((s, it) => s + (it.line_cost         ?? 0), 0);
+      const grouped    = groupPalletItems(pallet.items);
+
+      rows.push([
+        `PALLET ${pallet.number}`,
+        `Dims: ${dimsText}`,
+        `Tare: ${palletTare.toFixed(3)} kg`,
+        `Packages: ${pallet.items.length}`,
+        `Net: ${pNet.toFixed(3)} kg`,
+        `Gross: ${pGross.toFixed(3)} kg`,
+        `Value: ${currency} ${pCost.toFixed(2)}`,
+      ]);
+      rows.push([
+        'Nx', 'Item Code', 'Description', 'Qty', 'Container',
+        'Dimensions (mm)', `Unit Cost (${currency})`, 'Unit weight (kg)',
+        'Tare weight (kg)', 'Net weight (kg)', 'Gross weight (kg)', `Total Cost (${currency})`,
+      ]);
+
+      for (const g of grouped) {
+        const it   = g.sample;
+        const dims = it.length_mm && it.width_mm && it.height_mm
+          ? `${it.length_mm}×${it.width_mm}×${it.height_mm}` : '–';
+        rows.push([
+          `${g.count}x`,
+          it.article_code,
+          it.description || '–',
+          it.quantity,
+          it.container_name ?? '!',
+          dims,
+          it.unit_cost  != null ? it.unit_cost         : '–',
+          it.unit_weight_kg != null ? it.unit_weight_kg : '–',
+          Number(g.sumContTare.toFixed(3)),
+          Number(g.sumNet.toFixed(3)),
+          Number(g.sumGross.toFixed(3)),
+          g.missingCost ? '–' : Number(g.sumCost.toFixed(2)),
+        ]);
+      }
+
+      rows.push([]);
+    }
+
+    rows.push([
+      `Pallets: ${totalPallets}`,
+      `Packages: ${totalPackages}`,
+      `Net: ${totalNetKg.toFixed(3)} kg`,
+      `Gross: ${totalGrossKg.toFixed(3)} kg`,
+      `Total value: ${currency} ${totalCost.toFixed(2)}`,
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Dogana');
+    XLSX.writeFile(wb, `packing-list-${id}-dogana.xlsx`);
+  }
+
   const currency = useMemo(() => {
     for (const p of nonEmptyPallets) for (const it of p.items) if (it.currency) return it.currency;
     return 'EUR';
@@ -273,8 +348,16 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
 
       {/* Screen-only editable header */}
       <div className="no-print mb-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
-        <div className="flex justify-end mb-1 h-4">
-          {savedFlash && <span className="text-green-600 text-xs">✓ Salvato automaticamente</span>}
+        <div className="flex items-center justify-between mb-2">
+          {savedFlash
+            ? <span className="text-green-600 text-xs">✓ Salvato automaticamente</span>
+            : <span />}
+          <button
+            onClick={downloadExcel}
+            className="text-sm px-3 py-1 rounded-lg border border-green-600 text-green-700 hover:bg-green-50 transition-colors"
+          >
+            Scarica Excel
+          </button>
         </div>
         <div className="grid grid-cols-3 gap-4 text-xs mb-3">
           <div>
@@ -527,7 +610,7 @@ export default function PackingListDetailPage() {
                       <th className="py-1.5 px-2 text-left">Article</th>
                       <th className="py-1.5 px-2 text-left">Description</th>
                       <th className="py-1.5 px-2 text-right">Qty</th>
-                      <th className="py-1.5 px-2 text-left">Job order</th>
+                      <th className="py-1.5 px-2 text-left">Commessa</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -546,7 +629,7 @@ export default function PackingListDetailPage() {
 
             {commesseGroups.length > 0 && (
               <div className="no-print mt-6">
-                <h3 className="subsection-title">Job orders grouped by group</h3>
+                <h3 className="subsection-title">Commesse raggruppate per gruppo</h3>
                 <ul className="text-xs space-y-1">
                   {commesseGroups.map((g, i) => (
                     <li key={i}>
