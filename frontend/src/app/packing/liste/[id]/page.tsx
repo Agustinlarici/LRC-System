@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import * as XLSX from 'xlsx';
@@ -155,7 +155,10 @@ function groupPalletItems(items: PalletItem[]) {
   return Array.from(map.values());
 }
 
-function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
+function DoganaView({ dispatch, downloadRef }: {
+  dispatch:    LogisticsDispatch;
+  downloadRef: React.MutableRefObject<(() => void) | null>;
+}) {
   const id = dispatch.id;
 
   const [invoiceNo,    setInvoiceNo]    = useState(() => localStorage.getItem(`inv:${id}`)       || '');
@@ -266,6 +269,12 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
     XLSX.writeFile(wb, `packing-list-${id}-dogana.xlsx`);
   }
 
+  // Espone downloadExcel all'header della pagina tramite ref
+  useEffect(() => {
+    downloadRef.current = downloadExcel;
+    return () => { downloadRef.current = null; };
+  });
+
   const currency = useMemo(() => {
     for (const p of nonEmptyPallets) for (const it of p.items) if (it.currency) return it.currency;
     return 'EUR';
@@ -348,17 +357,11 @@ function DoganaView({ dispatch }: { dispatch: LogisticsDispatch }) {
 
       {/* Screen-only editable header */}
       <div className="no-print mb-4 border border-gray-200 rounded-lg p-4 bg-gray-50">
-        <div className="flex items-center justify-between mb-2">
-          {savedFlash
-            ? <span className="text-green-600 text-xs">✓ Salvato automaticamente</span>
-            : <span />}
-          <button
-            onClick={downloadExcel}
-            className="text-sm px-3 py-1 rounded-lg border border-green-600 text-green-700 hover:bg-green-50 transition-colors"
-          >
-            Scarica Excel
-          </button>
-        </div>
+        {savedFlash && (
+          <div className="mb-2">
+            <span className="text-green-600 text-xs">✓ Salvato automaticamente</span>
+          </div>
+        )}
         <div className="grid grid-cols-3 gap-4 text-xs mb-3">
           <div>
             <div className="font-semibold text-gray-500 uppercase mb-1">Invoice No.</div>
@@ -518,6 +521,7 @@ export default function PackingListDetailPage() {
   const [commesseGroups, setCommesseGroups] = useState<CommessaGroup[]>([]);
   const [logistics,      setLogistics]      = useState<LogisticsDispatch | null>(null);
   const [loading,        setLoading]        = useState(true);
+  const doganaExcelRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     document.title = `Packing List #${id} — STR`;
@@ -578,6 +582,14 @@ export default function PackingListDetailPage() {
             >
               🧾 Customs / PDF
             </button>
+            {view === 'dogana' && (
+              <button
+                onClick={() => doganaExcelRef.current?.()}
+                className="text-sm px-3 py-1.5 rounded-lg border border-green-600 text-green-700 hover:bg-green-50 transition-colors"
+              >
+                Scarica Excel
+              </button>
+            )}
             <button onClick={() => window.print()} className="btn-secondary text-sm">
               🖨 Stampa
             </button>
@@ -643,7 +655,7 @@ export default function PackingListDetailPage() {
         )}
 
         {/* Dogana view */}
-        {view === 'dogana' && <DoganaView dispatch={logistics} />}
+        {view === 'dogana' && <DoganaView dispatch={logistics} downloadRef={doganaExcelRef} />}
       </div>
     </>
   );
