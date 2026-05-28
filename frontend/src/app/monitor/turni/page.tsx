@@ -99,10 +99,34 @@ export default function TurniCalendarioPage() {
   const fetchAll = useCallback(async (d: string) => {
     setLoading(true);
     try {
-      const data = await api.get<GiornoRow[]>(`/api/monitor/giorno/${d}`);
+      const [data, defaults] = await Promise.all([
+        api.get<GiornoRow[]>(`/api/monitor/giorno/${d}`),
+        api.get<Record<number, {
+          t1_inizio: string | null; t1_fine: string | null;
+          t2_inizio: string | null; t2_fine: string | null;
+          quantita_giornaliera: number | null;
+          pause: Array<{ ora_inizio: string; ora_fine: string }>;
+        }>>(`/api/monitor/defaults-for-date/${d}`).catch(() => ({} as Record<number, never>)),
+      ]);
       setRows(data);
       const next: Record<number, RowState> = {};
-      for (const r of data) next[r.linea_id] = rowFromApi(r);
+      for (const r of data) {
+        const hasData = r.t1_inizio || r.quantita_giornaliera;
+        if (!hasData && defaults[r.linea_id]) {
+          const def = defaults[r.linea_id];
+          next[r.linea_id] = {
+            t1_inizio:            def.t1_inizio ?? '',
+            t1_fine:              def.t1_fine   ?? '',
+            t2_inizio:            def.t2_inizio ?? '',
+            t2_fine:              def.t2_fine   ?? '',
+            quantita_giornaliera: def.quantita_giornaliera != null ? String(def.quantita_giornaliera) : '',
+            pause:                def.pause.map(p => ({ ora_inizio: p.ora_inizio, ora_fine: p.ora_fine })),
+            dirty: true, saving: false, saved: false,
+          };
+        } else {
+          next[r.linea_id] = rowFromApi(r);
+        }
+      }
       setCells(next);
     } catch {
       // keep existing data on error

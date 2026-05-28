@@ -169,6 +169,7 @@ export default function MonitorImpostazioniPage() {
               <LogoSection lineaId={selected.id} currentLogo={selected.logo} onSaved={fetchLinee} />
               <ComboSection lineaId={selected.id} />
               <SoglieSection lineaId={selected.id} />
+              <DefaultiTurniSection lineaId={selected.id} />
             </>
           )}
         </div>
@@ -374,6 +375,179 @@ function ComboSection({ lineaId }: { lineaId: number }) {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// ─── Sezione Turni default ────────────────────────────────────────────────────
+
+const DAY_NAMES = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
+const MAX_DEF_PAUSE = 3;
+
+interface TurnoDefaultRow {
+  day_of_week:          number;
+  t1_inizio:            string | null;
+  t1_fine:              string | null;
+  t2_inizio:            string | null;
+  t2_fine:              string | null;
+  quantita_giornaliera: number | null;
+  pause:                Array<{ ora_inizio: string; ora_fine: string }>;
+}
+
+function DefaultiTurniSection({ lineaId }: { lineaId: number }) {
+  const toast = useToast();
+  const [rows, setRows] = useState<TurnoDefaultRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    api.get<TurnoDefaultRow[]>(`/api/monitor/linee/${lineaId}/defaults`)
+      .then(setRows)
+      .finally(() => setLoading(false));
+  }, [lineaId]);
+
+  function update(dow: number, patch: Partial<TurnoDefaultRow>) {
+    setRows(prev => prev.map(r => r.day_of_week === dow ? { ...r, ...patch } : r));
+  }
+
+  function addPausa(dow: number) {
+    setRows(prev => prev.map(r => {
+      if (r.day_of_week !== dow || r.pause.length >= MAX_DEF_PAUSE) return r;
+      return { ...r, pause: [...r.pause, { ora_inizio: '10:00', ora_fine: '10:15' }] };
+    }));
+  }
+
+  function removePausa(dow: number, idx: number) {
+    setRows(prev => prev.map(r =>
+      r.day_of_week === dow ? { ...r, pause: r.pause.filter((_, i) => i !== idx) } : r
+    ));
+  }
+
+  function updatePausa(dow: number, idx: number, field: 'ora_inizio' | 'ora_fine', val: string) {
+    setRows(prev => prev.map(r => {
+      if (r.day_of_week !== dow) return r;
+      const pause = r.pause.map((p, i) => i === idx ? { ...p, [field]: val } : p);
+      return { ...r, pause };
+    }));
+  }
+
+  async function handleSave() {
+    setSaving(true); setSaved(false);
+    try {
+      await api.put(`/api/monitor/linee/${lineaId}/defaults`, rows);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      toast.success('Turni standard salvati');
+    } catch {
+      toast.error('Errore durante il salvataggio');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inp = 'border border-gray-200 rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400';
+  const timeInp = `${inp} w-20`;
+  const numInp  = `${inp} w-20`;
+
+  return (
+    <div className="card">
+      <h3 className="text-base font-semibold text-gray-700 mb-1">Turni standard</h3>
+      <p className="text-xs text-gray-500 mb-4">
+        Orari predefiniti per giorno della settimana. Applicati automaticamente quando si apre un giorno senza dati nella vista turni.
+      </p>
+
+      {loading ? (
+        <p className="text-sm text-gray-400">Caricamento...</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="text-xs border-collapse" style={{ minWidth: 700 }}>
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200 text-gray-500">
+                <th className="py-2 px-2 text-left w-24">Giorno</th>
+                <th className="py-2 px-2 text-center" colSpan={2}><span className="text-blue-600">T1</span></th>
+                <th className="py-2 px-2 text-center" colSpan={2}><span className="text-indigo-500">T2</span></th>
+                <th className="py-2 px-2 text-center" colSpan={MAX_DEF_PAUSE * 2 + 1}>Pause</th>
+                <th className="py-2 px-2 text-left w-20">Qtà/g</th>
+              </tr>
+              <tr className="bg-gray-50 border-b border-gray-100 text-gray-400">
+                <th></th>
+                <th className="py-1 px-2 font-normal">Inizio</th>
+                <th className="py-1 px-2 font-normal">Fine</th>
+                <th className="py-1 px-2 font-normal">Inizio</th>
+                <th className="py-1 px-2 font-normal">Fine</th>
+                {Array.from({ length: MAX_DEF_PAUSE }).map((_, i) => (
+                  <th key={i} className="py-1 px-1 font-normal" colSpan={2}>P{i + 1}</th>
+                ))}
+                <th></th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.day_of_week} className="border-b border-gray-100 hover:bg-gray-50/50">
+                  <td className="py-1.5 px-2 font-medium text-gray-700">{DAY_NAMES[r.day_of_week]}</td>
+                  <td className="py-1 px-1">
+                    <input type="time" className={timeInp} value={r.t1_inizio ?? ''}
+                      onChange={e => update(r.day_of_week, { t1_inizio: e.target.value || null })} />
+                  </td>
+                  <td className="py-1 px-1">
+                    <input type="time" className={timeInp} value={r.t1_fine ?? ''}
+                      onChange={e => update(r.day_of_week, { t1_fine: e.target.value || null })} />
+                  </td>
+                  <td className="py-1 px-1">
+                    <input type="time" className={`${timeInp} text-indigo-600`} value={r.t2_inizio ?? ''}
+                      onChange={e => update(r.day_of_week, { t2_inizio: e.target.value || null })} />
+                  </td>
+                  <td className="py-1 px-1">
+                    <input type="time" className={`${timeInp} text-indigo-600`} value={r.t2_fine ?? ''}
+                      onChange={e => update(r.day_of_week, { t2_fine: e.target.value || null })} />
+                  </td>
+                  {Array.from({ length: MAX_DEF_PAUSE }).map((_, pi) => {
+                    const p = r.pause[pi];
+                    return (
+                      <td key={pi} className="py-1 px-1" colSpan={2}>
+                        {p ? (
+                          <div className="flex items-center gap-0.5">
+                            <input type="time" className={`${timeInp} text-orange-600`} value={p.ora_inizio}
+                              onChange={e => updatePausa(r.day_of_week, pi, 'ora_inizio', e.target.value)} />
+                            <input type="time" className={`${timeInp} text-orange-600`} value={p.ora_fine}
+                              onChange={e => updatePausa(r.day_of_week, pi, 'ora_fine', e.target.value)} />
+                            <button onClick={() => removePausa(r.day_of_week, pi)}
+                              className="text-red-300 hover:text-red-500 leading-none px-0.5" title="Rimuovi">✕</button>
+                          </div>
+                        ) : (
+                          r.pause.length === pi && r.pause.length < MAX_DEF_PAUSE ? (
+                            <button onClick={() => addPausa(r.day_of_week)}
+                              className="text-orange-400 hover:text-orange-600 border border-orange-200 rounded px-1.5 py-0.5 whitespace-nowrap">
+                              + P
+                            </button>
+                          ) : <span className="text-gray-200 px-2">–</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td className="py-1 px-1">
+                    <input type="number" min={1} className={numInp} placeholder="es. 50"
+                      value={r.quantita_giornaliera ?? ''}
+                      onChange={e => update(r.day_of_week, {
+                        quantita_giornaliera: e.target.value ? parseInt(e.target.value, 10) : null,
+                      })} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center gap-3">
+        <button onClick={handleSave} disabled={saving || loading} className="btn-primary text-sm">
+          {saving ? 'Salvataggio...' : 'Salva turni standard'}
+        </button>
+        {saved && <span className="text-sm text-green-600">✓ Salvato</span>}
+      </div>
     </div>
   );
 }

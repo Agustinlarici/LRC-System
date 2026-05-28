@@ -962,6 +962,102 @@ monitorRoutes.put('/resumen/:id/linee', async (c) => {
   return c.body(null, 204);
 });
 
+// ─── Turni default (per linea × giorno settimana) ─────────────────────────────
+
+const turnoDefaultRowSchema = z.object({
+  day_of_week:          z.number().int().min(0).max(6),
+  t1_inizio:            z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
+  t1_fine:              z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
+  t2_inizio:            z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
+  t2_fine:              z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
+  quantita_giornaliera: z.number().int().positive().nullable().optional(),
+  pause:                z.array(z.object({
+    ora_inizio: z.string().regex(/^\d{2}:\d{2}$/),
+    ora_fine:   z.string().regex(/^\d{2}:\d{2}$/),
+  })).optional(),
+});
+
+// GET /linee/:id/defaults — 7 righe (una per giorno), create on-the-fly se mancano
+monitorRoutes.get('/linee/:id/defaults', async (c) => {
+  const lineaId = parseId(c.req.param('id'));
+  const rows = await db`
+    SELECT day_of_week, t1_inizio, t1_fine, t2_inizio, t2_fine, quantita_giornaliera, pause
+    FROM monitor_turno_default
+    WHERE linea_id = ${lineaId}
+    ORDER BY day_of_week
+  `;
+  const byDow = new Map(rows.map(r => [r.day_of_week as number, r]));
+  const result = Array.from({ length: 7 }, (_, i) => {
+    const r = byDow.get(i);
+    return {
+      day_of_week:          i,
+      t1_inizio:            r ? (r.t1_inizio as string | null) : null,
+      t1_fine:              r ? (r.t1_fine   as string | null) : null,
+      t2_inizio:            r ? (r.t2_inizio as string | null) : null,
+      t2_fine:              r ? (r.t2_fine   as string | null) : null,
+      quantita_giornaliera: r ? (r.quantita_giornaliera as number | null) : null,
+      pause:                r ? (r.pause as Array<{ ora_inizio: string; ora_fine: string }>) : [],
+    };
+  });
+  return c.json(result);
+});
+
+// PUT /linee/:id/defaults — salva tutti e 7 i giorni
+monitorRoutes.put('/linee/:id/defaults', async (c) => {
+  const lineaId = parseId(c.req.param('id'));
+  const body = await parseBody(c, z.array(turnoDefaultRowSchema));
+  for (const row of body) {
+    const pauseJson = JSON.stringify(row.pause ?? []);
+    await db`
+      INSERT INTO monitor_turno_default
+        (linea_id, day_of_week, t1_inizio, t1_fine, t2_inizio, t2_fine, quantita_giornaliera, pause)
+      VALUES (
+        ${lineaId}, ${row.day_of_week},
+        ${row.t1_inizio ?? null}, ${row.t1_fine ?? null},
+        ${row.t2_inizio ?? null}, ${row.t2_fine ?? null},
+        ${row.quantita_giornaliera ?? null},
+        ${pauseJson}::jsonb
+      )
+      ON CONFLICT (linea_id, day_of_week) DO UPDATE SET
+        t1_inizio            = EXCLUDED.t1_inizio,
+        t1_fine              = EXCLUDED.t1_fine,
+        t2_inizio            = EXCLUDED.t2_inizio,
+        t2_fine              = EXCLUDED.t2_fine,
+        quantita_giornaliera = EXCLUDED.quantita_giornaliera,
+        pause                = EXCLUDED.pause
+    `;
+  }
+  return c.body(null, 204);
+});
+
+// GET /defaults-for-date/:data — defaults di tutte le linee per il giorno della settimana della data
+monitorRoutes.get('/defaults-for-date/:data', async (c) => {
+  const data = parseDate(c.req.param('data'));
+  const dow = new Date(data).getUTCDay(); // 0=Dom … 6=Sab
+  const rows = await db`
+    SELECT linea_id, t1_inizio, t1_fine, t2_inizio, t2_fine, quantita_giornaliera, pause
+    FROM monitor_turno_default
+    WHERE day_of_week = ${dow}
+  `;
+  const result: Record<number, {
+    t1_inizio: string | null; t1_fine: string | null;
+    t2_inizio: string | null; t2_fine: string | null;
+    quantita_giornaliera: number | null;
+    pause: Array<{ ora_inizio: string; ora_fine: string }>;
+  }> = {};
+  for (const r of rows) {
+    result[r.linea_id as number] = {
+      t1_inizio:            (r.t1_inizio as string | null),
+      t1_fine:              (r.t1_fine   as string | null),
+      t2_inizio:            (r.t2_inizio as string | null),
+      t2_fine:              (r.t2_fine   as string | null),
+      quantita_giornaliera: (r.quantita_giornaliera as number | null),
+      pause:                (r.pause as Array<{ ora_inizio: string; ora_fine: string }>),
+    };
+  }
+  return c.json(result);
+});
+
 // ─── Sync manuale WebThron ────────────────────────────────────────────────────
 
 monitorRoutes.post('/admin/sync-day', async (c) => {
