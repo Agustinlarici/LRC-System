@@ -57,6 +57,9 @@ serve({ fetch: app.fetch, port }, async (info) => {
   await db`ALTER TABLE edi_clients ALTER COLUMN csg_establishment_code TYPE VARCHAR(20), ALTER COLUMN csg_establishment_code SET DEFAULT ''`.catch(() => {});
   logger.info('[Startup] edi_clients establishment_code OK');
 
+  await db`ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'monitor_resumen'`.catch(() => {});
+  logger.info('[Startup] module_key_enum monitor_resumen OK');
+
   await db`
     CREATE TABLE IF NOT EXISTS monitor_turno_default (
       id                   SERIAL PRIMARY KEY,
@@ -133,15 +136,16 @@ serve({ fetch: app.fetch, port }, async (info) => {
     setInterval(async () => {
       cycle++;
       await executiveRefresh();
-      setNextRun('sync_incremental', new Date(Date.now() + 10 * 60_000));
+      setNextRun('sync_incremental', new Date(Date.now() + 30_000));
 
-      if (cycle % 3 === 0) {
+      // bufferFullRefresh ogni ~30 min (60 cicli × 30s)
+      if (cycle % 60 === 0) {
         await bufferFullRefresh();
         setNextRun('buffer_refresh', new Date(Date.now() + 30 * 60_000));
       }
-    }, 10 * 60_000);
+    }, 30_000);
 
-    logger.info('[Startup] Scheduler avviato — sync WebThron tra 10 min, poi ogni 10 min');
+    logger.info('[Startup] Scheduler avviato — sync WebThron tra 10 min, poi ogni 30s');
   }, 2 * 60_000);
 
   logger.info('Server pronto — WebThron caricherà tra 2 minuti');

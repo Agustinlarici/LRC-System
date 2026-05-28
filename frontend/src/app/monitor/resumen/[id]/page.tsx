@@ -100,15 +100,21 @@ export default function ResumenDisplayPage() {
     await Promise.all(ids.map(async id => {
       try {
         const stato = await api.get<MonitorStato>(`/api/monitor/stato/${id}`);
-        setRows(prev => ({
-          ...prev,
-          [id]: {
-            stato,
-            remaining: stato.remaining_sec,
-            lineStop:  stato.linestop_sec ?? 0,
-            blink:     prev[id]?.blink ?? true,
-          },
-        }));
+        setRows(prev => {
+          const existing = prev[id];
+          const serverRemaining = stato.remaining_sec;
+          const serverLineStop  = stato.linestop_sec ?? 0;
+          const remaining = !existing || existing.remaining === null || serverRemaining === null || Math.abs(existing.remaining - serverRemaining) >= 2
+            ? serverRemaining
+            : existing.remaining;
+          const lineStop = !existing || Math.abs(existing.lineStop - serverLineStop) >= 2
+            ? serverLineStop
+            : existing.lineStop;
+          return {
+            ...prev,
+            [id]: { stato, remaining, lineStop, blink: existing?.blink ?? true },
+          };
+        });
       } catch { /* mantieni stato precedente */ }
     }));
   }, []);

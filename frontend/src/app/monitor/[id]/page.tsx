@@ -76,8 +76,14 @@ export default function MonitorDisplayPage() {
         const data = await api.get<MonitorStato>(`/api/monitor/stato/${id}`);
         setStato(data);
         setError(null);
-        setLocalRemaining(data.remaining_sec);
-        setLineStopSec(data.linestop_sec ?? 0);
+        setLocalRemaining(prev => {
+          if (prev === null || data.remaining_sec === null) return data.remaining_sec;
+          return Math.abs(prev - data.remaining_sec) >= 2 ? data.remaining_sec : prev;
+        });
+        setLineStopSec(prev => {
+          const serverVal = data.linestop_sec ?? 0;
+          return Math.abs(prev - serverVal) >= 2 ? serverVal : prev;
+        });
       } catch {
         setError('Errore connessione');
       }

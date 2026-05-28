@@ -1,4 +1,5 @@
 -- Monitor Resumen: gruppi configurabili di linee andon
+ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'monitor_resumen';
 CREATE TABLE IF NOT EXISTS monitor_resumen (
   id         SERIAL PRIMARY KEY,
   nome       VARCHAR(100) NOT NULL,
