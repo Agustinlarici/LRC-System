@@ -66,14 +66,12 @@ function Tabs({ active, onChange }: { active: Tab; onChange: (t: Tab) => void })
 
 // ─── Client Form Modal ────────────────────────────────────────────────────────
 
-const ESTABLISHMENT_CODES = ['021', '023', '025', '029', '030', 'SSF'] as const;
-
 const EMPTY_CLIENT: Omit<EdiClient, 'id' | 'created_at' | 'updated_at'> = {
   customer_account: '', description: '', edi_type: '',
   cdt_company_name: '', cdt_vat: '',
   cdt_address_1: '', cdt_address_2: '', cdt_address_3: '', cdt_address_4: '',
   sdt_vat: '', supplier_code: '',
-  csg_establishment_code: '021', csg_company_name: '',
+  csg_establishment_code: '', csg_company_name: '',
   csg_address_1: '', csg_address_2: '', csg_address_3: '', csg_address_4: '',
   csg_supply_point: '', output_folder: '',
 };
@@ -198,24 +196,22 @@ function ClientModal({
 
           {/* CSG */}
           <section>
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">CSG — Destinatario Ferrari</h3>
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Destinatario</h3>
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Codice stabilimento<span className="text-red-500 ml-0.5">*</span></label>
-                <select
-                  value={form.csg_establishment_code}
-                  onChange={e => setForm(f => ({ ...f, csg_establishment_code: e.target.value as typeof ESTABLISHMENT_CODES[number] }))}
-                  className="w-full border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {ESTABLISHMENT_CODES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <Field label="Ragione sociale Ferrari" value={form.csg_company_name} onChange={set('csg_company_name')} required maxLen={35} />
-              <Field label="Indirizzo 1" value={form.csg_address_1 ?? ''} onChange={set('csg_address_1')} maxLen={35} />
+              <Field
+                label="Cod. identificativo destinatario"
+                value={form.csg_establishment_code ?? ''}
+                onChange={set('csg_establishment_code')}
+                maxLen={20}
+                mono
+                placeholder="021 (Ferrari) · Odette ID (Audi) · Warehouse (McLaren)"
+              />
+              <Field label="Ragione sociale destinatario" value={form.csg_company_name} onChange={set('csg_company_name')} maxLen={35} />
+              <Field label="Indirizzo 1 / Incoterms (Audi) / Location (McLaren)" value={form.csg_address_1 ?? ''} onChange={set('csg_address_1')} maxLen={35} />
               <Field label="Indirizzo 2" value={form.csg_address_2 ?? ''} onChange={set('csg_address_2')} maxLen={35} />
               <Field label="Indirizzo 3" value={form.csg_address_3 ?? ''} onChange={set('csg_address_3')} maxLen={35} />
               <Field label="Indirizzo 4" value={form.csg_address_4 ?? ''} onChange={set('csg_address_4')} maxLen={35} />
-              <Field label="Punto di Rifornimento" value={form.csg_supply_point ?? ''} onChange={set('csg_supply_point')} maxLen={17} mono />
+              <Field label="Punto di scarico / Codice impianto (an..5)" value={form.csg_supply_point ?? ''} onChange={set('csg_supply_point')} maxLen={17} mono placeholder="es. I05 (Audi Ingolstadt)" />
             </div>
           </section>
         </div>
@@ -374,7 +370,12 @@ function ShipmentDetailModal({
       .finally(() => setLoading(false));
   }, [shipment.shipment_id]);
 
-  const missingContracts = lines.filter((_, i) => !contracts[i]?.trim());
+  // DESADV_MCLAREN: ordine acquisto opzionale; AVIEXP_FERRARI e DESADV_AUDI: obbligatorio
+  const contractRequired = !client?.edi_type || !['DESADV_MCLAREN'].includes(client.edi_type);
+  const contractLabel    = client?.edi_type === 'AVIEXP_FERRARI' ? 'N° Contratto Ferrari'
+                         : client?.edi_type === 'DESADV_AUDI'    ? 'N° Ordine Acquisto (VDA)'
+                         : 'N° Ordine Acquisto';
+  const missingContracts = contractRequired ? lines.filter((_, i) => !contracts[i]?.trim()) : [];
   const canGenerate      = !loading && missingContracts.length === 0 && !generating;
 
   async function handleGenerate(force = false) {
@@ -434,7 +435,7 @@ function ShipmentDetailModal({
             <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-600">
               <span><span className="font-medium">Tipo EDI:</span> {client.edi_type}</span>
               <span><span className="font-medium">Fornitore:</span> {client.supplier_code}</span>
-              <span><span className="font-medium">Stabilimento:</span> {client.csg_establishment_code}</span>
+              {client.csg_establishment_code && <span><span className="font-medium">Cod. dest.:</span> {client.csg_establishment_code}</span>}
               <span><span className="font-medium">Output:</span> <span className="font-mono">{client.output_folder}</span></span>
             </div>
           </div>
@@ -452,7 +453,7 @@ function ShipmentDetailModal({
             <>
               {missingContracts.length > 0 && (
                 <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
-                  <strong>{missingContracts.length} riga/righe</strong> senza N° contratto Ferrari — compilare per sbloccare la generazione.
+                  <strong>{missingContracts.length} riga/righe</strong> senza {contractLabel} — compilare per sbloccare la generazione.
                 </div>
               )}
               <div className="overflow-x-auto rounded-xl border border-gray-200">
@@ -463,7 +464,7 @@ function ShipmentDetailModal({
                       <th className="text-left px-3 py-2">Descrizione</th>
                       <th className="text-right px-3 py-2">Qtà</th>
                       <th className="text-left px-3 py-2">UM</th>
-                      <th className="text-left px-3 py-2">N° Contratto Ferrari <span className="text-red-400">*</span></th>
+                      <th className="text-left px-3 py-2">{contractLabel}{contractRequired && <span className="text-red-400 ml-0.5">*</span>}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -480,9 +481,9 @@ function ShipmentDetailModal({
                               type="text"
                               value={contracts[i] ?? ''}
                               onChange={e => setContracts(prev => ({ ...prev, [i]: e.target.value }))}
-                              maxLength={14}
-                              placeholder="14 cifre"
-                              className={`w-40 font-mono text-xs border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                              maxLength={client?.edi_type === 'AVIEXP_FERRARI' ? 14 : 35}
+                              placeholder={client?.edi_type === 'AVIEXP_FERRARI' ? '14 cifre' : 'N° ordine'}
+                              className={`w-44 font-mono text-xs border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                                 missing ? 'border-red-400 bg-red-50' : 'border-gray-300'
                               }`}
                             />
@@ -512,7 +513,7 @@ function ShipmentDetailModal({
               <button
                 onClick={() => handleGenerate(false)}
                 disabled={!canGenerate}
-                title={missingContracts.length > 0 ? 'Completare i contratti Ferrari prima di generare' : ''}
+                title={missingContracts.length > 0 ? `Compilare ${contractLabel} per tutte le righe` : ''}
                 className="px-5 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 font-medium transition-colors"
               >
                 {generating ? 'Generazione…' : 'Genera EDI'}

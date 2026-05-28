@@ -97,6 +97,7 @@ run_migrations() {
     "db/migrate-recepciones.sql"
     "db/migrate-edi.sql"
     "db/migrate-edi-rename-supplier-code.sql"
+    "db/migrate-edi-establishment-generic.sql"
   )
   for f in "${MIGRATIONS[@]}"; do
     if [ -f "$f" ]; then

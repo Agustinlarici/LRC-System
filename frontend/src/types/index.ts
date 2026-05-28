@@ -329,7 +329,7 @@ export interface EdiClient {
   cdt_address_4:              string | null;
   sdt_vat:       string;
   supplier_code: string;
-  csg_establishment_code:     '021' | '023' | '025' | '029' | '030' | 'SSF';
+  csg_establishment_code:     string;
   csg_company_name:           string;
   csg_address_1:              string | null;
   csg_address_2:              string | null;

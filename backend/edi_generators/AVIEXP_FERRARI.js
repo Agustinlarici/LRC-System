@@ -96,7 +96,7 @@ export function generate(shipment, client, sequence) {
     { pos: [1,   17],  value: noticeNumber },
     { pos: [18,  20],  value: 'SDT' },
     { pos: [21,  40],  value: client.sdt_vat },
-    { pos: [216, 232], value: client.sdt_ferrari_supplier_code },
+    { pos: [216, 232], value: client.supplier_code },
   ]));
 
   // ── CSG (destinatario Ferrari) ────────────────────────────────────────────────

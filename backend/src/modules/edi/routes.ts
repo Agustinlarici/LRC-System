@@ -30,7 +30,7 @@ const EdiClientSchema = z.object({
   cdt_address_4:             z.string().max(35).nullish(),
   sdt_vat:          z.string().max(20).default(''),
   supplier_code:    z.string().min(1).max(9).regex(/^\d+$/, 'Solo cifre numeriche'),
-  csg_establishment_code: z.enum(['021', '023', '025', '029', '030', 'SSF']),
+  csg_establishment_code: z.string().max(20).default(''),
   csg_company_name:          z.string().max(35).default(''),
   csg_address_1:             z.string().max(35).nullish(),
   csg_address_2:             z.string().max(35).nullish(),
@@ -267,12 +267,16 @@ ediRoutes.post('/generate', requireManage(MODULE), async (c) => {
   `;
   if (!client) throw new HTTPException(404, { message: 'Cliente EDI non configurato' });
 
-  // Guard: missing Ferrari contract numbers
-  const missing = body.lines.filter(l => !l.contract_number || l.contract_number.trim() === '');
-  if (missing.length > 0) {
-    throw new HTTPException(400, {
-      message: `${missing.length} riga/righe senza N° contratto Ferrari. Compilare prima di generare.`,
-    });
+  // DESADV_MCLAREN: il numero ordine è opzionale (RFF+ON con if nel generatore)
+  // AVIEXP_FERRARI e DESADV_AUDI: il numero contratto/ordine è obbligatorio
+  const ediTypesRequiringContract = ['AVIEXP_FERRARI', 'DESADV_AUDI'];
+  if (ediTypesRequiringContract.includes(client.edi_type as string)) {
+    const missing = body.lines.filter(l => !l.contract_number || l.contract_number.trim() === '');
+    if (missing.length > 0) {
+      throw new HTTPException(400, {
+        message: `${missing.length} riga/righe senza N° contratto / ordine acquisto. Compilare prima di generare.`,
+      });
+    }
   }
 
   // Load generator module

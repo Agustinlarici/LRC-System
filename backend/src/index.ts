@@ -52,6 +52,27 @@ serve({ fetch: app.fetch, port }, async (info) => {
   await db`CREATE INDEX IF NOT EXISTS audit_log_action_idx     ON audit_log (action)`.catch(() => {});
   logger.info('[Startup] audit_log OK');
 
+  // Rimuove il CHECK constraint Ferrari-specifico su csg_establishment_code
+  await db`ALTER TABLE edi_clients DROP CONSTRAINT IF EXISTS edi_clients_csg_establishment_code_check`.catch(() => {});
+  await db`ALTER TABLE edi_clients ALTER COLUMN csg_establishment_code TYPE VARCHAR(20), ALTER COLUMN csg_establishment_code SET DEFAULT ''`.catch(() => {});
+  logger.info('[Startup] edi_clients establishment_code OK');
+
+  await db`
+    CREATE TABLE IF NOT EXISTS monitor_turno_default (
+      id                   SERIAL PRIMARY KEY,
+      linea_id             INTEGER NOT NULL REFERENCES monitor_linea(id) ON DELETE CASCADE,
+      day_of_week          INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+      t1_inizio            TIME,
+      t1_fine              TIME,
+      t2_inizio            TIME,
+      t2_fine              TIME,
+      quantita_giornaliera INTEGER,
+      pause                JSONB NOT NULL DEFAULT '[]',
+      UNIQUE(linea_id, day_of_week)
+    )
+  `.catch((e: unknown) => logger.warn(`[Startup] monitor_turno_default: ${e}`));
+  logger.info('[Startup] monitor_turno_default OK');
+
   startScheduler();
   startWatcher();
 
