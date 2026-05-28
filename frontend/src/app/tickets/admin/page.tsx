@@ -7,13 +7,14 @@ const BACKEND = typeof window !== 'undefined'
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
 type User      = { id: number; username: string; display_name: string };
-type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'edi';
+type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi';
 type Permission = { module_key: ModuleKey; can_view: boolean; can_manage: boolean };
 
 const ALL_MODULES: { key: ModuleKey; label: string }[] = [
   { key: 'ingresso_merci',  label: 'Ingresso Merci' },
   { key: 'packing',         label: 'Packing' },
   { key: 'spma',            label: 'Avanzamento Prod' },
+  { key: 'recepciones',    label: 'Ricezione DDT' },
   { key: 'edi',             label: 'EDI' },
   { key: 'monitor',         label: 'Andon' },
   { key: 'monitor_resumen', label: 'Riepilogo Andon' },
