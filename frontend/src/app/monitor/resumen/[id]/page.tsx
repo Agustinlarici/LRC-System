@@ -279,14 +279,14 @@ export default function ResumenDisplayPage() {
 
               {/* Line Stop */}
               <div className="text-center">
-                <span className={`${sz.linestop} font-semibold tabular-nums text-white`}>
+                <span className="text-4xl font-semibold tabular-nums text-white">
                   {formatLinestop(row.lineStop)}
                 </span>
               </div>
 
               {/* Qtà Prodotta */}
               <div className="text-center">
-                <span className={`${sz.num} font-semibold tabular-nums ${qtaInRitardo ? 'text-red-500' : 'text-white'}`}>
+                <span className={`text-4xl font-semibold tabular-nums ${qtaInRitardo ? 'text-red-500' : 'text-white'}`}>
                   {row.stato.qta_prodotta}
                 </span>
               </div>
