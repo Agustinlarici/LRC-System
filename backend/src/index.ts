@@ -82,6 +82,13 @@ serve({ fetch: app.fetch, port }, async (info) => {
   // Telegram bot: parte subito, non dipende dal sync
   startTelegramBot();
 
+  // Cache da PostgreSQL locale — nessuna dipendenza da WebThron, parte subito
+  logger.info('[Startup] Cache executive da PostgreSQL...');
+  await startExecutiveCache();
+  logger.info('[Startup] Buffer cache da PostgreSQL...');
+  await startBufferCache();
+  setNextRun('buffer_refresh', new Date(Date.now() + 15 * 60_000));
+
   // ─── Startup ritardato di 2 min — non blocca WebThron all'avvio ──────────────
   setTimeout(async () => {
 
@@ -109,15 +116,6 @@ serve({ fetch: app.fetch, port }, async (info) => {
         PRIMARY KEY (modello, componente)
       )
     `.catch(() => {});
-
-    // 2. Popola cache executive da PostgreSQL (zero WebThron — usa history già salvata)
-    logger.info('[Startup] Cache executive da PostgreSQL...');
-    await startExecutiveCache();
-
-    // 3. Buffer cache da PostgreSQL (zero WebThron)
-    logger.info('[Startup] Buffer cache da PostgreSQL...');
-    await startBufferCache();
-    setNextRun('buffer_refresh', new Date(Date.now() + 15 * 60_000));
 
     // 4. Lookup tables: refresh se vuote.
     const [{ count }] = await db`SELECT COUNT(*) AS count FROM webthron_lookup_fasi`;
