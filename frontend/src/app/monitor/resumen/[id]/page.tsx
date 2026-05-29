@@ -114,6 +114,9 @@ export default function ResumenDisplayPage() {
           } else if (commesseArrivate && existing.remaining <= 0 && stato.cycle_time_sec !== null) {
             // Nuove commesse arrivate mentre in overtime → reset a cycle time
             remaining = stato.cycle_time_sec;
+          } else if (stato.commesse.length === 0 && stato.turno_attivo) {
+            // In attesa di picking: non sovrascrivere col server, il locale conta l'overtime
+            remaining = existing.remaining;
           } else if (Math.abs(existing.remaining - serverRemaining) >= 2) {
             remaining = serverRemaining;
           } else {

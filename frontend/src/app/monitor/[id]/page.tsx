@@ -84,6 +84,8 @@ export default function MonitorDisplayPage() {
           if (prev === null || data.remaining_sec === null) return data.remaining_sec;
           // Nuove commesse arrivate mentre in overtime → reset a cycle time
           if (commesseArrivate && prev <= 0 && data.cycle_time_sec !== null) return data.cycle_time_sec;
+          // In attesa di picking: non sovrascrivere col server, il locale conta l'overtime
+          if (data.commesse.length === 0 && data.turno_attivo) return prev;
           return Math.abs(prev - data.remaining_sec) >= 2 ? data.remaining_sec : prev;
         });
         setLineStopSec(prev => {
