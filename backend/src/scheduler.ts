@@ -10,6 +10,12 @@ import { logger } from './lib/logger.js';
 import { recepcionesEmitter } from './gateway/recepciones-emitter.js';
 import { pollOneDriveFolder } from './modules/spma/onedrive-watcher.js';
 
+function nextEvery10Min(): Date {
+  const now = new Date();
+  const secsLeft = (10 - (now.getMinutes() % 10)) * 60 - now.getSeconds();
+  return new Date(now.getTime() + secsLeft * 1000);
+}
+
 function nextOccurrence(hour: number, minute = 0): Date {
   const now  = new Date();
   const next = new Date();
@@ -105,11 +111,15 @@ export function startScheduler() {
 
   // Every 10 min — poll OneDrive folder for new SPMA Excel files
   cron.schedule('*/10 * * * *', async () => {
+    startRun('spma_onedrive_poll');
     try {
-      await pollOneDriveFolder();
+      const count = await pollOneDriveFolder();
+      endRun('spma_onedrive_poll', count);
     } catch (e) {
+      failRun('spma_onedrive_poll', e);
       logger.error(`[scheduler] SPMA OneDrive poll fallito: ${e instanceof Error ? e.message : e}`);
     }
+    setNextRun('spma_onedrive_poll', nextEvery10Min());
   }, { timezone: 'Europe/Rome' });
 
   // Every 5 min — promemoria ricezioni DDT in revisione da più di 30 min
@@ -132,9 +142,10 @@ export function startScheduler() {
   }, { timezone: 'Europe/Rome' });
 
   // Registra prossime esecuzioni all'avvio
-  setNextRun('heatmap_snapshot', nextOccurrence(1));
-  setNextRun('lookup_refresh',   nextOccurrence(2));
-  setNextRun('bc_sync',          nextOccurrence(3));
+  setNextRun('heatmap_snapshot',   nextOccurrence(1));
+  setNextRun('lookup_refresh',     nextOccurrence(2));
+  setNextRun('bc_sync',            nextOccurrence(3));
+  setNextRun('spma_onedrive_poll', nextEvery10Min());
 
   logger.info('Scheduler avviato — snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
 }

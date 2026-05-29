@@ -26,6 +26,7 @@ type ColorState = 'verde' | 'giallo' | 'rosso';
 
 function getColorState(stato: MonitorStato, remaining: number | null): ColorState {
   if (!stato.turno_attivo || stato.cycle_time_sec === null || remaining === null) return 'verde';
+  if (stato.commesse.length === 0) return 'verde';
   if (remaining <= 0) return 'rosso';
   const pct = (remaining / stato.cycle_time_sec) * 100;
   if (pct > stato.soglie.soglia_giallo) return 'verde';
@@ -102,17 +103,19 @@ export default function MonitorDisplayPage() {
     };
   }, [id]);
 
-  // Decrementa ogni secondo — si ferma durante le pause
+  const inAttesa = (stato?.commesse?.length ?? 1) === 0;
+
+  // Decrementa ogni secondo — si ferma durante le pause e in attesa di picking
   useEffect(() => {
-    if (stato?.in_pausa) return;
+    if (stato?.in_pausa || inAttesa) return;
     const tick = setInterval(() => {
       setLocalRemaining(prev => (prev !== null ? prev - 1 : null));
     }, 1000);
     return () => clearInterval(tick);
-  }, [stato?.in_pausa]);
+  }, [stato?.in_pausa, inAttesa]);
 
-  // Incrementa Line Stop ogni secondo quando in overtime (non in pausa)
-  const isOvertime = !stato?.in_pausa && localRemaining !== null && localRemaining <= 0;
+  // Incrementa Line Stop ogni secondo quando in overtime (non in pausa, non in attesa)
+  const isOvertime = !stato?.in_pausa && !inAttesa && localRemaining !== null && localRemaining <= 0;
   useEffect(() => {
     if (!isOvertime) return;
     const t = setInterval(() => setLineStopSec(s => s + 1), 1000);
@@ -143,7 +146,7 @@ export default function MonitorDisplayPage() {
   const isPausa = stato.in_pausa === true;
   const colorState = getColorState(stato, localRemaining);
   const c = COLORS[colorState];
-  const timeDisplay = isPausa || !stato.turno_attivo || localRemaining === null
+  const timeDisplay = isPausa || inAttesa || !stato.turno_attivo || localRemaining === null
     ? '--:--'
     : localRemaining <= 0
       ? `-${formatTime(Math.abs(localRemaining))}`

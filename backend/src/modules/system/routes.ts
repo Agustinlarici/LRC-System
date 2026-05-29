@@ -3,11 +3,12 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { parseBody } from '../../lib/validate.js';
 import { getIKnowFlags, setIKnowFlags } from '../../lib/system-flags.js';
-import { getAllStats } from '../../lib/sync-stats.js';
+import { getAllStats, startRun, endRun, failRun } from '../../lib/sync-stats.js';
 import { refreshLookupTables } from '../monitor/pg-webthron-sync.js';
 import { executiveRefresh } from '../monitor/executive-cache.js';
 import { syncPackArticles } from '../packing/bc-client.js';
 import { snapshotDayFromHistory } from '../dashboards/heatmap.js';
+import { pollOneDriveFolder } from '../spma/onedrive-watcher.js';
 import { getActiveAlerts } from '../../lib/alert-manager.js';
 import { sendAlert } from '../../lib/notifier.js';
 import { requireAuth } from '../../lib/auth.js';
@@ -76,6 +77,15 @@ systemRoutes.post('/force-lookup', requireAuth, (c) => {
     .then(() => {})
     .catch(() => {});
   return c.json({ message: 'Lookup refresh avviato' }, 202);
+});
+
+// POST /api/system/force-onedrive-poll — poll OneDrive SPMA subito
+systemRoutes.post('/force-onedrive-poll', requireAuth, (c) => {
+  startRun('spma_onedrive_poll');
+  pollOneDriveFolder()
+    .then(count => endRun('spma_onedrive_poll', count))
+    .catch(e => failRun('spma_onedrive_poll', e));
+  return c.json({ message: 'Poll OneDrive SPMA avviato' }, 202);
 });
 
 // POST /api/system/force-snapshot — snapshot OEE di ieri

@@ -86,12 +86,13 @@ function severityBadge(s: string) {
 }
 
 const JOB_LABELS: Record<string, string> = {
-  sync_incremental: 'Sync WebThron (10 min)',
-  sync_full_day:    'Sync Full Day (01:00)',
-  heatmap_snapshot: 'Snapshot OEE (01:00)',
-  lookup_refresh:   'Lookup Tables (02:00)',
-  bc_sync:          'Sync Business Central (03:00)',
-  buffer_refresh:   'Buffer Refresh (30 min)',
+  sync_incremental:  'Sync WebThron (10 min)',
+  sync_full_day:     'Sync Full Day (01:00)',
+  heatmap_snapshot:  'Snapshot OEE (01:00)',
+  lookup_refresh:    'Lookup Tables (02:00)',
+  bc_sync:           'Sync Business Central (03:00)',
+  buffer_refresh:    'Buffer Refresh (30 min)',
+  spma_onedrive_poll: 'OneDrive SPMA (10 min)',
 };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -257,10 +258,11 @@ export default function SystemPage() {
             <Card title="Azioni manuali">
               <div className="space-y-2">
                 {([
-                  ['force-sync',     'Sync WebThron ora'],
-                  ['force-bc-sync',  'Sync Business Central ora'],
-                  ['force-lookup',   'Refresh lookup tables'],
-                  ['force-snapshot', 'Snapshot OEE ieri'],
+                  ['force-sync',           'Sync WebThron ora'],
+                  ['force-bc-sync',        'Sync Business Central ora'],
+                  ['force-lookup',         'Refresh lookup tables'],
+                  ['force-snapshot',       'Snapshot OEE ieri'],
+                  ['force-onedrive-poll',  'Poll OneDrive SPMA ora'],
                 ] as [string, string][]).map(([ep, label]) => (
                   <button
                     key={ep}

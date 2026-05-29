@@ -56,18 +56,18 @@ async function getShareContext(shareUrl: string): Promise<{
   return { fedAuth, host, webPath, folderPath };
 }
 
-export async function pollOneDriveFolder(): Promise<void> {
+export async function pollOneDriveFolder(): Promise<number> {
   const shareUrl = process.env.SPMA_ONEDRIVE_SHARE_URL;
-  if (!shareUrl) return;
+  if (!shareUrl) return 0;
 
   let ctx: Awaited<ReturnType<typeof getShareContext>>;
   try {
     ctx = await getShareContext(shareUrl);
   } catch (err) {
     logger.error({ err }, 'spma-onedrive: errore ottenendo sessione SharePoint');
-    return;
+    return 0;
   }
-  if (!ctx) return;
+  if (!ctx) return 0;
 
   const { fedAuth, host, webPath, folderPath } = ctx;
 
@@ -88,18 +88,18 @@ export async function pollOneDriveFolder(): Promise<void> {
 
     if (!r.ok) {
       logger.warn({ status: r.status, apiUrl }, 'spma-onedrive: impossibile listare cartella');
-      return;
+      return 0;
     }
 
     const json = await r.json() as { d: { results: SpFile[] } };
     files = json.d.results ?? [];
   } catch (err) {
     logger.error({ err }, 'spma-onedrive: errore chiamata REST API SharePoint');
-    return;
+    return 0;
   }
 
   const xlsxFiles = files.filter(f => /\.(xlsx|xls|csv)$/i.test(f.Name));
-  if (xlsxFiles.length === 0) return;
+  if (xlsxFiles.length === 0) return 0;
 
   // Compare against already-processed files
   const processed = await db`SELECT file_id, last_modified FROM spma_onedrive_processed`;
@@ -112,10 +112,11 @@ export async function pollOneDriveFolder(): Promise<void> {
     return prev === null || modifiedAt > prev; // re-import if updated
   });
 
-  if (toProcess.length === 0) return;
+  if (toProcess.length === 0) return 0;
 
   logger.info(`spma-onedrive: ${toProcess.length} file Excel da importare`);
 
+  let imported = 0;
   for (const file of toProcess) {
     const downloadUrl = host + file.ServerRelativeUrl;
     try {
@@ -147,8 +148,10 @@ export async function pollOneDriveFolder(): Promise<void> {
         skipped:       result.skipped,
         deleted_stale: result.deleted_stale,
       }, 'spma-onedrive: importazione completata');
+      imported++;
     } catch (err) {
       logger.error({ err, name: file.Name }, 'spma-onedrive: importazione fallita');
     }
   }
+  return imported;
 }
