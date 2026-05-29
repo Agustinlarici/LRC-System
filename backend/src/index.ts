@@ -89,7 +89,7 @@ serve({ fetch: app.fetch, port }, async (info) => {
   await startBufferCache();
   setNextRun('buffer_refresh', new Date(Date.now() + 15 * 60_000));
 
-  // ─── Startup ritardato di 2 min — non blocca WebThron all'avvio ──────────────
+  // ─── Startup ritardato — lascia stabilizzare Docker e le connessioni esterne ──
   setTimeout(async () => {
 
     // 1. Migrazione: converte webthron_prod_cache in VIEW, crea lookup tables
@@ -143,8 +143,8 @@ serve({ fetch: app.fetch, port }, async (info) => {
       }
     }, 30_000);
 
-    logger.info('[Startup] Scheduler avviato — sync WebThron tra 10 min, poi ogni 30s');
-  }, 2 * 60_000);
+    logger.info('[Startup] Scheduler avviato — sync WebThron tra 20s, poi ogni 30s');
+  }, 20_000);
 
-  logger.info('Server pronto — WebThron caricherà tra 2 minuti');
+  logger.info('Server pronto — WebThron caricherà tra 20 secondi');
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import type { MonitorStato } from '@/types';
@@ -26,7 +26,6 @@ type ColorState = 'verde' | 'giallo' | 'rosso';
 
 function getColorState(stato: MonitorStato, remaining: number | null): ColorState {
   if (!stato.turno_attivo || stato.cycle_time_sec === null || remaining === null) return 'verde';
-  if (stato.commesse.length === 0) return 'verde';
   if (remaining <= 0) return 'rosso';
   const pct = (remaining / stato.cycle_time_sec) * 100;
   if (pct > stato.soglie.soglia_giallo) return 'verde';
@@ -62,6 +61,7 @@ export default function MonitorDisplayPage() {
   const [blink, setBlink] = useState(true);
   const [lineStopSec, setLineStopSec] = useState(0);
   const [blinkOn, setBlinkOn] = useState(true);
+  const prevCommesseKeyRef = useRef<string>('');
 
   useEffect(() => {
     const t = setInterval(() => setBlinkOn(v => !v), 700);
@@ -77,8 +77,13 @@ export default function MonitorDisplayPage() {
         const data = await api.get<MonitorStato>(`/api/monitor/stato/${id}`);
         setStato(data);
         setError(null);
+        const currKey = data.commesse.slice().sort().join(',');
+        const commesseArrivate = currKey !== prevCommesseKeyRef.current && data.commesse.length > 0;
+        prevCommesseKeyRef.current = currKey;
         setLocalRemaining(prev => {
           if (prev === null || data.remaining_sec === null) return data.remaining_sec;
+          // Nuove commesse arrivate mentre in overtime → reset a cycle time
+          if (commesseArrivate && prev <= 0 && data.cycle_time_sec !== null) return data.cycle_time_sec;
           return Math.abs(prev - data.remaining_sec) >= 2 ? data.remaining_sec : prev;
         });
         setLineStopSec(prev => {
@@ -103,19 +108,24 @@ export default function MonitorDisplayPage() {
     };
   }, [id]);
 
-  const inAttesa = (stato?.commesse?.length ?? 1) === 0;
+  const inAttesa = (stato?.commesse?.length ?? 1) === 0 && stato?.turno_attivo === true;
 
-  // Decrementa ogni secondo — si ferma durante le pause e in attesa di picking
+  // Decrementa ogni secondo — si ferma durante le pause.
+  // Quando in attesa di picking forza remaining a 0 subito (line stop conta)
   useEffect(() => {
-    if (stato?.in_pausa || inAttesa) return;
+    if (stato?.in_pausa) return;
     const tick = setInterval(() => {
-      setLocalRemaining(prev => (prev !== null ? prev - 1 : null));
+      setLocalRemaining(prev => {
+        if (prev === null) return null;
+        const next = prev - 1;
+        return inAttesa ? Math.min(0, next) : next;
+      });
     }, 1000);
     return () => clearInterval(tick);
   }, [stato?.in_pausa, inAttesa]);
 
-  // Incrementa Line Stop ogni secondo quando in overtime (non in pausa, non in attesa)
-  const isOvertime = !stato?.in_pausa && !inAttesa && localRemaining !== null && localRemaining <= 0;
+  // Incrementa Line Stop ogni secondo quando in overtime (non in pausa)
+  const isOvertime = !stato?.in_pausa && localRemaining !== null && localRemaining <= 0;
   useEffect(() => {
     if (!isOvertime) return;
     const t = setInterval(() => setLineStopSec(s => s + 1), 1000);
@@ -146,10 +156,10 @@ export default function MonitorDisplayPage() {
   const isPausa = stato.in_pausa === true;
   const colorState = getColorState(stato, localRemaining);
   const c = COLORS[colorState];
-  const timeDisplay = isPausa || inAttesa || !stato.turno_attivo || localRemaining === null
+  const timeDisplay = isPausa || !stato.turno_attivo || localRemaining === null
     ? '--:--'
     : localRemaining <= 0
-      ? `-${formatTime(Math.abs(localRemaining))}`
+      ? `+${formatTime(Math.abs(localRemaining))}`
       : formatTime(localRemaining);
 
   const qtaInRitardo = stato.turno_attivo &&

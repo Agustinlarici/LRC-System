@@ -89,15 +89,23 @@ run_migrations() {
     "db/migrate-dashboards.sql"
     "db/migrate-webthron-cache.sql"
     "db/migrate-system-config.sql"
+    "db/migrate-impostazioni.sql"
+    "db/migrate-unified-sync.sql"
     "db/migrate-alerts.sql"
     "db/migrate-resumen.sql"
+    "db/migrate-spma.sql"
+    "db/migrate-spma-import-log.sql"
     "db/migrate-spma-alerts.sql"
     "db/migrate-spma-telegram.sql"
     "db/migrate-spma-email.sql"
+    "db/migrate-spma-onedrive.sql"
+    "db/migrate-iknow-tracking.sql"
+    "db/migrate-lead-time.sql"
     "db/migrate-recepciones.sql"
     "db/migrate-edi.sql"
     "db/migrate-edi-rename-supplier-code.sql"
     "db/migrate-edi-establishment-generic.sql"
+    "db/migrate-audit-log.sql"
   )
   for f in "${MIGRATIONS[@]}"; do
     if [ -f "$f" ]; then

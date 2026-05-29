@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import type { MonitorResumenDettaglio, MonitorResumenLinea, MonitorStato } from '@/types';
@@ -27,7 +27,6 @@ type ColorState = 'verde' | 'giallo' | 'rosso' | 'grigio';
 function getColorState(stato: MonitorStato, remaining: number | null): ColorState {
   if (!stato.turno_attivo || stato.in_pausa) return 'grigio';
   if (stato.cycle_time_sec === null || remaining === null) return 'grigio';
-  if (stato.commesse.length === 0) return 'grigio';
   if (remaining <= 0) return 'rosso';
   const pct = (remaining / stato.cycle_time_sec) * 100;
   if (pct > stato.soglie.soglia_giallo) return 'verde';
@@ -79,6 +78,7 @@ export default function ResumenDisplayPage() {
   const [rows, setRows]       = useState<Record<number, RowState>>({});
   const [error, setError]     = useState<string | null>(null);
   const [blinkOn, setBlinkOn] = useState(true);
+  const prevCommesseKeysRef   = useRef<Record<number, string>>({});
 
   useEffect(() => {
     const t = setInterval(() => setBlinkOn(v => !v), 700);
@@ -101,13 +101,24 @@ export default function ResumenDisplayPage() {
     await Promise.all(ids.map(async id => {
       try {
         const stato = await api.get<MonitorStato>(`/api/monitor/stato/${id}`);
+        const currKey = stato.commesse.slice().sort().join(',');
+        const commesseArrivate = currKey !== (prevCommesseKeysRef.current[id] ?? '') && stato.commesse.length > 0;
+        prevCommesseKeysRef.current[id] = currKey;
         setRows(prev => {
           const existing = prev[id];
           const serverRemaining = stato.remaining_sec;
           const serverLineStop  = stato.linestop_sec ?? 0;
-          const remaining = !existing || existing.remaining === null || serverRemaining === null || Math.abs(existing.remaining - serverRemaining) >= 2
-            ? serverRemaining
-            : existing.remaining;
+          let remaining: number | null;
+          if (!existing || existing.remaining === null || serverRemaining === null) {
+            remaining = serverRemaining;
+          } else if (commesseArrivate && existing.remaining <= 0 && stato.cycle_time_sec !== null) {
+            // Nuove commesse arrivate mentre in overtime → reset a cycle time
+            remaining = stato.cycle_time_sec;
+          } else if (Math.abs(existing.remaining - serverRemaining) >= 2) {
+            remaining = serverRemaining;
+          } else {
+            remaining = existing.remaining;
+          }
           const lineStop = !existing || Math.abs(existing.lineStop - serverLineStop) >= 2
             ? serverLineStop
             : existing.lineStop;
@@ -142,8 +153,10 @@ export default function ResumenDisplayPage() {
         for (const key in prev) {
           const id  = Number(key);
           const row = prev[id];
-          if (row.stato.in_pausa || row.stato.commesse.length === 0) { next[id] = row; continue; }
-          const newRemaining = row.remaining !== null ? row.remaining - 1 : null;
+          if (row.stato.in_pausa) { next[id] = row; continue; }
+          const inAttesa = row.stato.commesse.length === 0 && row.stato.turno_attivo;
+          const raw          = row.remaining !== null ? row.remaining - 1 : null;
+          const newRemaining = inAttesa && raw !== null ? Math.min(0, raw) : raw;
           const overtime     = newRemaining !== null && newRemaining <= 0;
           next[id] = {
             ...row,
@@ -212,7 +225,7 @@ export default function ResumenDisplayPage() {
         {loadedLinee.map(linea => {
           const row        = rows[linea.linea_id]!;
           const colorState = getColorState(row.stato, row.remaining);
-          const overtime   = !row.stato.in_pausa && row.stato.commesse.length > 0 && row.remaining !== null && row.remaining <= 0;
+          const overtime   = !row.stato.in_pausa && row.remaining !== null && row.remaining <= 0;
           const isPausa    = row.stato.in_pausa === true;
 
           const rowBg = isPausa
@@ -221,7 +234,7 @@ export default function ResumenDisplayPage() {
               ? (row.blink ? 'bg-red-950/60' : 'bg-[#1c1c1c]')
               : 'bg-[#1c1c1c]';
 
-          const timeDisplay = isPausa || row.stato.commesse.length === 0 || !row.stato.turno_attivo || row.remaining === null
+          const timeDisplay = isPausa || !row.stato.turno_attivo || row.remaining === null
             ? '--:--'
             : row.remaining <= 0
               ? `+${formatTimer(Math.abs(row.remaining))}`
@@ -259,9 +272,16 @@ export default function ResumenDisplayPage() {
               <div className="flex flex-col items-center justify-center gap-0.5 px-2">
                 {row.stato.commesse.length === 0
                   ? <span className={`${sz.commessa} font-bold text-red-500 transition-opacity duration-100 ${blinkOn ? 'opacity-100' : 'opacity-0'}`}>In attesa di picking</span>
-                  : row.stato.commesse.map(c => (
-                      <span key={c} className={`${sz.commessa} font-semibold text-white leading-tight`}>{c}</span>
-                    ))
+                  : (() => {
+                      const nc = row.stato.commesse.length;
+                      const steps = nc <= 1 ? 0 : nc === 2 ? 1 : 2;
+                      const sizes = ['text-base','text-lg','text-xl','text-2xl','text-3xl','text-4xl','text-5xl'];
+                      const base  = sizes.indexOf(sz.commessa);
+                      const cls   = sizes[Math.max(0, base - steps)];
+                      return row.stato.commesse.map(c => (
+                        <span key={c} className={`${cls} font-semibold text-white leading-tight`}>{c}</span>
+                      ));
+                    })()
                 }
               </div>
 
