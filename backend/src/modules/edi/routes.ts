@@ -361,13 +361,18 @@ ediRoutes.get('/history', requireModule(MODULE), async (c) => {
   const toDate:   string | null    = q['to']               ?? null;
   const acct:     string | null    = q['customer_account'] ?? null;
 
+  const fromFilter = fromDate ? db`AND generated_at::date >= ${fromDate}::date` : db``;
+  const toFilter   = toDate   ? db`AND generated_at::date <= ${toDate}::date`   : db``;
+  const acctFilter = acct     ? db`AND customer_account = ${acct}`              : db``;
+
   const rows = await db`
     SELECT id, shipment_id, customer_account, edi_type, filename,
            generated_at, status, error_message, is_regeneration
     FROM edi_history
-    WHERE (${fromDate}::date IS NULL OR generated_at::date >= ${fromDate}::date)
-      AND (${toDate}::date   IS NULL OR generated_at::date <= ${toDate}::date)
-      AND (${acct} IS NULL OR customer_account = ${acct})
+    WHERE 1=1
+    ${fromFilter}
+    ${toFilter}
+    ${acctFilter}
     ORDER BY generated_at DESC
     LIMIT 500
   `;

@@ -1,25 +1,24 @@
 import sql from 'mssql';
 
-// ─── Placeholder table names — sostituire con i nomi reali in Dynamics ────────
+// ─── Tabelle Dynamics (DB: STR) ───────────────────────────────────────────────
 
-// TODO: reemplazar con el nombre real de la tabla header de expediciones en Dynamics
-const SHIPMENT_HEADER_TABLE = 'PLACEHOLDER_HEADER';
+// Righe spedizione (EOS CWS Shipment Line) — usata per tutti i clienti EDI
+const LINE_TABLE = 'STR$EOS CWS Shipment Line$a879d9e1-a8d9-4dc8-87d8-69d278c5e003';
 
-// TODO: reemplazar con el nombre real de la tabla detalle de expediciones
-const SHIPMENT_DETAIL_TABLE = 'PLACEHOLDER_DETAIL';
+// Estensione LSA — contiene LSA Your Reference (Purchase Order McLaren/Audi)
+const LSA_TABLE  = 'STR$EOS CWS Shipment Line$34bccc94-c43f-4899-8aa8-c820f9e64421';
 
-// TODO: reemplazar con tabla y campo donde está el N° contrato/orden Ferrari (14 caracteres)
-// Formato: 10 dígitos número contrato + 4 dígitos posición, rellenados con ceros (ej: 00006015180015)
-const CONTRACT_NUMBER_EXPR = 'CAST(d.PLACEHOLDER_CONTRACT_FIELD AS VARCHAR(14))';
+// TODO: Ferrari — verificare se il contratto Ferrari (14 cifre/commessa)
+//       si trova in LSA Your Reference o in un altro campo/tabella
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 function getDynamicsConfig(): sql.config {
   return {
-    server:   process.env.DYNAMICS_DB_SERVER   ?? '',
-    database: process.env.DYNAMICS_DB_NAME     ?? '',
-    user:     process.env.DYNAMICS_DB_USER     ?? '',
-    password: process.env.DYNAMICS_DB_PASSWORD ?? '',
+    server:   process.env.BC_SERVER   ?? '',
+    database: process.env.BC_DATABASE ?? '',
+    user:     process.env.BC_USER     ?? '',
+    password: process.env.BC_PASSWORD ?? '',
     options: {
       encrypt:                false,
       trustServerCertificate: true,
@@ -62,9 +61,8 @@ export async function getShipments(
   try {
     const req = pool.request();
 
-    // Bind customer accounts as individual params to avoid string injection
-    const paramNames = customerAccounts.map((_, i) => {
-      req.input(`acc${i}`, sql.VarChar(20), customerAccounts[i]);
+    const paramNames = customerAccounts.map((acc, i) => {
+      req.input(`acc${i}`, sql.VarChar(20), acc);
       return `@acc${i}`;
     });
 
@@ -72,25 +70,25 @@ export async function getShipments(
     if (to)   req.input('to',   sql.Date, new Date(to));
 
     const dateFilter = [
-      from ? 'AND h.Posting_Date >= @from' : '',
-      to   ? 'AND h.Posting_Date <= @to'   : '',
+      from ? `AND MIN(l.[Posting Date]) >= @from` : '',
+      to   ? `AND MIN(l.[Posting Date]) <= @to`   : '',
     ].join(' ');
 
     const result = await req.query(`
       SELECT
-        h.No_                                        AS shipment_id,
-        CONVERT(VARCHAR(10), h.Posting_Date, 23)     AS shipment_date,
-        h.Sell_to_Customer_No_                       AS customer_account,
-        h.No_                                        AS document_number,
-        CONVERT(VARCHAR(10), h.Posting_Date, 23)     AS document_date,
-        CAST(0 AS BIT)                               AS is_extra_cee,
-        COUNT(d.Line_No_)                            AS line_count
-      FROM [${SHIPMENT_HEADER_TABLE}] h
-      LEFT JOIN [${SHIPMENT_DETAIL_TABLE}] d ON d.Document_No_ = h.No_
-      WHERE h.Sell_to_Customer_No_ IN (${paramNames.join(', ')})
-        ${dateFilter}
-      GROUP BY h.No_, h.Posting_Date, h.Sell_to_Customer_No_
-      ORDER BY h.Posting_Date DESC
+        l.[Document No_]                                    AS shipment_id,
+        CONVERT(VARCHAR(10), MIN(l.[Posting Date]), 23)     AS shipment_date,
+        l.[Destination No_]                                 AS customer_account,
+        l.[Document No_]                                    AS document_number,
+        CONVERT(VARCHAR(10), MIN(l.[Posting Date]), 23)     AS document_date,
+        CAST(0 AS BIT)                                      AS is_extra_cee,
+        COUNT(l.[Line No_])                                 AS line_count
+      FROM [${LINE_TABLE}] l
+      WHERE l.[Destination No_] IN (${paramNames.join(', ')})
+        AND LTRIM(RTRIM(ISNULL(l.[No_], ''))) <> ''
+      GROUP BY l.[Document No_], l.[Destination No_]
+      HAVING 1=1 ${dateFilter}
+      ORDER BY MIN(l.[Posting Date]) DESC
     `);
 
     return (result.recordset as DynamicsShipment[]).map(r => ({
@@ -110,14 +108,21 @@ export async function getShipmentLines(shipmentId: string): Promise<DynamicsLine
       .input('shipmentId', sql.VarChar(50), shipmentId)
       .query(`
         SELECT
-          d.No_                                AS article_code,
-          d.Description                        AS description,
-          d.Quantity                           AS quantity,
-          d.Unit_of_Measure_Code               AS unit_of_measure,
-          ${CONTRACT_NUMBER_EXPR}              AS contract_number
-        FROM [${SHIPMENT_DETAIL_TABLE}] d
-        WHERE d.Document_No_ = @shipmentId
-        ORDER BY d.Line_No_
+          l.[No_]                                                           AS article_code,
+          l.[Description]                                                   AS description,
+          l.[Quantity (Base)]                                               AS quantity,
+          l.[Unit of Measure]                                               AS unit_of_measure,
+          LEFT(
+            lsa.[LSA Your Reference],
+            CHARINDEX(' ', lsa.[LSA Your Reference] + ' ') - 1
+          )                                                                 AS contract_number
+        FROM [${LINE_TABLE}] l
+        LEFT JOIN [${LSA_TABLE}] lsa
+          ON  lsa.[Document No_] = l.[Document No_]
+          AND lsa.[Line No_]     = l.[Line No_]
+        WHERE l.[Document No_] = @shipmentId
+          AND LTRIM(RTRIM(ISNULL(l.[No_], ''))) <> ''
+        ORDER BY l.[Line No_]
       `);
 
     return (result.recordset as DynamicsLine[]).map(r => ({
