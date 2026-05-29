@@ -81,11 +81,16 @@ export default function MonitorDisplayPage() {
         const commesseArrivate = currKey !== prevCommesseKeyRef.current && data.commesse.length > 0;
         prevCommesseKeyRef.current = currKey;
         setLocalRemaining(prev => {
-          if (prev === null || data.remaining_sec === null) return data.remaining_sec;
+          if (data.remaining_sec === null) return null;
           // Nuove commesse arrivate mentre in overtime → reset a cycle time
-          if (commesseArrivate && prev <= 0 && data.cycle_time_sec !== null) return data.cycle_time_sec;
-          // In attesa di picking: non sovrascrivere col server, il locale conta l'overtime
-          if (data.commesse.length === 0 && data.turno_attivo) return prev;
+          if (commesseArrivate && (prev === null || prev <= 0) && data.cycle_time_sec !== null) return data.cycle_time_sec;
+          // In attesa di picking
+          if (data.commesse.length === 0 && data.turno_attivo) {
+            if (data.remaining_sec <= 0) return data.remaining_sec; // server in overtime: consistente su tutti i browser
+            if (prev !== null && prev < 0) return prev;              // già in overtime locale: continua senza oscillare
+            return 0;                                                // appena entrato in attesa: parti da 0
+          }
+          if (prev === null) return data.remaining_sec;
           return Math.abs(prev - data.remaining_sec) >= 2 ? data.remaining_sec : prev;
         });
         setLineStopSec(prev => {
@@ -112,19 +117,14 @@ export default function MonitorDisplayPage() {
 
   const inAttesa = (stato?.commesse?.length ?? 1) === 0 && stato?.turno_attivo === true;
 
-  // Decrementa ogni secondo — si ferma durante le pause.
-  // Quando in attesa di picking forza remaining a 0 subito (line stop conta)
+  // Decrementa ogni secondo — si ferma solo durante le pause
   useEffect(() => {
     if (stato?.in_pausa) return;
     const tick = setInterval(() => {
-      setLocalRemaining(prev => {
-        if (prev === null) return null;
-        const next = prev - 1;
-        return inAttesa ? Math.min(0, next) : next;
-      });
+      setLocalRemaining(prev => prev !== null ? prev - 1 : null);
     }, 1000);
     return () => clearInterval(tick);
-  }, [stato?.in_pausa, inAttesa]);
+  }, [stato?.in_pausa]);
 
   // Incrementa Line Stop ogni secondo quando in overtime (non in pausa)
   const isOvertime = !stato?.in_pausa && localRemaining !== null && localRemaining <= 0;

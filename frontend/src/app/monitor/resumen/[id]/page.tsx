@@ -109,14 +109,16 @@ export default function ResumenDisplayPage() {
           const serverRemaining = stato.remaining_sec;
           const serverLineStop  = stato.linestop_sec ?? 0;
           let remaining: number | null;
-          if (!existing || existing.remaining === null || serverRemaining === null) {
+          if (serverRemaining === null) {
+            remaining = null;
+          } else if (!existing || existing.remaining === null) {
             remaining = serverRemaining;
           } else if (commesseArrivate && existing.remaining <= 0 && stato.cycle_time_sec !== null) {
-            // Nuove commesse arrivate mentre in overtime → reset a cycle time
             remaining = stato.cycle_time_sec;
           } else if (stato.commesse.length === 0 && stato.turno_attivo) {
-            // In attesa di picking: non sovrascrivere col server, il locale conta l'overtime
-            remaining = existing.remaining;
+            if (serverRemaining <= 0) remaining = serverRemaining;            // server in overtime: consistente su tutti i browser
+            else if (existing.remaining < 0) remaining = existing.remaining; // già in overtime locale: continua senza oscillare
+            else remaining = 0;                                               // appena entrato in attesa: parti da 0
           } else if (Math.abs(existing.remaining - serverRemaining) >= 2) {
             remaining = serverRemaining;
           } else {
@@ -157,9 +159,7 @@ export default function ResumenDisplayPage() {
           const id  = Number(key);
           const row = prev[id];
           if (row.stato.in_pausa) { next[id] = row; continue; }
-          const inAttesa = row.stato.commesse.length === 0 && row.stato.turno_attivo;
-          const raw          = row.remaining !== null ? row.remaining - 1 : null;
-          const newRemaining = inAttesa && raw !== null ? Math.min(0, raw) : raw;
+          const newRemaining = row.remaining !== null ? row.remaining - 1 : null;
           const overtime     = newRemaining !== null && newRemaining <= 0;
           next[id] = {
             ...row,
