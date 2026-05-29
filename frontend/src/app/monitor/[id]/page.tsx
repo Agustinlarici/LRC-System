@@ -83,7 +83,7 @@ export default function MonitorDisplayPage() {
         setLocalRemaining(prev => {
           if (data.remaining_sec === null) return null;
           // Nuove commesse arrivate mentre in overtime → reset a cycle time
-          if (commesseArrivate && (prev === null || prev <= 0) && data.cycle_time_sec !== null) return data.cycle_time_sec;
+          if (commesseArrivate && prev !== null && prev <= 0 && data.cycle_time_sec !== null) return data.cycle_time_sec;
           // In attesa di picking
           if (data.commesse.length === 0 && data.turno_attivo) {
             if (prev !== null && prev < 0) return prev;                              // già in overtime: continua locale, no salti
