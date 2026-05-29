@@ -116,9 +116,9 @@ export default function ResumenDisplayPage() {
           } else if (commesseArrivate && existing.remaining <= 0 && stato.cycle_time_sec !== null) {
             remaining = stato.cycle_time_sec;
           } else if (stato.commesse.length === 0 && stato.turno_attivo) {
-            if (serverRemaining <= 0) remaining = serverRemaining;            // server in overtime: consistente su tutti i browser
-            else if (existing.remaining < 0) remaining = existing.remaining; // già in overtime locale: continua senza oscillare
-            else remaining = 0;                                               // appena entrato in attesa: parti da 0
+            if (existing.remaining < 0)      remaining = existing.remaining;                           // già in overtime: continua locale, no salti
+            else if (serverRemaining <= 0)   remaining = serverRemaining;                              // server già in overtime: usa server
+            else remaining = stato.elapsed_sec !== null ? -stato.elapsed_sec : 0;                     // usa elapsed server: stesso valore su tutti i browser
           } else if (Math.abs(existing.remaining - serverRemaining) >= 2) {
             remaining = serverRemaining;
           } else {
