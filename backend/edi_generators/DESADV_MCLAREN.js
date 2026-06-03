@@ -19,7 +19,7 @@
  *   lines[].article_code   → LIN (codice parte McLaren)
  *   lines[].quantity       → QTY+12
  *   lines[].unit_of_measure → QTY unità (normalizzata a codici EDIFACT)
- *   lines[].contract_number → RFF+ON (Purchase Order McLaren) + ref riga
+ *   lines[].contract_number → RFF+ON (Purchase Order McLaren), SA line number sempre 00010
  */
 
 // Mappa codici unità di misura Business Central → EDIFACT UN/ECE Rec 20
@@ -168,16 +168,13 @@ export function generate(shipment, client, sequence) {
     const qty    = Number(line.quantity || 0);
     const uom    = toEdifactUom(line.unit_of_measure);
     const poNo   = edifactEsc(String(line.contract_number || ''));
-    // Riferimento riga ordine: numero riga × 10 con padding 5 cifre (es. 1→00010, 2→00020)
-    const lineRef = String(lineNo * 10).padStart(5, '0');
-
     segs.push(`CPS+${lineNo}'`);
     segs.push(`PAC+1'`);
     segs.push(`LIN+${lineNo}++${partNo}:IN+:0+0'`);
     segs.push(`QTY+12:${qty}:${uom}'`);
 
     if (poNo) {
-      segs.push(`RFF+ON:${poNo}:${lineRef}'`);
+      segs.push(`RFF+ON:${poNo}:00010'`);
     }
     segs.push(`RFF+AAU:${docNo}'`);
   }
