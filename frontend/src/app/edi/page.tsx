@@ -73,7 +73,7 @@ const EMPTY_CLIENT: Omit<EdiClient, 'id' | 'created_at' | 'updated_at'> = {
   sdt_vat: '', supplier_code: '',
   csg_establishment_code: '', csg_company_name: '',
   csg_address_1: '', csg_address_2: '', csg_address_3: '', csg_address_4: '',
-  csg_supply_point: '', output_folder: '',
+  csg_supply_point: '', output_folder: '', auto_generate: false,
 };
 
 function Field({
@@ -168,7 +168,19 @@ function ClientModal({
                   {generators.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
               </div>
-              <Field label="Cartella output (percorso assoluto)" value={form.output_folder} onChange={set('output_folder')} required placeholder="/mnt/intesa/edi_out" />
+              <Field label="Cartella output (percorso assoluto)" value={form.output_folder} onChange={set('output_folder')} required placeholder="/app/edi-output" />
+              <div className="flex items-center gap-3 pt-5">
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!form.auto_generate}
+                    onChange={e => setForm(f => ({ ...f, auto_generate: e.target.checked }))}
+                    className="sr-only peer"
+                  />
+                  <div className="w-10 h-5 bg-gray-300 peer-focus:ring-2 peer-focus:ring-blue-400 rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5" />
+                </label>
+                <span className="text-sm text-gray-700">Genera automaticamente alle 23:45</span>
+              </div>
             </div>
           </section>
 

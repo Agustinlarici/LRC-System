@@ -337,6 +337,7 @@ export interface EdiClient {
   csg_address_4:              string | null;
   csg_supply_point:           string | null;
   output_folder:              string;
+  auto_generate:              boolean;
   created_at:                 string;
   updated_at:                 string;
 }

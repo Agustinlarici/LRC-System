@@ -60,6 +60,9 @@ serve({ fetch: app.fetch, port }, async (info) => {
   await db`ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'monitor_resumen'`.catch(() => {});
   logger.info('[Startup] module_key_enum monitor_resumen OK');
 
+  await db`ALTER TABLE edi_clients ADD COLUMN IF NOT EXISTS auto_generate BOOLEAN NOT NULL DEFAULT FALSE`.catch(() => {});
+  logger.info('[Startup] edi_clients auto_generate OK');
+
   await db`
     CREATE TABLE IF NOT EXISTS monitor_turno_default (
       id                   SERIAL PRIMARY KEY,

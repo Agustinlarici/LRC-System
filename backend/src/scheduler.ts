@@ -4,6 +4,7 @@ import { snapshotDayFromHistory } from './modules/dashboards/heatmap.js';
 import { syncFullDayToHistory, refreshLookupTables } from './modules/monitor/pg-webthron-sync.js';
 import { checkSpmaDelays } from './modules/spma/delay-checker.js';
 import { sendDelayReportEmail, emailConfigured, type SmtpConfig } from './modules/spma/spma-email-notifier.js';
+import { autoGenerateEdi } from './modules/edi/auto-generate.js';
 import { db } from './db/client.js';
 import { startRun, endRun, failRun, setNextRun } from './lib/sync-stats.js';
 import { logger } from './lib/logger.js';
@@ -141,11 +142,23 @@ export function startScheduler() {
     }
   }, { timezone: 'Europe/Rome' });
 
+  // 23:45 — generazione automatica EDI per i clienti con auto_generate = true
+  cron.schedule('45 23 * * *', async () => {
+    logger.info('[scheduler] EDI auto-generate...');
+    try {
+      await autoGenerateEdi();
+    } catch (e) {
+      logger.error(`[scheduler] EDI auto-generate fallito: ${e instanceof Error ? e.message : e}`);
+    }
+    setNextRun('edi_auto_generate', nextOccurrence(23, 45));
+  }, { timezone: 'Europe/Rome' });
+
   // Registra prossime esecuzioni all'avvio
   setNextRun('heatmap_snapshot',   nextOccurrence(1));
   setNextRun('lookup_refresh',     nextOccurrence(2));
   setNextRun('bc_sync',            nextOccurrence(3));
   setNextRun('spma_onedrive_poll', nextEvery10Min());
+  setNextRun('edi_auto_generate',  nextOccurrence(23, 45));
 
-  logger.info('Scheduler avviato — snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
+  logger.info('Scheduler avviato — EDI auto 23:45, snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
 }

@@ -38,6 +38,7 @@ const EdiClientSchema = z.object({
   csg_address_4:             z.string().max(35).nullish(),
   csg_supply_point:          z.string().max(17).nullish(),
   output_folder:             z.string().min(1),
+  auto_generate:             z.boolean().default(false),
 });
 
 const GenerateSchema = z.object({
@@ -109,7 +110,7 @@ ediRoutes.post('/clients', requireManage(MODULE), async (c) => {
       sdt_vat, supplier_code,
       csg_establishment_code, csg_company_name,
       csg_address_1, csg_address_2, csg_address_3, csg_address_4,
-      csg_supply_point, output_folder
+      csg_supply_point, output_folder, auto_generate
     ) VALUES (
       ${b.customer_account}, ${b.description}, ${b.edi_type},
       ${b.cdt_company_name ?? ''}, ${b.cdt_vat ?? ''},
@@ -119,7 +120,7 @@ ediRoutes.post('/clients', requireManage(MODULE), async (c) => {
       ${b.csg_establishment_code}, ${b.csg_company_name ?? ''},
       ${b.csg_address_1 ?? null}, ${b.csg_address_2 ?? null},
       ${b.csg_address_3 ?? null}, ${b.csg_address_4 ?? null},
-      ${b.csg_supply_point ?? null}, ${b.output_folder}
+      ${b.csg_supply_point ?? null}, ${b.output_folder}, ${b.auto_generate ?? false}
     ) RETURNING *
   `;
   return c.json(row, 201);
@@ -161,6 +162,7 @@ ediRoutes.put('/clients/:id', requireManage(MODULE), async (c) => {
       csg_address_4           = ${b.csg_address_4 ?? null},
       csg_supply_point        = ${b.csg_supply_point ?? null},
       output_folder           = ${b.output_folder},
+      auto_generate           = ${b.auto_generate ?? false},
       updated_at              = NOW()
     WHERE id = ${id}
     RETURNING *

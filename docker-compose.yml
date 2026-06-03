@@ -93,6 +93,7 @@ services:
     volumes:
       - ${SCAN_FOLDER_HOST:-./test-scansioni}:/scansioni:ro
       - ${DOCS_FOLDER_HOST:-./test-documentos}:/documentos
+      - edi_share:/app/edi-output
     ports:
       - "3001:3001"
     depends_on:
@@ -128,3 +129,9 @@ services:
 volumes:
   lrc-system-pgdata-prod:
     external: true
+  edi_share:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: //192.168.1.245/edi/PROVA
+      o: "guest,vers=3.0,uid=1000,gid=1000,file_mode=0777,dir_mode=0777"

@@ -105,6 +105,7 @@ run_migrations() {
     "db/migrate-edi.sql"
     "db/migrate-edi-rename-supplier-code.sql"
     "db/migrate-edi-establishment-generic.sql"
+    "db/migrate-edi-auto-generate.sql"
     "db/migrate-audit-log.sql"
   )
   for f in "${MIGRATIONS[@]}"; do
