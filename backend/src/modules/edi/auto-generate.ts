@@ -1,8 +1,8 @@
 import { join } from 'path';
-import { writeFile } from 'fs/promises';
 import { pathToFileURL } from 'url';
 import { db } from '../../db/client.js';
 import { getShipments, getShipmentLines } from './dynamics-client.js';
+import { writeEdiFile } from '../../lib/smb-writer.js';
 import { logger } from '../../lib/logger.js';
 
 const GENERATORS_DIR = join(process.cwd(), 'edi_generators');
@@ -84,9 +84,8 @@ export async function autoGenerateEdi(): Promise<void> {
           };
 
           const fileContent = generatorMod.generate(body, client, sequence);
-          const outputPath  = join(client.output_folder as string, filename);
 
-          await writeFile(outputPath, fileContent, 'utf-8');
+          await writeEdiFile(client.output_folder as string, filename, fileContent);
 
           await db`
             INSERT INTO edi_history

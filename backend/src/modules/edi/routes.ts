@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import { readdir, access, writeFile } from 'node:fs/promises';
+import { readdir, access } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -9,6 +9,7 @@ import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
 import { requireModule, requireManage } from '../../lib/auth.js';
 import { getShipments, getShipmentLines } from './dynamics-client.js';
+import { writeEdiFile, isUncPath } from '../../lib/smb-writer.js';
 
 export const ediRoutes = new Hono();
 const MODULE = 'edi' as const;
@@ -95,10 +96,12 @@ ediRoutes.get('/clients', requireModule(MODULE), async (c) => {
 ediRoutes.post('/clients', requireManage(MODULE), async (c) => {
   const body = await parseBody(c, EdiClientSchema);
 
-  try {
-    await access(body.output_folder, constants.W_OK);
-  } catch {
-    throw new HTTPException(400, { message: `Cartella non accessibile: "${body.output_folder}"` });
+  if (!isUncPath(body.output_folder)) {
+    try {
+      await access(body.output_folder, constants.W_OK);
+    } catch {
+      throw new HTTPException(400, { message: `Cartella non accessibile: "${body.output_folder}"` });
+    }
   }
 
   const b = body as Required<typeof body>;
@@ -325,10 +328,9 @@ ediRoutes.post('/generate', requireManage(MODULE), async (c) => {
     throw new HTTPException(500, { message: `Errore generazione: ${(err as Error).message}` });
   }
 
-  // Write to output_folder
-  const outputPath = join(client.output_folder as string, filename);
+  // Write to output_folder (local path or UNC/SMB)
   try {
-    await writeFile(outputPath, fileContent, 'utf-8');
+    await writeEdiFile(client.output_folder as string, filename, fileContent);
   } catch (err) {
     await db`
       INSERT INTO edi_history
@@ -338,7 +340,7 @@ ediRoutes.post('/generate', requireManage(MODULE), async (c) => {
          ${filename}, 'error', ${(err as Error).message}, ${fileContent}, ${body.force === true})
     `;
     throw new HTTPException(500, {
-      message: `Impossibile scrivere il file "${outputPath}": ${(err as Error).message}`,
+      message: `Impossibile scrivere il file "${filename}": ${(err as Error).message}`,
     });
   }
 

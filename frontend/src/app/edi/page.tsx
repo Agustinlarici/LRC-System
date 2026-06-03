@@ -168,7 +168,7 @@ function ClientModal({
                   {generators.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
               </div>
-              <Field label="Cartella output (percorso assoluto)" value={form.output_folder} onChange={set('output_folder')} required placeholder="/app/edi-output" />
+              <Field label="Cartella output (percorso assoluto)" value={form.output_folder} onChange={set('output_folder')} required placeholder="/percorso/locale  oppure  \\\\192.168.1.x\\share\\cartella" />
               <div className="flex items-center gap-3 pt-5">
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
