@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { StopEvent, StopReason, StopCategory } from '@/types';
 
@@ -213,10 +214,15 @@ export default function ParatePage() {
     return () => clearInterval(interval);
   }, [loadMotivi, loadStops]);
 
-  async function apriManuale() {
+  async function toggleFermata() {
     setOpening(true);
     try {
-      await api.post(`/api/monitor/parate/${lineaId}/apri`, {});
+      const open = stops.find(isOpen);
+      if (open) {
+        await api.post(`/api/monitor/parate/${open.id}/chiudi`, {});
+      } else {
+        await api.post(`/api/monitor/parate/${lineaId}/apri`, {});
+      }
       await loadStops();
     } finally { setOpening(false); }
   }
@@ -247,10 +253,14 @@ export default function ParatePage() {
               className="text-sm text-gray-500 hover:text-gray-700 font-medium px-3 py-1.5 border border-gray-200 rounded-lg">
               Aggiorna
             </button>
-            <button onClick={apriManuale} disabled={opening}
-              className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-sm disabled:opacity-50 transition-colors shadow-sm">
-              <span className="text-base leading-none">⏹</span>
-              {opening ? 'Apertura...' : 'Segna linea ferma'}
+            <button onClick={toggleFermata} disabled={opening}
+              className={`flex items-center gap-2 px-5 py-2.5 font-bold rounded-xl text-sm disabled:opacity-50 transition-colors shadow-sm text-white ${
+                openStops.length > 0
+                  ? 'bg-green-600 hover:bg-green-700'
+                  : 'bg-red-600 hover:bg-red-700'
+              }`}>
+              <span className="text-base leading-none">{openStops.length > 0 ? '▶' : '⏹'}</span>
+              {opening ? '...' : openStops.length > 0 ? 'Termina fermata' : 'Segna linea ferma'}
             </button>
           </div>
         </div>

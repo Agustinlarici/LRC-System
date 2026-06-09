@@ -88,6 +88,19 @@ stopRoutes.post('/parate/:lineaId/apri', async (c) => {
   return c.json({ id: row.id }, 201);
 });
 
+// ─── Chiudi fermata manuale ───────────────────────────────────────────────────
+
+stopRoutes.post('/parate/:eventId/chiudi', async (c) => {
+  const eventId = parseId(c.req.param('eventId'));
+  const [updated] = await db`
+    UPDATE monitor_stop_events SET ended_at = NOW()
+    WHERE id = ${eventId} AND ended_at IS NULL
+    RETURNING id
+  `;
+  if (!updated) throw new HTTPException(404, { message: 'Fermata non trovata o già chiusa' });
+  return c.json({ ok: true });
+});
+
 // ─── Registra motivo su una fermata (operaio, no auth) ────────────────────────
 
 const motivoSchema = z.object({

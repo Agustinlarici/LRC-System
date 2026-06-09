@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
-import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { MonitorStato } from '@/types';
 
@@ -307,17 +306,7 @@ export default function MonitorDisplayPage() {
         </div>
       )}
 
-      {/* Bottone fermate — angolo in basso a destra */}
-      {stato.turno_attivo && (
-        <Link
-          href={`/monitor/parate/${id}`}
-          target="_blank"
-          className="absolute bottom-4 right-4 flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm uppercase tracking-widest transition-all opacity-30 hover:opacity-100"
-          style={{ background: '#1f1f1f', color: inAttesa ? '#f87171' : '#9ca3af', border: `1px solid ${inAttesa ? '#ef444480' : '#374151'}` }}
-        >
-          <span>⏹</span> Fermate
-        </Link>
-      )}
+
     </div>
   );
 }
