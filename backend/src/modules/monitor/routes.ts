@@ -521,19 +521,46 @@ monitorRoutes.get('/stato/:id', async (c) => {
   const qtaProdotta  = turnoTimestamps.length;
   const ultimoEvento = turnoTimestamps[turnoTimestamps.length - 1] ?? null;
 
-  // ── Line Stop (gap analysis su cicli passati) ──────────────────────────────
-  let pastLinestopSec = 0;
+  // ── Tutti gli eventi fermata del turno ────────────────────────────────────
+  const fermateRaw = await db`
+    SELECT started_at, COALESCE(ended_at, NOW()) AS ended_at
+    FROM monitor_stop_events
+    WHERE linea_id = ${id}
+      AND started_at >= ${turnoStartTs.toISOString()}
+    ORDER BY started_at
+  `;
+  const fermateEvents = fermateRaw.map(f => ({
+    start: new Date(f.started_at as string),
+    end:   new Date(f.ended_at   as string),
+  }));
 
-  // Gap dall'inizio turno al primo pezzo
-  if (turnoTimestamps.length > 0) {
-    const gapInizio = (turnoTimestamps[0].getTime() - turnoStartTs.getTime()) / 1000;
-    if (gapInizio > cycleTimeSec) pastLinestopSec += gapInizio - cycleTimeSec;
+  function fermataOverlapSec(from: Date, to: Date): number {
+    let sec = 0;
+    for (const f of fermateEvents) {
+      const oStart = Math.max(from.getTime(), f.start.getTime());
+      const oEnd   = Math.min(to.getTime(),   f.end.getTime());
+      if (oEnd > oStart) sec += (oEnd - oStart) / 1000;
+    }
+    return sec;
   }
 
-  // Gap tra pezzi consecutivi
+  const totalFermateSec = fermateEvents.reduce(
+    (acc, f) => acc + (f.end.getTime() - f.start.getTime()) / 1000, 0,
+  );
+
+  // ── Line Stop (gap analysis, periodi fermata esclusi) ─────────────────────
+  let pastLinestopSec = 0;
+
+  if (turnoTimestamps.length > 0) {
+    const rawGap     = (turnoTimestamps[0].getTime() - turnoStartTs.getTime()) / 1000;
+    const productive = rawGap - fermataOverlapSec(turnoStartTs, turnoTimestamps[0]);
+    if (productive > cycleTimeSec) pastLinestopSec += productive - cycleTimeSec;
+  }
+
   for (let i = 1; i < turnoTimestamps.length; i++) {
-    const gap = (turnoTimestamps[i].getTime() - turnoTimestamps[i - 1].getTime()) / 1000;
-    if (gap > cycleTimeSec) pastLinestopSec += gap - cycleTimeSec;
+    const rawGap     = (turnoTimestamps[i].getTime() - turnoTimestamps[i - 1].getTime()) / 1000;
+    const productive = rawGap - fermataOverlapSec(turnoTimestamps[i - 1], turnoTimestamps[i]);
+    if (productive > cycleTimeSec) pastLinestopSec += productive - cycleTimeSec;
   }
 
   // ── Check pausa corrente ───────────────────────────────────────────────────
@@ -594,7 +621,7 @@ monitorRoutes.get('/stato/:id', async (c) => {
       ultimo_evento:        ultimoEvento?.toISOString() ?? null,
       elapsed_sec:          null,
       remaining_sec:        null,
-      linestop_sec:         Math.floor(pastLinestopSec),
+      linestop_sec:         Math.floor(pastLinestopSec + totalFermateSec),
       avanzamento_previsto: avanzamentoPrevisto,
       commesse:             commesse,
       soglie:               soglieColore,
@@ -613,9 +640,10 @@ monitorRoutes.get('/stato/:id', async (c) => {
     return acc + Math.max(0, Math.floor((overlapEnd - overlapStart) / 1000));
   }, 0);
 
-  const elapsedSec           = Math.max(0, rawElapsed - pauseSecBetween);
+  const currentFermataSec    = fermataOverlapSec(refTime, now);
+  const elapsedSec           = Math.max(0, rawElapsed - pauseSecBetween - currentFermataSec);
   const currentCycleLinestop = Math.max(0, elapsedSec - cycleTimeSec);
-  const linestopSec          = Math.floor(pastLinestopSec) + currentCycleLinestop;
+  const linestopSec          = Math.floor(pastLinestopSec) + currentCycleLinestop + Math.floor(totalFermateSec);
 
   return c.json({
     linea:                { id: linea.id, nome: linea.nome, logo: linea.logo ?? null },

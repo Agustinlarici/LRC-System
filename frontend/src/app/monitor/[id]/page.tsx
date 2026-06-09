@@ -100,10 +100,7 @@ export default function MonitorDisplayPage() {
           if (prev === null) return data.remaining_sec;
           return Math.abs(prev - data.remaining_sec) >= 2 ? data.remaining_sec : prev;
         });
-        setLineStopSec(prev => {
-          const serverVal = data.linestop_sec ?? 0;
-          return Math.abs(prev - serverVal) >= 2 ? serverVal : prev;
-        });
+        setLineStopSec(prev => Math.max(prev, data.linestop_sec ?? 0));
       } catch {
         setError('Errore connessione');
       }
