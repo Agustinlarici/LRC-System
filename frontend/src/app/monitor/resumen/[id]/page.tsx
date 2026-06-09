@@ -119,20 +119,16 @@ export default function ResumenDisplayPage() {
           } else if (commesseArrivate && existing.remaining <= 0 && stato.cycle_time_sec !== null) {
             remaining = stato.cycle_time_sec;
           } else if ((stato.commesse.length === 0 || stato.fermata_manuale) && stato.turno_attivo) {
-            if (existing.remaining < 0)    remaining = existing.remaining;
-            else if (serverRemaining <= 0) remaining = serverRemaining;
-            else {
-              const elapsedBase = stato.fermata_manuale && stato.fermata_elapsed_sec !== null
-                ? stato.fermata_elapsed_sec
-                : (stato.elapsed_sec ?? 0);
-              remaining = -elapsedBase;
-            }
+            // In attesa: mantieni locale se già in overtime, altrimenti usa server
+            remaining = existing.remaining < 0 ? existing.remaining : serverRemaining;
           } else if (Math.abs(existing.remaining - serverRemaining) >= 2) {
             remaining = serverRemaining;
           } else {
             remaining = existing.remaining;
           }
-          const lineStop = serverLineStop;
+          const lineStop = !existing || Math.abs(existing.lineStop - serverLineStop) >= 2
+            ? serverLineStop
+            : existing.lineStop;
           return {
             ...prev,
             [id]: { stato, remaining, lineStop, blink: existing?.blink ?? true },
@@ -171,6 +167,7 @@ export default function ResumenDisplayPage() {
           next[id] = {
             ...row,
             remaining: newRemaining,
+            lineStop:  overtime ? row.lineStop + 1 : row.lineStop,
             blink:     overtime ? !row.blink : true,
           };
         }
