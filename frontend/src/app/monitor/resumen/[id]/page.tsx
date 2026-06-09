@@ -130,9 +130,8 @@ export default function ResumenDisplayPage() {
           } else {
             remaining = existing.remaining;
           }
-          const lineStop = !existing || Math.abs(existing.lineStop - serverLineStop) >= 2
-            ? serverLineStop
-            : existing.lineStop;
+          // Non scende mai sotto il valore locale (es. dopo termina fermata il server manda 0)
+          const lineStop = !existing ? serverLineStop : Math.max(existing.lineStop, serverLineStop);
           return {
             ...prev,
             [id]: { stato, remaining, lineStop, blink: existing?.blink ?? true },
