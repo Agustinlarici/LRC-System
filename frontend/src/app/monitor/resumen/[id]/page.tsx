@@ -118,12 +118,13 @@ export default function ResumenDisplayPage() {
             remaining = serverRemaining;
           } else if (commesseArrivate && existing.remaining <= 0 && stato.cycle_time_sec !== null) {
             remaining = stato.cycle_time_sec;
+          } else if (existing.stato.fermata_manuale && !stato.fermata_manuale) {
+            // Uscita da fermata → sincronizza sempre col server (evita timer che continuano)
+            remaining = serverRemaining;
           } else if (stato.fermata_manuale && stato.turno_attivo) {
-            // Fermata manuale: conta sempre come overtime dal momento della fermata
             const base = stato.fermata_elapsed_sec ?? 0;
             remaining = existing.remaining < 0 ? existing.remaining : -base;
           } else if (stato.commesse.length === 0 && stato.turno_attivo) {
-            // In attesa di picking: overtime solo quando il server lo conferma
             remaining = existing.remaining < 0 ? existing.remaining : serverRemaining;
           } else if (Math.abs(existing.remaining - serverRemaining) >= 2) {
             remaining = serverRemaining;

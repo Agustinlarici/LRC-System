@@ -61,7 +61,8 @@ export default function MonitorDisplayPage() {
   const [blink, setBlink] = useState(true);
   const [lineStopSec, setLineStopSec] = useState(0);
   const [blinkOn, setBlinkOn] = useState(true);
-  const prevCommesseKeyRef = useRef<string>('');
+  const prevCommesseKeyRef  = useRef<string>('');
+  const prevFermataRef      = useRef(false);
 
   useEffect(() => {
     const t = setInterval(() => setBlinkOn(v => !v), 700);
@@ -80,20 +81,19 @@ export default function MonitorDisplayPage() {
         const currKey = data.commesse.slice().sort().join(',');
         const commesseArrivate = currKey !== prevCommesseKeyRef.current && data.commesse.length > 0;
         prevCommesseKeyRef.current = currKey;
+        const wasInFermata = prevFermataRef.current;
+        prevFermataRef.current = data.fermata_manuale;
         setLocalRemaining(prev => {
           if (data.remaining_sec === null) return null;
-          // Nuove commesse arrivate mentre in overtime → reset a cycle time
           if (commesseArrivate && prev !== null && prev <= 0 && data.cycle_time_sec !== null) return data.cycle_time_sec;
-          // In attesa di picking o fermata manuale
-          const isBlocked = (data.commesse.length === 0 || data.fermata_manuale) && data.turno_attivo;
+          // Uscita da fermata → sincronizza sempre col server (evita timer che continuano)
+          if (wasInFermata && !data.fermata_manuale) return data.remaining_sec;
           if (data.fermata_manuale && data.turno_attivo) {
-            // Fermata manuale: conta sempre come overtime dal momento della fermata
             const base = data.fermata_elapsed_sec ?? 0;
             if (prev !== null && prev < 0) return prev;
             return -base;
           }
           if (data.commesse.length === 0 && data.turno_attivo) {
-            // In attesa di picking: overtime solo quando il server lo conferma
             if (prev !== null && prev < 0) return prev;
             return data.remaining_sec;
           }
