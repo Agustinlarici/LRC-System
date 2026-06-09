@@ -27,7 +27,7 @@ type ColorState = 'verde' | 'giallo' | 'rosso' | 'grigio';
 function getColorState(stato: MonitorStato, remaining: number | null): ColorState {
   if (!stato.turno_attivo || stato.in_pausa) return 'grigio';
   if (stato.cycle_time_sec === null || remaining === null) return 'grigio';
-  if (stato.commesse.length === 0 || stato.fermata_manuale) {
+  if (stato.commesse.length === 0 && !stato.fermata_manuale) {
     return remaining !== null && remaining <= 0 ? 'rosso' : 'grigio';
   }
   if (remaining <= 0) return 'rosso';
@@ -118,8 +118,12 @@ export default function ResumenDisplayPage() {
             remaining = serverRemaining;
           } else if (commesseArrivate && existing.remaining <= 0 && stato.cycle_time_sec !== null) {
             remaining = stato.cycle_time_sec;
-          } else if ((stato.commesse.length === 0 || stato.fermata_manuale) && stato.turno_attivo) {
-            // In attesa: mantieni locale se già in overtime, altrimenti usa server
+          } else if (stato.fermata_manuale && stato.turno_attivo) {
+            // Fermata manuale: conta sempre come overtime dal momento della fermata
+            const base = stato.fermata_elapsed_sec ?? 0;
+            remaining = existing.remaining < 0 ? existing.remaining : -base;
+          } else if (stato.commesse.length === 0 && stato.turno_attivo) {
+            // In attesa di picking: overtime solo quando il server lo conferma
             remaining = existing.remaining < 0 ? existing.remaining : serverRemaining;
           } else if (Math.abs(existing.remaining - serverRemaining) >= 2) {
             remaining = serverRemaining;
@@ -161,7 +165,8 @@ export default function ResumenDisplayPage() {
           const id  = Number(key);
           const row = prev[id];
           if (row.stato.in_pausa) { next[id] = row; continue; }
-          if ((row.stato.commesse.length === 0 || row.stato.fermata_manuale) && (row.remaining === null || row.remaining > 0)) { next[id] = row; continue; }
+          // Ferma il tick solo per in attesa con remaining > 0; fermata_manuale conta sempre
+          if (row.stato.commesse.length === 0 && !row.stato.fermata_manuale && (row.remaining === null || row.remaining > 0)) { next[id] = row; continue; }
           const newRemaining = row.remaining !== null ? row.remaining - 1 : null;
           const overtime     = newRemaining !== null && newRemaining <= 0;
           next[id] = {
@@ -231,7 +236,8 @@ export default function ResumenDisplayPage() {
         {loadedLinee.map(linea => {
           const row        = rows[linea.linea_id]!;
           const colorState = getColorState(row.stato, row.remaining);
-          const isBlocked  = (row.stato.commesse.length === 0 || row.stato.fermata_manuale) && row.stato.turno_attivo && (row.remaining === null || row.remaining > 0);
+          // isBlocked: solo in attesa di picking con remaining > 0 (fermata_manuale va sempre in overtime)
+          const isBlocked  = row.stato.commesse.length === 0 && row.stato.turno_attivo && (row.remaining === null || row.remaining > 0);
           const overtime   = !row.stato.in_pausa && row.remaining !== null && row.remaining <= 0;
           const isPausa    = row.stato.in_pausa === true;
 

@@ -86,9 +86,14 @@ export default function MonitorDisplayPage() {
           if (commesseArrivate && prev !== null && prev <= 0 && data.cycle_time_sec !== null) return data.cycle_time_sec;
           // In attesa di picking o fermata manuale
           const isBlocked = (data.commesse.length === 0 || data.fermata_manuale) && data.turno_attivo;
-          if (isBlocked) {
-            // Mantieni locale se già in overtime, altrimenti usa il valore server
-            // (positivo → --:--, negativo → +MM:SS)
+          if (data.fermata_manuale && data.turno_attivo) {
+            // Fermata manuale: conta sempre come overtime dal momento della fermata
+            const base = data.fermata_elapsed_sec ?? 0;
+            if (prev !== null && prev < 0) return prev;
+            return -base;
+          }
+          if (data.commesse.length === 0 && data.turno_attivo) {
+            // In attesa di picking: overtime solo quando il server lo conferma
             if (prev !== null && prev < 0) return prev;
             return data.remaining_sec;
           }
@@ -117,10 +122,8 @@ export default function MonitorDisplayPage() {
     };
   }, [id]);
 
-  const inAttesa = (
-    (stato?.commesse?.length ?? 1) === 0 ||
-    stato?.fermata_manuale === true
-  ) && stato?.turno_attivo === true;
+  // inAttesa: solo commesse vuote (non fermata_manuale — quella va sempre in overtime)
+  const inAttesa = (stato?.commesse?.length ?? 1) === 0 && stato?.turno_attivo === true;
 
   // Decrementa ogni secondo — si ferma solo durante le pause
   useEffect(() => {
