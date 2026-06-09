@@ -31,6 +31,7 @@ services:
       - ./db/migrate-spma-email.sql:/docker-entrypoint-initdb.d/21_spma_email.sql:ro
       - ./db/migrate-resumen.sql:/docker-entrypoint-initdb.d/19_resumen.sql:ro
       - ./db/migrate-spma-onedrive.sql:/docker-entrypoint-initdb.d/20_spma_onedrive.sql:ro
+      - ./db/migrate-monitor-stops.sql:/docker-entrypoint-initdb.d/22_monitor_stops.sql:ro
     ports:
       - "5432:5432"
     healthcheck:

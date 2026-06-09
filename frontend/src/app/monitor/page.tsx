@@ -53,21 +53,31 @@ export default function MonitorPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {linee.filter(l => l.attivo).map(linea => (
-            <Link
-              key={linea.id}
-              href={`/monitor/${linea.id}`}
-              target="_blank"
-              className="card hover:shadow-md transition-shadow cursor-pointer block"
-            >
+            <div key={linea.id} className="card hover:shadow-md transition-shadow">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xl font-bold text-gray-800">{linea.nome}</span>
                 <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">Attivo</span>
               </div>
-              <div className="space-y-1 text-sm text-gray-600">
+              <div className="space-y-1 text-sm text-gray-600 mb-4">
                 <div><span className="label">Fase:</span> {linea.fase}</div>
               </div>
-              <div className="mt-3 text-xs text-blue-600">Apri andon →</div>
-            </Link>
+              <div className="flex gap-2">
+                <Link
+                  href={`/monitor/${linea.id}`}
+                  target="_blank"
+                  className="flex-1 text-center text-sm font-medium text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 rounded-lg py-2 transition-colors"
+                >
+                  Apri andon →
+                </Link>
+                <Link
+                  href={`/monitor/parate/${linea.id}`}
+                  target="_blank"
+                  className="flex-1 text-center text-sm font-medium text-red-600 hover:text-red-800 border border-red-200 hover:border-red-400 rounded-lg py-2 transition-colors"
+                >
+                  Fermate
+                </Link>
+              </div>
+            </div>
           ))}
         </div>
       )}

@@ -5,6 +5,7 @@ import { errorHandler } from './middleware/error-handler.js';
 import { ingressoMerciRoutes } from './modules/ingresso-merci/routes.js';
 import { packingRoutes } from './modules/packing/routes.js';
 import { monitorRoutes } from './modules/monitor/routes.js';
+import { stopRoutes }    from './modules/monitor/stop-routes.js';
 import { mappaRoutes } from './modules/mappa/routes.js';
 import { bufferRoutes } from './modules/buffer/routes.js';
 import { ticketRoutes } from './modules/tickets/routes.js';
@@ -77,6 +78,7 @@ app.get('/health', async (c) => {
 app.route('/api/ingresso-merci', ingressoMerciRoutes);
 app.route('/api/pack', packingRoutes);
 app.route('/api/monitor', monitorRoutes);
+app.route('/api/monitor', stopRoutes);
 app.route('/api/mappa', mappaRoutes);
 app.route('/api/buffer', bufferRoutes);
 app.route('/api/auth', authRoutes);

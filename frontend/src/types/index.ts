@@ -374,6 +374,42 @@ export interface EdiHistoryEntry {
   is_regeneration:  boolean;
 }
 
+// ─── Monitor Stop Events ──────────────────────────────────────────────────────
+
+export interface StopCategory {
+  id:     number;
+  nome:   string;
+  colore: string;
+  ordine: number;
+  attivo: boolean;
+}
+
+export interface StopReason {
+  id:               number;
+  category_id:      number | null;
+  categoria_nome:   string | null;
+  categoria_colore: string | null;
+  descrizione:      string;
+  ordine:           number;
+  attivo?:          boolean;
+}
+
+export interface StopEvent {
+  id:                  number;
+  linea_id:            number;
+  linea_nome?:         string;
+  started_at:          string;
+  ended_at:            string | null;
+  duration_sec:        number | null;
+  reason_id:           number | null;
+  reason_descrizione:  string | null;
+  categoria_nome:      string | null;
+  categoria_colore:    string | null;
+  note:                string | null;
+  operatore:           string | null;
+  registrato_at:       string | null;
+}
+
 // ─── Recepciones DDT ─────────────────────────────────────────────────────────
 
 export interface Recepcion {

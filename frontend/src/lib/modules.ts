@@ -49,6 +49,16 @@ export const MODULES: ModuleConfig[] = [
     description: 'Vista grafica dello stato delle linee sul piano fabbrica',
     icon: '🗺️', sidebar: 'IconMap', hidden: false, moduleKey: 'mappa',
   },
+  {
+    href: '/admin/monitor/parate', label: 'Storico fermate', group: 'Produzione',
+    description: 'Storico fermate di linea con motivi e durate',
+    icon: '🛑', sidebar: 'IconClipboard', hidden: false, moduleKey: 'monitor',
+  },
+  {
+    href: '/admin/monitor/motivi', label: 'Motivi fermate', group: 'Produzione',
+    description: 'Configurazione categorie e motivi di fermata',
+    icon: '⚙️', sidebar: 'IconSettings', hidden: false, moduleKey: 'monitor', manageOnly: true,
+  },
 
   // ── Dashboard ──────────────────────────────────────────────────────────────
   {

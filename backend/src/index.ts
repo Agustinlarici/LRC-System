@@ -4,6 +4,7 @@ import { startScheduler } from './scheduler.js';
 import { startWatcher } from './watcher/watcher.service.js';
 import { startBufferCache, bufferFullRefresh } from './modules/buffer/cache.js';
 import { startExecutiveCache, executiveRefresh } from './modules/monitor/executive-cache.js';
+import { detectStopsAllLines } from './modules/monitor/stop-detector.js';
 import { refreshLookupTables } from './modules/monitor/pg-webthron-sync.js';
 import { setNextRun } from './lib/sync-stats.js';
 import { startWatchdog } from './lib/watchdog.js';
@@ -137,6 +138,7 @@ serve({ fetch: app.fetch, port }, async (info) => {
     setInterval(async () => {
       cycle++;
       await executiveRefresh();
+      detectStopsAllLines().catch(() => {});
       setNextRun('sync_incremental', new Date(Date.now() + 30_000));
 
       // bufferFullRefresh ogni ~30 min (60 cicli × 30s)
