@@ -27,7 +27,9 @@ type ColorState = 'verde' | 'giallo' | 'rosso' | 'grigio';
 function getColorState(stato: MonitorStato, remaining: number | null): ColorState {
   if (!stato.turno_attivo || stato.in_pausa) return 'grigio';
   if (stato.cycle_time_sec === null || remaining === null) return 'grigio';
-  if (stato.commesse.length === 0 || stato.fermata_manuale) return 'grigio';
+  if (stato.commesse.length === 0 || stato.fermata_manuale) {
+    return remaining !== null && remaining <= 0 ? 'rosso' : 'grigio';
+  }
   if (remaining <= 0) return 'rosso';
   const pct = (remaining / stato.cycle_time_sec) * 100;
   if (pct > stato.soglie.soglia_giallo) return 'verde';
@@ -164,7 +166,8 @@ export default function ResumenDisplayPage() {
         for (const key in prev) {
           const id  = Number(key);
           const row = prev[id];
-          if (row.stato.in_pausa || row.stato.commesse.length === 0 || row.stato.fermata_manuale) { next[id] = row; continue; }
+          if (row.stato.in_pausa) { next[id] = row; continue; }
+          if ((row.stato.commesse.length === 0 || row.stato.fermata_manuale) && (row.remaining === null || row.remaining > 0)) { next[id] = row; continue; }
           const newRemaining = row.remaining !== null ? row.remaining - 1 : null;
           const overtime     = newRemaining !== null && newRemaining <= 0;
           next[id] = {
