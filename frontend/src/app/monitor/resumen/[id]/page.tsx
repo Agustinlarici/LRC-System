@@ -234,8 +234,8 @@ export default function ResumenDisplayPage() {
         {loadedLinee.map(linea => {
           const row        = rows[linea.linea_id]!;
           const colorState = getColorState(row.stato, row.remaining);
-          const isBlocked  = (row.stato.commesse.length === 0 || row.stato.fermata_manuale) && row.stato.turno_attivo;
-          const overtime   = !row.stato.in_pausa && !isBlocked && row.remaining !== null && row.remaining <= 0;
+          const isBlocked  = (row.stato.commesse.length === 0 || row.stato.fermata_manuale) && row.stato.turno_attivo && (row.remaining === null || row.remaining > 0);
+          const overtime   = !row.stato.in_pausa && row.remaining !== null && row.remaining <= 0;
           const isPausa    = row.stato.in_pausa === true;
 
           const rowBg = isPausa
@@ -244,11 +244,11 @@ export default function ResumenDisplayPage() {
               ? (row.blink ? 'bg-red-950/60' : 'bg-[#1c1c1c]')
               : 'bg-[#1c1c1c]';
 
-          const timeDisplay = isPausa || isBlocked || !row.stato.turno_attivo || row.remaining === null
-            ? '--:--'
-            : row.remaining <= 0
-              ? `+${formatTimer(Math.abs(row.remaining))}`
-              : formatTimer(row.remaining);
+          const timeDisplay =
+            isPausa || !row.stato.turno_attivo || row.remaining === null ? '--:--'
+            : row.remaining <= 0 ? `+${formatTimer(Math.abs(row.remaining))}`
+            : isBlocked ? '--:--'
+            : formatTimer(row.remaining);
 
           const cycleTime = row.stato.cycle_time_sec;
           const hasBar = cycleTime !== null && row.remaining !== null && row.stato.turno_attivo && !isPausa;

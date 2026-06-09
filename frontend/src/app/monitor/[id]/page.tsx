@@ -122,8 +122,7 @@ export default function MonitorDisplayPage() {
 
   const inAttesa = (
     (stato?.commesse?.length ?? 1) === 0 ||
-    stato?.fermata_manuale === true ||
-    (localRemaining !== null && localRemaining <= 0)
+    stato?.fermata_manuale === true
   ) && stato?.turno_attivo === true;
 
   // Decrementa ogni secondo — si ferma solo durante le pause
