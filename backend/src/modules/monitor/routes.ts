@@ -570,12 +570,24 @@ monitorRoutes.get('/stato/:id', async (c) => {
   const netElapsedSec       = Math.max(0, Math.min(netShiftSec, elapsedFromStartSec - completedPausaSec));
   const avanzamentoPrevisto = Math.floor(netElapsedSec / cycleTimeSec);
 
+  // ── Fermata manuale aperta ────────────────────────────────────────────────
+  const [openStop] = await db`
+    SELECT EXTRACT(EPOCH FROM (NOW() - started_at))::INT AS fermata_elapsed_sec
+    FROM monitor_stop_events
+    WHERE linea_id = ${id} AND ended_at IS NULL
+    ORDER BY started_at DESC LIMIT 1
+  `;
+  const fermataManuale     = !!openStop;
+  const fermataElapsedSec  = (openStop?.fermata_elapsed_sec as number | null) ?? null;
+
   // ── Risposta durante pausa ─────────────────────────────────────────────────
   if (inPausa) {
     return c.json({
       linea:                { id: linea.id, nome: linea.nome, logo: linea.logo ?? null },
       turno_attivo:         true,
       in_pausa:             true,
+      fermata_manuale:      fermataManuale,
+      fermata_elapsed_sec:  fermataElapsedSec,
       qta_prodotta:         qtaProdotta,
       qta_da_produrre:      qtaRow.quantita_giornaliera,
       cycle_time_sec:       cycleTimeSec,
@@ -609,6 +621,8 @@ monitorRoutes.get('/stato/:id', async (c) => {
     linea:                { id: linea.id, nome: linea.nome, logo: linea.logo ?? null },
     turno_attivo:         true,
     in_pausa:             false,
+    fermata_manuale:      fermataManuale,
+    fermata_elapsed_sec:  fermataElapsedSec,
     qta_prodotta:         qtaProdotta,
     qta_da_produrre:      qtaRow.quantita_giornaliera,
     cycle_time_sec:       cycleTimeSec,

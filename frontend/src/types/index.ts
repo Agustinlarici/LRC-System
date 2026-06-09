@@ -271,8 +271,10 @@ export interface MonitorStato {
   qta_da_produrre: number;
   cycle_time_sec: number | null;
   ultimo_evento: string | null;
-  elapsed_sec: number | null;
-  remaining_sec: number | null;
+  elapsed_sec:         number | null;
+  remaining_sec:       number | null;
+  fermata_manuale:     boolean;
+  fermata_elapsed_sec: number | null;
   linestop_sec: number;
   avanzamento_previsto: number;
   commesse: string[];

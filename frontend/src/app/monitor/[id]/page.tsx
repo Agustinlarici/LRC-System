@@ -84,11 +84,16 @@ export default function MonitorDisplayPage() {
           if (data.remaining_sec === null) return null;
           // Nuove commesse arrivate mentre in overtime → reset a cycle time
           if (commesseArrivate && prev !== null && prev <= 0 && data.cycle_time_sec !== null) return data.cycle_time_sec;
-          // In attesa di picking
-          if (data.commesse.length === 0 && data.turno_attivo) {
-            if (prev !== null && prev < 0) return prev;                              // già in overtime: continua locale, no salti
-            if (data.remaining_sec <= 0)   return data.remaining_sec;               // server già in overtime: usa server (consistente su refresh)
-            return data.elapsed_sec !== null ? -data.elapsed_sec : 0;               // usa elapsed server: stesso valore su tutti i browser
+          // In attesa di picking o fermata manuale
+          const isBlocked = (data.commesse.length === 0 || data.fermata_manuale) && data.turno_attivo;
+          if (isBlocked) {
+            if (prev !== null && prev < 0) return prev;
+            if (data.remaining_sec <= 0)   return data.remaining_sec;
+            // Fermata manuale: usa il suo elapsed, altrimenti elapsed produzione
+            const elapsedBase = data.fermata_manuale && data.fermata_elapsed_sec !== null
+              ? data.fermata_elapsed_sec
+              : (data.elapsed_sec ?? 0);
+            return -elapsedBase;
           }
           if (prev === null) return data.remaining_sec;
           return Math.abs(prev - data.remaining_sec) >= 2 ? data.remaining_sec : prev;
@@ -115,7 +120,7 @@ export default function MonitorDisplayPage() {
     };
   }, [id]);
 
-  const inAttesa = (stato?.commesse?.length ?? 1) === 0 && stato?.turno_attivo === true;
+  const inAttesa = ((stato?.commesse?.length ?? 1) === 0 || stato?.fermata_manuale === true) && stato?.turno_attivo === true;
 
   // Decrementa ogni secondo — si ferma solo durante le pause
   useEffect(() => {
