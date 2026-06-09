@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import type { StopEvent, StopReason, StopCategory } from '@/types';
@@ -20,6 +20,8 @@ function fmtDuration(sec: number) {
 }
 
 function isOpen(e: StopEvent) { return e.ended_at === null; }
+
+const LABEL = 'text-sm font-bold text-gray-400 uppercase tracking-widest mb-2 block';
 
 // ─── Riga fermata ─────────────────────────────────────────────────────────────
 
@@ -57,63 +59,88 @@ function StopRow({
     return () => clearInterval(t);
   }, [open, event.started_at]);
 
+  // Auto-save 2s dopo l'ultima modifica (solo se nome è compilato)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
+    if (!operatore.trim()) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      setSaving(true); setError(null);
+      try {
+        await api.post(`/api/monitor/parate/${event.id}/motivo`, {
+          reason_id: reasonId,
+          note:      note.trim() || null,
+          operatore: operatore.trim(),
+        });
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+        onSaved();
+      } catch { setError('Errore salvataggio'); }
+      finally  { setSaving(false); }
+    }, 2000);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catId, reasonId, note, operatore]);
+
   const filteredReasons = catId ? reasons.filter(r => r.category_id === catId) : reasons;
   const borderColor = open ? '#ef4444' : event.reason_id ? '#22c55e' : '#f59e0b';
-
-  async function save() {
-    if (!operatore.trim()) { setError('Inserisci il tuo nome'); return; }
-    setSaving(true); setError(null);
-    try {
-      await api.post(`/api/monitor/parate/${event.id}/motivo`, {
-        reason_id: reasonId,
-        note:      note.trim() || null,
-        operatore: operatore.trim(),
-      });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-      onSaved();
-    } catch { setError('Errore salvataggio'); }
-    finally  { setSaving(false); }
-  }
-
   const durationDisplay = open
     ? (elapsed !== null ? fmtDuration(elapsed) : '0m 00s')
     : fmtDuration(event.duration_sec ?? 0);
 
   return (
     <div
-      className="bg-white rounded-xl shadow-sm overflow-hidden"
-      style={{ borderLeft: `5px solid ${borderColor}` }}
+      className="bg-white rounded-2xl shadow-sm overflow-hidden"
+      style={{ borderLeft: `7px solid ${borderColor}` }}
     >
       <div
-        className="grid items-start gap-x-5 gap-y-3 p-4"
-        style={{ gridTemplateColumns: '130px 1fr 1fr 180px 140px auto' }}
+        className="grid gap-8 p-7"
+        style={{ gridTemplateColumns: '190px 1fr 1fr 220px 210px' }}
       >
 
-        {/* Stato + orario + timer */}
-        <div className="flex flex-col gap-1.5 pt-0.5">
-          <span className={`text-xs font-bold uppercase px-2.5 py-1 rounded-full self-start ${
+        {/* Stato + orari + durata */}
+        <div className="flex flex-col gap-5">
+          <span className={`text-sm font-bold uppercase px-3 py-1.5 rounded-full self-start ${
             open ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'
           }`}>
             {open ? '● In corso' : 'Chiusa'}
           </span>
-          <p className="text-base font-bold tabular-nums text-gray-800 leading-tight">
-            {fmtTime(event.started_at)}
-            {event.ended_at ? <><br /><span className="text-gray-400 font-normal">→ {fmtTime(event.ended_at)}</span></> : ''}
-          </p>
-          <p className={`text-lg font-mono font-semibold tabular-nums ${open ? 'text-red-500' : 'text-gray-500'}`}>
-            {durationDisplay}
-          </p>
+
+          <div>
+            <span className={LABEL}>Inizio</span>
+            <p className="text-4xl font-bold tabular-nums text-gray-900 leading-none">
+              {fmtTime(event.started_at)}
+            </p>
+          </div>
+
+          {event.ended_at && (
+            <div>
+              <span className={LABEL}>Fine</span>
+              <p className="text-4xl font-bold tabular-nums text-gray-900 leading-none">
+                {fmtTime(event.ended_at)}
+              </p>
+            </div>
+          )}
+
+          <div>
+            <span className={LABEL}>Durata</span>
+            <p className={`text-4xl font-bold tabular-nums leading-none ${open ? 'text-red-500' : 'text-gray-600'}`}>
+              {durationDisplay}
+            </p>
+          </div>
         </div>
 
         {/* Categoria */}
         <div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Categoria</p>
-          <div className="flex flex-wrap gap-1.5">
+          <span className={LABEL}>Categoria</span>
+          <div className="flex flex-wrap gap-2">
             {categories.map(cat => (
               <button key={cat.id}
                 onClick={() => { setCatId(cat.id); setReasonId(null); }}
-                className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border-2"
+                className="px-5 py-3 rounded-xl text-base font-semibold transition-all border-2"
                 style={catId === cat.id
                   ? { background: cat.colore, color: '#fff', borderColor: cat.colore }
                   : { background: '#f9fafb', color: '#374151', borderColor: '#e5e7eb' }}>
@@ -122,7 +149,7 @@ function StopRow({
             ))}
             {catId !== null && (
               <button onClick={() => { setCatId(null); setReasonId(null); }}
-                className="px-2.5 py-1 rounded-lg text-xs border-2 bg-white text-gray-400 border-gray-200 hover:border-gray-400">
+                className="px-4 py-3 rounded-xl text-base border-2 bg-white text-gray-400 border-gray-200 hover:border-gray-400">
                 ✕
               </button>
             )}
@@ -131,11 +158,11 @@ function StopRow({
 
         {/* Motivo */}
         <div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Motivo</p>
-          <div className="flex flex-wrap gap-1.5">
+          <span className={LABEL}>Motivo</span>
+          <div className="flex flex-wrap gap-2">
             {filteredReasons.map(r => (
               <button key={r.id} onClick={() => setReasonId(r.id)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border-2 transition-all ${
+                className={`px-5 py-3 rounded-xl text-base font-semibold border-2 transition-all ${
                   reasonId === r.id
                     ? 'bg-blue-600 text-white border-blue-600'
                     : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-blue-300'
@@ -144,40 +171,46 @@ function StopRow({
               </button>
             ))}
             {filteredReasons.length === 0 && (
-              <span className="text-xs text-gray-300 italic">Seleziona categoria</span>
+              <span className="text-base text-gray-300 italic">Seleziona categoria</span>
             )}
           </div>
         </div>
 
         {/* Note */}
         <div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Note</p>
-          <input
-            type="text" value={note} onChange={e => setNote(e.target.value)}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          <span className={LABEL}>Note</span>
+          <textarea
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            rows={3}
+            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
             placeholder="Note opzionali..."
           />
         </div>
 
-        {/* Nome */}
-        <div>
-          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Nome *</p>
-          <input
-            type="text" value={operatore} onChange={e => setOperatore(e.target.value)}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-            placeholder="Tuo nome"
-          />
-        </div>
-
-        {/* Salva */}
-        <div className="flex flex-col items-end gap-1 pt-5">
-          {error && <p className="text-red-500 text-xs text-right">{error}</p>}
-          <button onClick={save} disabled={saving}
-            className={`px-5 py-2 rounded-lg font-bold text-sm transition-colors disabled:opacity-50 ${
-              saved ? 'bg-green-500 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
-            }`}>
-            {saved ? '✓ Salvato' : saving ? '...' : 'Salva'}
-          </button>
+        {/* Nome + stato salvataggio */}
+        <div className="flex flex-col gap-3">
+          <div>
+            <span className={LABEL}>Nome operatore *</span>
+            <input
+              type="text"
+              value={operatore}
+              onChange={e => setOperatore(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+              placeholder="Tuo nome"
+            />
+          </div>
+          <div className="text-base font-semibold h-6">
+            {saving  && <span className="text-gray-400">Salvataggio...</span>}
+            {saved && !saving && <span className="text-green-500">● Salvato</span>}
+            {error && !saving && <span className="text-red-500">{error}</span>}
+            {!saving && !saved && !error && operatore.trim() && (
+              <span className="text-gray-300 text-sm">Salva automatico</span>
+            )}
+            {!operatore.trim() && (
+              <span className="text-amber-400 text-sm">Inserisci nome per salvare</span>
+            )}
+          </div>
         </div>
 
       </div>
@@ -239,7 +272,7 @@ export default function ParatePage() {
 
   if (loading) return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-      <p className="text-gray-400 text-lg">Caricamento...</p>
+      <p className="text-gray-400 text-xl">Caricamento...</p>
     </div>
   );
 
@@ -251,24 +284,24 @@ export default function ParatePage() {
     <div className="min-h-screen bg-gray-100">
 
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-10 shadow-sm">
-        <h1 className="text-2xl font-bold text-gray-900">Fermate — {lineaNome}</h1>
+      <div className="bg-white border-b border-gray-200 px-8 py-5 sticky top-0 z-10 shadow-sm">
+        <h1 className="text-3xl font-bold text-gray-900">Fermate — {lineaNome}</h1>
       </div>
 
-      <div className="px-6 py-6 space-y-6">
-        {error && <p className="text-red-500 text-center">{error}</p>}
+      <div className="px-8 py-8 space-y-8">
+        {error && <p className="text-red-500 text-center text-lg">{error}</p>}
 
         {/* Card pulsante principale */}
-        <div className={`rounded-2xl p-6 shadow border-2 transition-colors ${
+        <div className={`rounded-2xl p-8 shadow border-2 transition-colors ${
           lineaFerma ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'
         }`}>
-          <div className="flex items-center justify-between gap-6">
+          <div className="flex items-center justify-between gap-8">
             <div>
-              <p className={`text-sm font-bold uppercase tracking-widest ${lineaFerma ? 'text-red-500' : 'text-gray-400'}`}>
+              <p className={`text-xl font-bold uppercase tracking-widest ${lineaFerma ? 'text-red-500' : 'text-gray-400'}`}>
                 {lineaFerma ? '● Linea ferma' : '○ Linea in produzione'}
               </p>
               {lineaFerma && openStops[0] && (
-                <p className="text-xs text-red-400 mt-1">
+                <p className="text-base text-red-400 mt-2">
                   Iniziata alle {fmtTime(openStops[0].started_at)}
                 </p>
               )}
@@ -276,11 +309,11 @@ export default function ParatePage() {
             <button
               onClick={toggleFermata}
               disabled={opening}
-              className={`flex items-center gap-3 px-10 py-4 font-bold rounded-xl text-base disabled:opacity-50 transition-colors shadow-sm text-white ${
+              className={`flex items-center gap-4 px-12 py-5 font-bold rounded-2xl text-xl disabled:opacity-50 transition-colors shadow text-white ${
                 lineaFerma ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
               }`}
             >
-              <span className="text-xl leading-none">{lineaFerma ? '▶' : '⏹'}</span>
+              <span className="text-2xl leading-none">{lineaFerma ? '▶' : '⏹'}</span>
               {opening ? '...' : lineaFerma ? 'Riprendi linea' : 'Ferma linea'}
             </button>
           </div>
@@ -288,8 +321,8 @@ export default function ParatePage() {
 
         {/* Fermate in corso */}
         {openStops.length > 0 && (
-          <section className="space-y-3">
-            <p className="text-xs font-bold text-red-500 uppercase tracking-widest">In corso</p>
+          <section className="space-y-4">
+            <p className="text-sm font-bold text-red-500 uppercase tracking-widest">In corso</p>
             {openStops.map(e => (
               <StopRow key={e.id} event={e} categories={categories} reasons={reasons} onSaved={loadStops} />
             ))}
@@ -298,8 +331,8 @@ export default function ParatePage() {
 
         {/* Storico */}
         {closedStops.length > 0 && (
-          <section className="space-y-3">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Fermate del giorno</p>
+          <section className="space-y-4">
+            <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Fermate del giorno</p>
             {closedStops.map(e => (
               <StopRow key={e.id} event={e} categories={categories} reasons={reasons} onSaved={loadStops} />
             ))}
@@ -307,9 +340,9 @@ export default function ParatePage() {
         )}
 
         {stops.length === 0 && !error && (
-          <div className="text-center py-24 text-gray-400">
-            <p className="text-5xl mb-4">✓</p>
-            <p className="text-lg font-medium text-gray-500">Nessuna fermata nelle ultime 24 ore</p>
+          <div className="text-center py-32 text-gray-400">
+            <p className="text-6xl mb-6">✓</p>
+            <p className="text-2xl font-medium text-gray-500">Nessuna fermata nelle ultime 24 ore</p>
           </div>
         )}
       </div>
