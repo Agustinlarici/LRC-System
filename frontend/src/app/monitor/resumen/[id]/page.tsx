@@ -132,9 +132,7 @@ export default function ResumenDisplayPage() {
           } else {
             remaining = existing.remaining;
           }
-          const lineStop = !existing || Math.abs(existing.lineStop - serverLineStop) >= 2
-            ? serverLineStop
-            : existing.lineStop;
+          const lineStop = serverLineStop;
           return {
             ...prev,
             [id]: { stato, remaining, lineStop, blink: existing?.blink ?? true },
@@ -173,7 +171,6 @@ export default function ResumenDisplayPage() {
           next[id] = {
             ...row,
             remaining: newRemaining,
-            lineStop:  overtime ? row.lineStop + 1 : row.lineStop,
             blink:     overtime ? !row.blink : true,
           };
         }
