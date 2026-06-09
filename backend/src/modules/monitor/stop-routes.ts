@@ -73,6 +73,21 @@ stopRoutes.get('/parate/:lineaId', async (c) => {
   return c.json({ linea, stops });
 });
 
+// ─── Apri fermata manuale (operaio, no auth) ─────────────────────────────────
+
+stopRoutes.post('/parate/:lineaId/apri', async (c) => {
+  const lineaId = parseId(c.req.param('lineaId'));
+  const [linea] = await db`SELECT id FROM monitor_linea WHERE id = ${lineaId} AND attivo = true`;
+  if (!linea) throw new HTTPException(404, { message: 'Linea non trovata' });
+
+  const [row] = await db`
+    INSERT INTO monitor_stop_events (linea_id, started_at)
+    VALUES (${lineaId}, NOW())
+    RETURNING id
+  `;
+  return c.json({ id: row.id }, 201);
+});
+
 // ─── Registra motivo su una fermata (operaio, no auth) ────────────────────────
 
 const motivoSchema = z.object({
