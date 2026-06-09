@@ -241,11 +241,7 @@ export default function ResumenDisplayPage() {
           const overtime   = !row.stato.in_pausa && row.remaining !== null && row.remaining <= 0;
           const isPausa    = row.stato.in_pausa === true;
 
-          const rowBg = isPausa
-            ? 'bg-zinc-700/60'
-            : overtime
-              ? (row.blink ? 'bg-red-950/60' : 'bg-[#1c1c1c]')
-              : 'bg-[#1c1c1c]';
+          const rowBg = isPausa ? 'bg-zinc-700/60' : overtime ? 'bg-red-950/60' : 'bg-[#1c1c1c]';
 
           const timeDisplay =
             isPausa || !row.stato.turno_attivo || row.remaining === null ? '--:--'

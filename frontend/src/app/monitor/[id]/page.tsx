@@ -176,10 +176,7 @@ export default function MonitorDisplayPage() {
     stato.avanzamento_previsto != null &&
     stato.qta_prodotta < stato.avanzamento_previsto;
 
-  // Sfondo: grigio durante pausa, lampeggia rosso quando scaduto, altrimenti scuro
-  const bgColor = isPausa
-    ? '#374151'
-    : isOvertime ? (blink ? '#dc2626' : '#1a1a1a') : '#1a1a1a';
+  const bgColor = isPausa ? '#374151' : isOvertime ? '#dc2626' : '#1a1a1a';
 
   return (
     <div className="fixed inset-0 transition-colors duration-200" style={{ backgroundColor: bgColor }}>
