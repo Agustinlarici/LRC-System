@@ -640,7 +640,7 @@ monitorRoutes.get('/stato/:id', async (c) => {
     return acc + Math.max(0, Math.floor((overlapEnd - overlapStart) / 1000));
   }, 0);
 
-  const currentFermataSec    = fermataOverlapSec(refTime, now);
+  const currentFermataSec    = Math.floor(fermataOverlapSec(refTime, now));
   const elapsedSec           = Math.max(0, rawElapsed - pauseSecBetween - currentFermataSec);
   const currentCycleLinestop = Math.max(0, elapsedSec - cycleTimeSec);
   const linestopSec          = Math.floor(pastLinestopSec) + currentCycleLinestop + Math.floor(totalFermateSec);

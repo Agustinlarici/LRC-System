@@ -8,7 +8,7 @@ import type { MonitorStato } from '@/types';
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatTime(totalSeconds: number): string {
-  const abs = Math.max(0, totalSeconds);
+  const abs = Math.max(0, Math.floor(totalSeconds));
   const mm = Math.floor(abs / 60);
   const ss = abs % 60;
   return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
