@@ -1,8 +1,9 @@
 import { join } from 'path';
 import { writeFile } from 'fs/promises';
+import { createRequire } from 'module';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const SMB2 = require('@marsaud/smb2') as new (cfg: {
+const _require = createRequire(import.meta.url);
+const SMB2 = _require('@marsaud/smb2') as new (cfg: {
   share: string; username: string; password: string; domain: string; autoCloseTimeout?: number;
 }) => {
   writeFile(path: string, data: string, opts: { encoding: string }): Promise<void>;
