@@ -3,7 +3,7 @@
 export type ModuleKey =
   | 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer'
   | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
-  | 'spma' | 'recepciones' | 'edi';
+  | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi';
 
 export interface ModulePermission {
   module_key: ModuleKey;

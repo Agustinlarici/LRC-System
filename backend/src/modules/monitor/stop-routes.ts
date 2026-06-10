@@ -4,7 +4,7 @@ import { z }             from 'zod';
 import * as XLSX         from 'xlsx';
 import { db }            from '../../db/client.js';
 import { parseBody }     from '../../lib/validate.js';
-import { requireAuth }   from '../../lib/auth.js';
+import { requireAuth, requireModule, requireManage } from '../../lib/auth.js';
 import { detectStopsForLine } from './stop-detector.js';
 
 export const stopRoutes = new Hono();
@@ -128,7 +128,7 @@ stopRoutes.post('/parate/:eventId/motivo', async (c) => {
 
 // ─── Storico admin ────────────────────────────────────────────────────────────
 
-stopRoutes.get('/parate', requireAuth, async (c) => {
+stopRoutes.get('/parate', requireModule('monitor_parate'), async (c) => {
   const q        = c.req.query();
   const lineaId  = q['linea_id']  ? parseInt(q['linea_id'], 10)  : null;
   const from     = q['from']     ?? null;
@@ -162,7 +162,7 @@ stopRoutes.get('/parate', requireAuth, async (c) => {
 
 // ─── Export Excel ─────────────────────────────────────────────────────────────
 
-stopRoutes.get('/parate/export', requireAuth, async (c) => {
+stopRoutes.get('/parate/export', requireModule('monitor_parate'), async (c) => {
   const q        = c.req.query();
   const lineaId  = q['linea_id'] ? parseInt(q['linea_id'], 10) : null;
   const from     = q['from']    ?? null;
@@ -220,7 +220,7 @@ const categorySchema = z.object({
   attivo: z.boolean().default(true),
 });
 
-stopRoutes.get('/motivi/admin', requireAuth, async (c) => {
+stopRoutes.get('/motivi/admin', requireModule('monitor_motivi'), async (c) => {
   const categorie = await db`
     SELECT id, nome, colore, ordine, attivo FROM monitor_stop_categories ORDER BY ordine, nome
   `;
@@ -233,7 +233,7 @@ stopRoutes.get('/motivi/admin', requireAuth, async (c) => {
   return c.json({ categorie, motivi });
 });
 
-stopRoutes.post('/motivi/categorie', requireAuth, async (c) => {
+stopRoutes.post('/motivi/categorie', requireManage('monitor_motivi'), async (c) => {
   const body = await parseBody(c, categorySchema);
   const [row] = await db`
     INSERT INTO monitor_stop_categories (nome, colore, ordine, attivo)
@@ -243,7 +243,7 @@ stopRoutes.post('/motivi/categorie', requireAuth, async (c) => {
   return c.json(row, 201);
 });
 
-stopRoutes.put('/motivi/categorie/:id', requireAuth, async (c) => {
+stopRoutes.put('/motivi/categorie/:id', requireManage('monitor_motivi'), async (c) => {
   const id   = parseId(c.req.param('id'));
   const body = await parseBody(c, categorySchema.partial());
   const [row] = await db`
@@ -258,7 +258,7 @@ stopRoutes.put('/motivi/categorie/:id', requireAuth, async (c) => {
   return c.json(row);
 });
 
-stopRoutes.delete('/motivi/categorie/:id', requireAuth, async (c) => {
+stopRoutes.delete('/motivi/categorie/:id', requireManage('monitor_motivi'), async (c) => {
   const id = parseId(c.req.param('id'));
   await db`DELETE FROM monitor_stop_categories WHERE id = ${id}`;
   return c.json({ ok: true });
@@ -273,7 +273,7 @@ const reasonSchema = z.object({
   attivo:      z.boolean().default(true),
 });
 
-stopRoutes.post('/motivi/reasons', requireAuth, async (c) => {
+stopRoutes.post('/motivi/reasons', requireManage('monitor_motivi'), async (c) => {
   const body = await parseBody(c, reasonSchema);
   const [row] = await db`
     INSERT INTO monitor_stop_reasons (category_id, descrizione, ordine, attivo)
@@ -283,7 +283,7 @@ stopRoutes.post('/motivi/reasons', requireAuth, async (c) => {
   return c.json(row, 201);
 });
 
-stopRoutes.put('/motivi/reasons/:id', requireAuth, async (c) => {
+stopRoutes.put('/motivi/reasons/:id', requireManage('monitor_motivi'), async (c) => {
   const id   = parseId(c.req.param('id'));
   const body = await parseBody(c, reasonSchema.partial());
   const [row] = await db`
@@ -298,7 +298,7 @@ stopRoutes.put('/motivi/reasons/:id', requireAuth, async (c) => {
   return c.json(row);
 });
 
-stopRoutes.delete('/motivi/reasons/:id', requireAuth, async (c) => {
+stopRoutes.delete('/motivi/reasons/:id', requireManage('monitor_motivi'), async (c) => {
   const id = parseId(c.req.param('id'));
   await db`DELETE FROM monitor_stop_reasons WHERE id = ${id}`;
   return c.json({ ok: true });

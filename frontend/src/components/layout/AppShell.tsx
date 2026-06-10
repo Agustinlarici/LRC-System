@@ -16,6 +16,8 @@ function getModuleForPath(pathname: string): { key: ModuleKey; needsManage?: boo
   if (pathname.startsWith('/ingresso-merci'))        return { key: 'ingresso_merci' };
   if (pathname.startsWith('/packing/impostazioni'))  return { key: 'packing', needsManage: true };
   if (pathname.startsWith('/packing'))               return { key: 'packing' };
+  if (pathname.startsWith('/admin/monitor/motivi'))   return { key: 'monitor_motivi', needsManage: true };
+  if (pathname.startsWith('/admin/monitor/parate'))   return { key: 'monitor_parate' };
   if (pathname.startsWith('/monitor/resumen'))        return { key: 'monitor_resumen' };
   if (pathname.startsWith('/monitor'))               return { key: 'monitor' };
   if (pathname.startsWith('/buffer'))                return { key: 'buffer' };
