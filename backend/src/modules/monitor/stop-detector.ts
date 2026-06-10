@@ -50,7 +50,7 @@ function timeToMin(t: string) {
 // ─── Core detection for a single line ────────────────────────────────────────
 
 async function detectStopsForLine(lineaId: number): Promise<void> {
-  const { now, dateStr, timeStr } = getRomeNow();
+  const { now, dateStr } = getRomeNow();
   const cache = getExecutiveCache();
   if (!cache) return;
 
@@ -60,7 +60,7 @@ async function detectStopsForLine(lineaId: number): Promise<void> {
 
   const combos = await db`SELECT modello, componente FROM monitor_linea_combo WHERE linea_id = ${lineaId}`;
   if (combos.length === 0) return;
-  const combosSet = new Set(combos.map((c: { modello: string; componente: string }) => `${c.modello}|${c.componente}`));
+  const combosSet = new Set(combos.map(c => `${c.modello as string}|${c.componente as string}`));
 
   const turniOggi = await db`
     SELECT ora_inizio, ora_fine FROM monitor_turno
@@ -80,12 +80,12 @@ async function detectStopsForLine(lineaId: number): Promise<void> {
   `;
 
   // Cycle time
-  const totalTurnoMin = turniOggi.reduce((acc: number, t: { ora_inizio: string; ora_fine: string }) =>
-    acc + Math.max(0, timeToMin(t.ora_fine) - timeToMin(t.ora_inizio)), 0);
-  const pauseMin = pause.reduce((acc: number, p: { ora_inizio: string; ora_fine: string }) => {
-    const pS = timeToMin(p.ora_inizio), pE = timeToMin(p.ora_fine);
-    const overlap = turniOggi.reduce((tAcc: number, t: { ora_inizio: string; ora_fine: string }) =>
-      tAcc + Math.max(0, Math.min(pE, timeToMin(t.ora_fine)) - Math.max(pS, timeToMin(t.ora_inizio))), 0);
+  const totalTurnoMin = turniOggi.reduce((acc: number, t) =>
+    acc + Math.max(0, timeToMin(t.ora_fine as string) - timeToMin(t.ora_inizio as string)), 0);
+  const pauseMin = pause.reduce((acc: number, p) => {
+    const pS = timeToMin(p.ora_inizio as string), pE = timeToMin(p.ora_fine as string);
+    const overlap = turniOggi.reduce((tAcc: number, t) =>
+      tAcc + Math.max(0, Math.min(pE, timeToMin(t.ora_fine as string)) - Math.max(pS, timeToMin(t.ora_inizio as string))), 0);
     return acc + overlap;
   }, 0);
   const nettoMin     = Math.max(1, totalTurnoMin - pauseMin);
@@ -102,9 +102,9 @@ async function detectStopsForLine(lineaId: number): Promise<void> {
     .sort((a, b) => a.getTime() - b.getTime());
 
   // Collect pause intervals as ms ranges for net-time calculation
-  const pauseRanges = pause.map((p: { ora_inizio: string; ora_fine: string }) => ({
-    start: romeDt(dateStr, p.ora_inizio, now).getTime(),
-    end:   romeDt(dateStr, p.ora_fine,   now).getTime(),
+  const pauseRanges = pause.map(p => ({
+    start: romeDt(dateStr, p.ora_inizio as string, now).getTime(),
+    end:   romeDt(dateStr, p.ora_fine   as string, now).getTime(),
   }));
 
   function netElapsed(fromMs: number, toMs: number): number {
@@ -151,7 +151,7 @@ async function detectStopsForLine(lineaId: number): Promise<void> {
 export async function detectStopsAllLines(): Promise<void> {
   try {
     const linee = await db`SELECT id FROM monitor_linea WHERE attivo = true`;
-    await Promise.all(linee.map((l: { id: number }) => detectStopsForLine(l.id).catch(() => {})));
+    await Promise.all(linee.map(l => detectStopsForLine(l.id as number).catch(() => {})));
   } catch (err) {
     logger.error({ err }, 'stop-detector: errore rilevamento fermate');
   }

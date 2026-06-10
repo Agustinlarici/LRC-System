@@ -4,7 +4,7 @@ import { z }             from 'zod';
 import * as XLSX         from 'xlsx';
 import { db }            from '../../db/client.js';
 import { parseBody }     from '../../lib/validate.js';
-import { requireAuth, requireModule, requireManage } from '../../lib/auth.js';
+import { requireModule, requireManage } from '../../lib/auth.js';
 import { detectStopsForLine } from './stop-detector.js';
 
 export const stopRoutes = new Hono();
@@ -235,9 +235,13 @@ stopRoutes.get('/motivi/admin', requireModule('monitor_motivi'), async (c) => {
 
 stopRoutes.post('/motivi/categorie', requireManage('monitor_motivi'), async (c) => {
   const body = await parseBody(c, categorySchema);
+  const nome   = body.nome   as string;
+  const colore = body.colore as string;
+  const ordine = body.ordine as number;
+  const attivo = body.attivo as boolean;
   const [row] = await db`
     INSERT INTO monitor_stop_categories (nome, colore, ordine, attivo)
-    VALUES (${body.nome}, ${body.colore}, ${body.ordine}, ${body.attivo})
+    VALUES (${nome}, ${colore}, ${ordine}, ${attivo})
     RETURNING *
   `;
   return c.json(row, 201);
@@ -246,12 +250,16 @@ stopRoutes.post('/motivi/categorie', requireManage('monitor_motivi'), async (c) 
 stopRoutes.put('/motivi/categorie/:id', requireManage('monitor_motivi'), async (c) => {
   const id   = parseId(c.req.param('id'));
   const body = await parseBody(c, categorySchema.partial());
+  const nome:   string | null  = body.nome   ?? null;
+  const colore: string | null  = body.colore ?? null;
+  const ordine: number | null  = body.ordine ?? null;
+  const attivo: boolean | null = body.attivo ?? null;
   const [row] = await db`
     UPDATE monitor_stop_categories
-    SET nome   = COALESCE(${body.nome   ?? null}, nome),
-        colore = COALESCE(${body.colore ?? null}, colore),
-        ordine = COALESCE(${body.ordine ?? null}, ordine),
-        attivo = COALESCE(${body.attivo ?? null}, attivo)
+    SET nome   = COALESCE(${nome},   nome),
+        colore = COALESCE(${colore}, colore),
+        ordine = COALESCE(${ordine}, ordine),
+        attivo = COALESCE(${attivo}, attivo)
     WHERE id = ${id} RETURNING *
   `;
   if (!row) throw new HTTPException(404, { message: 'Categoria non trovata' });
@@ -275,9 +283,13 @@ const reasonSchema = z.object({
 
 stopRoutes.post('/motivi/reasons', requireManage('monitor_motivi'), async (c) => {
   const body = await parseBody(c, reasonSchema);
+  const category_id = body.category_id as number | null;
+  const descrizione = body.descrizione as string;
+  const ordine      = body.ordine      as number;
+  const attivo      = body.attivo      as boolean;
   const [row] = await db`
     INSERT INTO monitor_stop_reasons (category_id, descrizione, ordine, attivo)
-    VALUES (${body.category_id}, ${body.descrizione}, ${body.ordine}, ${body.attivo})
+    VALUES (${category_id}, ${descrizione}, ${ordine}, ${attivo})
     RETURNING *
   `;
   return c.json(row, 201);
@@ -286,12 +298,16 @@ stopRoutes.post('/motivi/reasons', requireManage('monitor_motivi'), async (c) =>
 stopRoutes.put('/motivi/reasons/:id', requireManage('monitor_motivi'), async (c) => {
   const id   = parseId(c.req.param('id'));
   const body = await parseBody(c, reasonSchema.partial());
+  const category_id: number | null  = body.category_id ?? null;
+  const descrizione: string | null  = body.descrizione ?? null;
+  const ordine:      number | null  = body.ordine      ?? null;
+  const attivo:      boolean | null = body.attivo      ?? null;
   const [row] = await db`
     UPDATE monitor_stop_reasons
-    SET category_id = COALESCE(${body.category_id ?? null}, category_id),
-        descrizione = COALESCE(${body.descrizione ?? null}, descrizione),
-        ordine      = COALESCE(${body.ordine      ?? null}, ordine),
-        attivo      = COALESCE(${body.attivo      ?? null}, attivo)
+    SET category_id = COALESCE(${category_id}, category_id),
+        descrizione = COALESCE(${descrizione}, descrizione),
+        ordine      = COALESCE(${ordine},      ordine),
+        attivo      = COALESCE(${attivo},      attivo)
     WHERE id = ${id} RETURNING *
   `;
   if (!row) throw new HTTPException(404, { message: 'Motivo non trovato' });
