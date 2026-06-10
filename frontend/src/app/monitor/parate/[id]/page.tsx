@@ -104,7 +104,7 @@ function StopRow({
           <span className={`${LABEL} ${open ? 'text-red-500' : 'text-gray-400'}`}>
             {open ? '● In corso' : 'Chiusa'}
           </span>
-          <p className={`text-4xl font-bold tabular-nums leading-none ${open ? 'text-red-500' : 'text-gray-700'}`}>
+          <p className={`text-xl font-bold tabular-nums ${open ? 'text-red-500' : 'text-gray-700'}`}>
             {durationDisplay}
           </p>
         </div>
@@ -112,7 +112,7 @@ function StopRow({
         {/* Inizio */}
         <div className="px-5 py-5 flex flex-col gap-2">
           <span className={LABEL}>Inizio</span>
-          <p className="text-3xl font-bold tabular-nums text-gray-900 leading-none">
+          <p className="text-xl font-bold tabular-nums text-gray-900">
             {fmtTime(event.started_at)}
           </p>
         </div>
@@ -120,7 +120,7 @@ function StopRow({
         {/* Fine */}
         <div className="px-5 py-5 flex flex-col gap-2">
           <span className={LABEL}>Fine</span>
-          <p className="text-3xl font-bold tabular-nums text-gray-900 leading-none">
+          <p className="text-xl font-bold tabular-nums text-gray-900">
             {event.ended_at ? fmtTime(event.ended_at) : '—'}
           </p>
         </div>
@@ -133,7 +133,7 @@ function StopRow({
               <button
                 key={cat.id}
                 onClick={() => { setCatId(cat.id); setReasonId(null); }}
-                className="px-4 py-2 rounded-xl text-sm font-semibold transition-all border-2"
+                className="px-4 py-2 rounded-xl text-base font-semibold transition-all border-2"
                 style={catId === cat.id
                   ? { background: cat.colore, color: '#fff', borderColor: cat.colore }
                   : { background: '#f9fafb', color: '#374151', borderColor: '#e5e7eb' }}
@@ -144,7 +144,7 @@ function StopRow({
             {catId !== null && (
               <button
                 onClick={() => { setCatId(null); setReasonId(null); }}
-                className="px-3 py-2 rounded-xl text-sm border-2 text-gray-400 border-gray-200 hover:border-gray-400"
+                className="px-3 py-2 rounded-xl text-base border-2 text-gray-400 border-gray-200 hover:border-gray-400"
               >✕</button>
             )}
           </div>
@@ -158,7 +158,7 @@ function StopRow({
               <button
                 key={r.id}
                 onClick={() => setReasonId(r.id)}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold border-2 transition-all ${
+                className={`px-4 py-2 rounded-xl text-base font-semibold border-2 transition-all ${
                   reasonId === r.id
                     ? 'bg-blue-600 text-white border-blue-600'
                     : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-blue-300'
@@ -168,7 +168,7 @@ function StopRow({
               </button>
             ))}
             {filteredReasons.length === 0 && (
-              <span className="text-sm text-gray-300 italic">Seleziona categoria</span>
+              <span className="text-base text-gray-300 italic">Seleziona categoria</span>
             )}
           </div>
         </div>
