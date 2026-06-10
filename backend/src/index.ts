@@ -78,6 +78,9 @@ serve({ fetch: app.fetch, port }, async (info) => {
       UNIQUE(linea_id, day_of_week)
     )
   `.catch((e: unknown) => logger.warn(`[Startup] monitor_turno_default: ${e}`));
+  await db`ALTER TABLE monitor_turno_default ADD COLUMN IF NOT EXISTS pause JSONB NOT NULL DEFAULT '[]'`.catch(() => {});
+  // Fix rows where pause was stored as a JSONB string instead of a JSONB array (double-encoding bug)
+  await db`UPDATE monitor_turno_default SET pause = (pause #>> '{}')::jsonb WHERE jsonb_typeof(pause) = 'string'`.catch(() => {});
   logger.info('[Startup] monitor_turno_default OK');
 
   startScheduler();

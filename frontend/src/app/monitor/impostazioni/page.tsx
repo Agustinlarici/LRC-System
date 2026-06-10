@@ -404,7 +404,8 @@ function DefaultiTurniSection({ lineaId }: { lineaId: number }) {
   useEffect(() => {
     setLoading(true);
     api.get<TurnoDefaultRow[]>(`/api/monitor/linee/${lineaId}/defaults`)
-      .then(setRows)
+      .then(data => setRows(data.map(r => ({ ...r, pause: r.pause ?? [] }))))
+      .catch(() => toast.error('Errore caricamento turni standard'))
       .finally(() => setLoading(false));
   }, [lineaId]);
 
@@ -414,29 +415,42 @@ function DefaultiTurniSection({ lineaId }: { lineaId: number }) {
 
   function addPausa(dow: number) {
     setRows(prev => prev.map(r => {
-      if (r.day_of_week !== dow || r.pause.length >= MAX_DEF_PAUSE) return r;
-      return { ...r, pause: [...r.pause, { ora_inizio: '10:00', ora_fine: '10:15' }] };
+      if (r.day_of_week !== dow) return r;
+      const pause = r.pause ?? [];
+      if (pause.length >= MAX_DEF_PAUSE) return r;
+      return { ...r, pause: [...pause, { ora_inizio: '10:00', ora_fine: '10:15' }] };
     }));
   }
 
   function removePausa(dow: number, idx: number) {
-    setRows(prev => prev.map(r =>
-      r.day_of_week === dow ? { ...r, pause: r.pause.filter((_, i) => i !== idx) } : r
-    ));
+    setRows(prev => prev.map(r => {
+      if (r.day_of_week !== dow) return r;
+      const pause = (r.pause ?? []).filter((_, i) => i !== idx);
+      return { ...r, pause };
+    }));
   }
 
   function updatePausa(dow: number, idx: number, field: 'ora_inizio' | 'ora_fine', val: string) {
     setRows(prev => prev.map(r => {
       if (r.day_of_week !== dow) return r;
-      const pause = r.pause.map((p, i) => i === idx ? { ...p, [field]: val } : p);
+      const pause = (r.pause ?? []).map((p, i) => i === idx ? { ...p, [field]: val } : p);
       return { ...r, pause };
     }));
   }
 
   async function handleSave() {
     setSaving(true); setSaved(false);
+    const sliceHHMM = (v: string | null) => v ? v.slice(0, 5) : null;
+    const payload = rows.map(r => ({
+      ...r,
+      t1_inizio: sliceHHMM(r.t1_inizio),
+      t1_fine:   sliceHHMM(r.t1_fine),
+      t2_inizio: sliceHHMM(r.t2_inizio),
+      t2_fine:   sliceHHMM(r.t2_fine),
+      pause:     (r.pause ?? []),
+    }));
     try {
-      await api.put(`/api/monitor/linee/${lineaId}/defaults`, rows);
+      await api.put(`/api/monitor/linee/${lineaId}/defaults`, payload);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
       toast.success('Turni standard salvati');
@@ -505,7 +519,8 @@ function DefaultiTurniSection({ lineaId }: { lineaId: number }) {
                       onChange={e => update(r.day_of_week, { t2_fine: e.target.value || null })} />
                   </td>
                   {Array.from({ length: MAX_DEF_PAUSE }).map((_, pi) => {
-                    const p = r.pause[pi];
+                    const pauseArr = r.pause ?? [];
+                    const p = pauseArr[pi];
                     return (
                       <td key={pi} className="py-1 px-1" colSpan={2}>
                         {p ? (
@@ -518,7 +533,7 @@ function DefaultiTurniSection({ lineaId }: { lineaId: number }) {
                               className="text-red-300 hover:text-red-500 leading-none px-0.5" title="Rimuovi">✕</button>
                           </div>
                         ) : (
-                          r.pause.length === pi && r.pause.length < MAX_DEF_PAUSE ? (
+                          pauseArr.length === pi && pauseArr.length < MAX_DEF_PAUSE ? (
                             <button onClick={() => addPausa(r.day_of_week)}
                               className="text-orange-400 hover:text-orange-600 border border-orange-200 rounded px-1.5 py-0.5 whitespace-nowrap">
                               + P

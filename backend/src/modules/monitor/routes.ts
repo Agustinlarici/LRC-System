@@ -1019,6 +1019,14 @@ const turnoDefaultRowSchema = z.object({
   })).optional(),
 });
 
+type PausaRow = { ora_inizio: string; ora_fine: string };
+const parsePause = (v: unknown): PausaRow[] => {
+  if (!v) return [];
+  if (Array.isArray(v)) return v as PausaRow[];
+  if (typeof v === 'string') { try { return JSON.parse(v) as PausaRow[]; } catch { return []; } }
+  return [];
+};
+
 // GET /linee/:id/defaults — 7 righe (una per giorno), create on-the-fly se mancano
 monitorRoutes.get('/linee/:id/defaults', async (c) => {
   const lineaId = parseId(c.req.param('id'));
@@ -1029,16 +1037,17 @@ monitorRoutes.get('/linee/:id/defaults', async (c) => {
     ORDER BY day_of_week
   `;
   const byDow = new Map(rows.map(r => [r.day_of_week as number, r]));
+  const sliceTime = (v: unknown) => v ? (v as string).slice(0, 5) : null;
   const result = Array.from({ length: 7 }, (_, i) => {
     const r = byDow.get(i);
     return {
       day_of_week:          i,
-      t1_inizio:            r ? (r.t1_inizio as string | null) : null,
-      t1_fine:              r ? (r.t1_fine   as string | null) : null,
-      t2_inizio:            r ? (r.t2_inizio as string | null) : null,
-      t2_fine:              r ? (r.t2_fine   as string | null) : null,
+      t1_inizio:            sliceTime(r?.t1_inizio),
+      t1_fine:              sliceTime(r?.t1_fine),
+      t2_inizio:            sliceTime(r?.t2_inizio),
+      t2_fine:              sliceTime(r?.t2_fine),
       quantita_giornaliera: r ? (r.quantita_giornaliera as number | null) : null,
-      pause:                r ? (r.pause as Array<{ ora_inizio: string; ora_fine: string }>) : [],
+      pause:                parsePause(r?.pause),
     };
   });
   return c.json(result);
@@ -1049,7 +1058,7 @@ monitorRoutes.put('/linee/:id/defaults', async (c) => {
   const lineaId = parseId(c.req.param('id'));
   const body = await parseBody(c, z.array(turnoDefaultRowSchema));
   for (const row of body) {
-    const pauseJson = JSON.stringify(row.pause ?? []);
+    const pauseStr = JSON.stringify(row.pause ?? []);
     await db`
       INSERT INTO monitor_turno_default
         (linea_id, day_of_week, t1_inizio, t1_fine, t2_inizio, t2_fine, quantita_giornaliera, pause)
@@ -1058,7 +1067,7 @@ monitorRoutes.put('/linee/:id/defaults', async (c) => {
         ${row.t1_inizio ?? null}, ${row.t1_fine ?? null},
         ${row.t2_inizio ?? null}, ${row.t2_fine ?? null},
         ${row.quantita_giornaliera ?? null},
-        ${pauseJson}::jsonb
+        ${pauseStr}
       )
       ON CONFLICT (linea_id, day_of_week) DO UPDATE SET
         t1_inizio            = EXCLUDED.t1_inizio,
@@ -1085,16 +1094,17 @@ monitorRoutes.get('/defaults-for-date/:data', async (c) => {
     t1_inizio: string | null; t1_fine: string | null;
     t2_inizio: string | null; t2_fine: string | null;
     quantita_giornaliera: number | null;
-    pause: Array<{ ora_inizio: string; ora_fine: string }>;
+    pause: PausaRow[];
   }> = {};
+  const sliceTime = (v: unknown) => v ? (v as string).slice(0, 5) : null;
   for (const r of rows) {
     result[r.linea_id as number] = {
-      t1_inizio:            (r.t1_inizio as string | null),
-      t1_fine:              (r.t1_fine   as string | null),
-      t2_inizio:            (r.t2_inizio as string | null),
-      t2_fine:              (r.t2_fine   as string | null),
+      t1_inizio:            sliceTime(r.t1_inizio),
+      t1_fine:              sliceTime(r.t1_fine),
+      t2_inizio:            sliceTime(r.t2_inizio),
+      t2_fine:              sliceTime(r.t2_fine),
       quantita_giornaliera: (r.quantita_giornaliera as number | null),
-      pause:                (r.pause as Array<{ ora_inizio: string; ora_fine: string }>),
+      pause:                parsePause(r.pause),
     };
   }
   return c.json(result);

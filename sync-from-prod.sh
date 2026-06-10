@@ -11,8 +11,7 @@
 # ═══════════════════════════════════════════════════════════════════
 set -e
 
-PROD_HOST="${PROD_HOST:-192.168.1.183}"
-PROD_USER="${PROD_USER:-alarici}"
+PROD_HOST="${PROD_HOST:-192.168.5.22}"
 PROD_DIR="${PROD_DIR:-~/lrc-system}"
 PROD_DB="lrc_system"
 PROD_DB_USER="lrc"
@@ -34,6 +33,12 @@ echo ""
 echo -e "${YELLOW}╔══════════════════════════════════════════════════════════╗${NC}"
 echo -e "${YELLOW}║  SYNC DB PRODUZIONE → DEV LOCALE                         ║${NC}"
 echo -e "${YELLOW}╚══════════════════════════════════════════════════════════╝${NC}"
+echo ""
+
+read -p "  Utente SSH (es. alarici@strlan.local): " PROD_USER
+read -p "  Server IP  [${PROD_HOST}]: " INPUT_HOST
+[ -n "$INPUT_HOST" ] && PROD_HOST="$INPUT_HOST"
+
 echo ""
 echo -e "  Produzione : ${RED}${PROD_USER}@${PROD_HOST}${NC} (solo lettura — pg_dump)"
 echo -e "  Locale     : ${GREEN}${LOCAL_DB}${NC} (verrà sovrascritto)"
@@ -61,7 +66,7 @@ fi
 
 # ─── 2. Dump dal server di produzione ────────────────────────────
 step "2/5  Dump DB produzione da ${PROD_HOST} (sola lettura)..."
-ssh "${PROD_USER}@${PROD_HOST}" \
+ssh -l "${PROD_USER}" "${PROD_HOST}" \
   "cd ${PROD_DIR} && docker exec ${PROD_CONTAINER} pg_dump -U ${PROD_DB_USER} -d ${PROD_DB} --no-owner --no-acl" \
   > "${PROD_DUMP}"
 info "Dump produzione ricevuto: $(du -sh "${PROD_DUMP}" | cut -f1)"

@@ -120,7 +120,7 @@ export default function TurniCalendarioPage() {
             t2_inizio:            def.t2_inizio ?? '',
             t2_fine:              def.t2_fine   ?? '',
             quantita_giornaliera: def.quantita_giornaliera != null ? String(def.quantita_giornaliera) : '',
-            pause:                def.pause.map(p => ({ ora_inizio: p.ora_inizio, ora_fine: p.ora_fine })),
+            pause:                (def.pause ?? []).map(p => ({ ora_inizio: p.ora_inizio, ora_fine: p.ora_fine })),
             dirty: true, saving: false, saved: false,
           };
         } else {
