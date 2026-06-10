@@ -21,31 +21,9 @@ function fmtDuration(sec: number) {
 
 function isOpen(e: StopEvent) { return e.ended_at === null; }
 
-// Colonne della tabella — stessa definizione in header e righe
-const COLS = '140px 100px 100px 1fr 1fr 200px 200px';
+const LABEL = 'text-xs font-bold text-gray-400 uppercase tracking-widest';
 
-// ─── Header tabella ───────────────────────────────────────────────────────────
-
-function TableHeader() {
-  const headers = ['Durata', 'Inizio', 'Fine', 'Categoria', 'Motivo', 'Note', 'Nome'];
-  return (
-    <div
-      className="grid bg-gray-50 border-b-2 border-gray-200"
-      style={{ gridTemplateColumns: COLS }}
-    >
-      {headers.map((h, i) => (
-        <div
-          key={h}
-          className={`px-5 py-3 text-sm font-bold text-gray-400 uppercase tracking-widest ${i < headers.length - 1 ? 'border-r border-gray-200' : ''}`}
-        >
-          {h}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Riga tabella ─────────────────────────────────────────────────────────────
+// ─── Card fermata ─────────────────────────────────────────────────────────────
 
 function StopRow({
   event, categories, reasons, onSaved,
@@ -100,7 +78,7 @@ function StopRow({
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
         onSaved();
-      } catch { setError('Errore salvataggio'); }
+      } catch { setError('Errore'); }
       finally  { setSaving(false); }
     }, 2000);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
@@ -111,118 +89,121 @@ function StopRow({
   const durationDisplay = open
     ? (elapsed !== null ? fmtDuration(elapsed) : '0m 00s')
     : fmtDuration(event.duration_sec ?? 0);
-
-  const rowBg     = open ? 'bg-red-50' : 'bg-white';
-  const accentClr = open ? '#ef4444' : event.reason_id ? '#22c55e' : '#f59e0b';
-  const cellBorder = 'border-r border-gray-200';
+  const accentColor = open ? '#ef4444' : event.reason_id ? '#22c55e' : '#f59e0b';
 
   return (
     <div
-      className={`grid border-b border-gray-200 ${rowBg}`}
-      style={{ gridTemplateColumns: COLS, borderLeft: `5px solid ${accentClr}` }}
+      className="bg-white rounded-2xl shadow-sm overflow-hidden"
+      style={{ borderLeft: `6px solid ${accentColor}` }}
     >
+      {/* Riga interna tipo tabella — divide-x crea i divisori verticali */}
+      <div className="grid divide-x divide-gray-100" style={{ gridTemplateColumns: '9rem 8rem 8rem 1fr 1fr 14rem 14rem' }}>
 
-      {/* Durata */}
-      <div className={`px-5 py-5 flex flex-col justify-center gap-1 ${cellBorder}`}>
-        {open && (
-          <span className="text-xs font-bold text-red-500 uppercase tracking-widest">● In corso</span>
-        )}
-        <p className={`text-3xl font-bold tabular-nums leading-none ${open ? 'text-red-500' : 'text-gray-700'}`}>
-          {durationDisplay}
-        </p>
-      </div>
-
-      {/* Inizio */}
-      <div className={`px-5 py-5 flex items-center ${cellBorder}`}>
-        <p className="text-2xl font-bold tabular-nums text-gray-900">
-          {fmtTime(event.started_at)}
-        </p>
-      </div>
-
-      {/* Fine */}
-      <div className={`px-5 py-5 flex items-center ${cellBorder}`}>
-        <p className="text-2xl font-bold tabular-nums text-gray-900">
-          {event.ended_at ? fmtTime(event.ended_at) : '—'}
-        </p>
-      </div>
-
-      {/* Categoria */}
-      <div className={`px-5 py-4 flex flex-col justify-center ${cellBorder}`}>
-        <div className="flex flex-wrap gap-2">
-          {categories.map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => { setCatId(cat.id); setReasonId(null); }}
-              className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all border-2"
-              style={catId === cat.id
-                ? { background: cat.colore, color: '#fff', borderColor: cat.colore }
-                : { background: '#f9fafb', color: '#374151', borderColor: '#e5e7eb' }}
-            >
-              {cat.nome}
-            </button>
-          ))}
-          {catId !== null && (
-            <button
-              onClick={() => { setCatId(null); setReasonId(null); }}
-              className="px-3 py-2.5 rounded-xl text-sm border-2 bg-white text-gray-400 border-gray-200 hover:border-gray-400"
-            >
-              ✕
-            </button>
-          )}
+        {/* Durata */}
+        <div className="px-5 py-5 flex flex-col gap-2">
+          <span className={`${LABEL} ${open ? 'text-red-500' : 'text-gray-400'}`}>
+            {open ? '● In corso' : 'Chiusa'}
+          </span>
+          <p className={`text-4xl font-bold tabular-nums leading-none ${open ? 'text-red-500' : 'text-gray-700'}`}>
+            {durationDisplay}
+          </p>
         </div>
-      </div>
 
-      {/* Motivo */}
-      <div className={`px-5 py-4 flex flex-col justify-center ${cellBorder}`}>
-        <div className="flex flex-wrap gap-2">
-          {filteredReasons.map(r => (
-            <button
-              key={r.id}
-              onClick={() => setReasonId(r.id)}
-              className={`px-4 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${
-                reasonId === r.id
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-blue-300'
-              }`}
-            >
-              {r.descrizione}
-            </button>
-          ))}
-          {filteredReasons.length === 0 && (
-            <span className="text-sm text-gray-300 italic">Seleziona categoria</span>
-          )}
+        {/* Inizio */}
+        <div className="px-5 py-5 flex flex-col gap-2">
+          <span className={LABEL}>Inizio</span>
+          <p className="text-3xl font-bold tabular-nums text-gray-900 leading-none">
+            {fmtTime(event.started_at)}
+          </p>
         </div>
-      </div>
 
-      {/* Note */}
-      <div className={`px-5 py-4 flex items-center ${cellBorder}`}>
-        <input
-          type="text"
-          value={note}
-          onChange={e => setNote(e.target.value)}
-          className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
-          placeholder="Note opzionali..."
-        />
-      </div>
-
-      {/* Nome + stato */}
-      <div className="px-5 py-4 flex flex-col justify-center gap-2">
-        <input
-          type="text"
-          value={operatore}
-          onChange={e => setOperatore(e.target.value)}
-          className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
-          placeholder="Nome operatore *"
-        />
-        <div className="text-sm font-semibold h-5 leading-none">
-          {saving                          && <span className="text-gray-400">Salvataggio...</span>}
-          {saved   && !saving              && <span className="text-green-500">● Salvato</span>}
-          {error   && !saving              && <span className="text-red-500">{error}</span>}
-          {!saving && !saved && !error && operatore.trim()  && <span className="text-gray-300">Salva automatico</span>}
-          {!operatore.trim()               && <span className="text-amber-400">Inserisci nome</span>}
+        {/* Fine */}
+        <div className="px-5 py-5 flex flex-col gap-2">
+          <span className={LABEL}>Fine</span>
+          <p className="text-3xl font-bold tabular-nums text-gray-900 leading-none">
+            {event.ended_at ? fmtTime(event.ended_at) : '—'}
+          </p>
         </div>
-      </div>
 
+        {/* Categoria */}
+        <div className="px-5 py-5 flex flex-col gap-3">
+          <span className={LABEL}>Categoria</span>
+          <div className="flex flex-wrap gap-2">
+            {categories.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => { setCatId(cat.id); setReasonId(null); }}
+                className="px-4 py-2 rounded-xl text-sm font-semibold transition-all border-2"
+                style={catId === cat.id
+                  ? { background: cat.colore, color: '#fff', borderColor: cat.colore }
+                  : { background: '#f9fafb', color: '#374151', borderColor: '#e5e7eb' }}
+              >
+                {cat.nome}
+              </button>
+            ))}
+            {catId !== null && (
+              <button
+                onClick={() => { setCatId(null); setReasonId(null); }}
+                className="px-3 py-2 rounded-xl text-sm border-2 text-gray-400 border-gray-200 hover:border-gray-400"
+              >✕</button>
+            )}
+          </div>
+        </div>
+
+        {/* Motivo */}
+        <div className="px-5 py-5 flex flex-col gap-3">
+          <span className={LABEL}>Motivo</span>
+          <div className="flex flex-wrap gap-2">
+            {filteredReasons.map(r => (
+              <button
+                key={r.id}
+                onClick={() => setReasonId(r.id)}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold border-2 transition-all ${
+                  reasonId === r.id
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-blue-300'
+                }`}
+              >
+                {r.descrizione}
+              </button>
+            ))}
+            {filteredReasons.length === 0 && (
+              <span className="text-sm text-gray-300 italic">Seleziona categoria</span>
+            )}
+          </div>
+        </div>
+
+        {/* Note */}
+        <div className="px-5 py-5 flex flex-col gap-3">
+          <span className={LABEL}>Note</span>
+          <input
+            type="text"
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+            placeholder="Note opzionali..."
+          />
+        </div>
+
+        {/* Nome + stato */}
+        <div className="px-5 py-5 flex flex-col gap-3">
+          <span className={LABEL}>Nome *</span>
+          <input
+            type="text"
+            value={operatore}
+            onChange={e => setOperatore(e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+            placeholder="Nome operatore"
+          />
+          <p className="text-sm font-semibold leading-none h-4">
+            {saving                                   && <span className="text-gray-400">Salvataggio...</span>}
+            {saved   && !saving                       && <span className="text-green-500">● Salvato</span>}
+            {error   && !saving                       && <span className="text-red-500">{error}</span>}
+            {!saving && !saved && !error && !operatore.trim() && <span className="text-amber-400">Inserisci nome</span>}
+          </p>
+        </div>
+
+      </div>
     </div>
   );
 }
@@ -328,32 +309,24 @@ export default function ParatePage() {
           </div>
         </div>
 
-        {/* Tabella fermate */}
-        {stops.length > 0 && (
-          <div className="rounded-2xl shadow overflow-hidden border border-gray-200">
-            <TableHeader />
-
-            {/* Fermate in corso */}
+        {/* Fermate in corso */}
+        {openStops.length > 0 && (
+          <section className="space-y-4">
+            <p className="text-sm font-bold text-red-500 uppercase tracking-widest">In corso</p>
             {openStops.map(e => (
               <StopRow key={e.id} event={e} categories={categories} reasons={reasons} onSaved={loadStops} />
             ))}
+          </section>
+        )}
 
-            {/* Separatore storico */}
-            {closedStops.length > 0 && (
-              <>
-                {openStops.length > 0 && (
-                  <div className="px-5 py-2 bg-gray-50 border-b border-t border-gray-200">
-                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                      Fermate del giorno
-                    </p>
-                  </div>
-                )}
-                {closedStops.map(e => (
-                  <StopRow key={e.id} event={e} categories={categories} reasons={reasons} onSaved={loadStops} />
-                ))}
-              </>
-            )}
-          </div>
+        {/* Storico */}
+        {closedStops.length > 0 && (
+          <section className="space-y-4">
+            <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Fermate del giorno</p>
+            {closedStops.map(e => (
+              <StopRow key={e.id} event={e} categories={categories} reasons={reasons} onSaved={loadStops} />
+            ))}
+          </section>
         )}
 
         {stops.length === 0 && !error && (
