@@ -104,7 +104,7 @@ function StopRow({
           <span className={`${LABEL} ${open ? 'text-red-500' : 'text-gray-400'}`}>
             {open ? '● In corso' : 'Chiusa'}
           </span>
-          <p className={`text-xl font-bold tabular-nums ${open ? 'text-red-500' : 'text-gray-700'}`}>
+          <p className={`text-2xl font-bold tabular-nums ${open ? 'text-red-500' : 'text-gray-700'}`}>
             {durationDisplay}
           </p>
         </div>
@@ -112,7 +112,7 @@ function StopRow({
         {/* Inizio */}
         <div className="px-5 py-5 flex flex-col gap-2">
           <span className={LABEL}>Inizio</span>
-          <p className="text-xl font-bold tabular-nums text-gray-900">
+          <p className="text-2xl font-bold tabular-nums text-gray-900">
             {fmtTime(event.started_at)}
           </p>
         </div>
@@ -120,7 +120,7 @@ function StopRow({
         {/* Fine */}
         <div className="px-5 py-5 flex flex-col gap-2">
           <span className={LABEL}>Fine</span>
-          <p className="text-xl font-bold tabular-nums text-gray-900">
+          <p className="text-2xl font-bold tabular-nums text-gray-900">
             {event.ended_at ? fmtTime(event.ended_at) : '—'}
           </p>
         </div>
@@ -282,16 +282,16 @@ export default function ParatePage() {
         {error && <p className="text-red-500 text-center text-lg">{error}</p>}
 
         {/* Card pulsante */}
-        <div className={`rounded-2xl p-8 shadow border-2 transition-colors ${
+        <div className={`rounded-xl px-6 py-4 shadow-sm border transition-colors ${
           lineaFerma ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'
         }`}>
-          <div className="flex items-center justify-between gap-8">
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <p className={`text-xl font-bold uppercase tracking-widest ${lineaFerma ? 'text-red-500' : 'text-gray-400'}`}>
+              <p className={`text-sm font-bold uppercase tracking-widest ${lineaFerma ? 'text-red-500' : 'text-gray-400'}`}>
                 {lineaFerma ? '● Linea ferma' : '○ Linea in produzione'}
               </p>
               {lineaFerma && openStops[0] && (
-                <p className="text-base text-red-400 mt-2">
+                <p className="text-xs text-red-400 mt-1">
                   Iniziata alle {fmtTime(openStops[0].started_at)}
                 </p>
               )}
@@ -299,11 +299,11 @@ export default function ParatePage() {
             <button
               onClick={toggleFermata}
               disabled={opening}
-              className={`flex items-center gap-4 px-12 py-5 font-bold rounded-2xl text-xl disabled:opacity-50 transition-colors shadow text-white ${
+              className={`flex items-center gap-2 px-6 py-2.5 font-bold rounded-xl text-sm disabled:opacity-50 transition-colors shadow-sm text-white ${
                 lineaFerma ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
               }`}
             >
-              <span className="text-2xl leading-none">{lineaFerma ? '▶' : '⏹'}</span>
+              <span className="leading-none">{lineaFerma ? '▶' : '⏹'}</span>
               {opening ? '...' : lineaFerma ? 'Riprendi linea' : 'Ferma linea'}
             </button>
           </div>
