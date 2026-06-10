@@ -180,6 +180,8 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/spma':                    'spma',
   '/recepciones':             'recepciones',
   '/edi':                     'edi',
+  '/admin/monitor/parate':    'monitor_parate',
+  '/admin/monitor/motivi':    'monitor_motivi',
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────

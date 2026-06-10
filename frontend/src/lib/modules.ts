@@ -52,12 +52,12 @@ export const MODULES: ModuleConfig[] = [
   {
     href: '/admin/monitor/parate', label: 'Storico fermate', group: 'Produzione',
     description: 'Storico fermate di linea con motivi e durate',
-    icon: '🛑', sidebar: 'IconClipboard', hidden: false, moduleKey: 'monitor',
+    icon: '🛑', sidebar: 'IconClipboard', hidden: false, moduleKey: 'monitor_parate',
   },
   {
     href: '/admin/monitor/motivi', label: 'Motivi fermate', group: 'Produzione',
     description: 'Configurazione categorie e motivi di fermata',
-    icon: '⚙️', sidebar: 'IconSettings', hidden: false, moduleKey: 'monitor', manageOnly: true,
+    icon: '⚙️', sidebar: 'IconSettings', hidden: false, moduleKey: 'monitor_motivi', manageOnly: true,
   },
 
   // ── Dashboard ──────────────────────────────────────────────────────────────
