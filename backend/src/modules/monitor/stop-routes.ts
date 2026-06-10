@@ -9,7 +9,8 @@ import { detectStopsForLine } from './stop-detector.js';
 
 export const stopRoutes = new Hono();
 
-function parseId(raw: string) {
+function parseId(raw: string | undefined) {
+  if (!raw) throw new HTTPException(400, { message: 'ID non valido' });
   const id = parseInt(raw, 10);
   if (isNaN(id) || id <= 0) throw new HTTPException(400, { message: 'ID non valido' });
   return id;
