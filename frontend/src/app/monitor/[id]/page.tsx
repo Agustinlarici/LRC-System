@@ -89,13 +89,11 @@ export default function MonitorDisplayPage() {
           // Uscita da fermata → sincronizza sempre col server (evita timer che continuano)
           if (wasInFermata && !data.fermata_manuale) return data.remaining_sec;
           if (data.fermata_manuale && data.turno_attivo) {
-            const base = data.fermata_elapsed_sec ?? 0;
-            if (prev !== null && prev < 0) return prev;
-            return -base;
+            return -(data.fermata_elapsed_sec ?? 0);
           }
           if (data.commesse.length === 0 && data.turno_attivo) {
-            if (prev !== null && prev < 0) return prev;
-            return data.remaining_sec;
+            if (prev !== null && prev <= 0) return prev;
+            return Math.min(data.remaining_sec ?? 0, 0);
           }
           if (prev === null) return data.remaining_sec;
           return Math.abs(prev - data.remaining_sec) >= 2 ? data.remaining_sec : prev;
@@ -167,9 +165,7 @@ export default function MonitorDisplayPage() {
     ? '--:--'
     : localRemaining <= 0
       ? `+${formatTime(Math.abs(localRemaining))}`
-      : inAttesa
-        ? '--:--'
-        : formatTime(localRemaining);
+      : formatTime(localRemaining);
 
   const qtaInRitardo = stato.turno_attivo &&
     stato.avanzamento_previsto != null &&

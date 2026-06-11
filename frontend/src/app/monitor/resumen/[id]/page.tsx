@@ -122,8 +122,7 @@ export default function ResumenDisplayPage() {
             // Uscita da fermata → sincronizza sempre col server (evita timer che continuano)
             remaining = serverRemaining;
           } else if (stato.fermata_manuale && stato.turno_attivo) {
-            const base = stato.fermata_elapsed_sec ?? 0;
-            remaining = existing.remaining < 0 ? existing.remaining : -base;
+            remaining = -(stato.fermata_elapsed_sec ?? 0);
           } else if (stato.commesse.length === 0 && stato.turno_attivo) {
             remaining = existing.remaining < 0 ? existing.remaining : serverRemaining;
           } else if (Math.abs(existing.remaining - serverRemaining) >= 2) {
