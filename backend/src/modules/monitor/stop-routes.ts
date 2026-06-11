@@ -58,7 +58,7 @@ stopRoutes.get('/parate/:lineaId', async (c) => {
   // Last 24h of stops for this line
   const stops = await db`
     SELECT
-      e.id, e.linea_id, e.started_at, e.ended_at,
+      e.id, e.linea_id, e.started_at, e.ended_at, e.source,
       EXTRACT(EPOCH FROM (COALESCE(e.ended_at, NOW()) - e.started_at))::INT AS duration_sec,
       e.reason_id, r.descrizione AS reason_descrizione,
       c.nome AS categoria_nome, c.colore AS categoria_colore,
@@ -82,8 +82,8 @@ stopRoutes.post('/parate/:lineaId/apri', async (c) => {
   if (!linea) throw new HTTPException(404, { message: 'Linea non trovata' });
 
   const [row] = await db`
-    INSERT INTO monitor_stop_events (linea_id, started_at)
-    VALUES (${lineaId}, NOW())
+    INSERT INTO monitor_stop_events (linea_id, started_at, source)
+    VALUES (${lineaId}, NOW(), 'manuale')
     RETURNING id
   `;
   return c.json({ id: row.id }, 201);
@@ -143,7 +143,7 @@ stopRoutes.get('/parate', requireModule('monitor_parate'), async (c) => {
 
   const stops = await db`
     SELECT
-      e.id, e.linea_id, l.nome AS linea_nome, e.started_at, e.ended_at,
+      e.id, e.linea_id, l.nome AS linea_nome, e.started_at, e.ended_at, e.source,
       EXTRACT(EPOCH FROM (COALESCE(e.ended_at, NOW()) - e.started_at))::INT AS duration_sec,
       e.reason_id, r.descrizione AS reason_descrizione,
       c.nome AS categoria_nome, c.colore AS categoria_colore,

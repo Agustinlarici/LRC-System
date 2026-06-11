@@ -402,6 +402,7 @@ export interface StopEvent {
   linea_nome?:         string;
   started_at:          string;
   ended_at:            string | null;
+  source:              'auto' | 'manuale';
   duration_sec:        number | null;
   reason_id:           number | null;
   reason_descrizione:  string | null;

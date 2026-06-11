@@ -247,15 +247,18 @@ export default function ParatePage() {
     return () => clearInterval(interval);
   }, [loadMotivi, loadStops]);
 
-  async function toggleFermata() {
+  async function apriManuale() {
     setOpening(true);
     try {
-      const open = stops.find(isOpen);
-      if (open) {
-        await api.post(`/api/monitor/parate/${open.id}/chiudi`, {});
-      } else {
-        await api.post(`/api/monitor/parate/${lineaId}/apri`, {});
-      }
+      await api.post(`/api/monitor/parate/${lineaId}/apri`, {});
+      await loadStops();
+    } finally { setOpening(false); }
+  }
+
+  async function chiudiManuale(id: number) {
+    setOpening(true);
+    try {
+      await api.post(`/api/monitor/parate/${id}/chiudi`, {});
       await loadStops();
     } finally { setOpening(false); }
   }
@@ -266,9 +269,11 @@ export default function ParatePage() {
     </div>
   );
 
-  const openStops   = stops.filter(isOpen);
-  const closedStops = stops.filter(e => !isOpen(e));
-  const lineaFerma  = openStops.length > 0;
+  const openStops    = stops.filter(isOpen);
+  const closedStops  = stops.filter(e => !isOpen(e));
+  const openManuale  = openStops.find(s => s.source === 'manuale');
+  const openAuto     = openStops.find(s => s.source === 'auto');
+  const lineaFerma   = openStops.length > 0;
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -281,7 +286,7 @@ export default function ParatePage() {
       <div className="px-8 py-8 space-y-8">
         {error && <p className="text-red-500 text-center text-lg">{error}</p>}
 
-        {/* Card pulsante */}
+        {/* Card stato + pulsante */}
         <div className={`rounded-xl px-6 py-4 shadow-sm border transition-colors ${
           lineaFerma ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'
         }`}>
@@ -293,19 +298,36 @@ export default function ParatePage() {
               {lineaFerma && openStops[0] && (
                 <p className="text-xs text-red-400 mt-1">
                   Iniziata alle {fmtTime(openStops[0].started_at)}
+                  {openAuto && !openManuale && ' — rilevata automaticamente'}
                 </p>
               )}
             </div>
-            <button
-              onClick={toggleFermata}
-              disabled={opening}
-              className={`flex items-center gap-2 px-6 py-2.5 font-bold rounded-xl text-sm disabled:opacity-50 transition-colors shadow-sm text-white ${
-                lineaFerma ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
-              }`}
-            >
-              <span className="leading-none">{lineaFerma ? '▶' : '⏹'}</span>
-              {opening ? '...' : lineaFerma ? 'Riprendi linea' : 'Ferma linea'}
-            </button>
+
+            {/* Nessun stop aperto → mostra "Ferma linea" */}
+            {!lineaFerma && (
+              <button
+                onClick={apriManuale}
+                disabled={opening}
+                className="flex items-center gap-2 px-6 py-2.5 font-bold rounded-xl text-sm disabled:opacity-50 transition-colors shadow-sm text-white bg-red-600 hover:bg-red-700"
+              >
+                <span className="leading-none">⏹</span>
+                {opening ? '...' : 'Ferma linea'}
+              </button>
+            )}
+
+            {/* Stop manuale aperto → mostra "Riprendi linea" */}
+            {openManuale && (
+              <button
+                onClick={() => chiudiManuale(openManuale.id)}
+                disabled={opening}
+                className="flex items-center gap-2 px-6 py-2.5 font-bold rounded-xl text-sm disabled:opacity-50 transition-colors shadow-sm text-white bg-green-600 hover:bg-green-700"
+              >
+                <span className="leading-none">▶</span>
+                {opening ? '...' : 'Riprendi linea'}
+              </button>
+            )}
+
+            {/* Solo stop auto (overtime) → nessun pulsante */}
           </div>
         </div>
 

@@ -31,3 +31,7 @@ CREATE TABLE IF NOT EXISTS monitor_stop_events (
 
 CREATE INDEX IF NOT EXISTS idx_stop_events_linea_started ON monitor_stop_events(linea_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_stop_events_started       ON monitor_stop_events(started_at DESC);
+
+-- Distingue fermate rilevate automaticamente da gap di produzione vs aperte manualmente dall'operaio
+ALTER TABLE monitor_stop_events ADD COLUMN IF NOT EXISTS source VARCHAR(10) NOT NULL DEFAULT 'auto';
+UPDATE monitor_stop_events SET source = 'auto' WHERE source IS NULL;

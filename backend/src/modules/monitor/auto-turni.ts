@@ -1,5 +1,4 @@
 import { db } from '../../db/client.js';
-import { logger } from '../../lib/logger.js';
 
 type PausaDef = { ora_inizio: string; ora_fine: string };
 
