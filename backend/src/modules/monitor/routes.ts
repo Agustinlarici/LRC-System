@@ -504,6 +504,16 @@ monitorRoutes.get('/stato/:id', async (c) => {
   const nettoMinuti  = Math.max(1, totalTurnoMinutes - pauseMinuti);
   const cycleTimeSec = Math.round((nettoMinuti * 60) / (qtaRow.quantita_giornaliera as number));
 
+  // Quota pezzi per il solo turno attivo (proporzionale ai minuti netti del turno)
+  const turnoAttivoMin = timeToMin(turnoAttivo.ora_fine as string) - timeToMin(turnoAttivo.ora_inizio as string);
+  const pauseInTurnoAttivoMin = pause.reduce((acc, p) => {
+    const oS = Math.max(timeToMin(p.ora_inizio as string), timeToMin(turnoAttivo.ora_inizio as string));
+    const oE = Math.min(timeToMin(p.ora_fine   as string), timeToMin(turnoAttivo.ora_fine   as string));
+    return acc + Math.max(0, oE - oS);
+  }, 0);
+  const turnoAttivoNettoMin = Math.max(1, turnoAttivoMin - pauseInTurnoAttivoMin);
+  const qtaTurno = Math.round((qtaRow.quantita_giornaliera as number) * turnoAttivoNettoMin / nettoMinuti);
+
   // ── Cache ──────────────────────────────────────────────────────────────────
   const execCache = getExecutiveCache();
   const allProdTimestamps = (execCache?.rows ?? [])
@@ -616,7 +626,7 @@ monitorRoutes.get('/stato/:id', async (c) => {
       fermata_manuale:      fermataManuale,
       fermata_elapsed_sec:  fermataElapsedSec,
       qta_prodotta:         qtaProdotta,
-      qta_da_produrre:      qtaRow.quantita_giornaliera,
+      qta_da_produrre:      qtaTurno,
       cycle_time_sec:       cycleTimeSec,
       ultimo_evento:        ultimoEvento?.toISOString() ?? null,
       elapsed_sec:          null,
