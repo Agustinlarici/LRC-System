@@ -5,6 +5,7 @@ import { syncFullDayToHistory, refreshLookupTables } from './modules/monitor/pg-
 import { checkSpmaDelays } from './modules/spma/delay-checker.js';
 import { sendDelayReportEmail, emailConfigured, type SmtpConfig } from './modules/spma/spma-email-notifier.js';
 import { autoGenerateEdi } from './modules/edi/auto-generate.js';
+import { applyDefaultsForDate } from './modules/monitor/auto-turni.js';
 import { db } from './db/client.js';
 import { startRun, endRun, failRun, setNextRun } from './lib/sync-stats.js';
 import { logger } from './lib/logger.js';
@@ -26,6 +27,18 @@ function nextOccurrence(hour: number, minute = 0): Date {
 }
 
 export function startScheduler() {
+  // 00:05 — applica turni standard per oggi alle linee senza dati salvati
+  cron.schedule('5 0 * * *', async () => {
+    const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
+    logger.info(`[scheduler] Auto-turni standard per ${dateStr}...`);
+    try {
+      const n = await applyDefaultsForDate(dateStr);
+      logger.info(`[scheduler] Auto-turni: ${n} linee aggiornate`);
+    } catch (e) {
+      logger.error(`[scheduler] Auto-turni fallito: ${e instanceof Error ? e.message : e}`);
+    }
+  }, { timezone: 'Europe/Rome' });
+
   // 01:00 — rilettura completa WebThron di ieri + snapshot OEE
   cron.schedule('0 1 * * *', async () => {
     const yesterday = new Date();

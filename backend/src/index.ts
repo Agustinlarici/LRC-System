@@ -9,6 +9,7 @@ import { refreshLookupTables } from './modules/monitor/pg-webthron-sync.js';
 import { setNextRun } from './lib/sync-stats.js';
 import { startWatchdog } from './lib/watchdog.js';
 import { startTelegramBot } from './lib/telegram-bot.js';
+import { applyDefaultsForDate } from './modules/monitor/auto-turni.js';
 import { logger } from './lib/logger.js';
 import { db } from './db/client.js';
 
@@ -82,6 +83,12 @@ serve({ fetch: app.fetch, port }, async (info) => {
   // Fix rows where pause was stored as a JSONB string instead of a JSONB array (double-encoding bug)
   await db`UPDATE monitor_turno_default SET pause = (pause #>> '{}')::jsonb WHERE jsonb_typeof(pause) = 'string'`.catch(() => {});
   logger.info('[Startup] monitor_turno_default OK');
+
+  // Applica turni standard per oggi se mancano dati (idempotente)
+  const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
+  applyDefaultsForDate(todayStr)
+    .then(n => { if (n > 0) logger.info(`[Startup] Auto-turni: ${n} linee aggiornate per ${todayStr}`); })
+    .catch(e => logger.warn(`[Startup] Auto-turni: ${e}`));
 
   startScheduler();
   startWatcher();
