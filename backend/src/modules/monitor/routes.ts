@@ -611,11 +611,29 @@ monitorRoutes.get('/stato/:id', async (c) => {
   const [openStop] = await db`
     SELECT EXTRACT(EPOCH FROM (NOW() - started_at))::INT AS fermata_elapsed_sec
     FROM monitor_stop_events
-    WHERE linea_id = ${id} AND ended_at IS NULL
+    WHERE linea_id = ${id} AND ended_at IS NULL AND source = 'manuale'
     ORDER BY started_at DESC LIMIT 1
   `;
   const fermataManuale     = !!openStop;
   const fermataElapsedSec  = (openStop?.fermata_elapsed_sec as number | null) ?? null;
+
+  // ── Gestione automatica fermate "in attesa picking" ───────────────────────
+  if (!inPausa) {
+    if (commesse.length === 0 && !fermataManuale) {
+      db`
+        INSERT INTO monitor_stop_events (linea_id, started_at, source)
+        SELECT ${id}, NOW(), 'auto'
+        WHERE NOT EXISTS (
+          SELECT 1 FROM monitor_stop_events WHERE linea_id = ${id} AND ended_at IS NULL
+        )
+      `.catch(() => {});
+    } else if (commesse.length > 0) {
+      db`
+        UPDATE monitor_stop_events SET ended_at = NOW()
+        WHERE linea_id = ${id} AND ended_at IS NULL AND source = 'auto'
+      `.catch(() => {});
+    }
+  }
 
   // ── Risposta durante pausa ─────────────────────────────────────────────────
   if (inPausa) {
@@ -662,7 +680,7 @@ monitorRoutes.get('/stato/:id', async (c) => {
     fermata_manuale:      fermataManuale,
     fermata_elapsed_sec:  fermataElapsedSec,
     qta_prodotta:         qtaProdotta,
-    qta_da_produrre:      qtaRow.quantita_giornaliera,
+    qta_da_produrre:      qtaTurno,
     cycle_time_sec:       cycleTimeSec,
     ultimo_evento:        ultimoEvento?.toISOString() ?? null,
     elapsed_sec:          elapsedSec,
