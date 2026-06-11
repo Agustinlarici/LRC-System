@@ -26,6 +26,7 @@ type ColorState = 'verde' | 'giallo' | 'rosso';
 
 function getColorState(stato: MonitorStato, remaining: number | null): ColorState {
   if (!stato.turno_attivo || stato.cycle_time_sec === null || remaining === null) return 'verde';
+  if (stato.commesse.length === 0 && !stato.fermata_manuale) return 'rosso';
   if (remaining <= 0) return 'rosso';
   const pct = (remaining / stato.cycle_time_sec) * 100;
   if (pct > stato.soglie.soglia_giallo) return 'verde';
