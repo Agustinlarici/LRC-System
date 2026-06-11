@@ -138,7 +138,7 @@ if [ "$CMD" = "update" ]; then
   run_migrations
 
   step "3/4  Build nuove immagini in background (nessun downtime)..."
-  docker compose build
+  docker compose build --no-cache
 
   step "4/4  Swap container (~5 secondi di interruzione)..."
   docker compose up -d
