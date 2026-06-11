@@ -129,7 +129,24 @@ export async function pollOneDriveFolder(): Promise<number> {
         continue;
       }
 
-      const buffer = Buffer.from(await r.arrayBuffer());
+      const contentType = r.headers.get('content-type') ?? 'unknown';
+      const arrayBuf = await r.arrayBuffer();
+      const buffer = Buffer.from(arrayBuf);
+      const firstBytes = buffer.slice(0, 4).toString('hex');
+
+      logger.info({
+        name:         file.Name,
+        contentType,
+        bufferBytes:  buffer.length,
+        firstBytesHex: firstBytes,
+      }, 'spma-onedrive: file scaricato');
+
+      // Detect HTML response masquerading as 200 OK (e.g. SharePoint login redirect)
+      if (contentType.includes('text/html') || firstBytes === '3c21444f' /* <!DO */ || firstBytes.startsWith('3c68') /* <h */ || firstBytes.startsWith('3c21') /* <! */) {
+        logger.error({ name: file.Name, contentType, bufferBytes: buffer.length }, 'spma-onedrive: risposta HTML invece del file Excel — cookie FedAuth scaduto o non sufficiente');
+        continue;
+      }
+
       const result = await runSpmaImport(buffer, file.Name);
 
       const lastModified = new Date(file.TimeLastModified);
@@ -143,10 +160,13 @@ export async function pollOneDriveFolder(): Promise<number> {
       `;
 
       logger.info({
-        name:          file.Name,
-        upserts:       result.upserts,
-        skipped:       result.skipped,
-        deleted_stale: result.deleted_stale,
+        name:           file.Name,
+        total_rows:     result.total_rows_seen,
+        upserts:        result.upserts,
+        skipped:        result.skipped,
+        deleted_stale:  result.deleted_stale,
+        sheets:         result.sheets,
+        warnings:       result.warnings.length > 0 ? result.warnings : undefined,
       }, 'spma-onedrive: importazione completata');
       imported++;
     } catch (err) {

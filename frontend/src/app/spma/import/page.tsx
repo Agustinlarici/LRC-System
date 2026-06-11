@@ -223,7 +223,7 @@ export default function SpmaImportPage() {
                     })}
                   </p>
                   <p className="text-gray-400 mt-0.5">
-                    {log.upserts} agg · {log.skipped} salt · {log.deleted_stale} rim
+                    {log.total_rows} righe · {log.upserts} agg · {log.skipped} salt · {log.deleted_stale} rim
                   </p>
                 </li>
               ))}
