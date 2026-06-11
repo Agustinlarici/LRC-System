@@ -93,7 +93,7 @@ export default function MonitorDisplayPage() {
           }
           if (data.commesse.length === 0 && data.turno_attivo) {
             if (prev !== null && prev <= 0) return prev;
-            return Math.min(data.remaining_sec ?? 0, 0);
+            return data.remaining_sec;
           }
           if (prev === null) return data.remaining_sec;
           return Math.abs(prev - data.remaining_sec) >= 2 ? data.remaining_sec : prev;

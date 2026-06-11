@@ -164,8 +164,6 @@ export default function ResumenDisplayPage() {
           const id  = Number(key);
           const row = prev[id];
           if (row.stato.in_pausa) { next[id] = row; continue; }
-          // Ferma il tick solo per in attesa con remaining > 0; fermata_manuale conta sempre
-          if (row.stato.commesse.length === 0 && !row.stato.fermata_manuale && (row.remaining === null || row.remaining > 0)) { next[id] = row; continue; }
           const newRemaining = row.remaining !== null ? row.remaining - 1 : null;
           const overtime     = newRemaining !== null && newRemaining <= 0;
           next[id] = {
@@ -235,8 +233,6 @@ export default function ResumenDisplayPage() {
         {loadedLinee.map(linea => {
           const row        = rows[linea.linea_id]!;
           const colorState = getColorState(row.stato, row.remaining);
-          // isBlocked: solo in attesa di picking con remaining > 0 (fermata_manuale va sempre in overtime)
-          const isBlocked  = row.stato.commesse.length === 0 && row.stato.turno_attivo && (row.remaining === null || row.remaining > 0);
           const overtime   = !row.stato.in_pausa && row.remaining !== null && row.remaining <= 0;
           const isPausa    = row.stato.in_pausa === true;
 
@@ -245,7 +241,6 @@ export default function ResumenDisplayPage() {
           const timeDisplay =
             isPausa || !row.stato.turno_attivo || row.remaining === null ? '--:--'
             : row.remaining <= 0 ? `+${formatTimer(Math.abs(row.remaining))}`
-            : isBlocked ? '--:--'
             : formatTimer(row.remaining);
 
           const cycleTime = row.stato.cycle_time_sec;
