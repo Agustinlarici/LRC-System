@@ -10,6 +10,12 @@ function fmtDatetime(iso: string) {
   });
 }
 
+function sourceLabel(source: string) {
+  if (source === 'attesa')  return { text: 'In attesa picking', cls: 'bg-orange-100 text-orange-700' };
+  if (source === 'manuale') return { text: 'Manuale',           cls: 'bg-blue-100 text-blue-700'   };
+  return                           { text: 'Overtime',          cls: 'bg-gray-100 text-gray-500'   };
+}
+
 function fmtDuration(sec: number | null) {
   if (sec === null) return '—';
   const h = Math.floor(sec / 3600);
@@ -126,7 +132,7 @@ export default function ParateAdminPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  {['Linea','Inizio','Fine','Durata','Categoria','Motivo','Note','Operatore'].map(h => (
+                  {['Linea','Tipo','Inizio','Fine','Durata','Categoria','Motivo','Note','Operatore'].map(h => (
                     <th key={h} className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -135,6 +141,9 @@ export default function ParateAdminPage() {
                 {stops.map(e => (
                   <tr key={e.id} className={`hover:bg-gray-50 ${!e.reason_id ? 'bg-yellow-50/50' : ''}`}>
                     <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{e.linea_nome}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {(() => { const s = sourceLabel(e.source); return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${s.cls}`}>{s.text}</span>; })()}
+                    </td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{fmtDatetime(e.started_at)}</td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
                       {e.ended_at

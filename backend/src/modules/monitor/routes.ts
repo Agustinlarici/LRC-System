@@ -622,7 +622,7 @@ monitorRoutes.get('/stato/:id', async (c) => {
     if (commesse.length === 0 && !fermataManuale) {
       db`
         INSERT INTO monitor_stop_events (linea_id, started_at, source)
-        SELECT ${id}, NOW(), 'auto'
+        SELECT ${id}, NOW(), 'attesa'
         WHERE NOT EXISTS (
           SELECT 1 FROM monitor_stop_events WHERE linea_id = ${id} AND ended_at IS NULL
         )
@@ -630,7 +630,7 @@ monitorRoutes.get('/stato/:id', async (c) => {
     } else if (commesse.length > 0) {
       db`
         UPDATE monitor_stop_events SET ended_at = NOW()
-        WHERE linea_id = ${id} AND ended_at IS NULL AND source = 'auto'
+        WHERE linea_id = ${id} AND ended_at IS NULL AND source = 'attesa'
       `.catch(() => {});
     }
   }

@@ -23,6 +23,12 @@ function isOpen(e: StopEvent) { return e.ended_at === null; }
 
 const LABEL = 'text-xs font-bold text-gray-400 uppercase tracking-widest';
 
+function SourceBadge({ source }: { source: string }) {
+  if (source === 'attesa') return <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">In attesa picking</span>;
+  if (source === 'manuale') return <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Manuale</span>;
+  return <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Overtime</span>;
+}
+
 // ─── Card fermata ─────────────────────────────────────────────────────────────
 
 function StopRow({
@@ -107,6 +113,7 @@ function StopRow({
           <p className={`text-2xl font-bold tabular-nums ${open ? 'text-red-500' : 'text-gray-700'}`}>
             {durationDisplay}
           </p>
+          <SourceBadge source={event.source} />
         </div>
 
         {/* Inizio */}
@@ -273,6 +280,7 @@ export default function ParatePage() {
   const closedStops  = stops.filter(e => !isOpen(e));
   const openManuale  = openStops.find(s => s.source === 'manuale');
   const openAuto     = openStops.find(s => s.source === 'auto');
+  const openAttesa   = openStops.find(s => s.source === 'attesa');
   const lineaFerma   = openStops.length > 0;
 
   return (
@@ -298,7 +306,8 @@ export default function ParatePage() {
               {lineaFerma && openStops[0] && (
                 <p className="text-xs text-red-400 mt-1">
                   Iniziata alle {fmtTime(openStops[0].started_at)}
-                  {openAuto && !openManuale && ' — rilevata automaticamente'}
+                  {openAttesa && !openManuale && ' — in attesa di picking'}
+                  {openAuto   && !openManuale && !openAttesa && ' — rilevata automaticamente'}
                 </p>
               )}
             </div>
