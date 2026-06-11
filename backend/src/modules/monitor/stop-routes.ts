@@ -5,7 +5,7 @@ import * as XLSX         from 'xlsx';
 import { db }            from '../../db/client.js';
 import { parseBody }     from '../../lib/validate.js';
 import { requireModule, requireManage } from '../../lib/auth.js';
-import { detectStopsForLine } from './stop-detector.js';
+import { detectStopsForLine, detectStopsAllLines } from './stop-detector.js';
 
 export const stopRoutes = new Hono();
 
@@ -130,6 +130,7 @@ stopRoutes.post('/parate/:eventId/motivo', async (c) => {
 // ─── Storico admin ────────────────────────────────────────────────────────────
 
 stopRoutes.get('/parate', requireModule('monitor_parate'), async (c) => {
+  await detectStopsAllLines().catch(() => {});
   const q        = c.req.query();
   const lineaId  = q['linea_id']  ? parseInt(q['linea_id'], 10)  : null;
   const from     = q['from']     ?? null;

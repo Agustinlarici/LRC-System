@@ -5,6 +5,7 @@ import { syncFullDayToHistory, refreshLookupTables } from './modules/monitor/pg-
 import { checkSpmaDelays } from './modules/spma/delay-checker.js';
 import { sendDelayReportEmail, emailConfigured, type SmtpConfig } from './modules/spma/spma-email-notifier.js';
 import { autoGenerateEdi } from './modules/edi/auto-generate.js';
+import { detectStopsAllLines } from './modules/monitor/stop-detector.js';
 import { applyDefaultsForDate } from './modules/monitor/auto-turni.js';
 import { db } from './db/client.js';
 import { startRun, endRun, failRun, setNextRun } from './lib/sync-stats.js';
@@ -134,6 +135,11 @@ export function startScheduler() {
       logger.error(`[scheduler] SPMA OneDrive poll fallito: ${e instanceof Error ? e.message : e}`);
     }
     setNextRun('spma_onedrive_poll', nextEvery10Min());
+  }, { timezone: 'Europe/Rome' });
+
+  // Every minute — rilevamento automatico fermate di linea
+  cron.schedule('* * * * *', async () => {
+    try { await detectStopsAllLines(); } catch { /* silenzioso */ }
   }, { timezone: 'Europe/Rome' });
 
   // Every 5 min — promemoria ricezioni DDT in revisione da più di 30 min
