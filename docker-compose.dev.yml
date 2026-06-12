@@ -50,6 +50,7 @@ services:
     environment:
       NODE_ENV:            development
       PORT:                3001
+      TZ:                  Europe/Rome
       DATABASE_URL:        postgres://lrc:lrc_password@db:5432/lrc_system_dev
       CORS_ORIGINS:        "http://localhost:3000"
       OPENAI_API_KEY:      ${OPENAI_API_KEY:-}
