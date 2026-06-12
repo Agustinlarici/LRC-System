@@ -112,6 +112,14 @@ export default function ResumenDisplayPage() {
           let remaining: number | null;
           if (serverRemaining === null) {
             remaining = null;
+          } else if (stato.commesse.length === 0 && stato.turno_attivo) {
+            // InAttesa picking: clamp sempre a ≤0 prima di qualsiasi altra logica
+            const serverClamped = Math.min(serverRemaining, 0);
+            if (!existing || existing.remaining === null || existing.remaining > 0) {
+              remaining = serverClamped;
+            } else {
+              remaining = serverClamped < existing.remaining - 8 ? serverClamped : existing.remaining;
+            }
           } else if (!existing || existing.remaining === null) {
             remaining = serverRemaining;
           } else if (commesseArrivate && existing.remaining <= 0 && stato.cycle_time_sec !== null) {
@@ -121,11 +129,6 @@ export default function ResumenDisplayPage() {
             remaining = serverRemaining;
           } else if (stato.fermata_manuale && stato.turno_attivo) {
             remaining = -(stato.fermata_elapsed_sec ?? 0);
-          } else if (stato.commesse.length === 0 && stato.turno_attivo) {
-            const serverClamped = Math.min(serverRemaining, 0);
-            remaining = (!existing || existing.remaining > 0)
-              ? serverClamped
-              : serverClamped < existing.remaining - 8 ? serverClamped : existing.remaining;
           } else if (existing.remaining < 0 && serverRemaining < 0) {
             // Entrambi in overtime: sincronizza solo se server è >8s avanti (evita salti da drift del poll)
             remaining = serverRemaining < existing.remaining - 8 ? serverRemaining : existing.remaining;
