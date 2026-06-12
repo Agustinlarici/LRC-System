@@ -219,7 +219,7 @@ export default function ResumenDisplayPage() {
             <span className="text-center">Line Stop</span>
             <span className="text-center leading-tight">Qtà<br />Prodotta</span>
             <span className="text-center leading-tight">Avanz.<br />Previsto</span>
-            <span className="text-center">Piano Turno</span>
+            <span className="text-center">Piano Totale</span>
           </div>
         )}
 
@@ -320,7 +320,7 @@ export default function ResumenDisplayPage() {
                 </span>
               </div>
 
-              {/* Piano Turno */}
+              {/* Piano Totale */}
               <div className="text-center">
                 <span className="text-4xl font-semibold tabular-nums text-white">
                   {row.stato.turno_attivo ? row.stato.qta_da_produrre : '—'}

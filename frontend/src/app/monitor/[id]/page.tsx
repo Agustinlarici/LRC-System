@@ -273,7 +273,7 @@ export default function MonitorDisplayPage() {
               </span>
             </div>
             <span className="text-gray-500 font-medium tracking-[0.2em] uppercase text-center mt-4" style={{ fontSize: 'clamp(1.2rem, 2.50vw, 2.3rem)', maxWidth: '55%'  }}>
-              Piano Turno
+              Piano Totale
             </span>
           </div>
         </div>
