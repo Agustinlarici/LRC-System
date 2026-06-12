@@ -619,24 +619,6 @@ monitorRoutes.get('/stato/:id', async (c) => {
   const fermataManuale     = !!openStop;
   const fermataElapsedSec  = (openStop?.fermata_elapsed_sec as number | null) ?? null;
 
-  // ── Gestione automatica fermate "in attesa picking" ───────────────────────
-  if (!inPausa) {
-    if (commesse.length === 0 && !fermataManuale) {
-      db`
-        INSERT INTO monitor_stop_events (linea_id, started_at, source)
-        SELECT ${id}, NOW(), 'attesa'
-        WHERE NOT EXISTS (
-          SELECT 1 FROM monitor_stop_events WHERE linea_id = ${id} AND ended_at IS NULL
-        )
-      `.catch(() => {});
-    } else if (commesse.length > 0) {
-      db`
-        UPDATE monitor_stop_events SET ended_at = NOW()
-        WHERE linea_id = ${id} AND ended_at IS NULL AND source = 'attesa'
-      `.catch(() => {});
-    }
-  }
-
   // ── Risposta durante pausa ─────────────────────────────────────────────────
   if (inPausa) {
     return c.json({
@@ -661,6 +643,27 @@ monitorRoutes.get('/stato/:id', async (c) => {
   // ── Elapsed corrente ───────────────────────────────────────────────────────
   const refTime    = ultimoEvento ?? turnoStartTs;
   const rawElapsed = Math.floor((now.getTime() - refTime.getTime()) / 1000);
+
+  // ── Gestione automatica fermate "in attesa picking" ───────────────────────
+  if (cycleTimeSec !== null) {
+    if (commesse.length === 0 && !fermataManuale && rawElapsed >= cycleTimeSec) {
+      // started_at = momento esatto in cui il ciclo è scaduto (non NOW())
+      // UPSERT: converte lo stop 'auto' aperto del detector in 'attesa' se stesso started_at
+      const cycleExpiredAt = new Date(refTime.getTime() + cycleTimeSec * 1000);
+      db`
+        INSERT INTO monitor_stop_events (linea_id, started_at, source)
+        VALUES (${id}, ${cycleExpiredAt.toISOString()}, 'attesa')
+        ON CONFLICT (linea_id, started_at) DO UPDATE
+          SET source = 'attesa'
+          WHERE monitor_stop_events.ended_at IS NULL AND monitor_stop_events.source = 'auto'
+      `.catch(() => {});
+    } else if (commesse.length > 0) {
+      db`
+        UPDATE monitor_stop_events SET ended_at = NOW()
+        WHERE linea_id = ${id} AND ended_at IS NULL AND source = 'attesa'
+      `.catch(() => {});
+    }
+  }
 
   const pauseSecBetween = pause.reduce((acc, p) => {
     const pStartMs = romeDt(p.ora_inizio as string).getTime();
