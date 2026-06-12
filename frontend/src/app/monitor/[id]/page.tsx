@@ -36,7 +36,7 @@ function getColorState(stato: MonitorStato, remaining: number | null): ColorStat
 const COLORS: Record<ColorState, { bg: string; text: string; sub: string; border: string }> = {
   verde:  { bg: 'bg-[#1a1a1a]', text: 'text-emerald-400',  sub: 'text-gray-500', border: 'border-gray-800' },
   giallo: { bg: 'bg-[#1a1a1a]', text: 'text-yellow-400',   sub: 'text-gray-500', border: 'border-gray-800' },
-  rosso:  { bg: 'bg-[#1a1a1a]', text: 'text-red-500',      sub: 'text-gray-500', border: 'border-gray-800' },
+  rosso:  { bg: 'bg-[#1a1a1a]', text: 'text-white',         sub: 'text-gray-300', border: 'border-red-900' },
 };
 
 // ─── Logo file map ────────────────────────────────────────────────────────────
