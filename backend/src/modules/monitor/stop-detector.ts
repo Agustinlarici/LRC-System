@@ -143,6 +143,20 @@ async function detectStopsForLine(lineaId: number): Promise<void> {
         SET ended_at = EXCLUDED.ended_at
         WHERE monitor_stop_events.ended_at IS NULL
     `;
+
+    // Se il gap è chiuso, chiude anche eventuali stop non-manuali aperti rimasti
+    // bloccati (es. 'attesa' creati con started_at = NOW() prima del fix)
+    if (gap.to !== null) {
+      await db`
+        UPDATE monitor_stop_events
+        SET ended_at = ${gap.to}
+        WHERE linea_id  = ${lineaId}
+          AND ended_at  IS NULL
+          AND source   != 'manuale'
+          AND started_at >= ${gap.from}
+          AND started_at <  ${gap.to}
+      `;
+    }
   }
 }
 
