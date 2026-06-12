@@ -537,6 +537,7 @@ monitorRoutes.get('/stato/:id', async (c) => {
     FROM monitor_stop_events
     WHERE linea_id = ${id}
       AND started_at >= ${turnoStartTs.toISOString()}
+      AND source != 'attesa'
     ORDER BY started_at
   `;
   const fermateEvents = fermateRaw.map(f => ({
