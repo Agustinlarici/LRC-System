@@ -122,7 +122,10 @@ export default function ResumenDisplayPage() {
           } else if (stato.fermata_manuale && stato.turno_attivo) {
             remaining = -(stato.fermata_elapsed_sec ?? 0);
           } else if (stato.commesse.length === 0 && stato.turno_attivo) {
-            remaining = existing.remaining < 0 ? existing.remaining : serverRemaining;
+            const serverClamped = Math.min(serverRemaining, 0);
+            remaining = (!existing || existing.remaining > 0)
+              ? serverClamped
+              : serverClamped < existing.remaining - 8 ? serverClamped : existing.remaining;
           } else if (existing.remaining < 0 && serverRemaining < 0) {
             // Entrambi in overtime: sincronizza solo se server è >8s avanti (evita salti da drift del poll)
             remaining = serverRemaining < existing.remaining - 8 ? serverRemaining : existing.remaining;

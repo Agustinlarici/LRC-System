@@ -93,8 +93,10 @@ export default function MonitorDisplayPage() {
             return -(data.fermata_elapsed_sec ?? 0);
           }
           if (data.commesse.length === 0 && data.turno_attivo) {
-            if (prev !== null && prev <= 0) return prev;
-            return data.remaining_sec;
+            // In attesa picking: mostra sempre +mm:ss — se il ciclo non è ancora scaduto, parte da 0
+            const serverClamped = Math.min(data.remaining_sec, 0);
+            if (prev === null || prev > 0) return serverClamped;
+            return serverClamped < prev - 8 ? serverClamped : prev;
           }
           if (prev === null) return data.remaining_sec;
           // Entrambi in overtime: sincronizza solo se server è >8s avanti (evita salti da drift del poll a 5s)
