@@ -123,6 +123,9 @@ export default function ResumenDisplayPage() {
             remaining = -(stato.fermata_elapsed_sec ?? 0);
           } else if (stato.commesse.length === 0 && stato.turno_attivo) {
             remaining = existing.remaining < 0 ? existing.remaining : serverRemaining;
+          } else if (existing.remaining < 0 && serverRemaining < 0) {
+            // Entrambi in overtime: sincronizza solo se server è >8s avanti (evita salti da drift del poll)
+            remaining = serverRemaining < existing.remaining - 8 ? serverRemaining : existing.remaining;
           } else if (Math.abs(existing.remaining - serverRemaining) >= 2) {
             remaining = serverRemaining;
           } else {

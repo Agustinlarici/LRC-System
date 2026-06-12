@@ -97,6 +97,10 @@ export default function MonitorDisplayPage() {
             return data.remaining_sec;
           }
           if (prev === null) return data.remaining_sec;
+          // Entrambi in overtime: sincronizza solo se server è >8s avanti (evita salti da drift del poll a 5s)
+          if (prev < 0 && data.remaining_sec < 0) {
+            return data.remaining_sec < prev - 8 ? data.remaining_sec : prev;
+          }
           return Math.abs(prev - data.remaining_sec) >= 2 ? data.remaining_sec : prev;
         });
         setLineStopSec(prev => Math.max(prev, data.linestop_sec ?? 0));
