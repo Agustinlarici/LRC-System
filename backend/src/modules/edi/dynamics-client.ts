@@ -54,17 +54,29 @@ export async function getShipments(
   customerAccounts: string[],
   from?: string,
   to?: string,
+  options?: { allCustomers?: boolean; limit?: number; offset?: number; search?: string },
 ): Promise<DynamicsShipment[]> {
-  if (customerAccounts.length === 0) return [];
+  const { allCustomers = false, limit = 200, offset = 0, search } = options ?? {};
+  if (!allCustomers && customerAccounts.length === 0) return [];
 
   const pool = await sql.connect(getDynamicsConfig());
   try {
     const req = pool.request();
 
-    const paramNames = customerAccounts.map((acc, i) => {
-      req.input(`acc${i}`, sql.VarChar(20), acc);
-      return `@acc${i}`;
-    });
+    const conditions: string[] = ["LTRIM(RTRIM(ISNULL(l.[No_], ''))) <> ''"];
+
+    if (!allCustomers) {
+      const paramNames = customerAccounts.map((acc, i) => {
+        req.input(`acc${i}`, sql.VarChar(20), acc);
+        return `@acc${i}`;
+      });
+      conditions.push(`l.[Destination No_] IN (${paramNames.join(', ')})`);
+    }
+
+    if (search) {
+      req.input('search', sql.VarChar(60), `%${search}%`);
+      conditions.push(`l.[Document No_] LIKE @search`);
+    }
 
     if (from) req.input('from', sql.Date, new Date(from));
     if (to)   req.input('to',   sql.Date, new Date(to));
@@ -73,6 +85,9 @@ export async function getShipments(
       from ? `AND MIN(l.[Posting Date]) >= @from` : '',
       to   ? `AND MIN(l.[Posting Date]) <= @to`   : '',
     ].join(' ');
+
+    req.input('limit',  sql.Int, limit);
+    req.input('offset', sql.Int, offset);
 
     const result = await req.query(`
       SELECT
@@ -84,11 +99,11 @@ export async function getShipments(
         CAST(0 AS BIT)                                      AS is_extra_cee,
         COUNT(l.[Line No_])                                 AS line_count
       FROM [${LINE_TABLE}] l
-      WHERE l.[Destination No_] IN (${paramNames.join(', ')})
-        AND LTRIM(RTRIM(ISNULL(l.[No_], ''))) <> ''
+      WHERE ${conditions.join(' AND ')}
       GROUP BY l.[Document No_], l.[Destination No_]
       HAVING 1=1 ${dateFilter}
       ORDER BY MIN(l.[Posting Date]) DESC
+      OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
     `);
 
     return (result.recordset as DynamicsShipment[]).map(r => ({
@@ -101,8 +116,11 @@ export async function getShipments(
   }
 }
 
-export async function getShipmentLines(shipmentId: string): Promise<DynamicsLine[]> {
+export async function getShipmentLines(shipmentId: string, options?: { raw?: boolean }): Promise<DynamicsLine[]> {
   const pool = await sql.connect(getDynamicsConfig());
+  const contractField = options?.raw
+    ? `LTRIM(RTRIM(lsa.[LSA Your Reference]))`
+    : `LEFT(lsa.[LSA Your Reference], CHARINDEX(' ', lsa.[LSA Your Reference] + ' ') - 1)`;
   try {
     const result = await pool.request()
       .input('shipmentId', sql.VarChar(50), shipmentId)
@@ -112,10 +130,7 @@ export async function getShipmentLines(shipmentId: string): Promise<DynamicsLine
           l.[Description]                                                   AS description,
           l.[Quantity (Base)]                                               AS quantity,
           l.[Unit of Measure]                                               AS unit_of_measure,
-          LEFT(
-            lsa.[LSA Your Reference],
-            CHARINDEX(' ', lsa.[LSA Your Reference] + ' ') - 1
-          )                                                                 AS contract_number
+          ${contractField}                                                  AS contract_number
         FROM [${LINE_TABLE}] l
         LEFT JOIN [${LSA_TABLE}] lsa
           ON  lsa.[Document No_] = l.[Document No_]

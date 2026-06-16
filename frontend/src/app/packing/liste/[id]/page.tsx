@@ -68,6 +68,21 @@ interface CommessaGroup {
   commesse:       string;
 }
 
+interface EdiShipmentSummary {
+  shipment_id:      string;
+  shipment_date:    string | null;
+  customer_account: string | null;
+  line_count:       number;
+}
+
+interface EdiLine {
+  article_code:    string;
+  description:     string | null;
+  quantity:        number;
+  unit_of_measure: string | null;
+  contract_number: string | null;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtDate(raw: string) { return fmtDatetime(raw);
@@ -169,6 +184,20 @@ function DoganaView({ dispatch, downloadRef }: {
   const [palletExtras, setPalletExtras] = useState<PalletExtras>(() => {
     try { return JSON.parse(localStorage.getItem(`plExtras:${id}`) || '{}'); } catch { return {}; }
   });
+  const [cartoneMode,    setCartoneMode]    = useState(() => localStorage.getItem(`cartone:${id}`)      === 'true');
+  const [cartoneLabel,   setCartoneLabel]   = useState(() => localStorage.getItem(`cartoneLabel:${id}`) || 'Box');
+  const [cartoneTareStr, setCartoneTareStr] = useState(() => localStorage.getItem(`cartoneTare:${id}`)  || '1.5');
+  const [ordiniMode,       setOrdiniMode]       = useState(() => localStorage.getItem(`ordini:${id}`)    === 'true');
+  const [selectedShipIds,  setSelectedShipIds]  = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem(`ordiniShip:${id}`) || '[]'); } catch { return []; } });
+  const [showShipPicker,   setShowShipPicker]   = useState(false);
+  const [allShipments,     setAllShipments]     = useState<EdiShipmentSummary[]>([]);
+  const [shipmentFilter,   setShipmentFilter]   = useState('');
+  const [shipFilterDebounce, setShipFilterDebounce] = useState('');
+  const [shipmentOffset,   setShipmentOffset]   = useState(0);
+  const [hasMoreShipments, setHasMoreShipments] = useState(false);
+  const [ordiniLines,      setOrdiniLines]      = useState<EdiLine[]>([]);
+  const [ordiniLoading,    setOrdiniLoading]    = useState(false);
+  const [shipmentsLoading, setShipmentsLoading] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const isFirstRender = useRef(true);
 
@@ -178,17 +207,54 @@ function DoganaView({ dispatch, downloadRef }: {
   useEffect(() => { localStorage.setItem(`consignee:${id}`, destinatario); }, [id, destinatario]);
   useEffect(() => { localStorage.setItem(`finalDest:${id}`, destFinale);   }, [id, destFinale]);
   useEffect(() => { localStorage.setItem(`plExtras:${id}`,  JSON.stringify(palletExtras)); }, [id, palletExtras]);
+  useEffect(() => { localStorage.setItem(`cartone:${id}`,      String(cartoneMode)); }, [id, cartoneMode]);
+  useEffect(() => { localStorage.setItem(`cartoneLabel:${id}`, cartoneLabel);        }, [id, cartoneLabel]);
+  useEffect(() => { localStorage.setItem(`cartoneTare:${id}`,  cartoneTareStr);      }, [id, cartoneTareStr]);
+  useEffect(() => { localStorage.setItem(`ordini:${id}`,     String(ordiniMode));               }, [id, ordiniMode]);
+  useEffect(() => { localStorage.setItem(`ordiniShip:${id}`, JSON.stringify(selectedShipIds));  }, [id, selectedShipIds]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setShipFilterDebounce(shipmentFilter), 400);
+    return () => clearTimeout(t);
+  }, [shipmentFilter]);
+
+  useEffect(() => {
+    if (!showShipPicker) return;
+    setShipmentsLoading(true);
+    const params = new URLSearchParams({ all: 'true', limit: '10', offset: '0' });
+    if (shipFilterDebounce) params.set('search', shipFilterDebounce);
+    api.get<EdiShipmentSummary[]>(`/api/edi/shipments?${params}`)
+      .then(data => {
+        setAllShipments(data);
+        setShipmentOffset(data.length);
+        setHasMoreShipments(data.length === 10);
+      })
+      .catch(() => {})
+      .finally(() => setShipmentsLoading(false));
+  }, [showShipPicker, shipFilterDebounce]);
+
+  useEffect(() => {
+    if (!ordiniMode || selectedShipIds.length === 0) { setOrdiniLines([]); return; }
+    setOrdiniLoading(true);
+    Promise.all(selectedShipIds.map(sid => api.get<EdiLine[]>(`/api/edi/shipments/${sid}?raw=true`)))
+      .then(results => setOrdiniLines(results.flat()))
+      .catch(() => {})
+      .finally(() => setOrdiniLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ordiniMode, JSON.stringify(selectedShipIds)]);
 
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
     setSavedFlash(true);
     const t = setTimeout(() => setSavedFlash(false), 2000);
     return () => clearTimeout(t);
-  }, [invoiceNo, orderNo, mittente, destinatario, destFinale, palletExtras]);
+  }, [invoiceNo, orderNo, mittente, destinatario, destFinale, palletExtras, cartoneMode, cartoneLabel, cartoneTareStr, ordiniMode, selectedShipIds]);
 
   function handleExtraChange(palletId: number, key: string, value: string) {
     setPalletExtras(prev => ({ ...prev, [palletId]: { ...prev[palletId], [key]: value } }));
   }
+
+  const cartoneTareKgNum = parseFloat(cartoneTareStr) || 0;
 
   const nonEmptyPallets = dispatch.pallets.filter(p => p.items.length > 0);
   const missingItems    = nonEmptyPallets.flatMap(p => p.items).filter(it => it.missing_weight || it.missing_container || it.missing_price);
@@ -211,8 +277,10 @@ function DoganaView({ dispatch, downloadRef }: {
       const palletTare = extra.palletTareKg !== undefined && extra.palletTareKg !== '' ? Number(extra.palletTareKg) : 6;
       const hasDims    = !!(extra.L || extra.W || extra.H);
       const dimsText   = hasDims ? `${extra.L || 0}×${extra.W || 0}×${extra.H || 0} mm` : '—';
-      const pNet       = pallet.items.reduce((s, it) => s + (it.net_kg            ?? 0), 0);
-      const pContTare  = pallet.items.reduce((s, it) => s + (it.container_tare_kg ?? 0), 0);
+      const pNet       = pallet.items.reduce((s, it) => s + (it.net_kg ?? 0), 0);
+      const pContTare  = cartoneMode
+        ? pallet.items.length * cartoneTareKgNum
+        : pallet.items.reduce((s, it) => s + (it.container_tare_kg ?? 0), 0);
       const pGross     = pNet + pContTare + palletTare;
       const pCost      = pallet.items.reduce((s, it) => s + (it.line_cost         ?? 0), 0);
       const grouped    = groupPalletItems(pallet.items);
@@ -241,13 +309,13 @@ function DoganaView({ dispatch, downloadRef }: {
           it.article_code,
           it.description || '–',
           it.quantity,
-          it.container_name ?? '!',
+          cartoneMode ? cartoneLabel : (it.container_name ?? '!'),
           dims,
-          it.unit_cost  != null ? it.unit_cost         : '–',
+          it.unit_cost      != null ? it.unit_cost      : '–',
           it.unit_weight_kg != null ? it.unit_weight_kg : '–',
-          Number(g.sumContTare.toFixed(3)),
+          cartoneMode ? Number((g.count * cartoneTareKgNum).toFixed(3))                            : Number(g.sumContTare.toFixed(3)),
           Number(g.sumNet.toFixed(3)),
-          Number(g.sumGross.toFixed(3)),
+          cartoneMode ? Number((g.sumNet + g.count * cartoneTareKgNum).toFixed(3))                 : Number(g.sumGross.toFixed(3)),
           g.missingCost ? '–' : Number(g.sumCost.toFixed(2)),
         ]);
       }
@@ -285,15 +353,32 @@ function DoganaView({ dispatch, downloadRef }: {
     for (const p of nonEmptyPallets) {
       const extra = palletExtras[p.id] || {};
       const palletTare = extra.palletTareKg !== undefined && extra.palletTareKg !== '' ? Number(extra.palletTareKg) : 6;
-      const pNet      = p.items.reduce((s, it) => s + (it.net_kg            ?? 0), 0);
-      const pContTare = p.items.reduce((s, it) => s + (it.container_tare_kg ?? 0), 0);
-      const pCost     = p.items.reduce((s, it) => s + (it.line_cost         ?? 0), 0);
+      const pNet      = p.items.reduce((s, it) => s + (it.net_kg    ?? 0), 0);
+      const pContTare = cartoneMode
+        ? p.items.length * cartoneTareKgNum
+        : p.items.reduce((s, it) => s + (it.container_tare_kg ?? 0), 0);
+      const pCost     = p.items.reduce((s, it) => s + (it.line_cost ?? 0), 0);
       tNet   += pNet;
       tGross += pNet + pContTare + palletTare;
       tCost  += pCost;
     }
     return { totalNetKg: tNet, totalGrossKg: tGross, totalCost: tCost };
-  }, [nonEmptyPallets, palletExtras]);
+  }, [nonEmptyPallets, palletExtras, cartoneMode, cartoneTareKgNum]);
+
+  const dispatchQtyByArticle = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const p of nonEmptyPallets)
+      for (const it of p.items)
+        map[it.article_code] = (map[it.article_code] || 0) + it.quantity;
+    return map;
+  }, [nonEmptyPallets]);
+
+  const ordiniQtyByArticle = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const line of ordiniLines)
+      map[line.article_code] = (map[line.article_code] || 0) + line.quantity;
+    return map;
+  }, [ordiniLines]);
 
   return (
     <>
@@ -314,6 +399,9 @@ function DoganaView({ dispatch, downloadRef }: {
         input.dogana-input, textarea.dogana-input {
           border-bottom: 1px solid #ccc; background: #f9fafb; padding: 2px 4px; font-size: inherit;
         }
+        .ordini-ok td { background-color: #bbf7d0; }
+        .ordini-err td { background-color: #fecaca; }
+        @media print { .ordini-ok td, .ordini-err td { background-color: transparent !important; } }
         input.dogana-input:focus, textarea.dogana-input:focus { outline: none; background: #eff6ff; }
 
         table.dog-table { width: 100%; border-collapse: collapse; font-size: inherit; table-layout: fixed; }
@@ -380,6 +468,131 @@ function DoganaView({ dispatch, downloadRef }: {
             <textarea className="dogana-input w-full" rows={2} value={destFinale} onChange={e => setDestFinale(e.target.value)} />
           </div>
         </div>
+        <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-end gap-4">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={cartoneMode}
+              onChange={e => setCartoneMode(e.target.checked)}
+              className="w-4 h-4 accent-orange-500"
+            />
+            <span className="text-sm font-semibold text-gray-700">Spedizione in cartone</span>
+          </label>
+          {cartoneMode && (
+            <>
+              <div>
+                <div className="text-xs text-gray-500">Tipo collo</div>
+                <input
+                  className="dogana-input w-24"
+                  value={cartoneLabel}
+                  onChange={e => setCartoneLabel(e.target.value)}
+                />
+              </div>
+              <div>
+                <div className="text-xs text-gray-500">Tara cartone (kg)</div>
+                <input
+                  type="number" min="0" step="0.001"
+                  className="dogana-input w-24"
+                  value={cartoneTareStr}
+                  onChange={e => setCartoneTareStr(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Ordini di vendita */}
+        <div className="mt-3 pt-3 border-t border-gray-200">
+          <div className="flex flex-wrap items-center gap-3 mb-2">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={ordiniMode}
+                onChange={e => setOrdiniMode(e.target.checked)}
+                className="w-4 h-4 accent-blue-600"
+              />
+              <span className="text-sm font-semibold text-gray-700">Aggiungi ordini di vendita</span>
+            </label>
+            {ordiniMode && (
+              <>
+                <button
+                  onClick={() => setShowShipPicker(v => !v)}
+                  className="text-xs px-2 py-1 rounded border border-blue-300 text-blue-700 hover:bg-blue-50 transition-colors"
+                >
+                  {showShipPicker ? 'Chiudi ▴' : 'Seleziona spedizioni ▾'}
+                </button>
+                {selectedShipIds.map(sid => (
+                  <span key={sid} className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    {sid}
+                    <button
+                      onClick={() => setSelectedShipIds(prev => prev.filter(s => s !== sid))}
+                      className="text-blue-400 hover:text-blue-800 leading-none"
+                    >×</button>
+                  </span>
+                ))}
+                {ordiniLoading && <span className="text-xs text-gray-400">Caricamento...</span>}
+              </>
+            )}
+          </div>
+          {ordiniMode && showShipPicker && (
+            <div className="border border-gray-200 rounded-lg bg-white p-3">
+              <input
+                type="text"
+                placeholder="Cerca per ID spedizione..."
+                className="w-full text-xs border border-gray-300 rounded px-2 py-1 mb-2"
+                value={shipmentFilter}
+                onChange={e => setShipmentFilter(e.target.value)}
+              />
+              <div className="max-h-56 overflow-y-auto">
+                {shipmentsLoading && allShipments.length === 0 ? (
+                  <div className="text-xs text-gray-500 py-2">Caricamento spedizioni...</div>
+                ) : allShipments.length === 0 ? (
+                  <div className="text-xs text-gray-400 py-2">Nessuna spedizione trovata.</div>
+                ) : (
+                  allShipments.map(s => (
+                    <label key={s.shipment_id} className="flex items-center gap-3 text-xs py-1 px-1 hover:bg-gray-50 cursor-pointer rounded">
+                      <input
+                        type="checkbox"
+                        checked={selectedShipIds.includes(s.shipment_id)}
+                        onChange={e => {
+                          if (e.target.checked) setSelectedShipIds(prev => [...prev, s.shipment_id]);
+                          else setSelectedShipIds(prev => prev.filter(sid => sid !== s.shipment_id));
+                        }}
+                      />
+                      <span className="font-mono font-semibold">{s.shipment_id}</span>
+                      {s.customer_account && <span className="text-gray-500">{s.customer_account}</span>}
+                      {s.shipment_date && <span className="text-gray-400">{s.shipment_date}</span>}
+                      <span className="text-gray-400 ml-auto">{s.line_count} righe</span>
+                    </label>
+                  ))
+                )}
+              </div>
+              {(hasMoreShipments || (shipmentsLoading && allShipments.length > 0)) && (
+                <div className="mt-2 pt-2 border-t border-gray-100 text-center">
+                  <button
+                    disabled={shipmentsLoading}
+                    onClick={() => {
+                      setShipmentsLoading(true);
+                      const params = new URLSearchParams({ all: 'true', limit: '10', offset: String(shipmentOffset) });
+                      if (shipmentFilter) params.set('search', shipmentFilter);
+                      api.get<EdiShipmentSummary[]>(`/api/edi/shipments?${params}`)
+                        .then(data => {
+                          setAllShipments(prev => [...prev, ...data]);
+                          setShipmentOffset(prev => prev + data.length);
+                          setHasMoreShipments(data.length === 10);
+                        })
+                        .catch(() => {})
+                        .finally(() => setShipmentsLoading(false));
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-800 disabled:text-gray-400"
+                  >
+                    {shipmentsLoading ? 'Caricamento...' : 'Mostra altri 10 ▾'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Printed header */}
@@ -399,8 +612,10 @@ function DoganaView({ dispatch, downloadRef }: {
         const palletTare = extra.palletTareKg !== undefined && extra.palletTareKg !== '' ? Number(extra.palletTareKg) : 6;
         const hasDims    = !!(extra.L || extra.W || extra.H);
         const dimsText   = hasDims ? `${extra.L || 0}×${extra.W || 0}×${extra.H || 0} mm` : null;
-        const pNet       = pallet.items.reduce((s, it) => s + (it.net_kg            ?? 0), 0);
-        const pContTare  = pallet.items.reduce((s, it) => s + (it.container_tare_kg ?? 0), 0);
+        const pNet       = pallet.items.reduce((s, it) => s + (it.net_kg ?? 0), 0);
+        const pContTare  = cartoneMode
+          ? pallet.items.length * cartoneTareKgNum
+          : pallet.items.reduce((s, it) => s + (it.container_tare_kg ?? 0), 0);
         const pGross     = pNet + pContTare + palletTare;
         const pCost      = pallet.items.reduce((s, it) => s + (it.line_cost         ?? 0), 0);
         const grouped    = groupPalletItems(pallet.items);
@@ -469,22 +684,25 @@ function DoganaView({ dispatch, downloadRef }: {
               </thead>
               <tbody>
                 {grouped.map((g, idx) => {
-                  const it      = g.sample;
-                  const dims    = it.length_mm && it.width_mm && it.height_mm ? `${it.length_mm}×${it.width_mm}×${it.height_mm}` : '–';
-                  const rowCls  = g.missing || g.missingCost ? 'bg-yellow-50' : '';
+                  const it             = g.sample;
+                  const dims           = it.length_mm && it.width_mm && it.height_mm ? `${it.length_mm}×${it.width_mm}×${it.height_mm}` : '–';
+                  const rowCls         = g.missing || g.missingCost ? 'bg-yellow-50' : '';
+                  const displayContName = cartoneMode ? cartoneLabel : it.container_name;
+                  const displayContTare = cartoneMode ? g.count * cartoneTareKgNum : g.sumContTare;
+                  const displayGross    = cartoneMode ? g.sumNet + g.count * cartoneTareKgNum : g.sumGross;
                   return (
                     <tr key={idx} className={rowCls}>
                       <td className="c col-nx">{g.count}x</td>
                       <td className="col-code" style={{ fontFamily: 'monospace' }}>{it.article_code}</td>
                       <td className="col-desc">{it.description || '–'}</td>
                       <td className="c col-qty">{it.quantity}</td>
-                      <td className="c col-cont">{it.container_name ?? <span style={{ color: '#f87171' }}>!</span>}</td>
+                      <td className="c col-cont">{displayContName ?? <span style={{ color: '#f87171' }}>!</span>}</td>
                       <td className="c col-dims">{dims}</td>
                       <td className="c col-ucost">{it.unit_cost != null ? it.unit_cost.toFixed(2) : '–'}</td>
                       <td className="c col-unitkg">{it.unit_weight_kg != null ? it.unit_weight_kg.toFixed(4) : <span style={{ color: '#f87171' }}>-</span>}</td>
-                      <td className="c col-tare">{g.sumContTare.toFixed(3)}</td>
+                      <td className="c col-tare">{displayContTare.toFixed(3)}</td>
                       <td className="c col-lnet">{g.sumNet.toFixed(3)}</td>
-                      <td className="c col-lgross" style={{ fontWeight: 600 }}>{g.sumGross.toFixed(3)}</td>
+                      <td className="c col-lgross" style={{ fontWeight: 600 }}>{displayGross.toFixed(3)}</td>
                       <td className="c col-lcost">{g.missingCost ? '–' : g.sumCost.toFixed(2)}</td>
                     </tr>
                   );
@@ -503,6 +721,44 @@ function DoganaView({ dispatch, downloadRef }: {
         <span className="mr-4"><b>Gross:</b> {totalGrossKg.toFixed(3)} kg</span>
         <span><b>Total value:</b> {currency} {totalCost.toFixed(2)}</span>
       </div>
+
+      {/* Ordini di vendita table */}
+      {ordiniMode && ordiniLines.length > 0 && (() => {
+        const chunk = Math.ceil(ordiniLines.length / 3);
+        const cols  = [ordiniLines.slice(0, chunk), ordiniLines.slice(chunk, chunk * 2), ordiniLines.slice(chunk * 2)];
+        return (
+          <div className="mt-5" style={{ breakBefore: 'page', pageBreakBefore: 'always' }}>
+            <div className="font-bold uppercase text-xs mb-1 border-b border-gray-300 pb-1">Sales Orders</div>
+            <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start' }}>
+              {cols.filter(c => c.length > 0).map((colLines, ci) => (
+                <table key={ci} className="dog-table" style={{ width: 'auto', tableLayout: 'auto', flex: '0 0 auto' }}>
+                  <thead>
+                    <tr>
+                      <th>Code</th>
+                      <th>Qty</th>
+                      <th>Sales Order</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {colLines.map((line, i) => {
+                      const dispQty  = dispatchQtyByArticle[line.article_code] || 0;
+                      const ordTotal = ordiniQtyByArticle[line.article_code]   || 0;
+                      const rowCls   = dispQty > 0 && dispQty === ordTotal ? 'ordini-ok' : 'ordini-err';
+                      return (
+                        <tr key={i} className={rowCls}>
+                          <td style={{ fontFamily: 'monospace' }}>{line.article_code}</td>
+                          <td className="r">{line.quantity}</td>
+                          <td>{line.contract_number || '–'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       </div>{/* end dogana-doc */}
     </>

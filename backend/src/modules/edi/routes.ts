@@ -188,19 +188,25 @@ ediRoutes.delete('/clients/:id', requireManage(MODULE), async (c) => {
 // ─── GET /shipments ───────────────────────────────────────────────────────────
 
 ediRoutes.get('/shipments', requireModule(MODULE), async (c) => {
+  const q = c.req.query();
+  const filterAcct:  string | undefined = q['customer_account'];
+  const filterFrom:  string | undefined = q['from'];
+  const filterTo:    string | undefined = q['to'];
+  const allCustomers = q['all'] === 'true';
+  const limit  = Math.min(Math.max(parseInt(q['limit']  ?? '10',  10), 1), 100);
+  const offset = Math.max(parseInt(q['offset'] ?? '0',   10), 0);
+  const search = q['search'] ?? '';
+
   const clients = await db`SELECT customer_account FROM edi_clients`;
   const accounts = clients.map(r => r.customer_account as string);
-  if (accounts.length === 0) return c.json([]);
+  if (!allCustomers && accounts.length === 0) return c.json([]);
 
-  const q = c.req.query();
-  const filterAcct: string | undefined = q['customer_account'];
-  const filterFrom: string | undefined = q['from'];
-  const filterTo:   string | undefined = q['to'];
-
-  const filtered = filterAcct ? accounts.filter(a => a === filterAcct) : accounts;
+  const filtered = allCustomers ? [] : (filterAcct ? accounts.filter(a => a === filterAcct) : accounts);
 
   try {
-    const shipments = await getShipments(filtered, filterFrom, filterTo);
+    const shipments = await getShipments(filtered, filterFrom, filterTo, {
+      allCustomers, limit, offset, search: search || undefined,
+    });
 
     // Cross-reference with history to get last status
     const ids = shipments.map(s => s.shipment_id);
@@ -237,8 +243,9 @@ ediRoutes.get('/shipments', requireModule(MODULE), async (c) => {
 
 ediRoutes.get('/shipments/:id', requireModule(MODULE), async (c) => {
   const shipmentId = c.req.param('id') ?? '';
+  const raw = c.req.query('raw') === 'true';
   try {
-    const lines = await getShipmentLines(shipmentId);
+    const lines = await getShipmentLines(shipmentId, { raw });
     return c.json(lines);
   } catch (err) {
     throw new HTTPException(503, {
