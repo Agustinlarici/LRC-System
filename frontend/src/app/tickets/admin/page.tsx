@@ -273,32 +273,203 @@ function IKnowCombosTab() {
   );
 }
 
+// ─── Permissions table (shared between tabs) ──────────────────────────────────
+
+function PermissionsTable({
+  edits,
+  onChange,
+}: {
+  edits: Record<ModuleKey, { can_view: boolean; can_manage: boolean }>;
+  onChange: (key: ModuleKey, field: 'can_view' | 'can_manage', value: boolean) => void;
+}) {
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-gray-100">
+          <th className="pb-2 text-left font-medium">Modulo</th>
+          <th className="pb-2 text-center font-medium w-24">Può vedere</th>
+          <th className="pb-2 text-center font-medium w-24">Può gestire</th>
+        </tr>
+      </thead>
+      <tbody>
+        {ALL_MODULES.map(m => (
+          <tr key={m.key} className="border-b border-gray-50">
+            <td className="py-2.5 pr-3 text-gray-700">{m.label}</td>
+            <td className="py-2.5 text-center">
+              <input
+                type="checkbox"
+                checked={edits[m.key]?.can_view ?? false}
+                onChange={e => onChange(m.key, 'can_view', e.target.checked)}
+                className="w-4 h-4 rounded accent-blue-600"
+              />
+            </td>
+            <td className="py-2.5 text-center">
+              <input
+                type="checkbox"
+                checked={edits[m.key]?.can_manage ?? false}
+                onChange={e => onChange(m.key, 'can_manage', e.target.checked)}
+                className="w-4 h-4 rounded accent-blue-600"
+              />
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ─── Create user tab ──────────────────────────────────────────────────────────
+
+function emptyPermEdits(): Record<ModuleKey, { can_view: boolean; can_manage: boolean }> {
+  const map = {} as Record<ModuleKey, { can_view: boolean; can_manage: boolean }>;
+  ALL_MODULES.forEach(m => { map[m.key] = { can_view: false, can_manage: false }; });
+  return map;
+}
+
+function CreateUserTab({ onCreated }: { onCreated: () => void }) {
+  const [form, setForm] = useState({
+    username:     '',
+    password:     '',
+    display_name: '',
+    email:        '',
+    role:         'operator' as 'guest' | 'operator' | 'it' | 'admin',
+  });
+  const [permEdits, setPermEdits] = useState<Record<ModuleKey, { can_view: boolean; can_manage: boolean }>>(emptyPermEdits);
+  const [saving,    setSaving]    = useState(false);
+  const [error,     setError]     = useState('');
+  const [success,   setSuccess]   = useState('');
+
+  function handlePerm(key: ModuleKey, field: 'can_view' | 'can_manage', value: boolean) {
+    setPermEdits(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(''); setSuccess('');
+    if (!form.username || !form.password || !form.display_name) {
+      setError('Username, password e nome sono obbligatori');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await apiFetch('/api/auth/users', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ ...form, email: form.email || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.message ?? 'Errore nella creazione'); return; }
+
+      const newUserId: number = data.id;
+      const permissions = ALL_MODULES.map(m => ({
+        module_key: m.key,
+        can_view:   permEdits[m.key]?.can_view   ?? false,
+        can_manage: permEdits[m.key]?.can_manage ?? false,
+      }));
+      await apiFetch(`/api/auth/users/${newUserId}/permissions`, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ permissions }),
+      });
+
+      setSuccess(`Utente "${data.display_name}" creato.`);
+      setForm({ username: '', password: '', display_name: '', email: '', role: 'operator' });
+      setPermEdits(emptyPermEdits());
+      onCreated();
+    } catch { setError('Errore di connessione'); }
+    finally { setSaving(false); }
+  }
+
+  const inputClass = 'border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 w-full';
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="card space-y-4">
+        <h2 className="font-semibold text-gray-800">Dati utente</h2>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Username *</label>
+            <input value={form.username} onChange={e => setForm(p => ({ ...p, username: e.target.value }))}
+              className={inputClass} placeholder="es. mrossi" autoComplete="off" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Nome visualizzato *</label>
+            <input value={form.display_name} onChange={e => setForm(p => ({ ...p, display_name: e.target.value }))}
+              className={inputClass} placeholder="es. Mario Rossi" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Password *</label>
+            <input type="password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+              className={inputClass} placeholder="min. 6 caratteri" autoComplete="new-password" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Email</label>
+            <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+              className={inputClass} placeholder="facoltativa" />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs text-gray-600 mb-1">Ruolo</label>
+          <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value as typeof form.role }))}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 w-48">
+            <option value="guest">guest — sola lettura</option>
+            <option value="operator">operator</option>
+            <option value="it">it</option>
+            <option value="admin">admin — accesso totale</option>
+          </select>
+          {form.role === 'admin' && (
+            <p className="text-xs text-orange-600 mt-1">Gli admin hanno accesso a tutti i moduli indipendentemente dai permessi sotto.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="card space-y-3">
+        <h2 className="font-semibold text-gray-800">Permessi moduli</h2>
+        <PermissionsTable edits={permEdits} onChange={handlePerm} />
+      </div>
+
+      {error   && <p className="text-sm text-red-600">{error}</p>}
+      {success && <p className="text-sm text-green-600">{success}</p>}
+
+      <button type="submit" disabled={saving}
+        className="bg-blue-600 text-white rounded-lg px-5 py-2 text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors">
+        {saving ? 'Creazione…' : 'Crea utente'}
+      </button>
+    </form>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-type Tab = 'permessi' | 'avanzata' | 'iknow';
+type Tab = 'utenti' | 'permessi' | 'avanzata' | 'iknow';
 
 export default function TicketAdminPage() {
-  const [tab, setTab] = useState<Tab>('permessi');
+  const [tab, setTab] = useState<Tab>('utenti');
+
+  // ─── Users list (shared) ───────────────────────────────────────────────────
+  const [users, setUsers] = useState<User[]>([]);
+
+  function reloadUsers() {
+    apiFetch('/api/auth/users').then(r => r.json()).then(setUsers).catch(() => {});
+  }
+
+  useEffect(() => { reloadUsers(); }, []);
 
   // ─── Permissions ───────────────────────────────────────────────────────────
-  const [users,      setUsers]      = useState<User[]>([]);
   const [permUser,   setPermUser]   = useState<number | null>(null);
-  const [permEdits,  setPermEdits]  = useState<Record<ModuleKey, { can_view: boolean; can_manage: boolean }>>({} as any);
+  const [permEdits,  setPermEdits]  = useState<Record<ModuleKey, { can_view: boolean; can_manage: boolean }>>(emptyPermEdits);
   const [permSaving, setPermSaving] = useState(false);
   const [permError,  setPermError]  = useState('');
   const [permSaved,  setPermSaved]  = useState(false);
-
-  useEffect(() => {
-    apiFetch('/api/auth/users').then(r => r.json()).then(setUsers).catch(() => {});
-  }, []);
 
   async function loadPermissions(userId: number) {
     setPermError(''); setPermSaved(false);
     try {
       const res = await apiFetch(`/api/auth/users/${userId}/permissions`);
       const data: Permission[] = await res.json();
-      const map = {} as Record<ModuleKey, { can_view: boolean; can_manage: boolean }>;
-      ALL_MODULES.forEach(m => { map[m.key] = { can_view: false, can_manage: false }; });
+      const map = emptyPermEdits();
       data.forEach(p => { map[p.module_key] = { can_view: p.can_view, can_manage: p.can_manage }; });
       setPermEdits(map);
     } catch { setPermError('Errore nel caricamento dei permessi'); }
@@ -333,7 +504,6 @@ export default function TicketAdminPage() {
   const tabClass = (t: Tab) =>
     `px-4 py-2 text-sm font-medium rounded-lg transition-colors ${tab === t ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`;
 
-
   return (
     <div className="max-w-3xl mx-auto">
       <div className="mb-6">
@@ -342,10 +512,14 @@ export default function TicketAdminPage() {
       </div>
 
       <div className="flex gap-2 mb-6 flex-wrap">
+        <button className={tabClass('utenti')}   onClick={() => setTab('utenti')}>Crea utente</button>
         <button className={tabClass('permessi')} onClick={() => setTab('permessi')}>Permessi</button>
         <button className={tabClass('avanzata')} onClick={() => setTab('avanzata')}>Avanzata</button>
         <button className={tabClass('iknow')}    onClick={() => setTab('iknow')}>Fasi iKnow</button>
       </div>
+
+      {/* ── CREATE USER ── */}
+      {tab === 'utenti' && <CreateUserTab onCreated={reloadUsers} />}
 
       {/* ── PERMISSIONS ── */}
       {tab === 'permessi' && (
@@ -371,38 +545,12 @@ export default function TicketAdminPage() {
 
           {permUser && (
             <>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-gray-100">
-                    <th className="pb-2 text-left font-medium">Modulo</th>
-                    <th className="pb-2 text-center font-medium w-24">Può vedere</th>
-                    <th className="pb-2 text-center font-medium w-24">Può gestire</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ALL_MODULES.map(m => (
-                    <tr key={m.key} className="border-b border-gray-50">
-                      <td className="py-2.5 pr-3 text-gray-700">{m.label}</td>
-                      <td className="py-2.5 text-center">
-                        <input
-                          type="checkbox"
-                          checked={permEdits[m.key]?.can_view ?? false}
-                          onChange={e => setPermEdits(prev => ({ ...prev, [m.key]: { ...prev[m.key], can_view: e.target.checked } }))}
-                          className="w-4 h-4 rounded accent-blue-600"
-                        />
-                      </td>
-                      <td className="py-2.5 text-center">
-                        <input
-                          type="checkbox"
-                          checked={permEdits[m.key]?.can_manage ?? false}
-                          onChange={e => setPermEdits(prev => ({ ...prev, [m.key]: { ...prev[m.key], can_manage: e.target.checked } }))}
-                          className="w-4 h-4 rounded accent-blue-600"
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <PermissionsTable
+                edits={permEdits}
+                onChange={(key, field, value) =>
+                  setPermEdits(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }))
+                }
+              />
 
               {permError && <p className="text-sm text-red-600">{permError}</p>}
               {permSaved && <p className="text-sm text-green-600">Permessi salvati.</p>}
