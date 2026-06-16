@@ -807,7 +807,7 @@ function DoganaView({ dispatch, downloadRef }: {
                             type="number" min="0" step="0.01"
                             value={priceOverrides[it.article_code] !== undefined
                               ? priceOverrides[it.article_code]
-                              : String(bcPrices[it.article_code] ?? it.unit_cost ?? '')}
+                              : String(bcPrices[it.article_code] != null ? Number(bcPrices[it.article_code].toFixed(4)) : (it.unit_cost ?? ''))}
                             onChange={e => setPriceOverrides(prev => ({ ...prev, [it.article_code]: e.target.value }))}
                           />
                         ) : (it.unit_cost != null ? it.unit_cost.toFixed(2) : '–')}
