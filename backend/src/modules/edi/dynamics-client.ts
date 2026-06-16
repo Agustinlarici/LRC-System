@@ -8,6 +8,9 @@ const LINE_TABLE = 'STR$EOS CWS Shipment Line$a879d9e1-a8d9-4dc8-87d8-69d278c5e0
 // Estensione LSA — contiene LSA Your Reference (Purchase Order McLaren/Audi)
 const LSA_TABLE  = 'STR$EOS CWS Shipment Line$34bccc94-c43f-4899-8aa8-c820f9e64421';
 
+// Righe ordine di vendita — contiene Unit Price
+const SALES_LINE_TABLE = 'STR$Sales Line$437dbf0e-84ff-417a-965d-ed2bb9650972';
+
 // TODO: Ferrari — verificare se il contratto Ferrari (14 cifre/commessa)
 //       si trova in LSA Your Reference o in un altro campo/tabella
 
@@ -111,6 +114,41 @@ export async function getShipments(
       is_extra_cee: Boolean(r.is_extra_cee),
       line_count:   Number(r.line_count),
     }));
+  } finally {
+    await pool.close();
+  }
+}
+
+export interface ShipmentArticlePrice {
+  article_code: string;
+  unit_price:   number;
+}
+
+export async function getShipmentPrices(shipmentIds: string[]): Promise<ShipmentArticlePrice[]> {
+  if (shipmentIds.length === 0) return [];
+  const pool = await sql.connect(getDynamicsConfig());
+  try {
+    const req = pool.request();
+    const placeholders = shipmentIds.map((sid, i) => {
+      req.input(`sid${i}`, sql.VarChar(50), sid);
+      return `@sid${i}`;
+    });
+    const result = await req.query(`
+      SELECT
+        l.[No_]         AS article_code,
+        sl.[Unit Price] AS unit_price
+      FROM [${LINE_TABLE}] l
+      INNER JOIN [${SALES_LINE_TABLE}] sl
+        ON  sl.[Document No_] = l.[Order No_]
+        AND sl.[Line No_]     = l.[Order Line No_]
+      WHERE l.[Document No_] IN (${placeholders.join(', ')})
+        AND LTRIM(RTRIM(ISNULL(l.[No_], ''))) <> ''
+        AND sl.[Unit Price] IS NOT NULL
+    `);
+    return (result.recordset as Array<{ article_code: unknown; unit_price: unknown }>).map(r => ({
+      article_code: String(r.article_code ?? '').trim(),
+      unit_price:   Number(r.unit_price ?? 0),
+    })).filter(r => r.article_code.length > 0);
   } finally {
     await pool.close();
   }

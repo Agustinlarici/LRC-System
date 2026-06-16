@@ -202,6 +202,11 @@ function DoganaView({ dispatch, downloadRef }: {
   const [ordiniLines,      setOrdiniLines]      = useState<EdiLine[]>([]);
   const [ordiniLoading,    setOrdiniLoading]    = useState(false);
   const [shipmentsLoading, setShipmentsLoading] = useState(false);
+  const [prezziOrdineMode, setPrezziOrdineMode] = useState(() => localStorage.getItem(`prezziOrdine:${id}`) === 'true');
+  const [bcPrices,         setBcPrices]         = useState<Record<string, number>>({});
+  const [priceOverrides,   setPriceOverrides]   = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem(`priceOverrides:${id}`) || '{}'); } catch { return {}; }
+  });
   const [savedFlash, setSavedFlash] = useState(false);
   const isFirstRender = useRef(true);
 
@@ -216,8 +221,10 @@ function DoganaView({ dispatch, downloadRef }: {
   useEffect(() => { localStorage.setItem(`cartoneTare:${id}`,  cartoneTareStr);                             }, [id, cartoneTareStr]);
   useEffect(() => { localStorage.setItem(`cartoneDims:${id}`,  cartoneDimsStr);                             }, [id, cartoneDimsStr]);
   useEffect(() => { localStorage.setItem(`cartoneLines:${id}`, JSON.stringify(cartoneLineOverrides));       }, [id, cartoneLineOverrides]);
-  useEffect(() => { localStorage.setItem(`ordini:${id}`,     String(ordiniMode));               }, [id, ordiniMode]);
-  useEffect(() => { localStorage.setItem(`ordiniShip:${id}`, JSON.stringify(selectedShipIds));  }, [id, selectedShipIds]);
+  useEffect(() => { localStorage.setItem(`ordini:${id}`,        String(ordiniMode));                        }, [id, ordiniMode]);
+  useEffect(() => { localStorage.setItem(`ordiniShip:${id}`,    JSON.stringify(selectedShipIds));           }, [id, selectedShipIds]);
+  useEffect(() => { localStorage.setItem(`prezziOrdine:${id}`,  String(prezziOrdineMode));                  }, [id, prezziOrdineMode]);
+  useEffect(() => { localStorage.setItem(`priceOverrides:${id}`, JSON.stringify(priceOverrides));           }, [id, priceOverrides]);
 
   useEffect(() => {
     const t = setTimeout(() => setShipFilterDebounce(shipmentFilter), 400);
@@ -250,11 +257,23 @@ function DoganaView({ dispatch, downloadRef }: {
   }, [ordiniMode, JSON.stringify(selectedShipIds)]);
 
   useEffect(() => {
+    if (!prezziOrdineMode || selectedShipIds.length === 0) { setBcPrices({}); return; }
+    api.get<Array<{ article_code: string; unit_price: number }>>(
+      `/api/edi/shipments/prices?ids=${selectedShipIds.join(',')}`
+    ).then(data => {
+      const map: Record<string, number> = {};
+      for (const r of data) map[r.article_code] = r.unit_price;
+      setBcPrices(map);
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prezziOrdineMode, JSON.stringify(selectedShipIds)]);
+
+  useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
     setSavedFlash(true);
     const t = setTimeout(() => setSavedFlash(false), 2000);
     return () => clearTimeout(t);
-  }, [invoiceNo, orderNo, mittente, destinatario, destFinale, palletExtras, cartoneMode, cartoneLabel, cartoneTareStr, cartoneDimsStr, cartoneLineOverrides, ordiniMode, selectedShipIds]);
+  }, [invoiceNo, orderNo, mittente, destinatario, destFinale, palletExtras, cartoneMode, cartoneLabel, cartoneTareStr, cartoneDimsStr, cartoneLineOverrides, ordiniMode, selectedShipIds, prezziOrdineMode, priceOverrides]);
 
   function handleExtraChange(palletId: number, key: string, value: string) {
     setPalletExtras(prev => ({ ...prev, [palletId]: { ...prev[palletId], [key]: value } }));
@@ -263,7 +282,10 @@ function DoganaView({ dispatch, downloadRef }: {
   const cartoneTareKgNum = parseFloat(cartoneTareStr) || 0;
 
   const nonEmptyPallets = dispatch.pallets.filter(p => p.items.length > 0);
-  const missingItems    = nonEmptyPallets.flatMap(p => p.items).filter(it => it.missing_weight || it.missing_container || it.missing_price);
+  const missingItems    = nonEmptyPallets.flatMap(p => p.items).filter(it =>
+    it.missing_weight || it.missing_container ||
+    (it.missing_price && !(prezziOrdineMode && (bcPrices[it.article_code] != null || priceOverrides[it.article_code] !== undefined)))
+  );
   const totalPallets    = nonEmptyPallets.length;
   const totalPackages   = nonEmptyPallets.reduce((s, p) => s + p.items.length, 0);
 
@@ -288,7 +310,14 @@ function DoganaView({ dispatch, downloadRef }: {
         ? pallet.items.length * cartoneTareKgNum
         : pallet.items.reduce((s, it) => s + (it.container_tare_kg ?? 0), 0);
       const pGross     = pNet + pContTare + palletTare;
-      const pCost      = pallet.items.reduce((s, it) => s + (it.line_cost         ?? 0), 0);
+      const pCost      = prezziOrdineMode
+        ? pallet.items.reduce((s, it) => {
+            const uc = priceOverrides[it.article_code] !== undefined
+              ? parseFloat(priceOverrides[it.article_code]) || 0
+              : (bcPrices[it.article_code] ?? it.unit_cost ?? 0);
+            return s + uc * it.quantity;
+          }, 0)
+        : pallet.items.reduce((s, it) => s + (it.line_cost ?? 0), 0);
       const grouped    = groupPalletItems(pallet.items);
 
       rows.push([
@@ -320,12 +349,23 @@ function DoganaView({ dispatch, downloadRef }: {
           it.quantity,
           excelName,
           excelDims,
-          it.unit_cost      != null ? it.unit_cost      : '–',
+          (() => {
+            const uc = prezziOrdineMode
+              ? (priceOverrides[it.article_code] !== undefined ? parseFloat(priceOverrides[it.article_code]) : (bcPrices[it.article_code] ?? it.unit_cost))
+              : it.unit_cost;
+            return uc != null ? uc : '–';
+          })(),
           it.unit_weight_kg != null ? it.unit_weight_kg : '–',
           cartoneMode ? Number((g.count * cartoneTareKgNum).toFixed(3))                : Number(g.sumContTare.toFixed(3)),
           Number(g.sumNet.toFixed(3)),
           cartoneMode ? Number((g.sumNet + g.count * cartoneTareKgNum).toFixed(3))     : Number(g.sumGross.toFixed(3)),
-          g.missingCost ? '–' : Number(g.sumCost.toFixed(2)),
+          (() => {
+            if (!prezziOrdineMode) return g.missingCost ? '–' : Number(g.sumCost.toFixed(2));
+            const uc = priceOverrides[it.article_code] !== undefined
+              ? parseFloat(priceOverrides[it.article_code])
+              : (bcPrices[it.article_code] ?? it.unit_cost);
+            return uc != null ? Number((uc * it.quantity * g.count).toFixed(2)) : '–';
+          })(),
         ]);
       });
 
@@ -366,13 +406,20 @@ function DoganaView({ dispatch, downloadRef }: {
       const pContTare = cartoneMode
         ? p.items.length * cartoneTareKgNum
         : p.items.reduce((s, it) => s + (it.container_tare_kg ?? 0), 0);
-      const pCost     = p.items.reduce((s, it) => s + (it.line_cost ?? 0), 0);
+      const pCost = prezziOrdineMode
+        ? p.items.reduce((s, it) => {
+            const uc = priceOverrides[it.article_code] !== undefined
+              ? parseFloat(priceOverrides[it.article_code]) || 0
+              : (bcPrices[it.article_code] ?? it.unit_cost ?? 0);
+            return s + uc * it.quantity;
+          }, 0)
+        : p.items.reduce((s, it) => s + (it.line_cost ?? 0), 0);
       tNet   += pNet;
       tGross += pNet + pContTare + palletTare;
       tCost  += pCost;
     }
     return { totalNetKg: tNet, totalGrossKg: tGross, totalCost: tCost };
-  }, [nonEmptyPallets, palletExtras, cartoneMode, cartoneTareKgNum]);
+  }, [nonEmptyPallets, palletExtras, cartoneMode, cartoneTareKgNum, prezziOrdineMode, bcPrices, priceOverrides]);
 
   const dispatchQtyByArticle = useMemo(() => {
     const map: Record<string, number> = {};
@@ -531,6 +578,15 @@ function DoganaView({ dispatch, downloadRef }: {
               />
               <span className="text-sm font-semibold text-gray-700">Aggiungi ordini di vendita</span>
             </label>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={prezziOrdineMode}
+                onChange={e => setPrezziOrdineMode(e.target.checked)}
+                className="w-4 h-4 accent-purple-600"
+              />
+              <span className="text-sm font-semibold text-gray-700">Prezzi da ordine di vendita</span>
+            </label>
             {ordiniMode && (
               <>
                 <button
@@ -635,7 +691,14 @@ function DoganaView({ dispatch, downloadRef }: {
           ? pallet.items.length * cartoneTareKgNum
           : pallet.items.reduce((s, it) => s + (it.container_tare_kg ?? 0), 0);
         const pGross     = pNet + pContTare + palletTare;
-        const pCost      = pallet.items.reduce((s, it) => s + (it.line_cost         ?? 0), 0);
+        const pCost      = prezziOrdineMode
+          ? pallet.items.reduce((s, it) => {
+              const uc = priceOverrides[it.article_code] !== undefined
+                ? parseFloat(priceOverrides[it.article_code]) || 0
+                : (bcPrices[it.article_code] ?? it.unit_cost ?? 0);
+              return s + uc * it.quantity;
+            }, 0)
+          : pallet.items.reduce((s, it) => s + (it.line_cost ?? 0), 0);
         const grouped    = groupPalletItems(pallet.items);
 
         return (
@@ -736,12 +799,30 @@ function DoganaView({ dispatch, downloadRef }: {
                           />
                         ) : rawDims}
                       </td>
-                      <td className="c col-ucost">{it.unit_cost != null ? it.unit_cost.toFixed(2) : '–'}</td>
+                      <td className="c col-ucost">
+                        {prezziOrdineMode ? (
+                          <input
+                            className="dogana-input"
+                            style={{ width: '70px' }}
+                            type="number" min="0" step="0.01"
+                            value={priceOverrides[it.article_code] !== undefined
+                              ? priceOverrides[it.article_code]
+                              : String(bcPrices[it.article_code] ?? it.unit_cost ?? '')}
+                            onChange={e => setPriceOverrides(prev => ({ ...prev, [it.article_code]: e.target.value }))}
+                          />
+                        ) : (it.unit_cost != null ? it.unit_cost.toFixed(2) : '–')}
+                      </td>
                       <td className="c col-unitkg">{it.unit_weight_kg != null ? it.unit_weight_kg.toFixed(4) : <span style={{ color: '#f87171' }}>-</span>}</td>
                       <td className="c col-tare">{displayContTare.toFixed(3)}</td>
                       <td className="c col-lnet">{g.sumNet.toFixed(3)}</td>
                       <td className="c col-lgross" style={{ fontWeight: 600 }}>{displayGross.toFixed(3)}</td>
-                      <td className="c col-lcost">{g.missingCost ? '–' : g.sumCost.toFixed(2)}</td>
+                      <td className="c col-lcost">{(() => {
+                        if (!prezziOrdineMode) return g.missingCost ? '–' : g.sumCost.toFixed(2);
+                        const uc = priceOverrides[it.article_code] !== undefined
+                          ? parseFloat(priceOverrides[it.article_code])
+                          : (bcPrices[it.article_code] ?? it.unit_cost);
+                        return uc != null ? (uc * it.quantity * g.count).toFixed(2) : '–';
+                      })()}</td>
                     </tr>
                   );
                 })}

@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
 import { requireModule, requireManage } from '../../lib/auth.js';
-import { getShipments, getShipmentLines } from './dynamics-client.js';
+import { getShipments, getShipmentLines, getShipmentPrices } from './dynamics-client.js';
 import { writeEdiFile, isUncPath } from '../../lib/smb-writer.js';
 
 export const ediRoutes = new Hono();
@@ -232,6 +232,22 @@ ediRoutes.get('/shipments', requireModule(MODULE), async (c) => {
       edi_type:   clientMap.get(s.customer_account) ?? '',
       edi_status: histMap.get(s.shipment_id) ?? 'pending',
     })));
+  } catch (err) {
+    throw new HTTPException(503, {
+      message: `Dynamics non disponibile: ${(err as Error).message}`,
+    });
+  }
+});
+
+// ─── GET /shipments/prices?ids=X,Y,Z ─────────────────────────────────────────
+
+ediRoutes.get('/shipments/prices', requireModule(MODULE), async (c) => {
+  const idsParam = c.req.query('ids') ?? '';
+  const ids = idsParam.split(',').map(s => s.trim()).filter(Boolean);
+  if (ids.length === 0) return c.json([]);
+  try {
+    const prices = await getShipmentPrices(ids);
+    return c.json(prices);
   } catch (err) {
     throw new HTTPException(503, {
       message: `Dynamics non disponibile: ${(err as Error).message}`,
