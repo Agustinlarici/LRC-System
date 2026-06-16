@@ -147,7 +147,7 @@ export async function getShipmentPrices(shipmentIds: string[]): Promise<Shipment
     `);
     return (result.recordset as Array<{ article_code: unknown; unit_price: unknown }>).map(r => ({
       article_code: String(r.article_code ?? '').trim(),
-      unit_price:   Math.round(Number(r.unit_price ?? 0) * 10000) / 10000,
+      unit_price:   Math.round(Number(r.unit_price ?? 0) * 100) / 100,
     })).filter(r => r.article_code.length > 0);
   } finally {
     await pool.close();
