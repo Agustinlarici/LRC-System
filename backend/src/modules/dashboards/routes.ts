@@ -590,7 +590,7 @@ dashboardsRoutes.post('/lead-time/patch-commessa', async (c) => {
     FROM ubidocum ubi
     LEFT JOIN ikExtra Extra186 ON ubi.iddocu = Extra186.iddocu AND Extra186.idcampo = 186 AND Extra186.idcomm = 0 AND Extra186.seq = 0
     LEFT JOIN ikExtra Extra30  ON ubi.iddocu = Extra30.iddocu  AND Extra30.idcampo  = 30  AND Extra30.idcomm  = 0 AND Extra30.seq  = 0
-    WHERE ubi.tipdoc IN ('0480','0080','0160','1520','5004','5005','5006','5007','5010','5016','PX01','0090')
+    WHERE ubi.tipdoc IN ('0080','1520','5004','5005','5006','5007','5010','5016','PX01','0160','0090','5019','1040','5009','5018','0480')
       AND DATE(CONVERT_TZ(ubi.datain, '+00:00', '+01:00')) = ?
       AND Extra186.stringa IS NOT NULL
       AND Extra30.stringa  IS NOT NULL

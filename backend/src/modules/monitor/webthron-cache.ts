@@ -35,7 +35,7 @@ function buildQuery(combos: Combo[], incremental: boolean) {
     LEFT JOIN ikExtraTab  AS ikExtra62Tab ON ikExtra62Tab.id = Extra62.stringa
     LEFT JOIN ikExtraTab  AS ikExtra43Tab ON ikExtra43Tab.id = Extra43.stringa
     LEFT JOIN ikExtraTab  AS ikExtra45Tab ON ikExtra45Tab.id = Extra45.stringa
-    WHERE ubi.tipdoc IN ('0080','0160','1520','5004','5005','5006','5007','5010','5016','PX01')
+    WHERE ubi.tipdoc IN ('0080','1520','5004','5005','5006','5007','5010','5016','PX01','0160','0090','5019','1040','5009','5018','0480')
       AND DATE(ubi.datain) = CURDATE()
       AND ikExtra62Tab.stringa = ?
       AND (${comboConditions || '1=0'})

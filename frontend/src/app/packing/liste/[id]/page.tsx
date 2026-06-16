@@ -184,9 +184,13 @@ function DoganaView({ dispatch, downloadRef }: {
   const [palletExtras, setPalletExtras] = useState<PalletExtras>(() => {
     try { return JSON.parse(localStorage.getItem(`plExtras:${id}`) || '{}'); } catch { return {}; }
   });
-  const [cartoneMode,    setCartoneMode]    = useState(() => localStorage.getItem(`cartone:${id}`)      === 'true');
-  const [cartoneLabel,   setCartoneLabel]   = useState(() => localStorage.getItem(`cartoneLabel:${id}`) || 'Box');
-  const [cartoneTareStr, setCartoneTareStr] = useState(() => localStorage.getItem(`cartoneTare:${id}`)  || '1.5');
+  const [cartoneMode,         setCartoneMode]         = useState(() => localStorage.getItem(`cartone:${id}`)       === 'true');
+  const [cartoneLabel,        setCartoneLabel]        = useState(() => localStorage.getItem(`cartoneLabel:${id}`)  || 'Box');
+  const [cartoneTareStr,      setCartoneTareStr]      = useState(() => localStorage.getItem(`cartoneTare:${id}`)   || '1.5');
+  const [cartoneDimsStr,      setCartoneDimsStr]      = useState(() => localStorage.getItem(`cartoneDims:${id}`)   || '1000×800×300');
+  const [cartoneLineOverrides, setCartoneLineOverrides] = useState<Record<string, { name?: string; dims?: string }>>(() => {
+    try { return JSON.parse(localStorage.getItem(`cartoneLines:${id}`) || '{}'); } catch { return {}; }
+  });
   const [ordiniMode,       setOrdiniMode]       = useState(() => localStorage.getItem(`ordini:${id}`)    === 'true');
   const [selectedShipIds,  setSelectedShipIds]  = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem(`ordiniShip:${id}`) || '[]'); } catch { return []; } });
   const [showShipPicker,   setShowShipPicker]   = useState(false);
@@ -207,9 +211,11 @@ function DoganaView({ dispatch, downloadRef }: {
   useEffect(() => { localStorage.setItem(`consignee:${id}`, destinatario); }, [id, destinatario]);
   useEffect(() => { localStorage.setItem(`finalDest:${id}`, destFinale);   }, [id, destFinale]);
   useEffect(() => { localStorage.setItem(`plExtras:${id}`,  JSON.stringify(palletExtras)); }, [id, palletExtras]);
-  useEffect(() => { localStorage.setItem(`cartone:${id}`,      String(cartoneMode)); }, [id, cartoneMode]);
-  useEffect(() => { localStorage.setItem(`cartoneLabel:${id}`, cartoneLabel);        }, [id, cartoneLabel]);
-  useEffect(() => { localStorage.setItem(`cartoneTare:${id}`,  cartoneTareStr);      }, [id, cartoneTareStr]);
+  useEffect(() => { localStorage.setItem(`cartone:${id}`,      String(cartoneMode));                        }, [id, cartoneMode]);
+  useEffect(() => { localStorage.setItem(`cartoneLabel:${id}`, cartoneLabel);                               }, [id, cartoneLabel]);
+  useEffect(() => { localStorage.setItem(`cartoneTare:${id}`,  cartoneTareStr);                             }, [id, cartoneTareStr]);
+  useEffect(() => { localStorage.setItem(`cartoneDims:${id}`,  cartoneDimsStr);                             }, [id, cartoneDimsStr]);
+  useEffect(() => { localStorage.setItem(`cartoneLines:${id}`, JSON.stringify(cartoneLineOverrides));       }, [id, cartoneLineOverrides]);
   useEffect(() => { localStorage.setItem(`ordini:${id}`,     String(ordiniMode));               }, [id, ordiniMode]);
   useEffect(() => { localStorage.setItem(`ordiniShip:${id}`, JSON.stringify(selectedShipIds));  }, [id, selectedShipIds]);
 
@@ -248,7 +254,7 @@ function DoganaView({ dispatch, downloadRef }: {
     setSavedFlash(true);
     const t = setTimeout(() => setSavedFlash(false), 2000);
     return () => clearTimeout(t);
-  }, [invoiceNo, orderNo, mittente, destinatario, destFinale, palletExtras, cartoneMode, cartoneLabel, cartoneTareStr, ordiniMode, selectedShipIds]);
+  }, [invoiceNo, orderNo, mittente, destinatario, destFinale, palletExtras, cartoneMode, cartoneLabel, cartoneTareStr, cartoneDimsStr, cartoneLineOverrides, ordiniMode, selectedShipIds]);
 
   function handleExtraChange(palletId: number, key: string, value: string) {
     setPalletExtras(prev => ({ ...prev, [palletId]: { ...prev[palletId], [key]: value } }));
@@ -300,25 +306,28 @@ function DoganaView({ dispatch, downloadRef }: {
         'Tare weight (kg)', 'Net weight (kg)', 'Gross weight (kg)', `Total Cost (${currency})`,
       ]);
 
-      for (const g of grouped) {
-        const it   = g.sample;
-        const dims = it.length_mm && it.width_mm && it.height_mm
+      grouped.forEach((g, gi) => {
+        const it      = g.sample;
+        const rawDims = it.length_mm && it.width_mm && it.height_mm
           ? `${it.length_mm}×${it.width_mm}×${it.height_mm}` : '–';
+        const lineKey     = `${pallet.id}-${gi}`;
+        const excelName   = cartoneMode ? (cartoneLineOverrides[lineKey]?.name ?? cartoneLabel) : (it.container_name ?? '!');
+        const excelDims   = cartoneMode ? (cartoneLineOverrides[lineKey]?.dims ?? cartoneDimsStr) : rawDims;
         rows.push([
           `${g.count}x`,
           it.article_code,
           it.description || '–',
           it.quantity,
-          cartoneMode ? cartoneLabel : (it.container_name ?? '!'),
-          dims,
+          excelName,
+          excelDims,
           it.unit_cost      != null ? it.unit_cost      : '–',
           it.unit_weight_kg != null ? it.unit_weight_kg : '–',
-          cartoneMode ? Number((g.count * cartoneTareKgNum).toFixed(3))                            : Number(g.sumContTare.toFixed(3)),
+          cartoneMode ? Number((g.count * cartoneTareKgNum).toFixed(3))                : Number(g.sumContTare.toFixed(3)),
           Number(g.sumNet.toFixed(3)),
-          cartoneMode ? Number((g.sumNet + g.count * cartoneTareKgNum).toFixed(3))                 : Number(g.sumGross.toFixed(3)),
+          cartoneMode ? Number((g.sumNet + g.count * cartoneTareKgNum).toFixed(3))     : Number(g.sumGross.toFixed(3)),
           g.missingCost ? '–' : Number(g.sumCost.toFixed(2)),
         ]);
-      }
+      });
 
       rows.push([]);
     }
@@ -495,6 +504,15 @@ function DoganaView({ dispatch, downloadRef }: {
                   className="dogana-input w-24"
                   value={cartoneTareStr}
                   onChange={e => setCartoneTareStr(e.target.value)}
+                />
+              </div>
+              <div>
+                <div className="text-xs text-gray-500">Dims default (mm)</div>
+                <input
+                  className="dogana-input w-32"
+                  value={cartoneDimsStr}
+                  onChange={e => setCartoneDimsStr(e.target.value)}
+                  placeholder="1000×800×300"
                 />
               </div>
             </>
@@ -684,10 +702,12 @@ function DoganaView({ dispatch, downloadRef }: {
               </thead>
               <tbody>
                 {grouped.map((g, idx) => {
-                  const it             = g.sample;
-                  const dims           = it.length_mm && it.width_mm && it.height_mm ? `${it.length_mm}×${it.width_mm}×${it.height_mm}` : '–';
-                  const rowCls         = g.missing || g.missingCost ? 'bg-yellow-50' : '';
-                  const displayContName = cartoneMode ? cartoneLabel : it.container_name;
+                  const it              = g.sample;
+                  const rawDims         = it.length_mm && it.width_mm && it.height_mm ? `${it.length_mm}×${it.width_mm}×${it.height_mm}` : '–';
+                  const rowCls          = g.missing || g.missingCost ? 'bg-yellow-50' : '';
+                  const lineKey         = `${pallet.id}-${idx}`;
+                  const displayContName = cartoneMode ? (cartoneLineOverrides[lineKey]?.name ?? cartoneLabel) : it.container_name;
+                  const displayDims     = cartoneMode ? (cartoneLineOverrides[lineKey]?.dims ?? cartoneDimsStr) : rawDims;
                   const displayContTare = cartoneMode ? g.count * cartoneTareKgNum : g.sumContTare;
                   const displayGross    = cartoneMode ? g.sumNet + g.count * cartoneTareKgNum : g.sumGross;
                   return (
@@ -696,8 +716,26 @@ function DoganaView({ dispatch, downloadRef }: {
                       <td className="col-code" style={{ fontFamily: 'monospace' }}>{it.article_code}</td>
                       <td className="col-desc">{it.description || '–'}</td>
                       <td className="c col-qty">{it.quantity}</td>
-                      <td className="c col-cont">{displayContName ?? <span style={{ color: '#f87171' }}>!</span>}</td>
-                      <td className="c col-dims">{dims}</td>
+                      <td className="c col-cont">
+                        {cartoneMode ? (
+                          <input
+                            className="dogana-input"
+                            style={{ width: '86px' }}
+                            value={displayContName ?? ''}
+                            onChange={e => setCartoneLineOverrides(prev => ({ ...prev, [lineKey]: { ...prev[lineKey], name: e.target.value } }))}
+                          />
+                        ) : (displayContName ?? <span style={{ color: '#f87171' }}>!</span>)}
+                      </td>
+                      <td className="c col-dims">
+                        {cartoneMode ? (
+                          <input
+                            className="dogana-input"
+                            style={{ width: '86px' }}
+                            value={displayDims}
+                            onChange={e => setCartoneLineOverrides(prev => ({ ...prev, [lineKey]: { ...prev[lineKey], dims: e.target.value } }))}
+                          />
+                        ) : rawDims}
+                      </td>
                       <td className="c col-ucost">{it.unit_cost != null ? it.unit_cost.toFixed(2) : '–'}</td>
                       <td className="c col-unitkg">{it.unit_weight_kg != null ? it.unit_weight_kg.toFixed(4) : <span style={{ color: '#f87171' }}>-</span>}</td>
                       <td className="c col-tare">{displayContTare.toFixed(3)}</td>
