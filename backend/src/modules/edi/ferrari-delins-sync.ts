@@ -2,7 +2,7 @@ import { db } from '../../db/client.js';
 import { scanFerrariFolder, type ScanRow } from './ferrari-ingresso-parser.js';
 
 export const FERRARI_DELINS_FOLDER =
-  process.env.EDI_FERRARI_DELINS_FOLDER ?? '\\\\192.168.1.245\\edi\\FERRARI\\DELINS';
+  process.env.EDI_FERRARI_DELINS_FOLDER || '\\\\192.168.1.245\\edi\\FERRARI\\DELINS';
 
 export interface FerrariSyncStats {
   rows:            number;
