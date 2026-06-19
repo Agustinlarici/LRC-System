@@ -33,12 +33,13 @@ export async function syncFerrariDelins(): Promise<FerrariSyncStats> {
   const result = await scanFerrariFolder(FERRARI_DELINS_FOLDER);
   const now    = new Date();
 
-  await db.begin(async sql => {
-    await sql`DELETE FROM edi_ferrari_delins`;
+  await db.begin(async (txRaw) => {
+    const tx = txRaw as unknown as typeof db;
+    await tx`DELETE FROM edi_ferrari_delins`;
     if (result.rows.length > 0) {
       const values = result.rows.map((r: ScanRow) => ({ ...r, scanned_at: now }));
       for (let i = 0; i < values.length; i += BATCH) {
-        await sql`INSERT INTO edi_ferrari_delins ${sql(values.slice(i, i + BATCH))}`;
+        await tx`INSERT INTO edi_ferrari_delins ${tx(values.slice(i, i + BATCH))}`;
       }
     }
   });
