@@ -1,12 +1,24 @@
 import { db } from '../../db/client.js';
 import { logger } from '../../lib/logger.js';
-import { runSpmaImport } from './import-logic.js';
+import { runSpmaImport, type SpmaImportResult } from './import-logic.js';
 
 interface SpFile {
   Name: string;
   UniqueId: string;
   TimeLastModified: string;
   ServerRelativeUrl: string;
+}
+
+export interface PollFileDetail {
+  name:         string;
+  result?:      SpmaImportResult;
+  error?:       string;
+  skippedHtml?: boolean;
+}
+
+export interface PollResult {
+  count:   number;
+  details: PollFileDetail[];
 }
 
 // Get anonymous FedAuth session from the sharing link + derive folder info
@@ -56,18 +68,18 @@ async function getShareContext(shareUrl: string): Promise<{
   return { fedAuth, host, webPath, folderPath };
 }
 
-export async function pollOneDriveFolder(): Promise<number> {
+export async function pollOneDriveFolder(): Promise<PollResult> {
   const shareUrl = process.env.SPMA_ONEDRIVE_SHARE_URL;
-  if (!shareUrl) return 0;
+  if (!shareUrl) return { count: 0, details: [] };
 
   let ctx: Awaited<ReturnType<typeof getShareContext>>;
   try {
     ctx = await getShareContext(shareUrl);
   } catch (err) {
     logger.error({ err }, 'spma-onedrive: errore ottenendo sessione SharePoint');
-    return 0;
+    return { count: 0, details: [] };
   }
-  if (!ctx) return 0;
+  if (!ctx) return { count: 0, details: [] };
 
   const { fedAuth, host, webPath, folderPath } = ctx;
 
@@ -88,18 +100,18 @@ export async function pollOneDriveFolder(): Promise<number> {
 
     if (!r.ok) {
       logger.warn({ status: r.status, apiUrl }, 'spma-onedrive: impossibile listare cartella');
-      return 0;
+      return { count: 0, details: [] };
     }
 
     const json = await r.json() as { d: { results: SpFile[] } };
     files = json.d.results ?? [];
   } catch (err) {
     logger.error({ err }, 'spma-onedrive: errore chiamata REST API SharePoint');
-    return 0;
+    return { count: 0, details: [] };
   }
 
   const xlsxFiles = files.filter(f => /\.(xlsx|xls|csv)$/i.test(f.Name));
-  if (xlsxFiles.length === 0) return 0;
+  if (xlsxFiles.length === 0) return { count: 0, details: [] };
 
   // Compare against already-processed files
   const processed = await db`SELECT file_id, last_modified FROM spma_onedrive_processed`;
@@ -112,11 +124,13 @@ export async function pollOneDriveFolder(): Promise<number> {
     return prev === null || modifiedAt > prev; // re-import if updated
   });
 
-  if (toProcess.length === 0) return 0;
+  if (toProcess.length === 0) return { count: 0, details: [] };
 
   logger.info(`spma-onedrive: ${toProcess.length} file Excel da importare`);
 
   let imported = 0;
+  const details: PollFileDetail[] = [];
+
   for (const file of toProcess) {
     const downloadUrl = host + file.ServerRelativeUrl;
     try {
@@ -126,6 +140,7 @@ export async function pollOneDriveFolder(): Promise<number> {
 
       if (!r.ok) {
         logger.warn({ name: file.Name, status: r.status }, 'spma-onedrive: download fallito');
+        details.push({ name: file.Name, error: `Download fallito (HTTP ${r.status})` });
         continue;
       }
 
@@ -144,6 +159,7 @@ export async function pollOneDriveFolder(): Promise<number> {
       // Detect HTML response masquerading as 200 OK (e.g. SharePoint login redirect)
       if (contentType.includes('text/html') || firstBytes === '3c21444f' /* <!DO */ || firstBytes.startsWith('3c68') /* <h */ || firstBytes.startsWith('3c21') /* <! */) {
         logger.error({ name: file.Name, contentType, bufferBytes: buffer.length }, 'spma-onedrive: risposta HTML invece del file Excel — cookie FedAuth scaduto o non sufficiente');
+        details.push({ name: file.Name, skippedHtml: true, error: 'Risposta HTML — cookie FedAuth scaduto o link non pubblico' });
         continue;
       }
 
@@ -168,10 +184,13 @@ export async function pollOneDriveFolder(): Promise<number> {
         sheets:         result.sheets,
         warnings:       result.warnings.length > 0 ? result.warnings : undefined,
       }, 'spma-onedrive: importazione completata');
+
+      details.push({ name: file.Name, result });
       imported++;
     } catch (err) {
       logger.error({ err, name: file.Name }, 'spma-onedrive: importazione fallita');
+      details.push({ name: file.Name, error: (err as Error).message });
     }
   }
-  return imported;
+  return { count: imported, details };
 }

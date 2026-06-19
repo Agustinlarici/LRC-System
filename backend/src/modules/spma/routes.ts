@@ -191,8 +191,8 @@ spmaRoutes.post('/onedrive-poll', requireManage(MODULE), async (c) => {
   if (!process.env.SPMA_ONEDRIVE_SHARE_URL) {
     return c.json({ error: 'SPMA_ONEDRIVE_SHARE_URL non configurato' }, 400);
   }
-  await pollOneDriveFolder();
-  return c.json({ status: 'ok' });
+  const result = await pollOneDriveFolder();
+  return c.json(result);
 });
 
 // ─── Plan rebuild (manual) ────────────────────────────────────────────────────

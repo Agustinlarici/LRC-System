@@ -17,6 +17,19 @@ interface ImportResult {
   };
 }
 
+interface PollFileDetail {
+  name:         string;
+  result?:      ImportResult;
+  error?:       string;
+  skippedHtml?: boolean;
+}
+
+interface PollResult {
+  count:   number;
+  details: PollFileDetail[];
+  error?:  string;
+}
+
 interface ImportLog {
   id:            number;
   file_name:     string;
@@ -33,11 +46,14 @@ const BACKEND = typeof window !== 'undefined'
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
 export default function SpmaImportPage() {
-  const [file,     setFile]     = useState<File | null>(null);
-  const [loading,  setLoading]  = useState(false);
-  const [result,   setResult]   = useState<ImportResult | null>(null);
-  const [error,    setError]    = useState<string | null>(null);
-  const [history,  setHistory]  = useState<ImportLog[]>([]);
+  const [file,       setFile]       = useState<File | null>(null);
+  const [loading,    setLoading]    = useState(false);
+  const [result,     setResult]     = useState<ImportResult | null>(null);
+  const [error,      setError]      = useState<string | null>(null);
+  const [history,    setHistory]    = useState<ImportLog[]>([]);
+  const [polling,    setPolling]    = useState(false);
+  const [pollResult, setPollResult] = useState<PollResult | null>(null);
+  const [pollError,  setPollError]  = useState<string | null>(null);
   const inputRef   = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -80,6 +96,27 @@ export default function SpmaImportPage() {
     e.preventDefault();
     const f = e.dataTransfer.files[0];
     if (f) setFile(f);
+  }
+
+  async function handlePoll() {
+    setPolling(true); setPollResult(null); setPollError(null);
+    try {
+      const res = await fetch(`${BACKEND}/api/spma/onedrive-poll`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      setPollResult(json as PollResult);
+      fetch(`${BACKEND}/api/spma/import-history`, { credentials: 'include' })
+        .then(r => r.json())
+        .then(setHistory)
+        .catch(() => {});
+    } catch (err) {
+      setPollError((err as Error).message);
+    } finally {
+      setPolling(false);
+    }
   }
 
   return (
@@ -148,6 +185,62 @@ export default function SpmaImportPage() {
             {error}
           </div>
         )}
+
+        {/* ── Import automatico OneDrive ── */}
+        <div className="mt-8 border-t border-gray-100 pt-6">
+          <h2 className="font-semibold text-gray-900 mb-1">Import automatico (OneDrive)</h2>
+          <p className="text-sm text-gray-500 mb-3">
+            Controlla la cartella OneDrive configurata e importa eventuali file nuovi o aggiornati.
+            Lo scheduler esegue questo controllo automaticamente ogni 10 minuti.
+          </p>
+          <button
+            type="button"
+            onClick={handlePoll}
+            disabled={polling}
+            className="bg-gray-700 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {polling ? 'Controllo in corso...' : 'Poll OneDrive ora'}
+          </button>
+
+          {pollError && (
+            <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              {pollError}
+            </div>
+          )}
+
+          {pollResult && (
+            <div className="mt-3 space-y-3">
+              {pollResult.count === 0 && pollResult.details.length === 0 ? (
+                <p className="text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
+                  Nessun file nuovo o aggiornato trovato nella cartella OneDrive.
+                </p>
+              ) : (
+                pollResult.details.map((d, i) => (
+                  <div key={i} className="bg-white border border-gray-200 rounded-xl p-4">
+                    <p className="font-medium text-gray-800 text-sm mb-2 truncate" title={d.name}>{d.name}</p>
+                    {d.error ? (
+                      <p className="text-sm text-red-600">{d.error}</p>
+                    ) : d.result ? (
+                      <>
+                        <div className="grid grid-cols-4 gap-2 mb-2">
+                          <Stat label="Righe lette"  value={d.result.total_rows_seen} />
+                          <Stat label="Aggiornate"   value={d.result.upserts}          color="text-green-600" />
+                          <Stat label="Saltate"      value={d.result.skipped}          color="text-yellow-600" />
+                          <Stat label="Rimosse"      value={d.result.deleted_stale}    color="text-red-600" />
+                        </div>
+                        {d.result.warnings.length > 0 && (
+                          <ul className="text-xs text-orange-600 space-y-0.5 mt-2 max-h-40 overflow-y-auto">
+                            {d.result.warnings.map((w, j) => <li key={j}>⚠ {w}</li>)}
+                          </ul>
+                        )}
+                      </>
+                    ) : null}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
 
         {result && (
           <div className="mt-6 space-y-4">

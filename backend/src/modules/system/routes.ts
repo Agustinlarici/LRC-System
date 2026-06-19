@@ -83,7 +83,7 @@ systemRoutes.post('/force-lookup', requireAuth, (c) => {
 systemRoutes.post('/force-onedrive-poll', requireAuth, (c) => {
   startRun('spma_onedrive_poll');
   pollOneDriveFolder()
-    .then(count => endRun('spma_onedrive_poll', count))
+    .then(result => endRun('spma_onedrive_poll', result.count))
     .catch(e => failRun('spma_onedrive_poll', e));
   return c.json({ message: 'Poll OneDrive SPMA avviato' }, 202);
 });
