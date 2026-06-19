@@ -108,6 +108,7 @@ run_migrations() {
     "db/migrate-edi-auto-generate.sql"
     "db/migrate-audit-log.sql"
     "db/migrate-monitor-stops.sql"
+    "db/migrate-edi-ferrari-delins.sql"
   )
   for f in "${MIGRATIONS[@]}"; do
     if [ -f "$f" ]; then
