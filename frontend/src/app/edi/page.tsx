@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '@/lib/api';
-import type { EdiClient, EdiShipment, EdiHistoryEntry, EdiLine } from '@/types';
+import type { EdiClient, EdiShipment, EdiHistoryEntry, EdiLine, EdiIngressoRow, EdiIngressoScanResult, EdiOrdineFerrari } from '@/types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -35,7 +35,31 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-// ─── Tab bar ─────────────────────────────────────────────────────────────────
+// ─── Section toggle (Uscita / Ingresso) ──────────────────────────────────────
+
+type Section = 'uscita' | 'ingresso';
+
+function SectionToggle({ active, onChange }: { active: Section; onChange: (s: Section) => void }) {
+  return (
+    <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit mb-6">
+      {(['ingresso', 'uscita'] as Section[]).map(s => (
+        <button
+          key={s}
+          onClick={() => onChange(s)}
+          className={`px-5 py-1.5 text-sm font-medium rounded-md transition-colors ${
+            active === s
+              ? 'bg-white text-gray-900 shadow-sm'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          {s === 'uscita' ? 'Uscita' : 'Ingresso'}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ─── Tab bar (per Uscita) ─────────────────────────────────────────────────────
 
 type Tab = 'clients' | 'shipments' | 'history';
 
@@ -140,7 +164,6 @@ function ClientModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
 
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
           <h2 className="font-semibold text-gray-800">
             {isNew ? 'Nuovo cliente EDI' : `Modifica — ${client!.description}`}
@@ -148,10 +171,8 @@ function ClientModal({
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-2xl leading-none">&times;</button>
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
 
-          {/* Basic */}
           <section>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Generale</h3>
             <div className="grid grid-cols-2 gap-3">
@@ -184,7 +205,6 @@ function ClientModal({
             </div>
           </section>
 
-          {/* CDT */}
           <section>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">CDT — Mittente</h3>
             <div className="grid grid-cols-2 gap-3">
@@ -197,7 +217,6 @@ function ClientModal({
             </div>
           </section>
 
-          {/* SDT */}
           <section>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">SDT — Venditore/Fornitore</h3>
             <div className="grid grid-cols-2 gap-3">
@@ -206,7 +225,6 @@ function ClientModal({
             </div>
           </section>
 
-          {/* CSG */}
           <section>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Destinatario</h3>
             <div className="grid grid-cols-2 gap-3">
@@ -228,7 +246,6 @@ function ClientModal({
           </section>
         </div>
 
-        {/* Footer */}
         <div className="px-6 py-4 border-t shrink-0 flex items-center justify-between gap-3">
           {error && <p className="text-sm text-red-600 flex-1">{error}</p>}
           {!error && <span />}
@@ -351,7 +368,7 @@ function TabClienti({ generators }: { generators: string[] }) {
   );
 }
 
-// ─── Shipment Detail Modal (Schermata 3) ─────────────────────────────────────
+// ─── Shipment Detail Modal ────────────────────────────────────────────────────
 
 function ShipmentDetailModal({
   shipment, clients, onClose, onGenerated,
@@ -373,7 +390,6 @@ function ShipmentDetailModal({
     api.get<EdiLine[]>(`/api/edi/shipments/${shipment.shipment_id}`)
       .then(data => {
         setLines(data);
-        // Pre-fill contract numbers from Dynamics
         const init: Record<number, string> = {};
         data.forEach((l, i) => { init[i] = l.contract_number ?? ''; });
         setContracts(init);
@@ -382,7 +398,6 @@ function ShipmentDetailModal({
       .finally(() => setLoading(false));
   }, [shipment.shipment_id]);
 
-  // DESADV_MCLAREN: ordine acquisto opzionale; AVIEXP_FERRARI e DESADV_AUDI: obbligatorio
   const contractRequired = !client?.edi_type || !['DESADV_MCLAREN'].includes(client.edi_type);
   const contractLabel    = client?.edi_type === 'AVIEXP_FERRARI' ? 'N° Contratto Ferrari'
                          : client?.edi_type === 'DESADV_AUDI'    ? 'N° Ordine Acquisto (VDA)'
@@ -429,7 +444,6 @@ function ShipmentDetailModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
 
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
           <div>
             <h2 className="font-semibold text-gray-800">Spedizione #{shipment.shipment_id}</h2>
@@ -441,7 +455,6 @@ function ShipmentDetailModal({
           </div>
         </div>
 
-        {/* Client config summary */}
         {client && (
           <div className="px-6 py-3 bg-gray-50 border-b shrink-0">
             <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-600">
@@ -453,7 +466,6 @@ function ShipmentDetailModal({
           </div>
         )}
 
-        {/* Lines */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {loading && <div className="space-y-2">{[1,2,3].map(i=><div key={i} className="h-10 bg-gray-100 rounded animate-pulse"/>)}</div>}
 
@@ -510,7 +522,6 @@ function ShipmentDetailModal({
           )}
         </div>
 
-        {/* Footer */}
         <div className="px-6 py-4 border-t shrink-0">
           {result && (
             <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
@@ -566,7 +577,6 @@ function TabSpedizioni({ clients }: { clients: EdiClient[] }) {
 
   return (
     <div>
-      {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4">
         <select
           value={filterAccount}
@@ -719,7 +729,6 @@ function TabStorico({ clients }: { clients: EdiClient[] }) {
 
   return (
     <div>
-      {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4">
         <select
           value={filterAccount}
@@ -812,45 +821,570 @@ function TabStorico({ clients }: { clients: EdiClient[] }) {
   );
 }
 
+// ─── Section Uscita ───────────────────────────────────────────────────────────
+
+function SectionUscita({ clients, generators }: { clients: EdiClient[]; generators: string[] }) {
+  const [tab, setTab] = useState<Tab>('clients');
+  return (
+    <div>
+      <Tabs active={tab} onChange={setTab} />
+      {tab === 'clients'   && <TabClienti generators={generators} />}
+      {tab === 'shipments' && <TabSpedizioni clients={clients} />}
+      {tab === 'history'   && <TabStorico clients={clients} />}
+    </div>
+  );
+}
+
+// ─── Tab Ordini aperti Ferrari ────────────────────────────────────────────────
+
+type BackendSyncState =
+  | { status: 'idle' }
+  | { status: 'running'; started_at: string }
+  | { status: 'done';    finished_at: string; stats: { rows: number; files_processed: number; files_skipped: number; errors: { file: string; error: string }[] } }
+  | { status: 'error';   finished_at: string; message: string };
+
+const LS_DOWNLOADED_KEY = 'edi_ferrari_downloaded_v1';
+
+function getDownloadedSet(): Set<string> {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(LS_DOWNLOADED_KEY) : null;
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch { return new Set(); }
+}
+
+function saveDownloaded(set: Set<string>) {
+  try { localStorage.setItem(LS_DOWNLOADED_KEY, JSON.stringify([...set])); } catch { /* noop */ }
+}
+
+function fmtFileMtime(s: string | null): string {
+  if (!s) return '—';
+  return new Date(s).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function TabOrdiniFerrari() {
+  const [ordini,      setOrdini]      = useState<EdiOrdineFerrari[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState('');
+  const [syncing,     setSyncing]     = useState(false);
+  const [syncMsg,     setSyncMsg]     = useState('');
+  const [downloading,        setDownloading]        = useState<string | null>(null);
+  const [downloadingPortale, setDownloadingPortale] = useState<string | null>(null);
+  const [downloaded,  setDownloaded]  = useState<Set<string>>(new Set());
+  const pollRef                       = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => { setDownloaded(getDownloadedSet()); }, []);
+
+  const reload = useCallback(() => {
+    setLoading(true);
+    setError('');
+    api.get<EdiOrdineFerrari[]>('/api/edi/ingresso/ordini')
+      .then(setOrdini)
+      .catch(e => setError((e as Error).message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  // Cleanup poll on unmount
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  function stopPoll() {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  }
+
+  async function handleSync() {
+    setSyncing(true);
+    setSyncMsg('In corso… (potrebbe richiedere qualche minuto)');
+    try {
+      await api.post('/api/edi/ingresso/sync');
+    } catch (e) {
+      setSyncing(false);
+      setSyncMsg(`Errore avvio: ${(e as Error).message}`);
+      return;
+    }
+
+    // Poll /status finché non finisce
+    stopPoll();
+    pollRef.current = setInterval(async () => {
+      try {
+        const state = await api.get<BackendSyncState>('/api/edi/ingresso/sync/status');
+        if (state.status === 'done') {
+          stopPoll();
+          setSyncing(false);
+          setSyncMsg(`Completato: ${state.stats.rows} righe da ${state.stats.files_processed} file.${state.stats.errors.length > 0 ? ` (${state.stats.errors.length} errori file)` : ''}`);
+          reload();
+        } else if (state.status === 'error') {
+          stopPoll();
+          setSyncing(false);
+          setSyncMsg(`Errore: ${state.message}`);
+        }
+        // 'running' → continua a fare polling
+      } catch {
+        // ignora errori di rete durante il polling
+      }
+    }, 3000);
+  }
+
+  async function handleDownloadPortale(numContratto: string) {
+    setDownloadingPortale(numContratto);
+    try {
+      const { xlsx, filename } = await api.get<{ xlsx: string; filename: string }>(
+        `/api/edi/ingresso/ordini/${encodeURIComponent(numContratto)}/download-portale`
+      );
+      const binary = atob(xlsx);
+      const bytes  = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setDownloadingPortale(null);
+    }
+  }
+
+  async function handleDownload(numContratto: string) {
+    setDownloading(numContratto);
+    try {
+      const { csv, filename } = await api.get<{ csv: string; filename: string }>(
+        `/api/edi/ingresso/ordini/${encodeURIComponent(numContratto)}/download`
+      );
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+      // Marca come scaricato
+      setDownloaded(prev => {
+        const next = new Set(prev);
+        next.add(numContratto);
+        saveDownloaded(next);
+        return next;
+      });
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  const lastScan = ordini.length > 0
+    ? new Date(ordini[0].scanned_at).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' })
+    : null;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm text-gray-500">
+          {lastScan
+            ? <>{ordini.length} contratt{ordini.length === 1 ? 'o' : 'i'} (ordini chiusi) · ultimo aggiornamento {lastScan}</>
+            : 'Nessun dato — eseguire una sincronizzazione.'}
+        </p>
+        <button
+          onClick={handleSync}
+          disabled={syncing}
+          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+        >
+          {syncing ? 'Sincronizzazione…' : 'Sincronizza ora'}
+        </button>
+      </div>
+
+      {syncMsg && (
+        <div className={`mb-4 p-3 rounded-lg text-sm border ${syncMsg.startsWith('Errore') ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'}`}>
+          {syncMsg}
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>
+      )}
+
+      {loading && (
+        <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-12 bg-gray-100 rounded-xl animate-pulse" />)}</div>
+      )}
+
+      {!loading && !error && ordini.length === 0 && (
+        <div className="text-center py-16 text-gray-400 text-sm">
+          <p>Nessun ordine aperto trovato.</p>
+          <p className="mt-1">La sincronizzazione automatica avviene ogni giorno alle 06:00, oppure usa il pulsante qui sopra.</p>
+        </div>
+      )}
+
+      {!loading && ordini.length > 0 && (
+        <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+              <tr>
+                <th className="text-left px-4 py-3">N° Contratto</th>
+                <th className="text-right px-4 py-3">Prog.</th>
+                <th className="text-right px-4 py-3">Righe</th>
+                <th className="text-left px-4 py-3">Data file</th>
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {ordini.map(o => {
+                const isDownloaded = downloaded.has(o.num_contratto);
+                return (
+                <tr key={o.num_contratto} className={`transition-colors ${isDownloaded ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-gray-50'}`}>
+                  <td className="px-4 py-3 font-mono font-medium text-gray-800">
+                    <div className="flex items-center gap-2">
+                      {o.num_contratto}
+                      {isDownloaded && (
+                        <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-100 px-1.5 py-0.5 rounded font-medium">
+                          ✓ scaricato
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-gray-500">{o.programmi}</td>
+                  <td className="px-4 py-3 text-right font-mono text-gray-600">{o.righe}</td>
+                  <td className="px-4 py-3 text-gray-600 text-xs font-mono">{fmtFileMtime(o.file_mtime)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => handleDownload(o.num_contratto)}
+                        disabled={downloading === o.num_contratto}
+                        className={`px-3 py-1 text-xs rounded-lg font-medium transition-colors disabled:opacity-50 ${
+                          isDownloaded
+                            ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                            : 'bg-green-600 text-white hover:bg-green-700'
+                        }`}
+                      >
+                        {downloading === o.num_contratto ? 'Download…' : isDownloaded ? 'Scarica di nuovo' : 'Scarica Excel'}
+                      </button>
+                      <button
+                        onClick={() => handleDownloadPortale(o.num_contratto)}
+                        disabled={downloadingPortale === o.num_contratto}
+                        className="px-3 py-1 text-xs rounded-lg font-medium transition-colors disabled:opacity-50 bg-blue-600 text-white hover:bg-blue-700"
+                      >
+                        {downloadingPortale === o.num_contratto ? 'Download…' : 'Scarica Excel formato vecchio'}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Colonne tabella Ingresso ─────────────────────────────────────────────────
+
+const INGRESSO_COLS: { key: keyof EdiIngressoRow; label: string; mono?: boolean; w?: number }[] = [
+  { key: 'source_file',               label: 'File',               mono: true, w: 140 },
+  { key: 'num_programma',             label: 'N° Programma',       mono: true, w: 130 },
+  { key: 'data_documento',            label: 'Data doc.',                      w: 90  },
+  { key: 'mittente',                  label: 'Mittente',                        w: 160 },
+  { key: 'fornitore',                 label: 'Fornitore',                       w: 160 },
+  { key: 'tipo_messaggio',            label: 'Tipo msg.',                       w: 70  },
+  { key: 'data_validita',             label: 'Data validità',                   w: 90  },
+  { key: 'codice_stabilimento',       label: 'Cod. stabilimento',  mono: true,  w: 130 },
+  { key: 'codice_articolo',           label: 'Codice articolo',    mono: true,  w: 110 },
+  { key: 'commessa',                  label: 'Commessa',           mono: true,  w: 80  },
+  { key: 'descrizione',               label: 'Descrizione',                     w: 200 },
+  { key: 'um',                        label: 'UM',                              w: 50  },
+  { key: 'num_contratto',             label: 'N° contratto',       mono: true,  w: 100 },
+  { key: 'pos_contratto',             label: 'Pos. contratto',     mono: true,  w: 90  },
+  { key: 'frequenza_codice',          label: 'Freq. cod.',         mono: true,  w: 70  },
+  { key: 'frequenza',                 label: 'Frequenza',                       w: 120 },
+  { key: 'tipo_documento',            label: 'Tipo documento',                  w: 110 },
+  { key: 'ft3_testo',                 label: 'Note (FT3)',                      w: 200 },
+  { key: 'data_calcolo',              label: 'Data calcolo',                    w: 90  },
+  { key: 'progressivo_programmato',   label: 'Prog. programmato',  mono: true,  w: 130 },
+  { key: 'progressivo_ricevuto',      label: 'Prog. ricevuto',     mono: true,  w: 110 },
+  { key: 'anticipo_ritardo',          label: 'Anticipo/Ritardo',   mono: true,  w: 110 },
+  { key: 'pdn_num_rimesso',           label: 'PDN N° rimesso',     mono: true,  w: 130 },
+  { key: 'pdn_data_rimesso',          label: 'PDN Data rimesso',                w: 110 },
+  { key: 'pdn_qty_dichiarata',        label: 'PDN Qty dich.',      mono: true,  w: 100 },
+  { key: 'pdn_qty_ricevuta',          label: 'PDN Qty ric.',       mono: true,  w: 90  },
+  { key: 'pdn_data_ricevimento',      label: 'PDN Data ric.',                   w: 100 },
+  { key: 'data_consegna',             label: 'Data consegna',                   w: 100 },
+  { key: 'quantita',                  label: 'Quantità',           mono: true,  w: 90  },
+  { key: 'tipo_schedulazione_codice', label: 'Sched. cod.',        mono: true,  w: 80  },
+  { key: 'tipo_schedulazione',        label: 'Tipo schedulazione',              w: 150 },
+];
+
+// ─── Section Ingresso ─────────────────────────────────────────────────────────
+
+type IngressoTab = 'ordini' | 'scansione';
+
+const LS_KEY_FOLDER = 'edi_ingresso_folder';
+
+function SectionIngresso() {
+  const [ingressoTab, setIngressoTab] = useState<IngressoTab>('ordini');
+  const [folder,   setFolder]   = useState(() => (typeof window !== 'undefined' ? localStorage.getItem(LS_KEY_FOLDER) ?? '' : ''));
+  const [loading,  setLoading]  = useState(false);
+  const [result,   setResult]   = useState<EdiIngressoScanResult | null>(null);
+  const [error,    setError]    = useState('');
+
+  // Filters
+  const [fArticolo, setFArticolo] = useState('');
+  const [fSched,    setFSched]    = useState('');
+  const [fFrom,     setFFrom]     = useState('');
+  const [fTo,       setFTo]       = useState('');
+
+  function saveFolder(v: string) {
+    setFolder(v);
+    if (typeof window !== 'undefined') localStorage.setItem(LS_KEY_FOLDER, v);
+  }
+
+  async function handleScan() {
+    if (!folder.trim()) { setError('Inserire il percorso della cartella.'); return; }
+    setLoading(true);
+    setError('');
+    setResult(null);
+    try {
+      const data = await api.post<EdiIngressoScanResult>('/api/edi/ingresso/scan', { folder: folder.trim() });
+      setResult(data);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Filtered rows
+  const rows = (result?.rows ?? []).filter(r => {
+    if (fArticolo && !r.codice_articolo.toLowerCase().includes(fArticolo.toLowerCase())) return false;
+    if (fSched && r.tipo_schedulazione !== fSched) return false;
+    if (fFrom || fTo) {
+      // data_consegna is DD/MM/YYYY
+      const parts = r.data_consegna.split('/');
+      if (parts.length === 3) {
+        const iso = `${parts[2]}-${parts[1]}-${parts[0]}`;
+        if (fFrom && iso < fFrom) return false;
+        if (fTo   && iso > fTo)   return false;
+      }
+    }
+    return true;
+  });
+
+  const schedTypes = [...new Set((result?.rows ?? []).map(r => r.tipo_schedulazione).filter(Boolean))];
+
+  return (
+    <div>
+      {/* Sub-tab bar */}
+      <div className="flex border-b border-gray-200 mb-6">
+        {([['ordini', 'Ordini aperti'], ['scansione', 'Scansione manuale']] as [IngressoTab, string][]).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setIngressoTab(key)}
+            className={`px-5 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              ingressoTab === key
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {ingressoTab === 'ordini' && <TabOrdiniFerrari />}
+
+      {ingressoTab === 'scansione' && (<>
+      {/* Folder input */}
+      <div className="flex gap-2 mb-4">
+        <input
+          type="text"
+          value={folder}
+          onChange={e => saveFolder(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') handleScan(); }}
+          placeholder="es. \\192.168.1.245\edi\FERRARI\DELINS"
+          className="flex-1 border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button
+          onClick={handleScan}
+          disabled={loading}
+          className="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors shrink-0"
+        >
+          {loading ? 'Lettura…' : 'Leggi cartella'}
+        </button>
+      </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {result && (
+        <>
+          {/* Stats */}
+          <div className="flex flex-wrap gap-3 mb-4 text-sm text-gray-600">
+            <span className="inline-flex items-center gap-1 bg-green-50 text-green-700 px-3 py-1 rounded-full text-xs font-medium">
+              {result.files_processed} file elaborati
+            </span>
+            {result.files_skipped > 0 && (
+              <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs">
+                {result.files_skipped} ignorati
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-medium">
+              {result.rows.length} righe totali
+            </span>
+            {result.errors.length > 0 && (
+              <span className="inline-flex items-center gap-1 bg-red-50 text-red-600 px-3 py-1 rounded-full text-xs font-medium">
+                {result.errors.length} errori
+              </span>
+            )}
+          </div>
+
+          {/* Parse errors */}
+          {result.errors.length > 0 && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 space-y-1">
+              {result.errors.map((e, i) => (
+                <div key={i}><span className="font-mono font-medium">{e.file}</span>: {e.error}</div>
+              ))}
+            </div>
+          )}
+
+          {/* Filters */}
+          <div className="flex flex-wrap gap-2 mb-3">
+            <input
+              type="text"
+              value={fArticolo}
+              onChange={e => setFArticolo(e.target.value)}
+              placeholder="Filtra articolo"
+              className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-44"
+            />
+            <select
+              value={fSched}
+              onChange={e => setFSched(e.target.value)}
+              className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Tutti i tipi</option>
+              {schedTypes.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <input type="date" value={fFrom} onChange={e => setFFrom(e.target.value)}
+              className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              title="Data consegna da" />
+            <input type="date" value={fTo} onChange={e => setFTo(e.target.value)}
+              className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              title="Data consegna a" />
+            {(fArticolo || fSched || fFrom || fTo) && (
+              <button
+                onClick={() => { setFArticolo(''); setFSched(''); setFFrom(''); setFTo(''); }}
+                className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 border rounded-lg"
+              >
+                Reset filtri
+              </button>
+            )}
+            <span className="px-3 py-1.5 text-sm text-gray-400">{rows.length} righe</span>
+          </div>
+
+          {/* Table */}
+          {rows.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-10">
+              {result.rows.length === 0 ? 'Nessuna riga DEL trovata nei file.' : 'Nessuna riga corrisponde ai filtri.'}
+            </p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-gray-200" style={{ maxHeight: '65vh' }}>
+              <table className="text-xs border-collapse" style={{ minWidth: INGRESSO_COLS.reduce((s, c) => s + (c.w ?? 100), 0) }}>
+                <thead className="bg-gray-50 sticky top-0 z-10">
+                  <tr>
+                    {INGRESSO_COLS.map(col => (
+                      <th
+                        key={col.key}
+                        className="text-left px-2 py-2 text-gray-500 font-semibold border-b border-r border-gray-200 whitespace-nowrap"
+                        style={{ minWidth: col.w, width: col.w }}
+                      >
+                        {col.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, i) => (
+                    <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      {INGRESSO_COLS.map(col => {
+                        const val = row[col.key];
+                        const isSched = col.key === 'tipo_schedulazione';
+                        return (
+                          <td
+                            key={col.key}
+                            className={`px-2 py-1.5 border-b border-r border-gray-100 whitespace-nowrap overflow-hidden text-ellipsis ${
+                              col.mono ? 'font-mono' : ''
+                            }`}
+                            style={{ maxWidth: col.w }}
+                            title={val}
+                          >
+                            {isSched && val ? (
+                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                                val === 'Ordine di consegna'
+                                  ? 'bg-blue-100 text-blue-700'
+                                  : 'bg-amber-100 text-amber-700'
+                              }`}>
+                                {val}
+                              </span>
+                            ) : (
+                              <span className="text-gray-700">{val || '—'}</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {!result && !loading && !error && (
+        <p className="text-sm text-gray-400 text-center py-16">
+          Inserisci il percorso della cartella inbox Ferrari e premi <strong>Leggi cartella</strong>.
+        </p>
+      )}
+      </>)}
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function EdiPage() {
-  const [tab, setTab]             = useState<Tab>('clients');
-  const [clients, setClients]     = useState<EdiClient[]>([]);
+  const [section,    setSection]    = useState<Section>('ingresso');
+  const [clients,    setClients]    = useState<EdiClient[]>([]);
   const [generators, setGenerators] = useState<string[]>([]);
 
-  // Load clients and generators once (shared across tabs)
   useEffect(() => {
     api.get<EdiClient[]>('/api/edi/clients').then(setClients).catch(() => {});
     api.get<string[]>('/api/edi/generators').then(setGenerators).catch(() => {});
   }, []);
 
-  // Reload clients when Clienti tab is shown (after saves)
   function reloadClients() {
     api.get<EdiClient[]>('/api/edi/clients').then(setClients).catch(() => {});
   }
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="max-w-[100%] px-0">
 
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-4">
         <h1 className="text-2xl font-bold text-gray-900">EDI</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Generazione automatica file Electronic Data Interchange per le spedizioni
+          Gestione flussi Electronic Data Interchange — uscita (spedizioni) e ingresso (ordini ricevuti)
         </p>
       </div>
 
-      <Tabs active={tab} onChange={t => { setTab(t); if (t !== 'clients') reloadClients(); }} />
+      <SectionToggle active={section} onChange={s => { setSection(s); if (s === 'uscita') reloadClients(); }} />
 
-      {tab === 'clients' && (
-        <TabClienti generators={generators} />
+      {section === 'uscita' && (
+        <SectionUscita clients={clients} generators={generators} />
       )}
-      {tab === 'shipments' && (
-        <TabSpedizioni clients={clients} />
-      )}
-      {tab === 'history' && (
-        <TabStorico clients={clients} />
+
+      {section === 'ingresso' && (
+        <SectionIngresso />
       )}
     </div>
   );

@@ -66,6 +66,51 @@ serve({ fetch: app.fetch, port }, async (info) => {
   logger.info('[Startup] edi_clients auto_generate OK');
 
   await db`
+    CREATE TABLE IF NOT EXISTS edi_ferrari_delins (
+      id                        BIGSERIAL   PRIMARY KEY,
+      source_file               TEXT        NOT NULL DEFAULT '',
+      num_programma             TEXT        NOT NULL DEFAULT '',
+      data_documento            TEXT        NOT NULL DEFAULT '',
+      mittente                  TEXT        NOT NULL DEFAULT '',
+      fornitore                 TEXT        NOT NULL DEFAULT '',
+      app_reference             TEXT        NOT NULL DEFAULT '',
+      tipo_messaggio            TEXT        NOT NULL DEFAULT '',
+      data_validita             TEXT        NOT NULL DEFAULT '',
+      codice_stabilimento       TEXT        NOT NULL DEFAULT '',
+      codice_articolo           TEXT        NOT NULL DEFAULT '',
+      commessa                  TEXT        NOT NULL DEFAULT '',
+      descrizione               TEXT        NOT NULL DEFAULT '',
+      um                        TEXT        NOT NULL DEFAULT '',
+      num_contratto             TEXT        NOT NULL DEFAULT '',
+      pos_contratto             TEXT        NOT NULL DEFAULT '',
+      frequenza_codice          TEXT        NOT NULL DEFAULT '',
+      frequenza                 TEXT        NOT NULL DEFAULT '',
+      tipo_documento            TEXT        NOT NULL DEFAULT '',
+      ft3_testo                 TEXT        NOT NULL DEFAULT '',
+      data_calcolo              TEXT        NOT NULL DEFAULT '',
+      progressivo_programmato   TEXT        NOT NULL DEFAULT '',
+      progressivo_ricevuto      TEXT        NOT NULL DEFAULT '',
+      anticipo_ritardo          TEXT        NOT NULL DEFAULT '',
+      pdn_num_rimesso           TEXT        NOT NULL DEFAULT '',
+      pdn_data_rimesso          TEXT        NOT NULL DEFAULT '',
+      pdn_qty_dichiarata        TEXT        NOT NULL DEFAULT '',
+      pdn_qty_ricevuta          TEXT        NOT NULL DEFAULT '',
+      pdn_data_ricevimento      TEXT        NOT NULL DEFAULT '',
+      data_consegna             TEXT        NOT NULL DEFAULT '',
+      quantita                  TEXT        NOT NULL DEFAULT '',
+      tipo_schedulazione_codice TEXT        NOT NULL DEFAULT '',
+      tipo_schedulazione        TEXT        NOT NULL DEFAULT '',
+      scanned_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `.catch((e: unknown) => logger.warn(`[Startup] edi_ferrari_delins: ${e}`));
+  await db`CREATE INDEX IF NOT EXISTS edi_ferrari_delins_num_programma_idx ON edi_ferrari_delins (num_programma)`.catch(() => {});
+  await db`CREATE INDEX IF NOT EXISTS edi_ferrari_delins_tipo_documento_idx ON edi_ferrari_delins (tipo_documento)`.catch(() => {});
+  await db`CREATE INDEX IF NOT EXISTS edi_ferrari_delins_commessa_idx       ON edi_ferrari_delins (commessa)`.catch(() => {});
+  await db`CREATE INDEX IF NOT EXISTS edi_ferrari_delins_scanned_at_idx     ON edi_ferrari_delins (scanned_at DESC)`.catch(() => {});
+  await db`ALTER TABLE edi_ferrari_delins ADD COLUMN IF NOT EXISTS file_mtime TIMESTAMPTZ`.catch(() => {});
+  logger.info('[Startup] edi_ferrari_delins OK');
+
+  await db`
     CREATE TABLE IF NOT EXISTS monitor_turno_default (
       id                   SERIAL PRIMARY KEY,
       linea_id             INTEGER NOT NULL REFERENCES monitor_linea(id) ON DELETE CASCADE,

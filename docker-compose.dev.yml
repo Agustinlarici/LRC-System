@@ -32,6 +32,7 @@ services:
       - ./db/migrate-resumen.sql:/docker-entrypoint-initdb.d/19_resumen.sql:ro
       - ./db/migrate-spma-onedrive.sql:/docker-entrypoint-initdb.d/20_spma_onedrive.sql:ro
       - ./db/migrate-monitor-stops.sql:/docker-entrypoint-initdb.d/22_monitor_stops.sql:ro
+      - ./db/migrate-edi-ferrari-delins.sql:/docker-entrypoint-initdb.d/23_edi_ferrari_delins.sql:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -43,7 +44,7 @@ services:
   backend:
     image: node:20-alpine
     working_dir: /app
-    command: sh -c "npm install && npm run dev"
+    command: sh -c "apk add --no-cache samba-client && npm install && npm run dev"
     restart: unless-stopped
     env_file:
       - .env.dev
@@ -69,14 +70,17 @@ services:
       DELIBERA_ESITO_OK:   "Accettato"
       SPMA_ONEDRIVE_SHARE_URL: ${SPMA_ONEDRIVE_SHARE_URL:-}
       CHOKIDAR_USEPOLLING: "true"
+      # SMB credentials vengono da .env.dev via env_file (non sovrascrivere qui)
     ports:
       - "3001:3001"
     volumes:
       - ./backend/src:/app/src                       # solo fuente → polling detecta cambios
       - ./backend/edi_generators:/app/edi_generators  # generatori EDI (rilevati dinamicamente)
       - ./backend/package.json:/app/package.json
+      - ./backend/patches:/app/patches  # patch-package le usa al npm install
       - ./backend/tsconfig.json:/app/tsconfig.json
       - backend_nm:/app/node_modules    # node_modules en volumen interno (rápido)
+      - ./backend/node_modules/@marsaud:/app/node_modules/@marsaud:ro  # smb2 parcheado directo
       - ./test-scansioni:/scansioni:ro
       - ./test-documentos:/documentos
     depends_on:

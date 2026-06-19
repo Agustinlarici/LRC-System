@@ -418,6 +418,15 @@ export interface EdiIngressoScanResult {
   errors:          { file: string; error: string }[];
 }
 
+export interface EdiOrdineFerrari {
+  num_contratto: string;
+  programmi:     number;
+  righe:         number;
+  file_mtime:    string | null;
+  scanned_at:    string;
+}
+
+
 // ─── Monitor Stop Events ──────────────────────────────────────────────────────
 
 export interface StopCategory {

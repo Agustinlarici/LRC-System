@@ -5,6 +5,7 @@ import { syncFullDayToHistory, refreshLookupTables } from './modules/monitor/pg-
 import { checkSpmaDelays } from './modules/spma/delay-checker.js';
 import { sendDelayReportEmail, emailConfigured, type SmtpConfig } from './modules/spma/spma-email-notifier.js';
 import { autoGenerateEdi } from './modules/edi/auto-generate.js';
+import { syncFerrariDelins } from './modules/edi/ferrari-delins-sync.js';
 import { detectStopsAllLines } from './modules/monitor/stop-detector.js';
 import { applyDefaultsForDate } from './modules/monitor/auto-turni.js';
 import { db } from './db/client.js';
@@ -128,8 +129,8 @@ export function startScheduler() {
   cron.schedule('*/10 * * * *', async () => {
     startRun('spma_onedrive_poll');
     try {
-      const count = await pollOneDriveFolder();
-      endRun('spma_onedrive_poll', count);
+      const result = await pollOneDriveFolder();
+      endRun('spma_onedrive_poll', result.count);
     } catch (e) {
       failRun('spma_onedrive_poll', e);
       logger.error(`[scheduler] SPMA OneDrive poll fallito: ${e instanceof Error ? e.message : e}`);
@@ -161,6 +162,24 @@ export function startScheduler() {
     }
   }, { timezone: 'Europe/Rome' });
 
+  // 06:00 — scansione Ferrari DELINS inbox → aggiorna edi_ferrari_delins
+  cron.schedule('0 6 * * *', async () => {
+    logger.info('[scheduler] EDI Ferrari DELINS sync...');
+    startRun('edi_ferrari_scan');
+    try {
+      const stats = await syncFerrariDelins();
+      endRun('edi_ferrari_scan', stats.rows);
+      logger.info(`[scheduler] EDI Ferrari DELINS: ${stats.rows} righe, ${stats.files_processed} file, ${stats.files_skipped} saltati`);
+      if (stats.errors.length > 0) {
+        logger.warn(`[scheduler] EDI Ferrari DELINS: ${stats.errors.length} errori file`);
+      }
+    } catch (e) {
+      failRun('edi_ferrari_scan', e);
+      logger.error(`[scheduler] EDI Ferrari DELINS fallito: ${e instanceof Error ? e.message : e}`);
+    }
+    setNextRun('edi_ferrari_scan', nextOccurrence(6));
+  }, { timezone: 'Europe/Rome' });
+
   // 23:45 — generazione automatica EDI per i clienti con auto_generate = true
   cron.schedule('45 23 * * *', async () => {
     logger.info('[scheduler] EDI auto-generate...');
@@ -173,11 +192,12 @@ export function startScheduler() {
   }, { timezone: 'Europe/Rome' });
 
   // Registra prossime esecuzioni all'avvio
+  setNextRun('edi_ferrari_scan',   nextOccurrence(6));
   setNextRun('heatmap_snapshot',   nextOccurrence(1));
   setNextRun('lookup_refresh',     nextOccurrence(2));
   setNextRun('bc_sync',            nextOccurrence(3));
   setNextRun('spma_onedrive_poll', nextEvery10Min());
   setNextRun('edi_auto_generate',  nextOccurrence(23, 45));
 
-  logger.info('Scheduler avviato — EDI auto 23:45, snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
+  logger.info('Scheduler avviato — Ferrari DELINS 06:00, EDI auto 23:45, snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
 }

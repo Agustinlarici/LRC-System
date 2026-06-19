@@ -16,6 +16,8 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+RUN apk add --no-cache samba-client
+
 COPY package*.json ./
 RUN npm ci --omit=dev
 

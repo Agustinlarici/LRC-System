@@ -31,6 +31,7 @@ services:
       - ./db/migrate-spma-onedrive.sql:/docker-entrypoint-initdb.d/18_spma_onedrive.sql:ro
       - ./db/migrate-audit-log.sql:/docker-entrypoint-initdb.d/19_audit_log.sql:ro
       - ./db/migrate-edi-establishment-generic.sql:/docker-entrypoint-initdb.d/20_edi_establishment_generic.sql:ro
+      - ./db/migrate-edi-ferrari-delins.sql:/docker-entrypoint-initdb.d/21_edi_ferrari_delins.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lrc} -d ${POSTGRES_DB:-lrc_system}"]
       interval: 5s
@@ -73,6 +74,12 @@ services:
       # Percorsi interni al container (fissi — il bind mount mappa l'host)
       SCAN_FOLDER:  /scansioni
       DOCS_FOLDER:  /documentos
+      # SMB / Cartelle di rete (UNC — es. \\192.168.1.245\edi\...)
+      SMB_USER:   ${SMB_USER:-}
+      SMB_PASS:   ${SMB_PASS:-}
+      SMB_DOMAIN: ${SMB_DOMAIN:-}
+      # EDI Ferrari DELINS — cartella inbox (default: \\192.168.1.245\edi\FERRARI\DELINS)
+      EDI_FERRARI_DELINS_FOLDER: ${EDI_FERRARI_DELINS_FOLDER:-}
       # Optional
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # SPMA — OneDrive folder polling (set to sharing URL to enable)

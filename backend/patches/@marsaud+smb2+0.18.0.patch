@@ -1,0 +1,330 @@
+diff --git a/node_modules/@marsaud/smb2/lib/api/readdir.js b/node_modules/@marsaud/smb2/lib/api/readdir.js
+index db28edf..527f83f 100644
+--- a/node_modules/@marsaud/smb2/lib/api/readdir.js
++++ b/node_modules/@marsaud/smb2/lib/api/readdir.js
+@@ -55,7 +55,7 @@ module.exports = function readdir(path, options, cb) {
+   }
+ 
+   function openDirectory(path, connection, cb) {
+-    SMB2Request('open', { path: path }, connection, function(err, file) {
++    SMB2Request('open_folder', { path: path }, connection, function(err, file) {
+       if (err) {
+         cb(err);
+       } else {
+@@ -65,15 +65,13 @@ module.exports = function readdir(path, options, cb) {
+   }
+ 
+   function closeDirectory(file, connection, cb) {
+-    // SMB2 query directory
+     SMB2Request('close', file, connection, function(err, res) {
+       if (err) {
+         if (err.code !== 'STATUS_FILE_CLOSED') {
+-          cb(err);
++          return cb(err);
+         }
+       }
+-      // SMB2 close directory
+-      cb(null, res);
++      return cb(null, res);
+     });
+   }
+ 
+@@ -83,11 +81,12 @@ module.exports = function readdir(path, options, cb) {
+     if (err) {
+       cb(err);
+     } else {
+-      queryDirectory(filesBatch, file, connection, function(err, file) {
++      // FIX: use '_batch' instead of 'file' to avoid shadowing the directory handle
++      queryDirectory(filesBatch, file, connection, function(err, _batch) {
+         if (err) {
+           cb(err);
+         } else {
+-          closeDirectory(file, connection, function(err, file) {
++          closeDirectory(file, connection, function(err) {
+             if (err) {
+               cb(err);
+             } else {
+diff --git a/node_modules/@marsaud/smb2/lib/messages/open_folder.js b/node_modules/@marsaud/smb2/lib/messages/open_folder.js
+index 8790949..3541911 100644
+--- a/node_modules/@marsaud/smb2/lib/messages/open_folder.js
++++ b/node_modules/@marsaud/smb2/lib/messages/open_folder.js
+@@ -2,19 +2,11 @@ var SMB2Message = require('../tools/smb2-message');
+ var message = require('../tools/message');
+ var constants = require('../structures/constants');
+ 
++// Minimal read-only access for directory listing
+ var desiredAccess =
+-  constants.DELETE |
+-  constants.FILE_APPEND_DATA |
+-  constants.FILE_DELETE_CHILD |
++  constants.FILE_READ_DATA |      // FILE_LIST_DIRECTORY for directories
+   constants.FILE_READ_ATTRIBUTES |
+-  constants.FILE_READ_DATA |
+-  constants.FILE_READ_EA |
+-  constants.FILE_WRITE_ATTRIBUTES |
+-  constants.FILE_WRITE_DATA |
+-  constants.FILE_WRITE_EA |
+-  constants.READ_CONTROL |
+-  constants.SYNCHRONIZE |
+-  constants.WRITE_DAC;
++  constants.SYNCHRONIZE;
+ 
+ module.exports = message({
+   generate: function(connection, params) {
+@@ -33,7 +25,7 @@ module.exports = message({
+         FileAttributes: 0x00000000,
+         ShareAccess: 0x00000007,
+         CreateDisposition: constants.FILE_OPEN,
+-        CreateOptions: 0x00200021,
++        CreateOptions: 0x00000021,
+         NameOffset: 0x0078,
+         CreateContextsOffset: 0x007a + buffer.length,
+       },
+diff --git a/node_modules/@marsaud/smb2/lib/messages/query_directory.js b/node_modules/@marsaud/smb2/lib/messages/query_directory.js
+index 72f09ab..718d4d0 100644
+--- a/node_modules/@marsaud/smb2/lib/messages/query_directory.js
++++ b/node_modules/@marsaud/smb2/lib/messages/query_directory.js
+@@ -30,9 +30,7 @@ function parseFiles(buffer) {
+   var offset = 0;
+   var nextFileOffset = -1;
+   while (nextFileOffset !== 0) {
+-    // extract next file offset
+     nextFileOffset = buffer.readUInt32LE(offset);
+-    // extract the file
+     files.push(
+       parseFile(
+         buffer.slice(
+@@ -41,72 +39,24 @@ function parseFiles(buffer) {
+         )
+       )
+     );
+-    // move to nex file
+     offset += nextFileOffset;
+   }
+   return files;
+ }
+ 
++// Parses FileNamesInformation (class 12 / 0x0C) — widely supported by all SMB servers.
++// Layout after NextEntryOffset: FileIndex(4) + FileNameLength(4) + FileName(variable)
+ function parseFile(buffer) {
+   var file = {};
+   var offset = 0;
+ 
+-  // index
+   file.Index = buffer.readUInt32LE(offset);
+   offset += 4;
+ 
+-  // CreationTime
+-  file.CreationTime = buffer.slice(offset, offset + 8);
+-  offset += 8;
+-
+-  // LastAccessTime
+-  file.LastAccessTime = buffer.slice(offset, offset + 8);
+-  offset += 8;
+-
+-  // LastWriteTime
+-  file.LastWriteTime = buffer.slice(offset, offset + 8);
+-  offset += 8;
+-
+-  // ChangeTime
+-  file.ChangeTime = buffer.slice(offset, offset + 8);
+-  offset += 8;
+-
+-  // EndofFile
+-  file.EndofFile = buffer.slice(offset, offset + 8);
+-  offset += 8;
+-
+-  // AllocationSize
+-  file.AllocationSize = buffer.slice(offset, offset + 8);
+-  offset += 8;
+-
+-  // FileAttributes
+-  file.FileAttributes = buffer.readUInt32LE(offset);
+-  offset += 4;
+-
+-  // FilenameLength
+   file.FilenameLength = buffer.readUInt32LE(offset);
+   offset += 4;
+ 
+-  // EASize
+-  file.EASize = buffer.readUInt32LE(offset);
+-  offset += 4;
+-
+-  // ShortNameLength
+-  file.ShortNameLength = buffer.readUInt8(offset);
+-  offset += 1;
+-
+-  // FileId
+-  file.FileId = buffer.slice(offset, offset + 8);
+-  offset += 8;
+-
+-  // Reserved
+-  offset += 27;
+-
+-  // Filename
+-  file.Filename = buffer
+-    .slice(offset, offset + file.FilenameLength)
+-    .toString('ucs2');
+-  offset += file.FilenameLength;
++  file.Filename = buffer.slice(offset, offset + file.FilenameLength).toString('ucs2');
+ 
+   return file;
+ }
+diff --git a/node_modules/@marsaud/smb2/lib/messages/session_setup_step1.js b/node_modules/@marsaud/smb2/lib/messages/session_setup_step1.js
+index 9cfba8f..6aaf245 100644
+--- a/node_modules/@marsaud/smb2/lib/messages/session_setup_step1.js
++++ b/node_modules/@marsaud/smb2/lib/messages/session_setup_step1.js
+@@ -2,6 +2,36 @@ var SMB2Message = require('../tools/smb2-message');
+ var message = require('../tools/message');
+ var ntlm = require('ntlm');
+ 
++/* ASN.1 DER helpers -------------------------------------------------------- */
++function derLen(n) {
++  if (n < 0x80) return Buffer.from([n]);
++  if (n < 0x100) return Buffer.from([0x81, n]);
++  return Buffer.from([0x82, (n >> 8) & 0xff, n & 0xff]);
++}
++function der(tag, content) {
++  return Buffer.concat([Buffer.from([tag]), derLen(content.length), content]);
++}
++
++/* SPNEGO NEGTOKEN_INIT wrapper for NTLM Type1 ------------------------------ */
++function spnegoWrapType1(ntlmToken) {
++  // OID 1.3.6.1.4.1.311.2.2.10 (NTLM)
++  var ntlmOid = der(0x06, Buffer.from('2b0601040182370202 0a'.replace(/\s/g, ''), 'hex'));
++  var mechTypes = der(0xa0, der(0x30, ntlmOid));        // [0] mechTypes
++  var mechToken = der(0xa2, der(0x04, ntlmToken));       // [2] mechToken
++  var negInit   = der(0xa0, der(0x30, Buffer.concat([mechTypes, mechToken]))); // [0] negTokenInit
++  // OID 1.3.6.1.5.5.2 (SPNEGO)
++  var spnegoOid = der(0x06, Buffer.from('2b06010505 02'.replace(/\s/g, ''), 'hex'));
++  return der(0x60, Buffer.concat([spnegoOid, negInit])); // APPLICATION [0]
++}
++
++/* Extract raw NTLM from SPNEGO challenge response -------------------------- */
++function extractNtlm(buf) {
++  var NTLMSSP = Buffer.from('4e544c4d53535000', 'hex');
++  if (buf.slice(0, 8).equals(NTLMSSP)) return buf;
++  var idx = buf.indexOf(NTLMSSP);
++  return idx >= 0 ? buf.slice(idx) : buf;
++}
++
+ module.exports = message({
+   generate: function(connection) {
+     return new SMB2Message({
+@@ -10,7 +40,7 @@ module.exports = message({
+         ProcessId: connection.ProcessId,
+       },
+       request: {
+-        Buffer: ntlm.encodeType1(connection.ip, connection.domain),
++        Buffer: spnegoWrapType1(ntlm.encodeType1(connection.ip, connection.domain)),
+       },
+     });
+   },
+@@ -20,6 +50,6 @@ module.exports = message({
+   onSuccess: function(connection, response) {
+     var h = response.getHeaders();
+     connection.SessionId = h.SessionId;
+-    connection.nonce = ntlm.decodeType2(response.getResponse().Buffer);
++    connection.nonce = ntlm.decodeType2(extractNtlm(response.getResponse().Buffer));
+   },
+ });
+diff --git a/node_modules/@marsaud/smb2/lib/messages/session_setup_step2.js b/node_modules/@marsaud/smb2/lib/messages/session_setup_step2.js
+index 04df649..4531bc9 100644
+--- a/node_modules/@marsaud/smb2/lib/messages/session_setup_step2.js
++++ b/node_modules/@marsaud/smb2/lib/messages/session_setup_step2.js
+@@ -2,6 +2,22 @@ var SMB2Message = require('../tools/smb2-message');
+ var message = require('../tools/message');
+ var ntlm = require('ntlm');
+ 
++/* ASN.1 DER helpers -------------------------------------------------------- */
++function derLen(n) {
++  if (n < 0x80) return Buffer.from([n]);
++  if (n < 0x100) return Buffer.from([0x81, n]);
++  return Buffer.from([0x82, (n >> 8) & 0xff, n & 0xff]);
++}
++function der(tag, content) {
++  return Buffer.concat([Buffer.from([tag]), derLen(content.length), content]);
++}
++
++/* SPNEGO NEGTOKEN_RESP wrapper for NTLM Type3 ------------------------------ */
++function spnegoWrapType3(ntlmToken) {
++  var respToken = der(0xa2, der(0x04, ntlmToken)); // [2] responseToken
++  return der(0xa1, der(0x30, respToken));           // [1] negTokenResp
++}
++
+ module.exports = message({
+   generate: function(connection) {
+     return new SMB2Message({
+@@ -11,12 +27,14 @@ module.exports = message({
+         ProcessId: connection.ProcessId,
+       },
+       request: {
+-        Buffer: ntlm.encodeType3(
+-          connection.username,
+-          connection.ip,
+-          connection.domain,
+-          connection.nonce,
+-          connection.password
++        Buffer: spnegoWrapType3(
++          ntlm.encodeType3(
++            connection.username,
++            connection.ip,
++            connection.domain,
++            connection.nonce,
++            connection.password
++          )
+         ),
+       },
+     });
+diff --git a/node_modules/@marsaud/smb2/lib/structures/query_directory.js b/node_modules/@marsaud/smb2/lib/structures/query_directory.js
+index fbcf0cb..6bb03a3 100644
+--- a/node_modules/@marsaud/smb2/lib/structures/query_directory.js
++++ b/node_modules/@marsaud/smb2/lib/structures/query_directory.js
+@@ -1,7 +1,7 @@
+ module.exports = {
+   request: [
+     ['StructureSize', 2, 33],
+-    ['FileInformationClass', 1, 0x25], // FileBothDirectoryInformation plus volume file ID about a file or directory.
++    ['FileInformationClass', 1, 0x0C], // FileNamesInformation — widely supported by all SMB servers.
+     ['Flags', 1, 0],
+     ['FileIndex', 4, 0],
+     ['FileId', 16],
+diff --git a/node_modules/@marsaud/smb2/lib/tools/smb2-forge.js b/node_modules/@marsaud/smb2/lib/tools/smb2-forge.js
+index b5de345..40e44b7 100644
+--- a/node_modules/@marsaud/smb2/lib/tools/smb2-forge.js
++++ b/node_modules/@marsaud/smb2/lib/tools/smb2-forge.js
+@@ -13,7 +13,14 @@ var SMB2Forge = (module.exports = {});
+  */
+ SMB2Forge.request = function(messageName, params, connection, cb) {
+   var msg = require('../messages/' + messageName);
+-  var smbMessage = msg.generate(connection, params);
++  var smbMessage;
++  try {
++    smbMessage = msg.generate(connection, params);
++  } catch (e) {
++    // params (file handle) can be undefined/invalid — route error through callback
++    if (typeof cb === 'function') cb(e);
++    return;
++  }
+ 
+   // send
+   sendNetBiosMessage(connection, smbMessage);
+@@ -68,8 +75,17 @@ SMB2Forge.response = function(c) {
+           // check if the message can be dispatched
+           // or store it
+           if (c.responsesCB[mId]) {
+-            c.responsesCB[mId](message);
++            var responseCb = c.responsesCB[mId];
+             delete c.responsesCB[mId];
++            try {
++              responseCb(message);
++            } catch (e) {
++              // If a callback throws synchronously (e.g. TypeError on FileId),
++              // route it to the connection error handler so the Promise rejects cleanly
++              if (c.errorHandler && c.errorHandler.length > 0) {
++                c.errorHandler[0].call(null, e);
++              }
++            }
+           } else {
+             c.responses[mId] = message;
+           }

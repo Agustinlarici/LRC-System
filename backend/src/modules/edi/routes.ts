@@ -3,13 +3,16 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { readdir, access } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { join } from 'node:path';
+import { join, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import * as XLSX from 'xlsx';
 import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
 import { requireModule, requireManage } from '../../lib/auth.js';
 import { getShipments, getShipmentLines, getShipmentPrices } from './dynamics-client.js';
-import { writeEdiFile, isUncPath } from '../../lib/smb-writer.js';
+import { writeEdiFile, isUncPath, parseUnc, listUncFolder } from '../../lib/smb-writer.js';
+import { scanFerrariFolder, CAMPI_OUTPUT } from './ferrari-ingresso-parser.js';
+import { startSyncInBackground, getSyncState } from './ferrari-delins-sync.js';
 
 export const ediRoutes = new Hono();
 const MODULE = 'edi' as const;
@@ -417,4 +420,222 @@ ediRoutes.get('/history/:id/content', requireModule(MODULE), async (c) => {
   `;
   if (!row) throw new HTTPException(404, { message: 'Voce non trovata' });
   return c.json({ content: row.file_content, filename: row.filename });
+});
+
+// ─── GET /ingresso/ordini — contratti senza commessa con ordini chiusi ────────
+
+ediRoutes.get('/ingresso/ordini', requireModule(MODULE), async (c) => {
+  const rows = await db`
+    SELECT
+      num_contratto,
+      COUNT(DISTINCT num_programma)::int AS programmi,
+      COUNT(*)::int                      AS righe,
+      MAX(file_mtime)                    AS file_mtime,
+      MIN(scanned_at)                    AS scanned_at
+    FROM edi_ferrari_delins
+    WHERE tipo_documento NOT IN ('Forecast', '')
+      AND num_contratto != ''
+    GROUP BY num_contratto
+    ORDER BY MAX(file_mtime) DESC NULLS LAST, num_contratto
+  `;
+  return c.json(rows);
+});
+
+// ─── GET /ingresso/ordini/:num_contratto/download — CSV di tutte le righe ────
+
+ediRoutes.get('/ingresso/ordini/:num_contratto/download', requireModule(MODULE), async (c) => {
+  const numContratto = c.req.param('num_contratto') ?? '';
+  if (!numContratto) throw new HTTPException(400, { message: 'num_contratto mancante' });
+
+  const rows = await db`
+    SELECT ${db(CAMPI_OUTPUT as unknown as string[])}, scanned_at
+    FROM edi_ferrari_delins
+    WHERE num_contratto = ${numContratto}
+    ORDER BY data_consegna, codice_articolo
+  `;
+  if (rows.length === 0) throw new HTTPException(404, { message: 'Contratto non trovato o nessuna riga' });
+
+  const cols = [...CAMPI_OUTPUT, 'scanned_at'];
+  const escape = (v: string) => {
+    if (v.includes(';') || v.includes('"') || v.includes('\n')) return `"${v.replace(/"/g, '""')}"`;
+    return v;
+  };
+  const header = cols.join(';');
+  const lines  = rows.map(r => cols.map(c => escape(String((r as Record<string, unknown>)[c] ?? ''))).join(';'));
+  const csv    = '﻿' + [header, ...lines].join('\r\n');
+
+  const safeName = numContratto.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const today    = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
+  const filename = `Ferrari_Ordine_${safeName}_${today}.csv`;
+
+  return c.json({ csv, filename });
+});
+
+// ─── POST /ingresso/sync — avvia scansione in background (ritorna subito) ─────
+
+ediRoutes.post('/ingresso/sync', requireModule(MODULE), (c) => {
+  return c.json(startSyncInBackground(), 202);
+});
+
+// ─── GET /ingresso/sync/status — stato corrente della sync ───────────────────
+
+ediRoutes.get('/ingresso/sync/status', requireModule(MODULE), (c) => {
+  return c.json(getSyncState());
+});
+
+// ─── GET /ingresso/ordini/:num_contratto/download-portale — formato portale ──
+
+const PORTALE_HEADERS = [
+  'Codice ordine di acquisto', 'Data', 'Codice fornitore', 'Accettazione',
+  'Ragione sociale 1:', 'Ragione sociale 2:', 'Indirizzo 1:', 'Indirizzo 2:',
+  'Città', 'CAP', 'Provincia', 'Codice resa', 'Descrizione resa',
+  'Codice spedizione', 'Descrizione spedizione', 'Descrizione pagamento',
+  'Valuta', 'Acquisitore', 'Tel.', 'Fax', 'Autorizzatore',
+  'Pos', 'Codice materiale', 'Descrizione', 'U.M.', 'Quantità',
+  'Prezzo Netto Unitario', 'U.M.P.', 'Sconto %', 'Importo Sconto Unitario',
+  'Data di consegna', 'Dest.', 'Set.', 'C.F.', 'Commessa', 'Lotto',
+  'Testo articolo', 'Testo riga', 'Nota 2', 'Nota 1', 'Stato Riga',
+];
+
+const PORTALE_NOTA1 =
+  "Ai fini dell'esecuzione del presente ordine troveranno applicazione" +
+  "eventuali accordi specifici intercorsi tra le parti (es. MOU, LOI," +
+  "Development Agreement, Supply Agreement, Letter of Assignemnt ecc.)";
+
+ediRoutes.get('/ingresso/ordini/:num_contratto/download-portale', requireModule(MODULE), async (c) => {
+  const numContratto = c.req.param('num_contratto') ?? '';
+  if (!numContratto) throw new HTTPException(400, { message: 'num_contratto mancante' });
+
+  const rows = await db`
+    SELECT codice_articolo, descrizione, um, quantita,
+           data_consegna, commessa, ft3_testo, pos_contratto
+    FROM edi_ferrari_delins
+    WHERE num_contratto = ${numContratto}
+    ORDER BY data_consegna, codice_articolo
+  `;
+  if (rows.length === 0) throw new HTTPException(404, { message: 'Contratto non trovato' });
+
+  const today = new Intl.DateTimeFormat('it-IT', {
+    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Rome',
+  }).format(new Date());
+
+  const dataRows = (rows as Record<string, unknown>[]).map((r, i) => [
+    numContratto,
+    today,
+    '25391',
+    '',
+    'STR AUTOMOTIVE S.P.A.',
+    '',
+    'STRADA FABBRECCIA, 33',
+    '',
+    'PESARO',
+    '61122',
+    'PU',
+    'EXW',
+    'Ex-Works',
+    '',
+    '',
+    '60 GG D.F.F.M.',
+    'EUR',
+    'LEONARDO BIN',
+    '',
+    '',
+    '',
+    String(r.pos_contratto || i + 1),
+    String(r.codice_articolo ?? ''),
+    String(r.descrizione ?? ''),
+    String(r.um ?? ''),
+    String(r.quantita ?? ''),
+    '',
+    String(r.um ?? ''),
+    '.00',
+    '',
+    String(r.data_consegna ?? ''),
+    '5',
+    '39',
+    '',
+    String(r.commessa ?? ''),
+    '',
+    String(r.ft3_testo ?? ''),
+    '',
+    '',
+    PORTALE_NOTA1,
+    'N',
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet([PORTALE_HEADERS, ...dataRows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Ordine');
+
+  const buf      = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  const b64      = buf.toString('base64');
+  const safeName = numContratto.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const dateStr  = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
+  const filename = `Portale_${safeName}_${dateStr}.xlsx`;
+
+  return c.json({ xlsx: b64, filename });
+});
+
+// ─── GET /ingresso/debug — valori distinti per diagnosi filtri ───────────────
+
+ediRoutes.get('/ingresso/debug', requireModule(MODULE), async (c) => {
+  const [tipiDoc, commesse, totale] = await Promise.all([
+    db`SELECT tipo_documento, COUNT(*)::int AS righe FROM edi_ferrari_delins GROUP BY tipo_documento ORDER BY righe DESC`,
+    db`SELECT commessa, COUNT(*)::int AS righe FROM edi_ferrari_delins GROUP BY commessa ORDER BY righe DESC LIMIT 20`,
+    db`SELECT COUNT(*)::int AS tot FROM edi_ferrari_delins`,
+  ]);
+  return c.json({ totale: totale[0]?.tot ?? 0, tipo_documento: tipiDoc, commessa: commesse });
+});
+
+// ─── GET /ingresso/test-smb — diagnostica connessione SMB ────────────────────
+
+ediRoutes.get('/ingresso/test-smb', requireModule(MODULE), async (c) => {
+  const folder = (c.req.query('folder') ?? '').trim();
+  if (!folder || !isUncPath(folder)) {
+    return c.json({ ok: false, error: 'Passare ?folder=\\\\server\\share\\path' });
+  }
+  const { share, subPath } = parseUnc(folder);
+  const result: Record<string, unknown> = {
+    share,
+    subPath,
+    smb_user: process.env.SMB_USER || '(non configurato)',
+    smb_domain: process.env.SMB_DOMAIN || '(non configurato)',
+  };
+  try {
+    const files = await listUncFolder(folder);
+    result.ok = true;
+    result.files_count = files.length;
+    result.sample = files.slice(0, 5);
+  } catch (err) {
+    const e = err as Error & { code?: string };
+    result.ok = false;
+    result.error_code = e.code ?? 'n/a';
+    result.error_message = e.message;
+  }
+  return c.json(result);
+});
+
+// ─── POST /ingresso/scan ──────────────────────────────────────────────────────
+
+ediRoutes.post('/ingresso/scan', requireModule(MODULE), async (c) => {
+  const body = await c.req.json() as { folder?: string };
+  const folder = (body?.folder ?? '').trim();
+
+  if (!folder) {
+    throw new HTTPException(400, { message: 'Cartella non specificata' });
+  }
+  if (!isAbsolute(folder) && !isUncPath(folder)) {
+    throw new HTTPException(400, { message: 'Il percorso deve essere assoluto o UNC (es. \\\\192.168.1.x\\share\\cartella)' });
+  }
+
+  try {
+    const result = await scanFerrariFolder(folder);
+    return c.json(result);
+  } catch (err) {
+    const e = err as (NodeJS.ErrnoException & { code?: string; messageName?: string });
+    const code = e.code ?? '';
+    const step = (e as any).messageName ?? 'n/a';
+    const msg = `SMB errore in step="${step}" code="${code || 'n/a'}": ${e.message}`;
+    throw new HTTPException(400, { message: msg });
+  }
 });
