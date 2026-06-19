@@ -101,11 +101,19 @@ async function detectStopsForLine(lineaId: number): Promise<void> {
     .filter(t => t >= turnoStart && t <= now)
     .sort((a, b) => a.getTime() - b.getTime());
 
-  // Collect pause intervals as ms ranges for net-time calculation
-  const pauseRanges = pause.map(p => ({
-    start: romeDt(dateStr, p.ora_inizio as string, now).getTime(),
-    end:   romeDt(dateStr, p.ora_fine   as string, now).getTime(),
-  }));
+  // Collect pause intervals + inter-shift breaks as ms ranges for net-time calculation
+  const pauseRanges: Array<{ start: number; end: number }> = [
+    ...pause.map(p => ({
+      start: romeDt(dateStr, p.ora_inizio as string, now).getTime(),
+      end:   romeDt(dateStr, p.ora_fine   as string, now).getTime(),
+    })),
+    // Add gaps between consecutive shifts (e.g. T1 14:00–14:15 break before T2)
+    ...turniOggi.slice(0, -1).flatMap((_, i) => {
+      const t1End   = romeDt(dateStr, turniOggi[i].ora_fine     as string, now).getTime();
+      const t2Start = romeDt(dateStr, turniOggi[i + 1].ora_inizio as string, now).getTime();
+      return t2Start > t1End ? [{ start: t1End, end: t2Start }] : [];
+    }),
+  ];
 
   function netElapsed(fromMs: number, toMs: number): number {
     let pauseMs = 0;

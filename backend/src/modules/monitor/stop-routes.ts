@@ -81,6 +81,14 @@ stopRoutes.post('/parate/:lineaId/apri', async (c) => {
   const [linea] = await db`SELECT id FROM monitor_linea WHERE id = ${lineaId} AND attivo = true`;
   if (!linea) throw new HTTPException(404, { message: 'Linea non trovata' });
 
+  // Idempotente: se esiste già uno stop manuale aperto, restituisce quello esistente
+  const [existing] = await db`
+    SELECT id FROM monitor_stop_events
+    WHERE linea_id = ${lineaId} AND ended_at IS NULL AND source = 'manuale'
+    ORDER BY started_at DESC LIMIT 1
+  `;
+  if (existing) return c.json({ id: existing.id as number }, 200);
+
   const [row] = await db`
     INSERT INTO monitor_stop_events (linea_id, started_at, source)
     VALUES (${lineaId}, NOW(), 'manuale')

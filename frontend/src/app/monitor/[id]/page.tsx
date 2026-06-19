@@ -124,9 +124,6 @@ export default function MonitorDisplayPage() {
     };
   }, [id]);
 
-  // inAttesa: solo commesse vuote (non fermata_manuale — quella va sempre in overtime)
-  const inAttesa = (stato?.commesse?.length ?? 1) === 0 && stato?.turno_attivo === true;
-
   // Decrementa ogni secondo — si ferma solo durante le pause
   useEffect(() => {
     if (stato?.in_pausa) return;

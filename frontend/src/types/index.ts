@@ -376,6 +376,48 @@ export interface EdiHistoryEntry {
   is_regeneration:  boolean;
 }
 
+export interface EdiIngressoRow {
+  source_file:                string;
+  num_programma:              string;
+  data_documento:             string;
+  mittente:                   string;
+  fornitore:                  string;
+  app_reference:              string;
+  tipo_messaggio:             string;
+  data_validita:              string;
+  codice_stabilimento:        string;
+  codice_articolo:            string;
+  commessa:                   string;
+  descrizione:                string;
+  um:                         string;
+  num_contratto:              string;
+  pos_contratto:              string;
+  frequenza_codice:           string;
+  frequenza:                  string;
+  tipo_documento:             string;
+  ft3_testo:                  string;
+  data_calcolo:               string;
+  progressivo_programmato:    string;
+  progressivo_ricevuto:       string;
+  anticipo_ritardo:           string;
+  pdn_num_rimesso:            string;
+  pdn_data_rimesso:           string;
+  pdn_qty_dichiarata:         string;
+  pdn_qty_ricevuta:           string;
+  pdn_data_ricevimento:       string;
+  data_consegna:              string;
+  quantita:                   string;
+  tipo_schedulazione_codice:  string;
+  tipo_schedulazione:         string;
+}
+
+export interface EdiIngressoScanResult {
+  rows:            EdiIngressoRow[];
+  files_processed: number;
+  files_skipped:   number;
+  errors:          { file: string; error: string }[];
+}
+
 // ─── Monitor Stop Events ──────────────────────────────────────────────────────
 
 export interface StopCategory {
