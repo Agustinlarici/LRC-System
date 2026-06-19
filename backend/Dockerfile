@@ -19,7 +19,8 @@ ENV NODE_ENV=production
 RUN apk add --no-cache samba-client
 
 COPY package*.json ./
-RUN npm ci --omit=dev
+COPY patches ./patches
+RUN npm ci && npm prune --omit=dev
 
 COPY --from=builder /app/dist ./dist
 COPY edi_generators ./edi_generators
