@@ -86,12 +86,6 @@ export default function MonitorDisplayPage() {
         prevFermataRef.current = data.fermata_manuale;
         setLocalRemaining(prev => {
           if (data.remaining_sec === null) return null;
-          // InAttesa picking: clamp sempre a ≤0 prima di qualsiasi altra logica
-          if (data.commesse.length === 0 && data.turno_attivo) {
-            const serverClamped = Math.min(data.remaining_sec, 0);
-            if (prev === null || prev > 0) return serverClamped;
-            return serverClamped < prev - 8 ? serverClamped : prev;
-          }
           if (commesseArrivate && prev !== null && prev <= 0 && data.cycle_time_sec !== null) return data.cycle_time_sec;
           // Uscita da fermata → sincronizza sempre col server (evita timer che continuano)
           if (wasInFermata && !data.fermata_manuale) return data.remaining_sec;

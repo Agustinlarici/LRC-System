@@ -112,14 +112,6 @@ export default function ResumenDisplayPage() {
           let remaining: number | null;
           if (serverRemaining === null) {
             remaining = null;
-          } else if (stato.commesse.length === 0 && stato.turno_attivo) {
-            // InAttesa picking: clamp sempre a ≤0 prima di qualsiasi altra logica
-            const serverClamped = Math.min(serverRemaining, 0);
-            if (!existing || existing.remaining === null || existing.remaining > 0) {
-              remaining = serverClamped;
-            } else {
-              remaining = serverClamped < existing.remaining - 8 ? serverClamped : existing.remaining;
-            }
           } else if (!existing || existing.remaining === null) {
             remaining = serverRemaining;
           } else if (commesseArrivate && existing.remaining <= 0 && stato.cycle_time_sec !== null) {

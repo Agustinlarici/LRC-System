@@ -51,9 +51,6 @@ function timeToMin(t: string) {
 
 async function detectStopsForLine(lineaId: number): Promise<void> {
   const { now, dateStr } = getRomeNow();
-  const cache = getExecutiveCache();
-  if (!cache) return;
-
   // Load linea config
   const [linea] = await db`SELECT id, fase FROM monitor_linea WHERE id = ${lineaId} AND attivo = true`;
   if (!linea) return;
@@ -61,6 +58,8 @@ async function detectStopsForLine(lineaId: number): Promise<void> {
   const combos = await db`SELECT modello, componente FROM monitor_linea_combo WHERE linea_id = ${lineaId}`;
   if (combos.length === 0) return;
   const combosSet = new Set(combos.map(c => `${c.modello as string}|${c.componente as string}`));
+
+  const cache = getExecutiveCache();
 
   const turniOggi = await db`
     SELECT ora_inizio, ora_fine FROM monitor_turno
@@ -95,11 +94,13 @@ async function detectStopsForLine(lineaId: number): Promise<void> {
   const turnoStart = romeDt(dateStr, turniOggi[0].ora_inizio as string, now);
   const turnoEnd   = romeDt(dateStr, turniOggi[turniOggi.length - 1].ora_fine as string, now);
 
-  const events = cache.rows
-    .filter(r => r.fase === (linea.fase as string) && combosSet.has(`${r.modello}|${r.componente}`))
-    .map(r => r.data_inserimento)
-    .filter(t => t >= turnoStart && t <= now)
-    .sort((a, b) => a.getTime() - b.getTime());
+  const events = cache
+    ? cache.rows
+        .filter(r => r.fase === (linea.fase as string) && combosSet.has(`${r.modello}|${r.componente}`))
+        .map(r => r.data_inserimento)
+        .filter(t => t >= turnoStart && t <= now)
+        .sort((a, b) => a.getTime() - b.getTime())
+    : [];
 
   // Collect pause intervals + inter-shift breaks as ms ranges for net-time calculation
   const pauseRanges: Array<{ start: number; end: number }> = [
