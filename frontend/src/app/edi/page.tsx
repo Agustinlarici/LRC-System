@@ -861,6 +861,20 @@ function fmtFileMtime(s: string | null): string {
   return new Date(s).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+type OrdTipo = 'PRP' | 'Ricambi' | 'MRP';
+
+function getOrdTipo(o: EdiOrdineFerrari): OrdTipo {
+  if (o.has_commessa) return 'PRP';
+  if (o.num_contratto.startsWith('63')) return 'Ricambi';
+  return 'MRP';
+}
+
+const TIPO_STYLE: Record<OrdTipo, { row: string; badge: string }> = {
+  PRP:     { row: 'bg-violet-50 hover:bg-violet-100',  badge: 'bg-violet-100 text-violet-700' },
+  Ricambi: { row: 'bg-amber-50  hover:bg-amber-100',   badge: 'bg-amber-100  text-amber-700'  },
+  MRP:     { row: 'bg-sky-50    hover:bg-sky-100',     badge: 'bg-sky-100    text-sky-700'    },
+};
+
 function TabOrdiniFerrari() {
   const [ordini,      setOrdini]      = useState<EdiOrdineFerrari[]>([]);
   const [loading,     setLoading]     = useState(true);
@@ -1014,11 +1028,19 @@ function TabOrdiniFerrari() {
       )}
 
       {!loading && ordini.length > 0 && (
+        <>
+        {/* Legend */}
+        <div className="flex flex-wrap gap-2 mb-3 text-xs">
+          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-violet-100 text-violet-700 font-medium">PRP — con commessa</span>
+          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-amber-100  text-amber-700  font-medium">Ricambi — N° contratto 63…</span>
+          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-sky-100    text-sky-700    font-medium">MRP — senza commessa</span>
+        </div>
         <div className="overflow-x-auto rounded-xl border border-gray-200">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
               <tr>
                 <th className="text-left px-4 py-3">N° Contratto</th>
+                <th className="text-left px-4 py-3">Tipo</th>
                 <th className="text-right px-4 py-3">Prog.</th>
                 <th className="text-right px-4 py-3">Righe</th>
                 <th className="text-left px-4 py-3">Data file</th>
@@ -1028,8 +1050,10 @@ function TabOrdiniFerrari() {
             <tbody className="divide-y divide-gray-100">
               {ordini.map(o => {
                 const isDownloaded = downloaded.has(o.num_contratto);
+                const tipo = getOrdTipo(o);
+                const tipoStyle = TIPO_STYLE[tipo];
                 return (
-                <tr key={o.num_contratto} className={`transition-colors ${isDownloaded ? 'bg-green-50 hover:bg-green-100' : 'hover:bg-gray-50'}`}>
+                <tr key={o.num_contratto} className={`transition-colors ${isDownloaded ? 'bg-green-50 hover:bg-green-100' : tipoStyle.row}`}>
                   <td className="px-4 py-3 font-mono font-medium text-gray-800">
                     <div className="flex items-center gap-2">
                       {o.num_contratto}
@@ -1039,6 +1063,9 @@ function TabOrdiniFerrari() {
                         </span>
                       )}
                     </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded font-medium ${tipoStyle.badge}`}>{tipo}</span>
                   </td>
                   <td className="px-4 py-3 text-right font-mono text-gray-500">{o.programmi}</td>
                   <td className="px-4 py-3 text-right font-mono text-gray-600">{o.righe}</td>
@@ -1071,6 +1098,7 @@ function TabOrdiniFerrari() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );

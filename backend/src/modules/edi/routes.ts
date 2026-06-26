@@ -422,16 +422,17 @@ ediRoutes.get('/history/:id/content', requireModule(MODULE), async (c) => {
   return c.json({ content: row.file_content, filename: row.filename });
 });
 
-// ─── GET /ingresso/ordini — contratti senza commessa con ordini chiusi ────────
+// ─── GET /ingresso/ordini — tutti i contratti con ordini chiusi ──────────────
 
 ediRoutes.get('/ingresso/ordini', requireModule(MODULE), async (c) => {
   const rows = await db`
     SELECT
       num_contratto,
-      COUNT(DISTINCT num_programma)::int AS programmi,
-      COUNT(*)::int                      AS righe,
-      MAX(file_mtime)                    AS file_mtime,
-      MIN(scanned_at)                    AS scanned_at
+      COUNT(DISTINCT num_programma)::int              AS programmi,
+      COUNT(*)::int                                   AS righe,
+      MAX(file_mtime)                                 AS file_mtime,
+      MIN(scanned_at)                                 AS scanned_at,
+      MAX(NULLIF(TRIM(commessa), '')) IS NOT NULL      AS has_commessa
     FROM edi_ferrari_delins
     WHERE tipo_documento NOT IN ('Forecast', '')
       AND num_contratto != ''
