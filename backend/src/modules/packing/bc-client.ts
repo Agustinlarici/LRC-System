@@ -60,20 +60,26 @@ export async function syncPackArticles(): Promise<SyncResult> {
   const existing = await db`SELECT code FROM pack_article`;
   const existingCodes = new Set(existing.map(r => r.code as string));
 
-  const toInsert = articles.filter(a => !existingCodes.has(a.code));
+  let inserted = 0;
+  let updated  = 0;
 
-  for (const a of toInsert) {
+  for (const a of articles) {
+    const isNew = !existingCodes.has(a.code);
     await db`
       INSERT INTO pack_article (code, description, family)
       VALUES (${a.code}, ${a.description ?? null}, ${a.family ?? null})
-      ON CONFLICT (code) DO NOTHING
+      ON CONFLICT (code) DO UPDATE SET
+        description = EXCLUDED.description,
+        family      = EXCLUDED.family
     `;
+    if (isNew) inserted++; else updated++;
   }
 
   return {
     ok:             true,
     bc_total:       articles.length,
     existing_in_pg: existingCodes.size,
-    inserted:       toInsert.length,
+    inserted,
+    updated,
   };
 }
