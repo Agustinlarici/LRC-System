@@ -52,6 +52,7 @@ export interface SyncResult {
   bc_total:      number;
   existing_in_pg: number;
   inserted:      number;
+  updated:       number;
 }
 
 export async function syncPackArticles(): Promise<SyncResult> {
