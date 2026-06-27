@@ -861,18 +861,20 @@ function fmtFileMtime(s: string | null): string {
   return new Date(s).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' });
 }
 
-type OrdTipo = 'PRP' | 'Ricambi' | 'MRP';
+type OrdTipo = 'PRP' | 'Ricambi' | 'MRP' | 'Forecast';
 
 function getOrdTipo(o: EdiOrdineFerrari): OrdTipo {
+  if (o.is_forecast)  return 'Forecast';
   if (o.has_commessa) return 'PRP';
   if (o.num_contratto.startsWith('63')) return 'Ricambi';
   return 'MRP';
 }
 
 const TIPO_STYLE: Record<OrdTipo, { row: string; badge: string }> = {
-  PRP:     { row: 'bg-violet-50 hover:bg-violet-100',  badge: 'bg-violet-100 text-violet-700' },
-  Ricambi: { row: 'bg-amber-50  hover:bg-amber-100',   badge: 'bg-amber-100  text-amber-700'  },
-  MRP:     { row: 'bg-sky-50    hover:bg-sky-100',     badge: 'bg-sky-100    text-sky-700'    },
+  PRP:      { row: 'bg-violet-50 hover:bg-violet-100', badge: 'bg-violet-100 text-violet-700' },
+  Ricambi:  { row: 'bg-amber-50  hover:bg-amber-100',  badge: 'bg-amber-100  text-amber-700'  },
+  MRP:      { row: 'bg-sky-50    hover:bg-sky-100',    badge: 'bg-sky-100    text-sky-700'    },
+  Forecast: { row: 'bg-gray-50   hover:bg-gray-100',   badge: 'bg-gray-200   text-gray-500'   },
 };
 
 function TabOrdiniFerrari() {
@@ -1034,6 +1036,7 @@ function TabOrdiniFerrari() {
           <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-violet-100 text-violet-700 font-medium">PRP — con commessa</span>
           <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-amber-100  text-amber-700  font-medium">Ricambi — N° contratto 63…</span>
           <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-sky-100    text-sky-700    font-medium">MRP — senza commessa</span>
+          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-gray-200   text-gray-500   font-medium">Forecast</span>
         </div>
         <div className="overflow-x-auto rounded-xl border border-gray-200">
           <table className="w-full text-sm">

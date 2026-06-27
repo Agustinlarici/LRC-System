@@ -439,9 +439,9 @@ ediRoutes.get('/ingresso/ordini', requireModule(MODULE), async (c) => {
             ORDER BY data_consegna, codice_articolo, num_programma
           )::float / 50
         )::int AS chunk
+        tipo_documento,
+        tipo_schedulazione
       FROM edi_ferrari_delins
-      WHERE tipo_documento != 'Forecast'
-        AND tipo_schedulazione != 'Forecast'
     ),
     chunk_counts AS (
       SELECT contratto_key, MAX(chunk) AS total_chunks
@@ -457,7 +457,8 @@ ediRoutes.get('/ingresso/ordini', requireModule(MODULE), async (c) => {
       COUNT(*)::int                             AS righe,
       MAX(b.file_mtime)                         AS file_mtime,
       MIN(b.scanned_at)                         AS scanned_at,
-      MAX(NULLIF(TRIM(b.commessa), '')) IS NOT NULL AS has_commessa
+      MAX(NULLIF(TRIM(b.commessa), '')) IS NOT NULL AS has_commessa,
+      BOOL_OR(b.tipo_documento = 'Forecast' OR b.tipo_schedulazione = 'Forecast') AS is_forecast
     FROM base b
     JOIN chunk_counts cc ON cc.contratto_key = b.contratto_key
     GROUP BY b.contratto_key, b.chunk, cc.total_chunks

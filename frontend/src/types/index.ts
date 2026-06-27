@@ -425,6 +425,7 @@ export interface EdiOrdineFerrari {
   file_mtime:    string | null;
   scanned_at:    string;
   has_commessa:  boolean;
+  is_forecast:   boolean;
 }
 
 
