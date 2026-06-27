@@ -35,7 +35,7 @@ export async function syncFerrariDelins(): Promise<FerrariSyncStats> {
 
   await db.begin(async (txRaw) => {
     const tx = txRaw as unknown as typeof db;
-    await tx`DELETE FROM edi_ferrari_delins`;
+    await tx`TRUNCATE edi_ferrari_delins`;
     if (result.rows.length > 0) {
       const values = result.rows.map((r: ScanRow) => ({ ...r, scanned_at: now }));
       for (let i = 0; i < values.length; i += BATCH) {
@@ -43,6 +43,9 @@ export async function syncFerrariDelins(): Promise<FerrariSyncStats> {
       }
     }
   });
+
+  // Aggiorna le statistiche del planner dopo il caricamento massiccio
+  await db`ANALYZE edi_ferrari_delins`;
 
   return {
     rows:            result.rows.length,
