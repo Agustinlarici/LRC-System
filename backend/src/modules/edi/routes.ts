@@ -426,18 +426,42 @@ ediRoutes.get('/history/:id/content', requireModule(MODULE), async (c) => {
 
 ediRoutes.get('/ingresso/ordini', requireModule(MODULE), async (c) => {
   const rows = await db`
+    WITH base AS (
+      SELECT
+        COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma) AS contratto_key,
+        num_programma,
+        commessa,
+        file_mtime,
+        scanned_at,
+        CEIL(
+          ROW_NUMBER() OVER (
+            PARTITION BY COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
+            ORDER BY data_consegna, codice_articolo, num_programma
+          )::float / 50
+        )::int AS chunk
+      FROM edi_ferrari_delins
+      WHERE tipo_documento != 'Forecast'
+        AND tipo_schedulazione != 'Forecast'
+    ),
+    chunk_counts AS (
+      SELECT contratto_key, MAX(chunk) AS total_chunks
+      FROM base
+      GROUP BY contratto_key
+    )
     SELECT
-      COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma) AS num_contratto,
-      COUNT(DISTINCT num_programma)::int                        AS programmi,
-      COUNT(*)::int                                             AS righe,
-      MAX(file_mtime)                                           AS file_mtime,
-      MIN(scanned_at)                                           AS scanned_at,
-      MAX(NULLIF(TRIM(commessa), '')) IS NOT NULL               AS has_commessa
-    FROM edi_ferrari_delins
-    WHERE tipo_documento != 'Forecast'
-      AND tipo_schedulazione != 'Forecast'
-    GROUP BY COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
-    ORDER BY MAX(file_mtime) DESC NULLS LAST, num_contratto
+      CASE WHEN cc.total_chunks > 1
+        THEN b.contratto_key || '-' || b.chunk::text
+        ELSE b.contratto_key
+      END                                       AS num_contratto,
+      COUNT(DISTINCT b.num_programma)::int      AS programmi,
+      COUNT(*)::int                             AS righe,
+      MAX(b.file_mtime)                         AS file_mtime,
+      MIN(b.scanned_at)                         AS scanned_at,
+      MAX(NULLIF(TRIM(b.commessa), '')) IS NOT NULL AS has_commessa
+    FROM base b
+    JOIN chunk_counts cc ON cc.contratto_key = b.contratto_key
+    GROUP BY b.contratto_key, b.chunk, cc.total_chunks
+    ORDER BY MAX(b.file_mtime) DESC NULLS LAST, num_contratto
   `;
   return c.json(rows);
 });
