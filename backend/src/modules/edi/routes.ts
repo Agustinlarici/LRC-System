@@ -427,17 +427,16 @@ ediRoutes.get('/history/:id/content', requireModule(MODULE), async (c) => {
 ediRoutes.get('/ingresso/ordini', requireModule(MODULE), async (c) => {
   const rows = await db`
     SELECT
-      num_contratto,
-      COUNT(DISTINCT num_programma)::int              AS programmi,
-      COUNT(*)::int                                   AS righe,
-      MAX(file_mtime)                                 AS file_mtime,
-      MIN(scanned_at)                                 AS scanned_at,
-      MAX(NULLIF(TRIM(commessa), '')) IS NOT NULL      AS has_commessa
+      COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma) AS num_contratto,
+      COUNT(DISTINCT num_programma)::int                        AS programmi,
+      COUNT(*)::int                                             AS righe,
+      MAX(file_mtime)                                           AS file_mtime,
+      MIN(scanned_at)                                           AS scanned_at,
+      MAX(NULLIF(TRIM(commessa), '')) IS NOT NULL               AS has_commessa
     FROM edi_ferrari_delins
     WHERE tipo_documento != 'Forecast'
       AND tipo_schedulazione != 'Forecast'
-      AND num_contratto != ''
-    GROUP BY num_contratto
+    GROUP BY COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
     ORDER BY MAX(file_mtime) DESC NULLS LAST, num_contratto
   `;
   return c.json(rows);
