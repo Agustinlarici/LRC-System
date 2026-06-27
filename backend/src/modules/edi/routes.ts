@@ -531,13 +531,42 @@ ediRoutes.get('/ingresso/ordini/:num_contratto/download-portale', requireModule(
   const numContratto = c.req.param('num_contratto') ?? '';
   if (!numContratto) throw new HTTPException(400, { message: 'num_contratto mancante' });
 
-  const rows = await db`
-    SELECT codice_articolo, descrizione, um, quantita,
-           data_consegna, commessa, ft3_testo, pos_contratto
-    FROM edi_ferrari_delins
-    WHERE num_contratto = ${numContratto}
-    ORDER BY data_consegna, codice_articolo
-  `;
+  // Detect chunk suffix e.g. "1217xxxx-2" → baseKey="1217xxxx", chunk=2
+  const chunkMatch = numContratto.match(/^(.+)-(\d+)$/);
+  const baseKey    = chunkMatch ? chunkMatch[1] : numContratto;
+  const chunkNum   = chunkMatch ? parseInt(chunkMatch[2], 10) : null;
+
+  const rows = chunkNum !== null
+    ? await db`
+        WITH base AS (
+          SELECT codice_articolo, descrizione, um, quantita,
+                 data_consegna, commessa, ft3_testo, pos_contratto,
+                 CEIL(
+                   ROW_NUMBER() OVER (
+                     ORDER BY data_consegna, codice_articolo, num_programma
+                   )::float / 50
+                 )::int AS chunk
+          FROM edi_ferrari_delins
+          WHERE COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma) = ${baseKey}
+            AND tipo_documento != 'Forecast'
+            AND tipo_schedulazione != 'Forecast'
+        )
+        SELECT codice_articolo, descrizione, um, quantita,
+               data_consegna, commessa, ft3_testo, pos_contratto
+        FROM base
+        WHERE chunk = ${chunkNum}
+        ORDER BY data_consegna, codice_articolo
+      `
+    : await db`
+        SELECT codice_articolo, descrizione, um, quantita,
+               data_consegna, commessa, ft3_testo, pos_contratto
+        FROM edi_ferrari_delins
+        WHERE COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma) = ${baseKey}
+          AND tipo_documento != 'Forecast'
+          AND tipo_schedulazione != 'Forecast'
+        ORDER BY data_consegna, codice_articolo
+      `;
+
   if (rows.length === 0) throw new HTTPException(404, { message: 'Contratto non trovato' });
 
   const today = new Intl.DateTimeFormat('it-IT', {
