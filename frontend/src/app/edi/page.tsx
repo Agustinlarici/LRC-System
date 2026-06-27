@@ -877,6 +877,8 @@ const TIPO_STYLE: Record<OrdTipo, { row: string; badge: string }> = {
   Forecast: { row: 'bg-gray-50   hover:bg-gray-100',   badge: 'bg-gray-200   text-gray-500'   },
 };
 
+const PAGE_SIZE = 20;
+
 function TabOrdiniFerrari() {
   const [ordini,      setOrdini]      = useState<EdiOrdineFerrari[]>([]);
   const [loading,     setLoading]     = useState(true);
@@ -886,6 +888,7 @@ function TabOrdiniFerrari() {
   const [downloading,        setDownloading]        = useState<string | null>(null);
   const [downloadingPortale, setDownloadingPortale] = useState<string | null>(null);
   const [downloaded,  setDownloaded]  = useState<Set<string>>(new Set());
+  const [visibili,    setVisibili]    = useState(PAGE_SIZE);
   const pollRef                       = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => { setDownloaded(getDownloadedSet()); }, []);
@@ -893,6 +896,7 @@ function TabOrdiniFerrari() {
   const reload = useCallback(() => {
     setLoading(true);
     setError('');
+    setVisibili(PAGE_SIZE);
     api.get<EdiOrdineFerrari[]>('/api/edi/ingresso/ordini')
       .then(setOrdini)
       .catch(e => setError((e as Error).message))
@@ -1051,7 +1055,7 @@ function TabOrdiniFerrari() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {ordini.map(o => {
+              {ordini.slice(0, visibili).map(o => {
                 const isDownloaded = downloaded.has(o.num_contratto);
                 const tipo = getOrdTipo(o);
                 const tipoStyle = TIPO_STYLE[tipo];
@@ -1101,6 +1105,16 @@ function TabOrdiniFerrari() {
             </tbody>
           </table>
         </div>
+        {visibili < ordini.length && (
+          <div className="mt-3 text-center">
+            <button
+              onClick={() => setVisibili(v => v + PAGE_SIZE)}
+              className="px-5 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Carica altri ({Math.min(PAGE_SIZE, ordini.length - visibili)} di {ordini.length - visibili} rimanenti)
+            </button>
+          </div>
+        )}
         </>
       )}
     </div>

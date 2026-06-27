@@ -438,7 +438,7 @@ ediRoutes.get('/ingresso/ordini', requireModule(MODULE), async (c) => {
             PARTITION BY COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
             ORDER BY data_consegna, codice_articolo, num_programma
           )::float / 50
-        )::int AS chunk
+        )::int AS chunk,
         tipo_documento,
         tipo_schedulazione
       FROM edi_ferrari_delins
