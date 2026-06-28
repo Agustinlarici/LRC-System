@@ -435,6 +435,8 @@ ediRoutes.get('/ingresso/ordini', requireModule(MODULE), async (c) => {
         scanned_at,
         CASE
           WHEN tipo_documento = 'Forecast' OR tipo_schedulazione = 'Forecast' THEN 1
+          WHEN NULLIF(TRIM(commessa), '') IS NULL
+            AND NOT (COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma) LIKE '63%') THEN 1
           ELSE CEIL(
             ROW_NUMBER() OVER (
               PARTITION BY COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
