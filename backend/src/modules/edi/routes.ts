@@ -433,12 +433,15 @@ ediRoutes.get('/ingresso/ordini', requireModule(MODULE), async (c) => {
         commessa,
         file_mtime,
         scanned_at,
-        CEIL(
-          ROW_NUMBER() OVER (
-            PARTITION BY COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
-            ORDER BY data_consegna, codice_articolo, num_programma
-          )::float / 50
-        )::int AS chunk,
+        CASE
+          WHEN tipo_documento = 'Forecast' OR tipo_schedulazione = 'Forecast' THEN 1
+          ELSE CEIL(
+            ROW_NUMBER() OVER (
+              PARTITION BY COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
+              ORDER BY data_consegna, codice_articolo, num_programma
+            )::float / 50
+          )::int
+        END AS chunk,
         tipo_documento,
         tipo_schedulazione
       FROM edi_ferrari_delins
