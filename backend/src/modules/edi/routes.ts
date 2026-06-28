@@ -426,9 +426,20 @@ ediRoutes.get('/history/:id/content', requireModule(MODULE), async (c) => {
 
 ediRoutes.get('/ingresso/ordini', requireModule(MODULE), async (c) => {
   const rows = await db`
-    WITH base AS (
+    WITH keyed AS (
+      SELECT *,
+        CASE
+          WHEN NULLIF(TRIM(commessa), '') IS NOT NULL
+            THEN COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
+          WHEN NULLIF(TRIM(num_contratto), '') LIKE '63%'
+            THEN NULLIF(TRIM(num_contratto), '')
+          ELSE num_programma
+        END AS contratto_key
+      FROM edi_ferrari_delins
+    ),
+    base AS (
       SELECT
-        COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma) AS contratto_key,
+        contratto_key,
         num_programma,
         commessa,
         file_mtime,
@@ -436,17 +447,17 @@ ediRoutes.get('/ingresso/ordini', requireModule(MODULE), async (c) => {
         CASE
           WHEN tipo_documento = 'Forecast' OR tipo_schedulazione = 'Forecast' THEN 1
           WHEN NULLIF(TRIM(commessa), '') IS NULL
-            AND NOT (COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma) LIKE '63%') THEN 1
+            AND NULLIF(TRIM(num_contratto), '') NOT LIKE '63%' THEN 1
           ELSE CEIL(
             ROW_NUMBER() OVER (
-              PARTITION BY COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
+              PARTITION BY contratto_key
               ORDER BY data_consegna, codice_articolo, num_programma
             )::float / 50
           )::int
         END AS chunk,
         tipo_documento,
         tipo_schedulazione
-      FROM edi_ferrari_delins
+      FROM keyed
     ),
     chunk_counts AS (
       SELECT contratto_key, MAX(chunk) AS total_chunks
@@ -457,11 +468,11 @@ ediRoutes.get('/ingresso/ordini', requireModule(MODULE), async (c) => {
       CASE WHEN cc.total_chunks > 1
         THEN b.contratto_key || '-' || b.chunk::text
         ELSE b.contratto_key
-      END                                       AS num_contratto,
-      COUNT(DISTINCT b.num_programma)::int      AS programmi,
-      COUNT(*)::int                             AS righe,
-      MAX(b.file_mtime)                         AS file_mtime,
-      MIN(b.scanned_at)                         AS scanned_at,
+      END                                           AS num_contratto,
+      COUNT(DISTINCT b.num_programma)::int          AS programmi,
+      COUNT(*)::int                                 AS righe,
+      MAX(b.file_mtime)                             AS file_mtime,
+      MIN(b.scanned_at)                             AS scanned_at,
       MAX(NULLIF(TRIM(b.commessa), '')) IS NOT NULL AS has_commessa,
       BOOL_OR(b.tipo_documento = 'Forecast' OR b.tipo_schedulazione = 'Forecast') AS is_forecast
     FROM base b
@@ -542,6 +553,16 @@ ediRoutes.get('/ingresso/ordini/:num_contratto/download-portale', requireModule(
   const baseKey    = chunkMatch ? chunkMatch[1] : numContratto;
   const chunkNum   = chunkMatch ? parseInt(chunkMatch[2], 10) : null;
 
+  const keyExpr = db`
+    CASE
+      WHEN NULLIF(TRIM(commessa), '') IS NOT NULL
+        THEN COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
+      WHEN NULLIF(TRIM(num_contratto), '') LIKE '63%'
+        THEN NULLIF(TRIM(num_contratto), '')
+      ELSE num_programma
+    END
+  `;
+
   const rows = chunkNum !== null
     ? await db`
         WITH base AS (
@@ -553,9 +574,7 @@ ediRoutes.get('/ingresso/ordini/:num_contratto/download-portale', requireModule(
                    )::float / 50
                  )::int AS chunk
           FROM edi_ferrari_delins
-          WHERE COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma) = ${baseKey}
-            AND tipo_documento != 'Forecast'
-            AND tipo_schedulazione != 'Forecast'
+          WHERE ${keyExpr} = ${baseKey}
         )
         SELECT codice_articolo, descrizione, um, quantita,
                data_consegna, commessa, ft3_testo, pos_contratto
@@ -567,9 +586,7 @@ ediRoutes.get('/ingresso/ordini/:num_contratto/download-portale', requireModule(
         SELECT codice_articolo, descrizione, um, quantita,
                data_consegna, commessa, ft3_testo, pos_contratto
         FROM edi_ferrari_delins
-        WHERE COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma) = ${baseKey}
-          AND tipo_documento != 'Forecast'
-          AND tipo_schedulazione != 'Forecast'
+        WHERE ${keyExpr} = ${baseKey}
         ORDER BY data_consegna, codice_articolo
       `;
 
