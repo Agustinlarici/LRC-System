@@ -433,7 +433,7 @@ ediRoutes.get('/ingresso/ordini', requireModule(MODULE), async (c) => {
             THEN COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
           WHEN NULLIF(TRIM(num_contratto), '') LIKE '63%'
             THEN NULLIF(TRIM(num_contratto), '')
-          ELSE num_programma
+          ELSE source_file
         END AS contratto_key
       FROM edi_ferrari_delins
     ),
@@ -559,7 +559,7 @@ ediRoutes.get('/ingresso/ordini/:num_contratto/download-portale', requireModule(
         THEN COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
       WHEN NULLIF(TRIM(num_contratto), '') LIKE '63%'
         THEN NULLIF(TRIM(num_contratto), '')
-      ELSE num_programma
+      ELSE source_file
     END
   `;
 
