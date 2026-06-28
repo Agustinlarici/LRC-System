@@ -489,10 +489,20 @@ ediRoutes.get('/ingresso/ordini/:num_contratto/download', requireModule(MODULE),
   const numContratto = c.req.param('num_contratto') ?? '';
   if (!numContratto) throw new HTTPException(400, { message: 'num_contratto mancante' });
 
+  const keyExpr = db`
+    CASE
+      WHEN NULLIF(TRIM(commessa), '') IS NOT NULL
+        THEN COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
+      WHEN NULLIF(TRIM(num_contratto), '') LIKE '63%'
+        THEN NULLIF(TRIM(num_contratto), '')
+      ELSE source_file
+    END
+  `;
+
   const rows = await db`
     SELECT ${db(CAMPI_OUTPUT as unknown as string[])}, scanned_at
     FROM edi_ferrari_delins
-    WHERE num_contratto = ${numContratto}
+    WHERE ${keyExpr} = ${numContratto}
     ORDER BY data_consegna, codice_articolo
   `;
   if (rows.length === 0) throw new HTTPException(404, { message: 'Contratto non trovato o nessuna riga' });
