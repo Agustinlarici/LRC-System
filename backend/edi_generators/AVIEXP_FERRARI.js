@@ -57,6 +57,15 @@ function fmtHHMM(date) {
  * Quantità: 10 char — 8 interi + 2 decimali, senza separatore, con zeri iniziali.
  * Es: 12.5 → "0000001250"
  */
+function extractDocNo(raw) {
+  const str = String(raw || '').trim();
+  const dashIdx = str.lastIndexOf('-');
+  if (dashIdx < 0) return str;
+  const suffix = str.slice(dashIdx + 1);
+  const num = parseInt(suffix, 10);
+  return isNaN(num) ? suffix : String(num);
+}
+
 function fmtQuantity(qty) {
   const centesimi = Math.round(Math.abs(Number(qty) || 0) * 100);
   return String(centesimi).padStart(10, '0');
@@ -146,7 +155,7 @@ export function generate(shipment, client, sequence) {
     { pos: [1,  17],  value: noticeNumber },
     { pos: [18, 20],  value: 'DAN' },
     { pos: [21, 23],  value: docType },
-    { pos: [59, 67],  value: String(shipment.document_number ?? '').slice(0, 9) },
+    { pos: [59, 67],  value: extractDocNo(shipment.document_number).slice(0, 9) },
     { pos: [76, 81],  value: docDate },
   ]));
 
