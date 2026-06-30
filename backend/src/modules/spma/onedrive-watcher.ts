@@ -132,10 +132,15 @@ export async function pollOneDriveFolder(): Promise<PollResult> {
   const details: PollFileDetail[] = [];
 
   for (const file of toProcess) {
-    const downloadUrl = host + file.ServerRelativeUrl;
+    const escapedPath  = file.ServerRelativeUrl.replace(/'/g, "''");
+    const downloadUrl  = `${host}${webPath}/_api/web/GetFileByServerRelativeUrl('${escapedPath}')/$value`;
     try {
       const r = await fetch(downloadUrl, {
-        headers: { Cookie: fedAuth, 'User-Agent': 'Mozilla/5.0' },
+        headers: {
+          Cookie:   fedAuth,
+          'User-Agent': 'Mozilla/5.0',
+          Accept:   'application/octet-stream',
+        },
       });
 
       if (!r.ok) {

@@ -135,7 +135,12 @@ export async function runSpmaImport(buffer: Buffer, fileName: string): Promise<S
       cellDates: true,
     } as XLSX.Sheet2JSONOpts);
 
-    if (rows.length === 0) continue;
+    if (rows.length === 0) {
+      const ref = sheet['!ref'] ?? 'undefined';
+      const rawSample = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null });
+      logger.warn({ sheetName, ref, rawRows: rawSample.length, rawSample: rawSample.slice(0, 3) }, 'spma-import: foglio vuoto da sheet_to_json');
+      continue;
+    }
 
     const headers = Object.keys(rows[0] ?? {});
     const colFecha = pickCol(headers, 'Data Ingresso Linea', 'Data Ingresso', 'Data');
