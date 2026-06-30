@@ -527,6 +527,55 @@ ediRoutes.get('/ingresso/ordini/:num_contratto/download', requireModule(MODULE),
   return c.json({ csv, filename });
 });
 
+// ─── POST /ingresso/ordini/download-csv-bulk — CSV con più ordini ────────────
+
+ediRoutes.post('/ingresso/ordini/download-csv-bulk', requireModule(MODULE), async (c) => {
+  const { keys } = await c.req.json<{ keys: string[] }>();
+  if (!Array.isArray(keys) || keys.length === 0)
+    throw new HTTPException(400, { message: 'keys mancante' });
+
+  const buildKeyExpr = () => db`
+    CASE
+      WHEN tipo_documento = 'Forecast' OR tipo_schedulazione = 'Forecast'
+        THEN source_file
+      WHEN NULLIF(TRIM(commessa), '') IS NOT NULL
+        THEN COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
+      WHEN NULLIF(TRIM(num_contratto), '') LIKE '63%'
+        THEN NULLIF(TRIM(num_contratto), '')
+      ELSE source_file
+    END
+  `;
+
+  const allRows: Record<string, unknown>[] = [];
+
+  for (const key of keys) {
+    const rows = await db`
+      SELECT ${db(CAMPI_OUTPUT as unknown as string[])}, scanned_at
+      FROM edi_ferrari_delins
+      WHERE ${buildKeyExpr()} = ${key}
+      ORDER BY data_consegna, codice_articolo
+    `;
+    allRows.push(...rows as Record<string, unknown>[]);
+  }
+
+  if (allRows.length === 0)
+    throw new HTTPException(404, { message: 'Nessuna riga trovata' });
+
+  const cols   = [...CAMPI_OUTPUT, 'scanned_at'];
+  const escape = (v: string) => {
+    if (v.includes(';') || v.includes('"') || v.includes('\n')) return `"${v.replace(/"/g, '""')}"`;
+    return v;
+  };
+  const header = cols.join(';');
+  const lines  = allRows.map(r => cols.map(col => escape(String(r[col] ?? ''))).join(';'));
+  const csv    = '﻿' + [header, ...lines].join('\r\n');
+
+  const today    = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
+  const filename = `Ferrari_Ordini_bulk_${today}.csv`;
+
+  return c.json({ csv, filename });
+});
+
 // ─── POST /ingresso/sync — avvia scansione in background (ritorna subito) ─────
 
 ediRoutes.post('/ingresso/sync', requireModule(MODULE), (c) => {

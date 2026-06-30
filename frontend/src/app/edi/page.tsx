@@ -889,8 +889,9 @@ function TabOrdiniFerrari() {
   const [downloadingPortale, setDownloadingPortale] = useState<string | null>(null);
   const [downloaded,  setDownloaded]  = useState<Set<string>>(new Set());
   const [visibili,    setVisibili]    = useState(PAGE_SIZE);
-  const [selected,    setSelected]    = useState<Set<string>>(new Set());
-  const [bulkLoading, setBulkLoading] = useState(false);
+  const [selected,        setSelected]        = useState<Set<string>>(new Set());
+  const [bulkLoading,     setBulkLoading]     = useState(false);
+  const [bulkCsvLoading,  setBulkCsvLoading]  = useState(false);
   const pollRef                       = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => { setDownloaded(getDownloadedSet()); }, []);
@@ -909,6 +910,25 @@ function TabOrdiniFerrari() {
 
   // Cleanup poll on unmount
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  async function handleBulkCsvDownload() {
+    setBulkCsvLoading(true);
+    try {
+      const { csv, filename } = await api.post<{ csv: string; filename: string }>(
+        '/api/edi/ingresso/ordini/download-csv-bulk',
+        { keys: [...selected] }
+      );
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBulkCsvLoading(false);
+    }
+  }
 
   async function handleBulkDownload() {
     setBulkLoading(true);
@@ -1172,6 +1192,13 @@ function TabOrdiniFerrari() {
         {selected.size > 0 && (
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-gray-900 text-white px-6 py-3 rounded-2xl shadow-xl">
             <span className="text-sm font-medium">{selected.size} selezionat{selected.size === 1 ? 'o' : 'i'}</span>
+            <button
+              onClick={handleBulkCsvDownload}
+              disabled={bulkCsvLoading}
+              className="px-4 py-1.5 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-sm font-medium rounded-lg transition-colors"
+            >
+              {bulkCsvLoading ? 'Download…' : 'Scarica Excel'}
+            </button>
             <button
               onClick={handleBulkDownload}
               disabled={bulkLoading}
