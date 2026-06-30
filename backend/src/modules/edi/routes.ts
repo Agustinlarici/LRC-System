@@ -669,6 +669,100 @@ ediRoutes.get('/ingresso/ordini/:num_contratto/download-portale', requireModule(
   return c.json({ xlsx: b64, filename });
 });
 
+// ─── POST /ingresso/ordini/download-portale-bulk — XLSX con più ordini ───────
+
+ediRoutes.post('/ingresso/ordini/download-portale-bulk', requireModule(MODULE), async (c) => {
+  const { keys } = await c.req.json<{ keys: string[] }>();
+  if (!Array.isArray(keys) || keys.length === 0)
+    throw new HTTPException(400, { message: 'keys mancante' });
+
+  const today = new Intl.DateTimeFormat('it-IT', {
+    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Rome',
+  }).format(new Date());
+
+  const buildKeyExpr = () => db`
+    CASE
+      WHEN tipo_documento = 'Forecast' OR tipo_schedulazione = 'Forecast'
+        THEN source_file
+      WHEN NULLIF(TRIM(commessa), '') IS NOT NULL
+        THEN COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
+      WHEN NULLIF(TRIM(num_contratto), '') LIKE '63%'
+        THEN NULLIF(TRIM(num_contratto), '')
+      ELSE source_file
+    END
+  `;
+
+  const allRows: unknown[][] = [];
+
+  for (const key of keys) {
+    const chunkMatch = key.match(/^(.+)-(\d+)$/);
+    const baseKey    = chunkMatch ? chunkMatch[1] : key;
+    const chunkNum   = chunkMatch ? parseInt(chunkMatch[2], 10) : null;
+    const keyExpr    = buildKeyExpr();
+
+    const rows = chunkNum !== null
+      ? await db`
+          WITH base AS (
+            SELECT codice_articolo, descrizione, um, quantita,
+                   data_consegna, commessa, ft3_testo, pos_contratto,
+                   CEIL(
+                     ROW_NUMBER() OVER (
+                       ORDER BY data_consegna, codice_articolo, num_programma
+                     )::float / 50
+                   )::int AS chunk
+            FROM edi_ferrari_delins
+            WHERE ${keyExpr} = ${baseKey}
+          )
+          SELECT codice_articolo, descrizione, um, quantita,
+                 data_consegna, commessa, ft3_testo, pos_contratto
+          FROM base
+          WHERE chunk = ${chunkNum}
+          ORDER BY data_consegna, codice_articolo
+        `
+      : await db`
+          SELECT codice_articolo, descrizione, um, quantita,
+                 data_consegna, commessa, ft3_testo, pos_contratto
+          FROM edi_ferrari_delins
+          WHERE ${keyExpr} = ${baseKey}
+          ORDER BY data_consegna, codice_articolo
+        `;
+
+    (rows as Record<string, unknown>[]).forEach((r, i) => {
+      allRows.push([
+        key, today, '25391', '',
+        'STR AUTOMOTIVE S.P.A.', '', 'STRADA FABBRECCIA, 33', '',
+        'PESARO', '61122', 'PU', 'EXW', 'Ex-Works', '', '',
+        '60 GG D.F.F.M.', 'EUR', 'LEONARDO BIN', '', '', '',
+        String(r.pos_contratto || i + 1),
+        String(r.codice_articolo ?? ''),
+        String(r.descrizione ?? ''),
+        String(r.um ?? ''),
+        String(r.quantita ?? ''),
+        '', String(r.um ?? ''), '.00', '',
+        String(r.data_consegna ?? ''),
+        '5', '39', '',
+        String(r.commessa ?? ''), '',
+        String(r.ft3_testo ?? ''),
+        '', '', PORTALE_NOTA1, 'N',
+      ]);
+    });
+  }
+
+  if (allRows.length === 0)
+    throw new HTTPException(404, { message: 'Nessuna riga trovata' });
+
+  const ws  = XLSX.utils.aoa_to_sheet([PORTALE_HEADERS, ...allRows]);
+  const wb  = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Ordini');
+
+  const buf     = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  const b64     = buf.toString('base64');
+  const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
+  const filename = `Portale_bulk_${dateStr}.xlsx`;
+
+  return c.json({ xlsx: b64, filename });
+});
+
 // ─── GET /ingresso/debug — valori distinti per diagnosi filtri ───────────────
 
 ediRoutes.get('/ingresso/debug', requireModule(MODULE), async (c) => {

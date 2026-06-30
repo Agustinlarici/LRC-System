@@ -889,6 +889,8 @@ function TabOrdiniFerrari() {
   const [downloadingPortale, setDownloadingPortale] = useState<string | null>(null);
   const [downloaded,  setDownloaded]  = useState<Set<string>>(new Set());
   const [visibili,    setVisibili]    = useState(PAGE_SIZE);
+  const [selected,    setSelected]    = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
   const pollRef                       = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => { setDownloaded(getDownloadedSet()); }, []);
@@ -907,6 +909,28 @@ function TabOrdiniFerrari() {
 
   // Cleanup poll on unmount
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  async function handleBulkDownload() {
+    setBulkLoading(true);
+    try {
+      const { xlsx, filename } = await api.post<{ xlsx: string; filename: string }>(
+        '/api/edi/ingresso/ordini/download-portale-bulk',
+        { keys: [...selected] }
+      );
+      const binary = atob(xlsx);
+      const bytes  = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBulkLoading(false);
+    }
+  }
 
   function stopPoll() {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
@@ -1046,6 +1070,22 @@ function TabOrdiniFerrari() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
               <tr>
+                <th className="px-4 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    className="rounded"
+                    checked={ordini.slice(0, visibili).length > 0 && ordini.slice(0, visibili).every(o => selected.has(o.num_contratto))}
+                    onChange={e => {
+                      const visible = ordini.slice(0, visibili).map(o => o.num_contratto);
+                      setSelected(prev => {
+                        const next = new Set(prev);
+                        if (e.target.checked) visible.forEach(k => next.add(k));
+                        else visible.forEach(k => next.delete(k));
+                        return next;
+                      });
+                    }}
+                  />
+                </th>
                 <th className="text-left px-4 py-3">N° Contratto</th>
                 <th className="text-left px-4 py-3">Tipo</th>
                 <th className="text-right px-4 py-3">Prog.</th>
@@ -1057,10 +1097,24 @@ function TabOrdiniFerrari() {
             <tbody className="divide-y divide-gray-100">
               {ordini.slice(0, visibili).map(o => {
                 const isDownloaded = downloaded.has(o.num_contratto);
+                const isSelected   = selected.has(o.num_contratto);
                 const tipo = getOrdTipo(o);
                 const tipoStyle = TIPO_STYLE[tipo];
                 return (
                 <tr key={o.num_contratto} className={`transition-colors ${isDownloaded ? 'bg-green-50 hover:bg-green-100' : tipoStyle.row}`}>
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      className="rounded"
+                      checked={isSelected}
+                      onChange={e => setSelected(prev => {
+                        const next = new Set(prev);
+                        if (e.target.checked) next.add(o.num_contratto);
+                        else next.delete(o.num_contratto);
+                        return next;
+                      })}
+                    />
+                  </td>
                   <td className="px-4 py-3 font-mono font-medium text-gray-800">
                     <div className="flex items-center gap-2">
                       {o.num_contratto}
@@ -1112,6 +1166,24 @@ function TabOrdiniFerrari() {
               className="px-5 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
             >
               Carica altri ({Math.min(PAGE_SIZE, ordini.length - visibili)} di {ordini.length - visibili} rimanenti)
+            </button>
+          </div>
+        )}
+        {selected.size > 0 && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 bg-gray-900 text-white px-6 py-3 rounded-2xl shadow-xl">
+            <span className="text-sm font-medium">{selected.size} selezionat{selected.size === 1 ? 'o' : 'i'}</span>
+            <button
+              onClick={handleBulkDownload}
+              disabled={bulkLoading}
+              className="px-4 py-1.5 bg-blue-500 hover:bg-blue-400 disabled:opacity-50 text-sm font-medium rounded-lg transition-colors"
+            >
+              {bulkLoading ? 'Download…' : 'Scarica Excel formato vecchio'}
+            </button>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="text-gray-400 hover:text-white text-sm transition-colors"
+            >
+              Deseleziona tutto
             </button>
           </div>
         )}
