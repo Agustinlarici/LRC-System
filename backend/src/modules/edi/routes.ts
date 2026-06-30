@@ -429,6 +429,8 @@ ediRoutes.get('/ingresso/ordini', requireModule(MODULE), async (c) => {
     WITH keyed AS (
       SELECT *,
         CASE
+          WHEN tipo_documento = 'Forecast' OR tipo_schedulazione = 'Forecast'
+            THEN source_file
           WHEN NULLIF(TRIM(commessa), '') IS NOT NULL
             THEN COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
           WHEN NULLIF(TRIM(num_contratto), '') LIKE '63%'
@@ -491,6 +493,8 @@ ediRoutes.get('/ingresso/ordini/:num_contratto/download', requireModule(MODULE),
 
   const keyExpr = db`
     CASE
+      WHEN tipo_documento = 'Forecast' OR tipo_schedulazione = 'Forecast'
+        THEN source_file
       WHEN NULLIF(TRIM(commessa), '') IS NOT NULL
         THEN COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
       WHEN NULLIF(TRIM(num_contratto), '') LIKE '63%'
@@ -565,6 +569,8 @@ ediRoutes.get('/ingresso/ordini/:num_contratto/download-portale', requireModule(
 
   const keyExpr = db`
     CASE
+      WHEN tipo_documento = 'Forecast' OR tipo_schedulazione = 'Forecast'
+        THEN source_file
       WHEN NULLIF(TRIM(commessa), '') IS NOT NULL
         THEN COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
       WHEN NULLIF(TRIM(num_contratto), '') LIKE '63%'
