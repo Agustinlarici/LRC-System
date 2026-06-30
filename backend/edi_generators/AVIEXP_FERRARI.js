@@ -17,6 +17,14 @@
 
 const RECORD_LENGTH = 512;
 
+const UOM_MAP = {
+  'NUM': 'PCE', 'NR': 'PCE', 'PZ': 'PCE', 'PCS': 'PCE',
+  'NUMERO': 'PCE', 'NR.': 'PCE', 'N': 'PCE',
+  'KG': 'KGM', 'KGS': 'KGM',
+  'M': 'MTR', 'MT': 'MTR',
+  'LT': 'LTR', 'L': 'LTR',
+};
+
 /**
  * Costruisce un record di lunghezza fissa posizionando i valori alle posizioni indicate (1-indexed).
  */
@@ -122,7 +130,7 @@ export function generate(shipment, client, sequence) {
       { pos: [21,  56],  value: articleCode },
       { pos: [91,  125], value: line.description ?? '' },
       { pos: [266, 275], value: fmtQuantity(line.quantity) },
-      { pos: [276, 278], value: line.unit_of_measure ?? '' },
+      { pos: [276, 278], value: UOM_MAP[String(line.unit_of_measure ?? '').toUpperCase().trim()] ?? line.unit_of_measure ?? '' },
       { pos: [279, 295], value: contractNumber },
     ]));
   }
