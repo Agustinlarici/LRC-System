@@ -120,7 +120,7 @@ export function generate(shipment, client, sequence) {
   lines.push(buildRecord([
     { pos: [1,   17],  value: noticeNumber },
     { pos: [18,  20],  value: 'CSG' },
-    { pos: [21,  23],  value: client.csg_establishment_code },
+    { pos: [21,  40],  value: client.csg_establishment_code },
     { pos: [41,  75],  value: client.csg_company_name },
     { pos: [76,  110], value: client.csg_address_1 ?? '' },
     { pos: [425, 441], value: client.csg_supply_point ?? '' },
@@ -136,7 +136,7 @@ export function generate(shipment, client, sequence) {
     lines.push(buildRecord([
       { pos: [1,   17],  value: noticeNumber },
       { pos: [18,  20],  value: 'ARD' },
-      { pos: [21,  56],  value: articleCode },
+      { pos: [21,  55],  value: articleCode },
       { pos: [91,  125], value: line.description ?? '' },
       { pos: [266, 275], value: fmtQuantity(line.quantity) },
       { pos: [276, 278], value: UOM_MAP[String(line.unit_of_measure ?? '').toUpperCase().trim()] ?? line.unit_of_measure ?? '' },
@@ -155,7 +155,7 @@ export function generate(shipment, client, sequence) {
     { pos: [1,  17],  value: noticeNumber },
     { pos: [18, 20],  value: 'DAN' },
     { pos: [21, 23],  value: docType },
-    { pos: [59, 67],  value: extractDocNo(shipment.document_number).slice(0, 9) },
+    { pos: [59, 75],  value: extractDocNo(shipment.document_number) },
     { pos: [76, 81],  value: docDate },
   ]));
 
