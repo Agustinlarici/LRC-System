@@ -426,61 +426,34 @@ ediRoutes.get('/history/:id/content', requireModule(MODULE), async (c) => {
 
 ediRoutes.get('/ingresso/ordini', requireModule(MODULE), async (c) => {
   const rows = await db`
-    WITH keyed AS (
-      SELECT *,
-        CASE
-          WHEN tipo_documento = 'Forecast' OR tipo_schedulazione = 'Forecast'
-            THEN source_file
-          WHEN NULLIF(TRIM(commessa), '') IS NOT NULL
-            THEN COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
-          WHEN NULLIF(TRIM(num_contratto), '') LIKE '63%'
-            THEN NULLIF(TRIM(num_contratto), '')
-          ELSE source_file
-        END AS contratto_key
-      FROM edi_ferrari_delins
-    ),
-    base AS (
-      SELECT
-        contratto_key,
-        num_programma,
-        commessa,
-        file_mtime,
-        scanned_at,
-        CASE
-          WHEN tipo_documento = 'Forecast' OR tipo_schedulazione = 'Forecast' THEN 1
-          WHEN NULLIF(TRIM(commessa), '') IS NULL
-            AND NULLIF(TRIM(num_contratto), '') NOT LIKE '63%' THEN 1
-          ELSE CEIL(
-            ROW_NUMBER() OVER (
-              PARTITION BY contratto_key
-              ORDER BY data_consegna, codice_articolo, num_programma
-            )::float / 50
-          )::int
-        END AS chunk,
-        tipo_documento,
-        tipo_schedulazione
-      FROM keyed
-    ),
-    chunk_counts AS (
-      SELECT contratto_key, MAX(chunk) AS total_chunks
-      FROM base
-      GROUP BY contratto_key
-    )
     SELECT
-      CASE WHEN cc.total_chunks > 1
-        THEN b.contratto_key || '-' || b.chunk::text
-        ELSE b.contratto_key
+      CASE
+        WHEN tipo_documento = 'Forecast' OR tipo_schedulazione = 'Forecast'
+          THEN source_file
+        WHEN NULLIF(TRIM(commessa), '') IS NOT NULL
+          THEN COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
+        WHEN NULLIF(TRIM(num_contratto), '') LIKE '63%'
+          THEN NULLIF(TRIM(num_contratto), '')
+        ELSE source_file
       END                                           AS num_contratto,
-      COUNT(DISTINCT b.num_programma)::int          AS programmi,
+      COUNT(DISTINCT num_programma)::int            AS programmi,
       COUNT(*)::int                                 AS righe,
-      MAX(b.file_mtime)                             AS file_mtime,
-      MIN(b.scanned_at)                             AS scanned_at,
-      MAX(NULLIF(TRIM(b.commessa), '')) IS NOT NULL AS has_commessa,
-      BOOL_OR(b.tipo_documento = 'Forecast' OR b.tipo_schedulazione = 'Forecast') AS is_forecast
-    FROM base b
-    JOIN chunk_counts cc ON cc.contratto_key = b.contratto_key
-    GROUP BY b.contratto_key, b.chunk, cc.total_chunks
-    ORDER BY MAX(b.file_mtime) DESC NULLS LAST, num_contratto
+      MAX(file_mtime)                               AS file_mtime,
+      MIN(scanned_at)                               AS scanned_at,
+      MAX(NULLIF(TRIM(commessa), '')) IS NOT NULL   AS has_commessa,
+      BOOL_OR(tipo_documento = 'Forecast' OR tipo_schedulazione = 'Forecast') AS is_forecast
+    FROM edi_ferrari_delins
+    GROUP BY
+      CASE
+        WHEN tipo_documento = 'Forecast' OR tipo_schedulazione = 'Forecast'
+          THEN source_file
+        WHEN NULLIF(TRIM(commessa), '') IS NOT NULL
+          THEN COALESCE(NULLIF(TRIM(num_contratto), ''), num_programma)
+        WHEN NULLIF(TRIM(num_contratto), '') LIKE '63%'
+          THEN NULLIF(TRIM(num_contratto), '')
+        ELSE source_file
+      END
+    ORDER BY MAX(file_mtime) DESC NULLS LAST, num_contratto
   `;
   return c.json(rows);
 });
@@ -611,11 +584,6 @@ ediRoutes.get('/ingresso/ordini/:num_contratto/download-portale', requireModule(
   const numContratto = c.req.param('num_contratto') ?? '';
   if (!numContratto) throw new HTTPException(400, { message: 'num_contratto mancante' });
 
-  // Detect chunk suffix e.g. "1217xxxx-2" → baseKey="1217xxxx", chunk=2
-  const chunkMatch = numContratto.match(/^(.+)-(\d+)$/);
-  const baseKey    = chunkMatch ? chunkMatch[1] : numContratto;
-  const chunkNum   = chunkMatch ? parseInt(chunkMatch[2], 10) : null;
-
   const keyExpr = db`
     CASE
       WHEN tipo_documento = 'Forecast' OR tipo_schedulazione = 'Forecast'
@@ -628,32 +596,13 @@ ediRoutes.get('/ingresso/ordini/:num_contratto/download-portale', requireModule(
     END
   `;
 
-  const rows = chunkNum !== null
-    ? await db`
-        WITH base AS (
-          SELECT codice_articolo, descrizione, um, quantita,
-                 data_consegna, commessa, ft3_testo, pos_contratto,
-                 CEIL(
-                   ROW_NUMBER() OVER (
-                     ORDER BY data_consegna, codice_articolo, num_programma
-                   )::float / 50
-                 )::int AS chunk
-          FROM edi_ferrari_delins
-          WHERE ${keyExpr} = ${baseKey}
-        )
-        SELECT codice_articolo, descrizione, um, quantita,
-               data_consegna, commessa, ft3_testo, pos_contratto
-        FROM base
-        WHERE chunk = ${chunkNum}
-        ORDER BY data_consegna, codice_articolo
-      `
-    : await db`
-        SELECT codice_articolo, descrizione, um, quantita,
-               data_consegna, commessa, ft3_testo, pos_contratto
-        FROM edi_ferrari_delins
-        WHERE ${keyExpr} = ${baseKey}
-        ORDER BY data_consegna, codice_articolo
-      `;
+  const rows = await db`
+    SELECT codice_articolo, descrizione, um, quantita,
+           data_consegna, commessa, ft3_testo, pos_contratto
+    FROM edi_ferrari_delins
+    WHERE ${keyExpr} = ${numContratto}
+    ORDER BY data_consegna, codice_articolo
+  `;
 
   if (rows.length === 0) throw new HTTPException(404, { message: 'Contratto non trovato' });
 
@@ -744,37 +693,14 @@ ediRoutes.post('/ingresso/ordini/download-portale-bulk', requireModule(MODULE), 
   const allRows: unknown[][] = [];
 
   for (const key of keys) {
-    const chunkMatch = key.match(/^(.+)-(\d+)$/);
-    const baseKey    = chunkMatch ? chunkMatch[1] : key;
-    const chunkNum   = chunkMatch ? parseInt(chunkMatch[2], 10) : null;
-    const keyExpr    = buildKeyExpr();
-
-    const rows = chunkNum !== null
-      ? await db`
-          WITH base AS (
-            SELECT codice_articolo, descrizione, um, quantita,
-                   data_consegna, commessa, ft3_testo, pos_contratto,
-                   CEIL(
-                     ROW_NUMBER() OVER (
-                       ORDER BY data_consegna, codice_articolo, num_programma
-                     )::float / 50
-                   )::int AS chunk
-            FROM edi_ferrari_delins
-            WHERE ${keyExpr} = ${baseKey}
-          )
-          SELECT codice_articolo, descrizione, um, quantita,
-                 data_consegna, commessa, ft3_testo, pos_contratto
-          FROM base
-          WHERE chunk = ${chunkNum}
-          ORDER BY data_consegna, codice_articolo
-        `
-      : await db`
-          SELECT codice_articolo, descrizione, um, quantita,
-                 data_consegna, commessa, ft3_testo, pos_contratto
-          FROM edi_ferrari_delins
-          WHERE ${keyExpr} = ${baseKey}
-          ORDER BY data_consegna, codice_articolo
-        `;
+    const keyExpr = buildKeyExpr();
+    const rows = await db`
+      SELECT codice_articolo, descrizione, um, quantita,
+             data_consegna, commessa, ft3_testo, pos_contratto
+      FROM edi_ferrari_delins
+      WHERE ${keyExpr} = ${key}
+      ORDER BY data_consegna, codice_articolo
+    `;
 
     (rows as Record<string, unknown>[]).forEach((r, i) => {
       allRows.push([
