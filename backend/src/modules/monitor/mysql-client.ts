@@ -108,7 +108,7 @@ export async function queryWebthronEvents(
       ikExtra45Tab.stringa  AS componente,
       Extra186.stringa      AS cod_seriale,
       Extra30.stringa       AS commessa,
-      ikExtra136Tab.stringa AS esito_delibera,
+      COALESCE(ikExtra136Tab.stringa, ikExtra71Tab.stringa, ikExtra41Tab.stringa) AS esito_delibera,
       ubi.datain            AS data_inserimento
     FROM ubidocum ubi
     LEFT JOIN ikExtra    Extra62    ON ubi.iddocu = Extra62.iddocu    AND Extra62.idcampo  = 62  AND Extra62.idcomm = 0 AND Extra62.seq = 0
@@ -117,12 +117,16 @@ export async function queryWebthronEvents(
     LEFT JOIN ikExtra    Extra186   ON ubi.iddocu = Extra186.iddocu   AND Extra186.idcampo = 186 AND Extra186.idcomm = 0 AND Extra186.seq = 0
     LEFT JOIN ikExtra    Extra30    ON ubi.iddocu = Extra30.iddocu    AND Extra30.idcampo  = 30  AND Extra30.idcomm  = 0 AND Extra30.seq  = 0
     LEFT JOIN ikExtra    Extra136   ON ubi.iddocu = Extra136.iddocu   AND Extra136.idcampo = 136 AND Extra136.idcomm = 0 AND Extra136.seq = 0
+    LEFT JOIN ikExtra    Extra71    ON ubi.iddocu = Extra71.iddocu    AND Extra71.idcampo  = 71  AND Extra71.idcomm = 0 AND Extra71.seq  = 0
+    LEFT JOIN ikExtra    Extra41    ON ubi.iddocu = Extra41.iddocu    AND Extra41.idcampo  = 41  AND Extra41.idcomm = 0 AND Extra41.seq  = 0
     LEFT JOIN ikExtraTab ikExtra62Tab  ON ikExtra62Tab.id  = Extra62.stringa
     LEFT JOIN ikExtraTab ikExtra43Tab  ON ikExtra43Tab.id  = Extra43.stringa
     LEFT JOIN ikExtraTab ikExtra45Tab  ON ikExtra45Tab.id  = Extra45.stringa
     LEFT JOIN ikExtraTab ikExtra136Tab ON ikExtra136Tab.id = Extra136.stringa
+    LEFT JOIN ikExtraTab ikExtra71Tab  ON ikExtra71Tab.id  = Extra71.stringa
+    LEFT JOIN ikExtraTab ikExtra41Tab  ON ikExtra41Tab.id  = Extra41.stringa
     WHERE
-      ubi.tipdoc IN ('0080','1520','5004','5005','5006','5007','5010','5016','PX01','0160','0090','5019','1040','5009','5018','0480')
+      ubi.tipdoc IN ('0080','1520','5004','5005','5006','5007','5010','5016','PX01','0160','0090','5019','1040','5009','5018','0480','5020')
       ${dateClause}
       AND Extra186.stringa     IS NOT NULL
       AND ikExtra43Tab.stringa IS NOT NULL

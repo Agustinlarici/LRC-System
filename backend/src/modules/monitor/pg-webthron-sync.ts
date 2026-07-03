@@ -236,7 +236,7 @@ export async function refreshLookupTables(): Promise<void> {
         LEFT JOIN ikExtraTab ikExtra62Tab ON ikExtra62Tab.id = Extra62.stringa
         LEFT JOIN ikExtraTab ikExtra43Tab ON ikExtra43Tab.id = Extra43.stringa
         LEFT JOIN ikExtraTab ikExtra45Tab ON ikExtra45Tab.id = Extra45.stringa
-        WHERE ubi.tipdoc IN ('0480','0080','0160','1520','5004','5005','5006','5007','5010','5016','PX01','0090')
+        WHERE ubi.tipdoc IN ('0080','1520','5004','5005','5006','5007','5010','5016','PX01','0160','0090','5019','1040','5009','5018','0480','5020')
           AND ubi.datain > NOW() - INTERVAL 90 DAY
           AND ikExtra62Tab.stringa IS NOT NULL
           AND ikExtra43Tab.stringa IS NOT NULL
