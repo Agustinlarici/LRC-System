@@ -139,6 +139,13 @@ export async function runSpmaImport(buffer: Buffer, fileName: string): Promise<S
       const ref = sheet['!ref'] ?? 'undefined';
       const rawSample = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null });
       logger.warn({ sheetName, ref, rawRows: rawSample.length, rawSample: rawSample.slice(0, 3) }, 'spma-import: foglio vuoto da sheet_to_json');
+      const rawRowCount = rawSample.length;
+      if (rawRowCount > 0) {
+        const firstRow = rawSample[0];
+        warnings.push(`Foglio "${sheetName}": ${rawRowCount} righe raw trovate ma sheet_to_json restituisce 0. Prima riga raw: ${JSON.stringify(firstRow).slice(0, 200)}`);
+      } else {
+        warnings.push(`Foglio "${sheetName}": foglio vuoto (ref=${ref}).`);
+      }
       continue;
     }
 
