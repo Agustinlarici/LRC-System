@@ -590,7 +590,7 @@ dashboardsRoutes.post('/lead-time/patch-commessa', async (c) => {
     FROM ubidocum ubi
     LEFT JOIN ikExtra Extra186 ON ubi.iddocu = Extra186.iddocu AND Extra186.idcampo = 186 AND Extra186.idcomm = 0 AND Extra186.seq = 0
     LEFT JOIN ikExtra Extra30  ON ubi.iddocu = Extra30.iddocu  AND Extra30.idcampo  = 30  AND Extra30.idcomm  = 0 AND Extra30.seq  = 0
-    WHERE ubi.tipdoc IN ('0080','1520','5004','5005','5006','5007','5010','5016','PX01','0160','0090','5019','1040','5009','5018','0480')
+    WHERE ubi.tipdoc IN ('0080','1520','5004','5005','5006','5007','5010','5016','PX01','0160','0090','5019','1040','5009','5018','0480','5020')
       AND DATE(CONVERT_TZ(ubi.datain, '+00:00', '+01:00')) = ?
       AND Extra186.stringa IS NOT NULL
       AND Extra30.stringa  IS NOT NULL
@@ -935,6 +935,157 @@ dashboardsRoutes.get('/daily-production-by-model', async (c) => {
       data:        r.data        as string,
       pezzi_reali: Number(r.pezzi_reali),
     })),
+  });
+});
+
+// ─── GET /quantity-filter-options ─────────────────────────────────────────────
+// Fasi (con flag "ha delibera"), modelli, componenti ed esiti delibera trovati
+// in webthron_events_history — popola i filtri del dashboard quantità.
+
+dashboardsRoutes.get('/quantity-filter-options', async (c) => {
+  const [fasi, combos, esiti] = await Promise.all([
+    db`
+      SELECT fase, bool_or(esito_delibera IS NOT NULL) AS is_delibera, COUNT(*)::int AS eventi
+      FROM webthron_events_history
+      GROUP BY fase
+      ORDER BY fase
+    `,
+    db`SELECT DISTINCT modello, componente FROM webthron_events_history ORDER BY modello, componente`,
+    db`SELECT DISTINCT esito_delibera FROM webthron_events_history WHERE esito_delibera IS NOT NULL ORDER BY esito_delibera`,
+  ]);
+
+  return c.json({
+    fasi: fasi.map(r => ({ fase: r.fase as string, is_delibera: Boolean(r.is_delibera), eventi: Number(r.eventi) })),
+    modelli:    [...new Set(combos.map(r => r.modello    as string))].sort(),
+    componenti: [...new Set(combos.map(r => r.componente as string))].sort(),
+    esiti: esiti.map(r => r.esito_delibera as string),
+  });
+});
+
+// ─── GET /quantity-summary?fase=X&days=60&modelli=&componenti=&esiti= ────────
+// Controllo quantità: totale di oggi (per ora) + storico giornaliero + rottura
+// per modello/componente, tutto da webthron_events_history (PostgreSQL,
+// nessuna query WebThron live). `fase` è obbligatorio — sommare eventi di fasi
+// diverse conterebbe lo stesso pezzo più volte (passa da una fase all'altra).
+
+dashboardsRoutes.get('/quantity-summary', async (c) => {
+  const fase = c.req.query('fase');
+  if (!fase) throw new HTTPException(400, { message: 'Parametro fase richiesto' });
+
+  const days        = Math.min(180, Math.max(1, parseInt(c.req.query('days') ?? '60', 10)));
+  const modelli     = parseStringList(c.req.query('modelli'));
+  const componenti  = parseStringList(c.req.query('componenti'));
+  const esiti       = parseStringList(c.req.query('esiti'));
+
+  const modelliFilter    = modelli    ? db`AND modello = ANY(${modelli})`        : db``;
+  const componentiFilter = componenti ? db`AND componente = ANY(${componenti})`  : db``;
+  const esitiFilter      = esiti      ? db`AND esito_delibera = ANY(${esiti})`   : db``;
+
+  const [dailyRows, hourRows, modelloRows, componenteRows, modelloEsitoRows, componenteEsitoRows, todayModelloComponenteRows, todayModelloEsitoRows, todayComponenteEsitoRows, deliberaCheck] = await Promise.all([
+    db`
+      SELECT data_cache::text AS data, esito_delibera AS esito, COUNT(*)::int AS quantita
+      FROM webthron_events_history
+      WHERE fase = ${fase}
+        AND data_cache >= CURRENT_DATE - (${days})::integer
+        ${modelliFilter} ${componentiFilter} ${esitiFilter}
+      GROUP BY data_cache, esito_delibera
+      ORDER BY data_cache
+    `,
+    db`
+      SELECT EXTRACT(HOUR FROM data_inserimento AT TIME ZONE 'Europe/Rome')::int AS ora,
+             esito_delibera AS esito, COUNT(*)::int AS quantita
+      FROM webthron_events_history
+      WHERE fase = ${fase}
+        AND data_cache = CURRENT_DATE
+        ${modelliFilter} ${componentiFilter} ${esitiFilter}
+      GROUP BY ora, esito_delibera
+      ORDER BY ora
+    `,
+    db`
+      SELECT modello, COUNT(*)::int AS quantita
+      FROM webthron_events_history
+      WHERE fase = ${fase}
+        AND data_cache >= CURRENT_DATE - (${days})::integer
+        ${modelliFilter} ${componentiFilter} ${esitiFilter}
+      GROUP BY modello
+      ORDER BY quantita DESC
+    `,
+    db`
+      SELECT componente, COUNT(*)::int AS quantita
+      FROM webthron_events_history
+      WHERE fase = ${fase}
+        AND data_cache >= CURRENT_DATE - (${days})::integer
+        ${modelliFilter} ${componentiFilter} ${esitiFilter}
+      GROUP BY componente
+      ORDER BY quantita DESC
+    `,
+    // Same two breakdowns, but split by esito — lets the caller compute an
+    // accept/reject/rework RATE per modello/componente, not just volume.
+    db`
+      SELECT modello, esito_delibera AS esito, COUNT(*)::int AS quantita
+      FROM webthron_events_history
+      WHERE fase = ${fase}
+        AND data_cache >= CURRENT_DATE - (${days})::integer
+        ${modelliFilter} ${componentiFilter} ${esitiFilter}
+      GROUP BY modello, esito_delibera
+    `,
+    db`
+      SELECT componente, esito_delibera AS esito, COUNT(*)::int AS quantita
+      FROM webthron_events_history
+      WHERE fase = ${fase}
+        AND data_cache >= CURRENT_DATE - (${days})::integer
+        ${modelliFilter} ${componentiFilter} ${esitiFilter}
+      GROUP BY componente, esito_delibera
+    `,
+    db`
+      SELECT modello, componente, COUNT(*)::int AS quantita
+      FROM webthron_events_history
+      WHERE fase = ${fase}
+        AND data_cache = CURRENT_DATE
+        ${modelliFilter} ${componentiFilter} ${esitiFilter}
+      GROUP BY modello, componente
+      ORDER BY quantita DESC
+    `,
+    // Same modello/componente × esito breakdowns as above, scoped to today only
+    // — lets the caller rank "criticità oggi" separately from "criticità storico".
+    db`
+      SELECT modello, esito_delibera AS esito, COUNT(*)::int AS quantita
+      FROM webthron_events_history
+      WHERE fase = ${fase}
+        AND data_cache = CURRENT_DATE
+        ${modelliFilter} ${componentiFilter} ${esitiFilter}
+      GROUP BY modello, esito_delibera
+    `,
+    db`
+      SELECT componente, esito_delibera AS esito, COUNT(*)::int AS quantita
+      FROM webthron_events_history
+      WHERE fase = ${fase}
+        AND data_cache = CURRENT_DATE
+        ${modelliFilter} ${componentiFilter} ${esitiFilter}
+      GROUP BY componente, esito_delibera
+    `,
+    db`SELECT bool_or(esito_delibera IS NOT NULL) AS is_delibera FROM webthron_events_history WHERE fase = ${fase}`,
+  ]);
+
+  return c.json({
+    fase,
+    days,
+    is_delibera: Boolean(deliberaCheck[0]?.is_delibera),
+    daily: dailyRows.map(r => ({
+      data: r.data as string, esito: r.esito as string | null, quantita: Number(r.quantita),
+    })),
+    today_by_hour: hourRows.map(r => ({
+      ora: Number(r.ora), esito: r.esito as string | null, quantita: Number(r.quantita),
+    })),
+    by_modello:         modelloRows.map(r        => ({ modello: r.modello           as string, quantita: Number(r.quantita) })),
+    by_componente:      componenteRows.map(r     => ({ componente: r.componente     as string, quantita: Number(r.quantita) })),
+    by_modello_esito:    modelloEsitoRows.map(r    => ({ modello: r.modello        as string, esito: r.esito as string | null, quantita: Number(r.quantita) })),
+    by_componente_esito: componenteEsitoRows.map(r => ({ componente: r.componente  as string, esito: r.esito as string | null, quantita: Number(r.quantita) })),
+    today_by_modello_componente: todayModelloComponenteRows.map(r => ({
+      modello: r.modello as string, componente: r.componente as string, quantita: Number(r.quantita),
+    })),
+    today_by_modello_esito:    todayModelloEsitoRows.map(r    => ({ modello: r.modello       as string, esito: r.esito as string | null, quantita: Number(r.quantita) })),
+    today_by_componente_esito: todayComponenteEsitoRows.map(r => ({ componente: r.componente as string, esito: r.esito as string | null, quantita: Number(r.quantita) })),
   });
 });
 

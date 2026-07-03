@@ -307,7 +307,7 @@ export default function HeatmapPage() {
                 return (
                   <div key={d}
                     className={`w-8 shrink-0 mx-px text-center text-xs font-medium
-                      ${isToday ? 'text-blue-600 font-bold' : 'text-gray-400'}`}>
+                      ${isToday ? 'text-blue-600 font-bold' : 'text-gray-600'}`}>
                     {d}
                   </div>
                 );
@@ -323,8 +323,8 @@ export default function HeatmapPage() {
                 const isWeekend = dow === 0 || dow === 6;
                 return (
                   <div key={d}
-                    className={`w-8 shrink-0 mx-px text-center text-[10px]
-                      ${isWeekend ? 'text-red-400' : 'text-gray-300'}`}>
+                    className={`w-8 shrink-0 mx-px text-center text-[11px] font-medium
+                      ${isWeekend ? 'text-red-500' : 'text-gray-500'}`}>
                     {DOW_LABELS[dow]}
                   </div>
                 );
@@ -357,7 +357,7 @@ export default function HeatmapPage() {
                         : null;
                       return (
                         <div key={d}
-                          className="w-8 shrink-0 mx-px text-center text-[9px] font-semibold text-gray-400">
+                          className="w-8 shrink-0 mx-px text-center text-[10px] font-semibold text-gray-600">
                           {avg !== null ? Math.round(avg) : ''}
                         </div>
                       );
@@ -377,7 +377,7 @@ export default function HeatmapPage() {
                     return (
                       <div key={ora} className="flex items-center mb-px">
                         <div className="w-[120px] shrink-0" />
-                        <div className="w-9 shrink-0 text-[10px] text-gray-400 text-right pr-1.5 select-none">
+                        <div className="w-9 shrink-0 text-[11px] font-medium text-gray-600 text-right pr-1.5 select-none">
                           {blockSize === 'day' ? 'giorno' : `${pad(ora)}-${pad(blockEnd)}`}
                         </div>
                         {data.days.map(d => {

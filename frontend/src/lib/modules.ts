@@ -62,7 +62,7 @@ export const MODULES: ModuleConfig[] = [
 
   // ── Dashboard ──────────────────────────────────────────────────────────────
   {
-    href: '/dashboards', label: 'Generale', group: 'Dashboard',
+    href: '/dashboards', label: 'OEE', group: 'Dashboard',
     description: 'Dashboard esecutivo produzione giornaliera',
     icon: '📊', sidebar: 'IconChart', hidden: false, moduleKey: 'dashboards',
   },
@@ -77,9 +77,19 @@ export const MODULES: ModuleConfig[] = [
     icon: '⏱️', sidebar: 'IconChart', hidden: false, moduleKey: 'dashboards',
   },
   {
-    href: '/dashboards/trends', label: 'Tendenze settimanali', group: 'Dashboard',
-    description: 'OEE, produzione e qualità aggregati per settimana per linea',
+    href: '/dashboards/trends', label: 'Tendenze OEE', group: 'Dashboard',
+    description: 'OEE, produzione e qualità giorno per giorno, per linea',
     icon: '📈', sidebar: 'IconChart', hidden: false, moduleKey: 'dashboards',
+  },
+  {
+    href: '/dashboards/quantita', label: 'Pezzi Prodotti', group: 'Dashboard',
+    description: 'Controllo pezzi contati per fase, modello, componente ed esito delibera',
+    icon: '🔢', sidebar: 'IconChart', hidden: false, moduleKey: 'dashboards',
+  },
+  {
+    href: '/dashboards/qualita', label: 'Qualità', group: 'Dashboard',
+    description: 'Tasso di accettazione, tendenza e criticità per modello/componente',
+    icon: '✅', sidebar: 'IconChart', hidden: false, moduleKey: 'dashboards',
   },
 
   // ── IT ─────────────────────────────────────────────────────────────────────

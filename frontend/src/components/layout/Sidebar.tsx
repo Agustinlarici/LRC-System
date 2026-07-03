@@ -177,6 +177,8 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/dashboards/heatmap':      'dashboards',
   '/dashboards/lead-time':    'dashboards',
   '/dashboards/trends':       'dashboards',
+  '/dashboards/quantita':     'dashboards',
+  '/dashboards/qualita':      'dashboards',
   '/spma':                    'spma',
   '/recepciones':             'recepciones',
   '/edi':                     'edi',

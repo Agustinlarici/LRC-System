@@ -71,6 +71,12 @@ function oeeTextColor(oee: number): string {
   return 'text-red-600';
 }
 
+function oeeStatus(oee: number): 'verde' | 'giallo' | 'rosso' {
+  if (oee >= OEE_TARGET) return 'verde';
+  if (oee >= 60)         return 'giallo';
+  return 'rosso';
+}
+
 function prodBarColor(reali: number, pianificati: number): string {
   if (pianificati === 0) return 'bg-gray-300';
   const r = reali / pianificati;
@@ -241,11 +247,11 @@ export default function ExecutiveDashboardPage() {
       <div className="card p-0 overflow-hidden">
         <div className="grid grid-cols-2 lg:grid-cols-4 divide-y divide-gray-100 lg:divide-y-0 lg:divide-x">
 
-          {/* OEE Generale — gauge */}
-          <div className="p-5 flex items-center gap-5">
-            <OeeGauge value={kpi.oee_generale} size={136} strokeWidth={11} fontSizeClass="text-4xl" />
+          {/* OEE — headline gauge, gets extra visual emphasis */}
+          <div className={`p-5 flex items-center gap-5 border-l-4 ${BORDER_COLOR[oeeStatus(kpi.oee_generale)]}`}>
+            <OeeGauge value={kpi.oee_generale} size={148} strokeWidth={12} fontSizeClass="text-5xl" />
             <div className="min-w-0">
-              <p className="text-sm font-medium text-gray-400 uppercase tracking-wide">OEE Generale</p>
+              <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide">OEE</p>
               <p className="text-xs text-gray-400 mt-1">obiettivo {OEE_TARGET}%</p>
             </div>
           </div>
@@ -293,7 +299,7 @@ export default function ExecutiveDashboardPage() {
       </div>
 
       {/* ── Line cards grid ───────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {linee.map(l => (
           <div
             key={l.id}
@@ -330,7 +336,7 @@ export default function ExecutiveDashboardPage() {
                       <span className="text-sm font-medium text-gray-400 uppercase tracking-wide">Disponibilità</span>
                       <span className="text-sm font-medium text-gray-900">{l.disponibilita.toFixed(1)}%</span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-1 overflow-hidden">
+                    <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all duration-500 ${l.disponibilita >= 90 ? 'bg-green-500' : l.disponibilita >= 70 ? 'bg-yellow-400' : 'bg-red-500'}`}
                         style={{ width: `${Math.min(100, l.disponibilita)}%` }}
@@ -348,7 +354,7 @@ export default function ExecutiveDashboardPage() {
                         <span className="text-gray-400"> · su {l.pezzi_pianificati}</span>
                       </span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-1 overflow-hidden">
+                    <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all duration-500 ${prodBarColor(l.pezzi_reali, l.avanzamento_previsto)}`}
                         style={{ width: `${prodBarPct(l.pezzi_reali, l.avanzamento_previsto)}%` }}
@@ -371,7 +377,7 @@ export default function ExecutiveDashboardPage() {
                         <span className="text-sm text-gray-400">nessun dato</span>
                       )}
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-1 overflow-hidden">
+                    <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
                       {l.pezzi_deliberati > 0 && (
                         <div
                           className={`h-full rounded-full transition-all duration-500 ${

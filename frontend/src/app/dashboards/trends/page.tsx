@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
 } from 'recharts';
+import { MultiSelectFilter } from '@/components/ui/MultiSelectFilter';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -202,64 +203,6 @@ function ParetoTooltip({ active, payload }: { active?: boolean; payload?: Array<
   );
 }
 
-// ─── Multi-select filter dropdown ──────────────────────────────────────────────
-
-function MultiSelectFilter<T extends string | number>({
-  label, options, selected, onChange, optionLabel,
-}: {
-  label: string;
-  options: T[];
-  selected: Set<T>;
-  onChange: (next: Set<T>) => void;
-  optionLabel?: (opt: T) => string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
-  }, []);
-
-  const toggle = (opt: T) => {
-    const next = new Set(selected);
-    if (next.has(opt)) next.delete(opt); else next.add(opt);
-    onChange(next);
-  };
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        className={`px-2.5 py-1 text-xs rounded-lg font-medium border transition-colors ${
-          selected.size > 0 ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-        }`}
-      >
-        {label}{selected.size > 0 ? ` (${selected.size})` : ''}
-      </button>
-      {open && (
-        <div className="absolute z-20 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2 max-h-64 overflow-auto min-w-[200px]">
-          {selected.size > 0 && (
-            <button onClick={() => onChange(new Set())} className="text-xs text-blue-600 hover:text-blue-800 mb-1 px-2">
-              Cancella filtro
-            </button>
-          )}
-          {options.length === 0 && <p className="text-xs text-gray-400 px-2 py-1">Nessuna opzione</p>}
-          {options.map(opt => (
-            <label key={String(opt)} className="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer text-sm text-gray-700">
-              <input type="checkbox" checked={selected.has(opt)} onChange={() => toggle(opt)} className="accent-blue-600" />
-              {optionLabel ? optionLabel(opt) : String(opt)}
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Sparkline — compact per-line OEE trend for the detail table ──────────────
 
 function Sparkline({ days }: { days: (DayRow | null)[] }) {
@@ -293,8 +236,8 @@ function LineaDetailChart({ linea, allDays }: { linea: LineaTrend; allDays: stri
       <ResponsiveContainer width="100%" height={200}>
         <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis dataKey="day" interval={tickInterval} tick={{ fontSize: 10, fill: '#9ca3af' }} />
-          <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#9ca3af' }} />
+          <XAxis dataKey="day" interval={tickInterval} tick={{ fontSize: 13, fill: '#374151' }} />
+          <YAxis domain={[0, 100]} tick={{ fontSize: 13, fill: '#374151' }} />
           <Tooltip content={<SeriesTooltip suffix="%" />} />
           <ReferenceLine y={OEE_TARGET} stroke="#16a34a" strokeDasharray="4 2" strokeWidth={1.5} />
           <Line type="monotone" dataKey="OEE" stroke="#2563eb" strokeWidth={2} dot={{ r: 2 }} connectNulls={false} isAnimationActive={false} />
@@ -637,8 +580,8 @@ export default function TrendsPage() {
         <ResponsiveContainer width="100%" height={260}>
           <LineChart data={mainChartData} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="day" interval={tickInterval} tick={{ fontSize: 10, fill: '#9ca3af' }} />
-            <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#9ca3af' }} />
+            <XAxis dataKey="day" interval={tickInterval} tick={{ fontSize: 13, fill: '#374151' }} />
+            <YAxis domain={[0, 100]} tick={{ fontSize: 13, fill: '#374151' }} />
             <Tooltip content={<SeriesTooltip suffix="%" />} />
             <ReferenceLine y={OEE_TARGET} stroke="#16a34a" strokeDasharray="4 2" strokeWidth={1.5} label={{ value: `${OEE_TARGET}%`, fontSize: 9, fill: '#16a34a', position: 'insideTopRight' }} />
             <Line type="monotone" dataKey="OEE" stroke="#93c5fd" strokeWidth={1.5} dot={{ r: 2, fill: '#3b82f6' }} connectNulls={false} isAnimationActive={false} />
@@ -655,8 +598,8 @@ export default function TrendsPage() {
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={cumChartData} margin={{ top: 8, right: 16, bottom: 0, left: -8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="day" interval={tickInterval} tick={{ fontSize: 10, fill: '#9ca3af' }} />
-              <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
+              <XAxis dataKey="day" interval={tickInterval} tick={{ fontSize: 13, fill: '#374151' }} />
+              <YAxis tick={{ fontSize: 13, fill: '#374151' }} />
               <Tooltip content={<SeriesTooltip suffix=" pz" />} />
               <Line type="monotone" dataKey="Piano" stroke="#9ca3af" strokeWidth={1.5} strokeDasharray="4 2" dot={false} isAnimationActive={false} />
               <Line type="monotone" dataKey="Reale" stroke="#2563eb" strokeWidth={2} dot={false} isAnimationActive={false} />
@@ -670,8 +613,8 @@ export default function TrendsPage() {
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={decompChartData} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="day" interval={tickInterval} tick={{ fontSize: 10, fill: '#9ca3af' }} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#9ca3af' }} />
+              <XAxis dataKey="day" interval={tickInterval} tick={{ fontSize: 13, fill: '#374151' }} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 13, fill: '#374151' }} />
               <Tooltip content={<SeriesTooltip suffix="%" />} />
               <Line type="monotone" dataKey="Disponibilità" stroke="#f59e0b" strokeWidth={1.75} dot={false} connectNulls={false} isAnimationActive={false} />
               <Line type="monotone" dataKey="Performance" stroke="#8b5cf6" strokeWidth={1.75} dot={false} connectNulls={false} isAnimationActive={false} />
@@ -690,8 +633,8 @@ export default function TrendsPage() {
             <ResponsiveContainer width="100%" height={Math.max(200, paretoTop.length * 32)}>
               <BarChart data={paretoTop} layout="vertical" margin={{ top: 4, right: 24, bottom: 4, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10, fill: '#9ca3af' }} unit="m" />
-                <YAxis type="category" dataKey="descrizione" width={150} tick={{ fontSize: 11, fill: '#374151' }} />
+                <XAxis type="number" tick={{ fontSize: 13, fill: '#374151' }} unit="m" />
+                <YAxis type="category" dataKey="descrizione" width={170} tick={{ fontSize: 12, fill: '#374151' }} />
                 <Tooltip content={<ParetoTooltip />} />
                 <Bar dataKey="minuti_totali" radius={[0, 4, 4, 0]}>
                   {paretoTop.map((r, i) => <Cell key={i} fill={r.colore} />)}
