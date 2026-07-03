@@ -124,7 +124,12 @@ async function detectStopsForLine(lineaId: number): Promise<void> {
     return Math.max(0, Math.floor((toMs - fromMs - pauseMs) / 1000));
   }
 
-  // Build list of [gapStart, gapEnd|null] pairs where net gap > cycleTimeSec
+  // Build list of [gapStart, gapEnd|null] pairs where net gap > cycleTimeSec.
+  // `to = null` means genuinely ongoing (turno still running); once the turno
+  // has ended, the gap must be closed at turnoEnd — otherwise it stays open
+  // and its duration keeps growing overnight (NOW() - started_at) even though
+  // no shift was scheduled during that time.
+  const shiftOver = now.getTime() >= turnoEnd.getTime();
   const gaps: Array<{ from: Date; to: Date | null }> = [];
 
   const checkpoints: Date[] = [turnoStart, ...events];
@@ -132,11 +137,11 @@ async function detectStopsForLine(lineaId: number): Promise<void> {
 
   for (let i = 0; i < checkpoints.length; i++) {
     const from    = checkpoints[i];
-    const to      = ends[i];  // null = ongoing
+    const to      = ends[i];  // null = ongoing (last segment only)
     const toMs    = to ? to.getTime() : Math.min(now.getTime(), turnoEnd.getTime());
     const elapsed = netElapsed(from.getTime(), toMs);
     if (elapsed > cycleTimeSec) {
-      gaps.push({ from, to });
+      gaps.push({ from, to: to ?? (shiftOver ? turnoEnd : null) });
     }
   }
 
@@ -166,6 +171,21 @@ async function detectStopsForLine(lineaId: number): Promise<void> {
           AND started_at <  ${gap.to}
       `;
     }
+  }
+
+  // Safety net: if the turno has ended, make sure no non-manual stop is left
+  // open past turnoEnd for today (covers 'attesa' events not tied to a gap
+  // above, e.g. still waiting for picking when the shift ends).
+  if (shiftOver) {
+    await db`
+      UPDATE monitor_stop_events
+      SET ended_at = ${turnoEnd}
+      WHERE linea_id  = ${lineaId}
+        AND ended_at  IS NULL
+        AND source   != 'manuale'
+        AND started_at >= ${turnoStart}
+        AND started_at <  ${turnoEnd}
+    `;
   }
 }
 

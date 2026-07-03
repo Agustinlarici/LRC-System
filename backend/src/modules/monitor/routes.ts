@@ -882,8 +882,8 @@ monitorRoutes.get('/executive', async (c) => {
     const disponibilita = turno_oggi
       ? Math.max(0, Math.min(1, (net_planned - minuti_fermo) / net_planned))
       : 0;
-    const performance = (turno_oggi && pezzi_pianificati > 0)
-      ? Math.min(1, pezzi_reali / pezzi_pianificati)
+    const performance = (turno_oggi && avanzamento_previsto > 0)
+      ? Math.min(1, pezzi_reali / avanzamento_previsto)
       : 0;
     // TODO: qualità defaults to 1.0 when no delibera data for this line's combos
     const qualita = pezzi_deliberati > 0

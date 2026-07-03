@@ -738,54 +738,202 @@ dashboardsRoutes.put('/lead-time/zones', async (c) => {
   });
 });
 
-// ─── GET /weekly-oee?weeks=8 ─────────────────────────────────────────────────
-// Aggregazione OEE settimanale da monitor_oee_daily (PostgreSQL only, nessuna
-// query WebThron). Ritorna una riga per (linea × settimana) con OEE medio,
-// produzione reale vs piano, pezzi conformi vs deliberati e fermate.
+// ─── GET /daily-oee?days=60 ───────────────────────────────────────────────────
+// Storico giornaliero da monitor_oee_daily (PostgreSQL only, nessuna query
+// WebThron). Ritorna una riga per (linea × giorno) con OEE, disponibilità,
+// performance, qualità, produzione reale vs piano e fermate.
 
-dashboardsRoutes.get('/weekly-oee', async (c) => {
-  const weeks = Math.min(52, Math.max(1, parseInt(c.req.query('weeks') ?? '8', 10)));
+function parseIdList(raw: string | undefined): number[] | null {
+  if (!raw) return null;
+  const ids = raw.split(',').map(s => parseInt(s, 10)).filter(n => !isNaN(n));
+  return ids.length > 0 ? ids : null;
+}
+
+function parseStringList(raw: string | undefined): string[] | null {
+  if (!raw) return null;
+  const items = raw.split(',').map(s => s.trim()).filter(Boolean);
+  return items.length > 0 ? items : null;
+}
+
+dashboardsRoutes.get('/daily-oee', async (c) => {
+  const days     = Math.min(180, Math.max(1, parseInt(c.req.query('days') ?? '60', 10)));
+  const lineaIds = parseIdList(c.req.query('linea_ids'));
+
+  const lineaFilter = lineaIds ? db`AND d.linea_id = ANY(${lineaIds})` : db``;
 
   const rows = await db`
     SELECT
       d.linea_id,
       ml.nome,
-      TO_CHAR(DATE_TRUNC('week', d.data), 'YYYY-MM-DD')                         AS week_start,
-      COUNT(*) FILTER (WHERE d.pezzi_reali > 0)                                 AS giorni,
-      ROUND(AVG(d.oee::numeric)          FILTER (WHERE d.pezzi_reali > 0),  1) AS oee_avg,
-      ROUND(AVG(d.disponibilita::numeric) FILTER (WHERE d.pezzi_reali > 0), 1) AS disp_avg,
-      ROUND(AVG(d.performance::numeric)   FILTER (WHERE d.pezzi_reali > 0), 1) AS perf_avg,
-      ROUND(AVG(d.qualita::numeric) FILTER (WHERE d.pezzi_deliberati > 0),  1) AS qual_avg,
-      SUM(d.pezzi_reali)        AS pezzi_reali,
-      SUM(d.pezzi_pianificati)  AS pezzi_piano,
-      SUM(d.pezzi_deliberati)   AS pezzi_deliberati,
-      SUM(d.pezzi_conformi)     AS pezzi_conformi,
-      SUM(d.minuti_fermo)       AS fermi_min,
-      SUM(d.fermi_count)        AS fermi_count
+      TO_CHAR(d.data, 'YYYY-MM-DD') AS data,
+      d.pezzi_reali,
+      d.pezzi_pianificati,
+      d.pezzi_deliberati,
+      d.pezzi_conformi,
+      d.minuti_turno,
+      d.minuti_fermo,
+      d.fermi_count,
+      d.disponibilita,
+      d.performance,
+      d.qualita,
+      d.oee
     FROM monitor_oee_daily d
     JOIN monitor_linea ml ON ml.id = d.linea_id AND ml.attivo = true
-    WHERE d.data >= CURRENT_DATE - (${weeks} * 7)::integer
-    GROUP BY d.linea_id, ml.nome, DATE_TRUNC('week', d.data)
-    ORDER BY ml.nome, week_start
+    WHERE d.data >= CURRENT_DATE - (${days})::integer
+      AND d.pezzi_reali > 0
+      ${lineaFilter}
+    ORDER BY ml.nome, d.data
   `;
 
   return c.json({
-    weeks,
+    days,
     data: rows.map(r => ({
-      linea_id:         r.linea_id         as number,
-      nome:             r.nome             as string,
-      week_start:       (r.week_start as string).slice(0, 10),
-      giorni:           Number(r.giorni),
-      oee_avg:          r.oee_avg   != null ? Number(r.oee_avg)   : null,
-      disp_avg:         r.disp_avg  != null ? Number(r.disp_avg)  : null,
-      perf_avg:         r.perf_avg  != null ? Number(r.perf_avg)  : null,
-      qual_avg:         r.qual_avg  != null ? Number(r.qual_avg)  : null,
-      pezzi_reali:      Number(r.pezzi_reali),
-      pezzi_piano:      Number(r.pezzi_piano),
-      pezzi_deliberati: Number(r.pezzi_deliberati),
-      pezzi_conformi:   Number(r.pezzi_conformi),
-      fermi_min:        Number(r.fermi_min),
-      fermi_count:      Number(r.fermi_count),
+      linea_id:          r.linea_id          as number,
+      nome:              r.nome              as string,
+      data:              (r.data as string).slice(0, 10),
+      pezzi_reali:       Number(r.pezzi_reali),
+      pezzi_pianificati: Number(r.pezzi_pianificati),
+      pezzi_deliberati:  Number(r.pezzi_deliberati),
+      pezzi_conformi:    Number(r.pezzi_conformi),
+      minuti_turno:      Number(r.minuti_turno),
+      minuti_fermo:      Number(r.minuti_fermo),
+      fermi_count:       Number(r.fermi_count),
+      disponibilita:     r.disponibilita != null ? Number(r.disponibilita) : null,
+      performance:       r.performance   != null ? Number(r.performance)   : null,
+      qualita:           r.qualita       != null ? Number(r.qualita)       : null,
+      oee:               r.oee           != null ? Number(r.oee)           : null,
+    })),
+  });
+});
+
+// ─── GET /stop-pareto?days=60 ─────────────────────────────────────────────────
+// Analisi Pareto delle fermate: minuti persi totali per motivo e per linea nel
+// periodo, ordinati decrescente — per capire dove intervenire prima.
+
+dashboardsRoutes.get('/stop-pareto', async (c) => {
+  const days     = Math.min(180, Math.max(1, parseInt(c.req.query('days') ?? '60', 10)));
+  const lineaIds = parseIdList(c.req.query('linea_ids'));
+
+  const lineaFilterE = lineaIds ? db`AND e.linea_id = ANY(${lineaIds})` : db``;
+
+  const [byReason, byLinea] = await Promise.all([
+    db`
+      SELECT
+        COALESCE(r.id, 0)                        AS reason_id,
+        COALESCE(r.descrizione, 'Non classificato') AS descrizione,
+        COALESCE(cat.nome, 'Non classificato')      AS categoria,
+        COALESCE(cat.colore, '#9ca3af')             AS colore,
+        SUM(EXTRACT(EPOCH FROM (COALESCE(e.ended_at, NOW()) - e.started_at)) / 60)::int AS minuti_totali,
+        COUNT(*)::int AS eventi_count
+      FROM monitor_stop_events e
+      LEFT JOIN monitor_stop_reasons r    ON r.id = e.reason_id
+      LEFT JOIN monitor_stop_categories cat ON cat.id = r.category_id
+      WHERE e.started_at >= NOW() - (${days} * INTERVAL '1 day')
+      ${lineaFilterE}
+      GROUP BY r.id, r.descrizione, cat.nome, cat.colore
+      ORDER BY minuti_totali DESC
+    `,
+    db`
+      SELECT
+        e.linea_id,
+        l.nome,
+        SUM(EXTRACT(EPOCH FROM (COALESCE(e.ended_at, NOW()) - e.started_at)) / 60)::int AS minuti_totali,
+        COUNT(*)::int AS eventi_count
+      FROM monitor_stop_events e
+      JOIN monitor_linea l ON l.id = e.linea_id
+      WHERE e.started_at >= NOW() - (${days} * INTERVAL '1 day')
+      ${lineaFilterE}
+      GROUP BY e.linea_id, l.nome
+      ORDER BY minuti_totali DESC
+    `,
+  ]);
+
+  return c.json({
+    days,
+    by_reason: byReason.map(r => ({
+      reason_id:     Number(r.reason_id),
+      descrizione:   r.descrizione as string,
+      categoria:     r.categoria   as string,
+      colore:        r.colore      as string,
+      minuti_totali: Number(r.minuti_totali),
+      eventi_count:  Number(r.eventi_count),
+    })),
+    by_linea: byLinea.map(r => ({
+      linea_id:      r.linea_id as number,
+      nome:          r.nome     as string,
+      minuti_totali: Number(r.minuti_totali),
+      eventi_count:  Number(r.eventi_count),
+    })),
+  });
+});
+
+// ─── GET /filter-options ──────────────────────────────────────────────────────
+// Linee attive + combo (modello, componente) configurati — popola i filtri
+// multi-selezione del dashboard tendenze.
+
+dashboardsRoutes.get('/filter-options', async (c) => {
+  const [linee, combos] = await Promise.all([
+    db`SELECT id, nome FROM monitor_linea WHERE attivo = true ORDER BY nome`,
+    db`SELECT DISTINCT linea_id, modello, componente FROM monitor_linea_combo ORDER BY modello, componente`,
+  ]);
+
+  const modelli    = [...new Set(combos.map(r => r.modello    as string))].sort();
+  const componenti = [...new Set(combos.map(r => r.componente as string))].sort();
+
+  return c.json({
+    linee: linee.map(r => ({ id: r.id as number, nome: r.nome as string })),
+    modelli,
+    componenti,
+    combos: combos.map(r => ({
+      linea_id:   r.linea_id   as number,
+      modello:    r.modello    as string,
+      componente: r.componente as string,
+    })),
+  });
+});
+
+// ─── GET /daily-production-by-model?days=60 ───────────────────────────────────
+// Pezzi reali per (linea × modello × componente × giorno), da
+// webthron_events_history (copia locale PostgreSQL, nessuna query WebThron
+// live). Conta solo gli eventi nella fase di produzione propria della linea
+// (esclude gli eventi di delibera, che condividono la stessa storia).
+
+dashboardsRoutes.get('/daily-production-by-model', async (c) => {
+  const days        = Math.min(180, Math.max(1, parseInt(c.req.query('days') ?? '60', 10)));
+  const lineaIds    = parseIdList(c.req.query('linea_ids'));
+  const modelli     = parseStringList(c.req.query('modelli'));
+  const componenti  = parseStringList(c.req.query('componenti'));
+
+  const lineaFilter      = lineaIds    ? db`AND ml.id = ANY(${lineaIds})`             : db``;
+  const modelliFilter    = modelli     ? db`AND weh.modello = ANY(${modelli})`        : db``;
+  const componentiFilter = componenti  ? db`AND weh.componente = ANY(${componenti})`  : db``;
+
+  const rows = await db`
+    SELECT
+      ml.id                AS linea_id,
+      ml.nome               AS linea_nome,
+      weh.modello,
+      weh.componente,
+      weh.data_cache::text  AS data,
+      COUNT(*)::int         AS pezzi_reali
+    FROM webthron_events_history weh
+    JOIN monitor_linea ml       ON ml.fase = weh.fase AND ml.attivo = true
+    JOIN monitor_linea_combo mlc ON mlc.linea_id = ml.id AND mlc.modello = weh.modello AND mlc.componente = weh.componente
+    WHERE weh.data_cache >= CURRENT_DATE - (${days})::integer
+      ${lineaFilter} ${modelliFilter} ${componentiFilter}
+    GROUP BY ml.id, ml.nome, weh.modello, weh.componente, weh.data_cache
+    ORDER BY weh.data_cache, ml.nome
+  `;
+
+  return c.json({
+    days,
+    data: rows.map(r => ({
+      linea_id:    r.linea_id    as number,
+      nome:        r.linea_nome  as string,
+      modello:     r.modello     as string,
+      componente:  r.componente  as string,
+      data:        r.data        as string,
+      pezzi_reali: Number(r.pezzi_reali),
     })),
   });
 });

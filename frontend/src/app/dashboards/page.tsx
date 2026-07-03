@@ -10,8 +10,7 @@ const BACKEND = typeof window !== 'undefined'
 // ─── Targets — change here to adjust KPI thresholds ──────────────────────────
 const OEE_TARGET      = 80;  // % — verde ≥80, giallo ≥72, rosso <72
 const QUALITA_TARGET  = 97;  // % — verde ≥97, giallo ≥87.3, rosso <87.3
-const PROD_WARN_PCT   = 0.8; // produzione bar: verde ≥80% del piano
-const SCRAP_WARN_PCT  = 5;   // % scrap — sopra questa soglia appare in "Richiede attenzione"
+const PROD_WARN_PCT   = 0.8; // produzione: verde ≥80% del piano, giallo ≥60%
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,10 +65,10 @@ function kpiTextColor(value: number, target: number): string {
   return 'text-red-600';
 }
 
-function kpiBg(value: number, target: number): string {
-  if (value >= target)        return 'bg-green-50 border-green-200';
-  if (value >= target * 0.9)  return 'bg-yellow-50 border-yellow-200';
-  return 'bg-red-50 border-red-200';
+function oeeTextColor(oee: number): string {
+  if (oee >= OEE_TARGET) return 'text-green-600';
+  if (oee >= 60)         return 'text-yellow-500';
+  return 'text-red-600';
 }
 
 function prodBarColor(reali: number, pianificati: number): string {
@@ -85,9 +84,13 @@ function prodBarPct(reali: number, pianificati: number): number {
   return Math.min(100, Math.round(reali / pianificati * 100));
 }
 
-function oeeTextColor(oee: number): string {
-  if (oee >= OEE_TARGET) return 'text-green-600';
-  if (oee >= 60)         return 'text-yellow-500';
+function ratioPct(reale: number, pianificata: number): number {
+  return pianificata === 0 ? 0 : reale / pianificata * 100;
+}
+
+function ratioText(pct: number): string {
+  if (pct >= PROD_WARN_PCT * 100) return 'text-green-600';
+  if (pct >= 60)                  return 'text-yellow-500';
   return 'text-red-600';
 }
 
@@ -109,6 +112,55 @@ function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('it-IT', {
     hour: '2-digit', minute: '2-digit', second: '2-digit',
   });
+}
+
+// ─── OEE gauge — car-dashboard style arc, open at the bottom ──────────────────
+
+const GAUGE_GAP   = 64;                 // degrees left open at the bottom
+const GAUGE_START = 90 + GAUGE_GAP / 2; // start angle (bottom-left), 0deg = 3 o'clock, clockwise
+const GAUGE_SWEEP = 360 - GAUGE_GAP;    // total arc sweep
+
+function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
+  const rad = (angleDeg * Math.PI) / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+function arcPath(cx: number, cy: number, r: number, startDeg: number, endDeg: number) {
+  const start    = polarToCartesian(cx, cy, r, startDeg);
+  const end      = polarToCartesian(cx, cy, r, endDeg);
+  const largeArc = endDeg - startDeg > 180 ? 1 : 0;
+  return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 1 ${end.x} ${end.y}`;
+}
+
+function OeeGauge({ value, size, strokeWidth, fontSizeClass }: {
+  value: number; size: number; strokeWidth: number; fontSizeClass: string;
+}) {
+  const cx          = size / 2;
+  const cy           = size / 2;
+  const r             = (size - strokeWidth) / 2;
+  const clamped       = Math.max(0, Math.min(100, value));
+  const colorClass    = oeeTextColor(value);
+  const trackD        = arcPath(cx, cy, r, GAUGE_START, GAUGE_START + GAUGE_SWEEP);
+  const progressD     = clamped > 0 ? arcPath(cx, cy, r, GAUGE_START, GAUGE_START + GAUGE_SWEEP * (clamped / 100)) : '';
+
+  return (
+    <div className="relative inline-flex items-center justify-center shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <path d={trackD} fill="none" strokeWidth={strokeWidth} strokeLinecap="round" stroke="currentColor" className="text-gray-200" />
+        {progressD && (
+          <path
+            d={progressD} fill="none" strokeWidth={strokeWidth} strokeLinecap="round"
+            stroke="currentColor" className={`${colorClass} transition-all duration-700 ease-out`}
+          />
+        )}
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className={`font-semibold leading-none ${colorClass} ${fontSizeClass}`}>
+          {value.toFixed(1)}<span className="text-[0.4em] font-medium text-gray-400 align-top">%</span>
+        </span>
+      </div>
+    </div>
+  );
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -158,80 +210,23 @@ export default function ExecutiveDashboardPage() {
   if (!data) return null;
 
   const { kpi, linee, aggiornato_at } = data;
-
-  // Issues for "Richiede attenzione" — sorted: stops first, then scrap, then OEE, then production
-  const issues: Array<{ id: number; nome: string; msg: string; level: 'red' | 'yellow' }> = [];
-  for (const l of linee) {
-    if (!l.turno_oggi) continue;
-    if (l.ferma_adesso) {
-      issues.push({ id: l.id, nome: l.nome, msg: `Ferma da ${l.ferma_da_min ?? '?'} min`, level: 'red' });
-    }
-    if (l.pezzi_deliberati > 0) {
-      const scrapPct = (l.pezzi_deliberati - l.pezzi_conformi) / l.pezzi_deliberati * 100;
-      if (scrapPct > SCRAP_WARN_PCT) {
-        issues.push({ id: l.id, nome: l.nome, msg: `Scrap ${scrapPct.toFixed(1)}% (${l.pezzi_deliberati - l.pezzi_conformi} pz)`, level: 'red' });
-      }
-    }
-    if (!l.ferma_adesso && l.oee > 0 && l.oee < OEE_TARGET) {
-      issues.push({ id: l.id, nome: l.nome, msg: `OEE ${l.oee.toFixed(1)}%`, level: 'yellow' });
-    } else if (l.pezzi_pianificati > 0 && l.pezzi_reali / l.pezzi_pianificati < 0.6) {
-      issues.push({ id: l.id, nome: l.nome, msg: `Produzione ${l.pezzi_reali} / ${l.pezzi_pianificati} pz`, level: 'yellow' });
-    }
-  }
+  const prodPct = ratioPct(kpi.produzione_reale, kpi.produzione_pianificata);
 
   return (
     <div className="space-y-6">
 
-      {/* ── KPI row + timestamp ───────────────────────────────────────────── */}
-      <div className="flex items-start gap-4">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 flex-1">
-
-        {/* OEE Generale */}
-        <div className={`card border ${kpiBg(kpi.oee_generale, OEE_TARGET)}`}>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">OEE Generale</p>
-          <p className={`text-3xl font-bold leading-none ${kpiTextColor(kpi.oee_generale, OEE_TARGET)}`}>
-            {kpi.oee_generale.toFixed(1)}%
-          </p>
-          <p className="text-xs text-gray-400 mt-1.5">obiettivo {OEE_TARGET}%</p>
+      {/* ── Page header ────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-lg font-medium text-gray-900">Dashboard Produzione</h1>
+          <p className="text-xs text-gray-400 mt-0.5">Stato in tempo reale delle linee — OEE, produzione e qualità</p>
         </div>
-
-        {/* Tempo Perso */}
-        <div className="card">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Tempo Perso</p>
-          <p className="text-3xl font-bold text-gray-800 leading-none">{kpi.tempo_perso_min}</p>
-          <p className="text-xs text-gray-400 mt-1.5">
-            min &nbsp;·&nbsp; {kpi.fermi_count} {kpi.fermi_count === 1 ? 'fermo' : 'fermi'}
-          </p>
-        </div>
-
-        {/* Produzione */}
-        <div className="card">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Produzione</p>
-          <p className="text-3xl font-bold text-gray-800 leading-none">
-            {kpi.produzione_reale}
-            <span className="text-lg font-normal text-gray-400"> / {kpi.produzione_pianificata}</span>
-          </p>
-          <p className="text-xs text-gray-400 mt-1.5">pezzi reali / pianificati</p>
-        </div>
-
-        {/* Qualità */}
-        {kpi.qualita_pct != null ? (
-          <div className={`card border ${kpiBg(kpi.qualita_pct, QUALITA_TARGET)}`}>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Qualità</p>
-            <p className={`text-3xl font-bold leading-none ${kpiTextColor(kpi.qualita_pct, QUALITA_TARGET)}`}>
-              {kpi.qualita_pct.toFixed(1)}%
-            </p>
-            <p className="text-xs text-gray-400 mt-1.5">obiettivo {QUALITA_TARGET}%</p>
-          </div>
-        ) : (
-          <div className="card">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Qualità</p>
-            <p className="text-3xl font-bold text-gray-300 leading-none">—</p>
-            <p className="text-xs text-gray-400 mt-1.5">nessun dato delibera oggi</p>
-          </div>
-        )}
-        </div>
-        <div className="shrink-0 flex flex-col items-end gap-2">
+        <div className="flex items-center gap-3">
+          {data.is_historical ? (
+            <span className="text-xs text-blue-500 font-medium">Storico — {selectedDate}</span>
+          ) : (
+            <span className="text-xs text-gray-400">Aggiornato alle {fmtTime(aggiornato_at)}</span>
+          )}
           <input
             type="date"
             value={selectedDate}
@@ -239,50 +234,76 @@ export default function ExecutiveDashboardPage() {
             onChange={e => { setSelectedDate(e.target.value); setLoading(true); }}
             className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          {data?.is_historical ? (
-            <p className="text-xs text-blue-500 font-medium">Storico — {selectedDate}</p>
-          ) : (
-            <p className="text-xs text-gray-400">Aggiornato alle {fmtTime(aggiornato_at)}</p>
-          )}
         </div>
       </div>
 
-      {/* ── Richiede attenzione / Tutto ok banner ─────────────────────────── */}
-      {issues.length > 0 ? (
-        <div className="card border border-orange-200 bg-orange-50">
-          <p className="text-sm font-semibold text-orange-800 mb-2 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-orange-500 inline-block" />
-            Richiede attenzione
-          </p>
-          <ul className="space-y-1.5">
-            {issues.map((iss, i) => (
-              <li key={i} className="flex items-center gap-2.5 text-sm">
-                <span className={`w-2 h-2 rounded-full shrink-0 inline-block ${iss.level === 'red' ? 'bg-red-500' : 'bg-yellow-400'}`} />
-                <span className="font-semibold text-gray-800">{iss.nome}</span>
-                <span className="text-gray-500">{iss.msg}</span>
-              </li>
-            ))}
-          </ul>
+      {/* ── KPI stat strip ─────────────────────────────────────────────────── */}
+      <div className="card p-0 overflow-hidden">
+        <div className="grid grid-cols-2 lg:grid-cols-4 divide-y divide-gray-100 lg:divide-y-0 lg:divide-x">
+
+          {/* OEE Generale — gauge */}
+          <div className="p-5 flex items-center gap-5">
+            <OeeGauge value={kpi.oee_generale} size={136} strokeWidth={11} fontSizeClass="text-4xl" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-gray-400 uppercase tracking-wide">OEE Generale</p>
+              <p className="text-xs text-gray-400 mt-1">obiettivo {OEE_TARGET}%</p>
+            </div>
+          </div>
+
+          {/* Tempo Perso */}
+          <div className="p-5">
+            <p className="text-sm font-medium text-gray-400 uppercase tracking-wide">Tempo Perso</p>
+            <p className="text-5xl font-semibold text-gray-900 leading-none mt-2">
+              {kpi.tempo_perso_min}<span className="text-lg font-medium text-gray-400 ml-1">min</span>
+            </p>
+            <p className="text-xs text-gray-400 mt-2">
+              {kpi.fermi_count} {kpi.fermi_count === 1 ? 'fermo' : 'fermi'}
+            </p>
+          </div>
+
+          {/* Produzione */}
+          <div className="p-5">
+            <p className="text-sm font-medium text-gray-400 uppercase tracking-wide">Produzione</p>
+            <p className="text-5xl font-semibold leading-none mt-2">
+              <span className={ratioText(prodPct)}>{kpi.produzione_reale}</span>
+              <span className="text-xl font-medium text-gray-400"> / {kpi.produzione_pianificata}</span>
+            </p>
+            <p className="text-xs text-gray-400 mt-2">pezzi reali / attesi ad ora</p>
+          </div>
+
+          {/* Qualità */}
+          <div className="p-5">
+            <p className="text-sm font-medium text-gray-400 uppercase tracking-wide">Qualità</p>
+            {kpi.qualita_pct != null ? (
+              <>
+                <p className={`text-5xl font-semibold leading-none mt-2 ${kpiTextColor(kpi.qualita_pct, QUALITA_TARGET)}`}>
+                  {kpi.qualita_pct.toFixed(1)}%
+                </p>
+                <p className="text-xs text-gray-400 mt-2">obiettivo {QUALITA_TARGET}%</p>
+              </>
+            ) : (
+              <>
+                <p className="text-5xl font-semibold text-gray-300 leading-none mt-2">—</p>
+                <p className="text-xs text-gray-400 mt-2">nessun dato delibera oggi</p>
+              </>
+            )}
+          </div>
+
         </div>
-      ) : (
-        <div className="card border border-green-200 bg-green-50 flex items-center gap-3 py-4">
-          <span className="w-3 h-3 rounded-full bg-green-500 shrink-0 inline-block" />
-          <p className="text-sm font-semibold text-green-800">Tutto sotto controllo</p>
-        </div>
-      )}
+      </div>
 
       {/* ── Line cards grid ───────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {linee.map(l => (
           <div
             key={l.id}
-            className={`card border-l-4 ${BORDER_COLOR[l.status]} space-y-3`}
+            className={`card border-l-2 p-5 ${BORDER_COLOR[l.status]}`}
           >
             {/* Card header: status dot + name + fermo badge */}
-            <div className="flex items-center justify-between gap-2 min-w-0">
+            <div className="flex items-center justify-between gap-2 min-w-0 mb-4">
               <div className="flex items-center gap-2 min-w-0">
                 <span className={`w-2.5 h-2.5 rounded-full shrink-0 inline-block ${DOT_COLOR[l.status]}`} />
-                <span className="font-semibold text-gray-900 text-sm truncate">{l.nome}</span>
+                <span className="font-medium text-gray-900 text-base truncate">{l.nome}</span>
               </div>
               {l.ferma_adesso && l.ferma_da_min != null && (
                 <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 shrink-0 whitespace-nowrap">
@@ -295,72 +316,74 @@ export default function ExecutiveDashboardPage() {
               <p className="text-xs text-gray-400 text-center py-3">Nessun turno configurato</p>
             ) : (
               <>
-                {/* Bar 1: Disponibilità */}
-                <div>
-                  <div className="flex justify-between items-center text-xs mb-1">
-                    <span className="text-gray-500">Disponibilità</span>
-                    <span className="font-semibold text-gray-700">{l.disponibilita.toFixed(1)}%</span>
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div
-                      className={`h-2 rounded-full transition-all duration-500 ${l.disponibilita >= 90 ? 'bg-green-500' : l.disponibilita >= 70 ? 'bg-yellow-400' : 'bg-red-500'}`}
-                      style={{ width: `${Math.min(100, l.disponibilita)}%` }}
-                    />
-                  </div>
+                {/* OEE gauge — hero metric, centered on top */}
+                <div className="flex flex-col items-center pb-4 mb-4 border-b border-gray-100">
+                  <OeeGauge value={l.oee} size={128} strokeWidth={10} fontSizeClass="text-3xl" />
+                  <p className="text-sm font-medium text-gray-400 uppercase tracking-wide mt-2">OEE</p>
                 </div>
 
-                {/* Bar 2: Pezzi prodotti vs avanzamento previsto */}
-                <div>
-                  <div className="flex justify-between items-center text-xs mb-1">
-                    <span className="text-gray-500">Produzione</span>
-                    <span className="font-semibold text-gray-700">
-                      {l.pezzi_reali} / {l.avanzamento_previsto} pz
-                      <span className="text-gray-400 font-normal"> su {l.pezzi_pianificati}</span>
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div
-                      className={`h-2 rounded-full transition-all duration-500 ${prodBarColor(l.pezzi_reali, l.avanzamento_previsto)}`}
-                      style={{ width: `${prodBarPct(l.pezzi_reali, l.avanzamento_previsto)}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Bar 3: Qualità (pezzi OK) */}
-                <div>
-                  <div className="flex justify-between items-center text-xs mb-1">
-                    <span className="text-gray-500">Qualità</span>
-                    {l.pezzi_deliberati > 0 ? (
-                      <span className="font-semibold text-gray-700">
-                        {l.pezzi_conformi} OK · {l.pezzi_deliberati - l.pezzi_conformi} scrap
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">nessun dato</span>
-                    )}
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2">
-                    {l.pezzi_deliberati > 0 && (
+                {/* Contributing bars — thin */}
+                <div className="space-y-2.5">
+                  {/* Disponibilità */}
+                  <div>
+                    <div className="flex justify-between items-baseline mb-1">
+                      <span className="text-sm font-medium text-gray-400 uppercase tracking-wide">Disponibilità</span>
+                      <span className="text-sm font-medium text-gray-900">{l.disponibilita.toFixed(1)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-1 overflow-hidden">
                       <div
-                        className={`h-2 rounded-full transition-all duration-500 ${
-                          l.qualita >= 97 ? 'bg-green-500'
-                          : l.qualita >= 90 ? 'bg-yellow-400'
-                          : 'bg-red-500'
-                        }`}
-                        style={{ width: `${Math.round(l.pezzi_conformi / l.pezzi_deliberati * 100)}%` }}
+                        className={`h-full rounded-full transition-all duration-500 ${l.disponibilita >= 90 ? 'bg-green-500' : l.disponibilita >= 70 ? 'bg-yellow-400' : 'bg-red-500'}`}
+                        style={{ width: `${Math.min(100, l.disponibilita)}%` }}
                       />
-                    )}
+                    </div>
                   </div>
-                </div>
 
-                {/* Divider */}
-                <div className="border-t border-gray-100" />
+                  {/* Produzione */}
+                  <div>
+                    <div className="flex justify-between items-baseline mb-1">
+                      <span className="text-sm font-medium text-gray-400 uppercase tracking-wide">Produzione</span>
+                      <span className="text-sm">
+                        <span className="font-medium text-gray-900">{l.pezzi_reali}</span>
+                        <span className="text-gray-500"> / {l.avanzamento_previsto}</span>
+                        <span className="text-gray-400"> · su {l.pezzi_pianificati}</span>
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-1 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${prodBarColor(l.pezzi_reali, l.avanzamento_previsto)}`}
+                        style={{ width: `${prodBarPct(l.pezzi_reali, l.avanzamento_previsto)}%` }}
+                      />
+                    </div>
+                  </div>
 
-                {/* OEE */}
-                <div className="text-right">
-                  <p className="text-xs text-gray-400 font-medium">OEE</p>
-                  <p className={`text-2xl font-bold leading-none ${oeeTextColor(l.oee)}`}>
-                    {l.oee.toFixed(1)}%
-                  </p>
+                  {/* Qualità */}
+                  <div>
+                    <div className="flex justify-between items-baseline mb-1">
+                      <span className="text-sm font-medium text-gray-400 uppercase tracking-wide">Qualità</span>
+                      {l.pezzi_deliberati > 0 ? (
+                        <span className="text-sm">
+                          <span className="font-medium text-gray-900">{l.pezzi_conformi} OK</span>
+                          <span className={l.pezzi_deliberati - l.pezzi_conformi > 0 ? 'text-red-600 font-medium' : 'text-gray-400'}>
+                            {' '}· {l.pezzi_deliberati - l.pezzi_conformi} scrap
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-sm text-gray-400">nessun dato</span>
+                      )}
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-1 overflow-hidden">
+                      {l.pezzi_deliberati > 0 && (
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            l.qualita >= 97 ? 'bg-green-500'
+                            : l.qualita >= 90 ? 'bg-yellow-400'
+                            : 'bg-red-500'
+                          }`}
+                          style={{ width: `${Math.round(l.pezzi_conformi / l.pezzi_deliberati * 100)}%` }}
+                        />
+                      )}
+                    </div>
+                  </div>
                 </div>
               </>
             )}
@@ -375,8 +398,8 @@ export default function ExecutiveDashboardPage() {
           .sort((a, b) => new Date(b.inizio).getTime() - new Date(a.inizio).getTime());
         if (tutteLeFormate.length === 0) return null;
         return (
-          <div className="card">
-            <p className="text-sm font-semibold text-gray-700 mb-3">Fermate del giorno</p>
+          <div className="card p-5">
+            <p className="text-lg font-medium text-gray-700 mb-3">Fermate del giorno</p>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
@@ -400,7 +423,7 @@ export default function ExecutiveDashboardPage() {
                           </span>
                         )}
                       </td>
-                      <td className="py-2 text-right font-semibold text-gray-700">{f.durata_min} min</td>
+                      <td className="py-2 text-right font-medium text-gray-700">{f.durata_min} min</td>
                     </tr>
                   ))}
                 </tbody>
