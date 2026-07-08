@@ -76,6 +76,23 @@ packingRoutes.get('/articles', async (c) => {
   return c.json(rows.map(r => r.code));
 });
 
+packingRoutes.post('/articles', async (c) => {
+  const body = await parseBody(c, z.object({
+    code:        z.string().min(1),
+    description: z.string().min(1).optional().nullable(),
+    family:      z.string().min(1).optional().nullable(),
+  }));
+  const code = body.code.trim().toUpperCase();
+  const [row] = await db`
+    INSERT INTO pack_article (code, description, family)
+    VALUES (${code}, ${body.description?.trim() ?? null}, ${body.family?.trim() ?? null})
+    ON CONFLICT (code) DO NOTHING
+    RETURNING code
+  `;
+  if (!row) throw new HTTPException(409, { message: `Articolo "${code}" già esistente` });
+  return c.json({ status: 'created', code }, 201);
+});
+
 packingRoutes.get('/check-article/:code', async (c) => {
   const code = c.req.param('code');
   const [row] = await db`SELECT COUNT(*)::int AS total FROM pack_article WHERE code = ${code}`;

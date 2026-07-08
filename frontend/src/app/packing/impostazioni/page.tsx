@@ -21,20 +21,32 @@ function col(row: Record<string, string>, ...keys: string[]): string | undefined
 
 // ─── BC Sync ──────────────────────────────────────────────────────────────────
 
+const SYNC_TIMEOUT_MS = 120_000;
+
 function SyncSection() {
   const [loading, setLoading] = useState(false);
   const [result,  setResult]  = useState<{ inserted: number; bc_total: number; existing_in_pg: number } | null>(null);
   const [error,   setError]   = useState('');
 
+  const [code,        setCode]        = useState('');
+  const [description, setDescription] = useState('');
+  const [family,       setFamily]      = useState('');
+  const [adding,       setAdding]      = useState(false);
+  const [addMsg,        setAddMsg]      = useState('');
+  const [addError,      setAddError]    = useState('');
+
   async function runSync() {
-    if (!confirm('Sincronizzare gli articoli da Business Central?')) return;
+    if (!confirm('Sincronizzare gli articoli da Business Central? L\'operazione può richiedere qualche minuto.')) return;
     setLoading(true); setError(''); setResult(null);
     try {
       const data = await api.post<{ ok: boolean; inserted: number; bc_total: number; existing_in_pg: number; error?: string }>(
-        '/api/pack/articles/sync-from-bc'
+        '/api/pack/articles/sync-from-bc',
+        undefined,
+        SYNC_TIMEOUT_MS
       );
       if (!data.ok) throw new Error(data.error || 'Errore sconosciuto');
       setResult(data);
+      _articlesCache = null;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Errore sconosciuto');
     } finally {
@@ -42,32 +54,69 @@ function SyncSection() {
     }
   }
 
+  async function addManual(e: React.FormEvent) {
+    e.preventDefault();
+    if (!code.trim()) return;
+    setAdding(true); setAddMsg(''); setAddError('');
+    try {
+      await api.post('/api/pack/articles', {
+        code:        code.trim(),
+        description: description.trim() || null,
+        family:      family.trim()      || null,
+      });
+      setAddMsg(`Articolo "${code.trim().toUpperCase()}" aggiunto.`);
+      setCode(''); setDescription(''); setFamily('');
+      _articlesCache = null;
+    } catch (e) {
+      setAddError(e instanceof Error ? e.message : 'Errore aggiunta articolo');
+    } finally {
+      setAdding(false);
+    }
+  }
+
   return (
-    <div>
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg flex justify-between">
-          <span>{error}</span>
-          <button onClick={() => setError('')} className="text-red-400 hover:text-red-600">✕</button>
-        </div>
-      )}
-      {result && (
-        <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg flex justify-between items-center">
-          <div className="flex gap-4">
-            <span><strong>Inseriti:</strong> {result.inserted}</span>
-            <span><strong>Totale BC:</strong> {result.bc_total}</span>
-            <span><strong>Già presenti:</strong> {result.existing_in_pg}</span>
+    <div className="space-y-8">
+      <div>
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg flex justify-between">
+            <span>{error}</span>
+            <button onClick={() => setError('')} className="text-red-400 hover:text-red-600">✕</button>
           </div>
-          <button onClick={() => setResult(null)} className="text-green-500 hover:text-green-700">✕</button>
+        )}
+        {result && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg flex justify-between items-center">
+            <div className="flex gap-4">
+              <span><strong>Inseriti:</strong> {result.inserted}</span>
+              <span><strong>Totale BC:</strong> {result.bc_total}</span>
+              <span><strong>Già presenti:</strong> {result.existing_in_pg}</span>
+            </div>
+            <button onClick={() => setResult(null)} className="text-green-500 hover:text-green-700">✕</button>
+          </div>
+        )}
+        <div className="flex items-center justify-between py-2">
+          <div>
+            <p className="font-medium text-gray-800 text-sm">Sincronizza da Business Central</p>
+            <p className="text-xs text-gray-500 mt-0.5">Inserisce solo i codici articolo mancanti. Automatico ogni giorno alle 03:00.</p>
+          </div>
+          <button onClick={runSync} disabled={loading} className="btn-primary whitespace-nowrap text-sm">
+            {loading ? 'Sincronizzazione...' : 'Sincronizza ora'}
+          </button>
         </div>
-      )}
-      <div className="flex items-center justify-between py-2">
-        <div>
-          <p className="font-medium text-gray-800 text-sm">Sincronizza da Business Central</p>
-          <p className="text-xs text-gray-500 mt-0.5">Inserisce solo i codici articolo mancanti. Automatico ogni giorno alle 03:00.</p>
-        </div>
-        <button onClick={runSync} disabled={loading} className="btn-primary whitespace-nowrap text-sm">
-          {loading ? 'Sincronizzazione...' : 'Sincronizza ora'}
-        </button>
+      </div>
+
+      <div>
+        <h3 className="font-semibold text-gray-700 mb-3">Aggiungi articolo manualmente</h3>
+        <p className="text-xs text-gray-500 mb-3">Per articoli non ancora presenti in Business Central o non sincronizzati.</p>
+        {addError && <p className="text-red-600 text-sm mb-3">{addError}</p>}
+        {addMsg && <p className="text-green-600 text-sm mb-3">{addMsg}</p>}
+        <form onSubmit={addManual} className="grid grid-cols-1 md:grid-cols-[200px_1fr_180px_auto] gap-3">
+          <input className="input" placeholder="Codice articolo" value={code} onChange={e => setCode(e.target.value)} />
+          <input className="input" placeholder="Descrizione (opzionale)" value={description} onChange={e => setDescription(e.target.value)} />
+          <input className="input" placeholder="Famiglia (opzionale)" value={family} onChange={e => setFamily(e.target.value)} />
+          <button type="submit" disabled={adding || !code.trim()} className="btn btn-primary">
+            {adding ? '...' : '+ Aggiungi'}
+          </button>
+        </form>
       </div>
     </div>
   );

@@ -15,7 +15,7 @@ function getBcConfig(): sql.config {
       trustServerCertificate: true,
     },
     connectionTimeout: 15000,
-    requestTimeout:    60000,
+    requestTimeout:    120000,
   };
 }
 
@@ -55,6 +55,8 @@ export interface SyncResult {
   updated:       number;
 }
 
+const BATCH_SIZE = 2000;
+
 export async function syncPackArticles(): Promise<SyncResult> {
   const articles = await queryBcArticles();
 
@@ -64,16 +66,23 @@ export async function syncPackArticles(): Promise<SyncResult> {
   let inserted = 0;
   let updated  = 0;
 
-  for (const a of articles) {
-    const isNew = !existingCodes.has(a.code);
+  for (let i = 0; i < articles.length; i += BATCH_SIZE) {
+    const batch = articles.slice(i, i + BATCH_SIZE).map(a => ({
+      code:        a.code,
+      description: a.description ?? null,
+      family:      a.family      ?? null,
+    }));
+
     await db`
-      INSERT INTO pack_article (code, description, family)
-      VALUES (${a.code}, ${a.description ?? null}, ${a.family ?? null})
+      INSERT INTO pack_article ${db(batch, 'code', 'description', 'family')}
       ON CONFLICT (code) DO UPDATE SET
         description = EXCLUDED.description,
         family      = EXCLUDED.family
     `;
-    if (isNew) inserted++; else updated++;
+
+    for (const a of batch) {
+      if (existingCodes.has(a.code)) updated++; else inserted++;
+    }
   }
 
   return {

@@ -16,7 +16,9 @@ export default function SyncArticlesPage() {
     setResult(null);
     try {
       const data = await api.post<{ ok: boolean; inserted: number; bc_total: number; existing_in_mysql: number; error?: string }>(
-        '/api/pack/articles/sync-from-bc'
+        '/api/pack/articles/sync-from-bc',
+        undefined,
+        120_000
       );
       if (!data.ok) throw new Error(data.error || 'Errore sconosciuto');
       setResult(data);
