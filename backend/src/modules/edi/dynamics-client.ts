@@ -105,7 +105,8 @@ export async function getShipments(
       WHERE ${conditions.join(' AND ')}
       GROUP BY l.[Document No_], l.[Destination No_]
       HAVING 1=1 ${dateFilter}
-      ORDER BY MIN(l.[Posting Date]) DESC
+      ORDER BY MIN(l.[Posting Date]) DESC,
+               TRY_CAST(SUBSTRING(l.[Document No_], CHARINDEX('-', l.[Document No_]) + 1, LEN(l.[Document No_])) AS INT) DESC
       OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
     `);
 
