@@ -62,6 +62,18 @@ serve({ fetch: app.fetch, port }, async (info) => {
   await db`ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'monitor_resumen'`.catch(() => {});
   logger.info('[Startup] module_key_enum monitor_resumen OK');
 
+  await db`ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'webddt'`.catch(() => {});
+  logger.info('[Startup] module_key_enum webddt OK');
+
+  await db`
+    CREATE TABLE IF NOT EXISTS webddt_downloads (
+      shipment_id   TEXT        PRIMARY KEY,
+      downloaded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      downloaded_by TEXT
+    )
+  `.catch((e: unknown) => logger.warn(`[Startup] webddt_downloads: ${e}`));
+  logger.info('[Startup] webddt_downloads OK');
+
   await db`ALTER TABLE edi_clients ADD COLUMN IF NOT EXISTS auto_generate BOOLEAN NOT NULL DEFAULT FALSE`.catch(() => {});
   logger.info('[Startup] edi_clients auto_generate OK');
 

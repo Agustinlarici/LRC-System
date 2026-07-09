@@ -124,6 +124,11 @@ export const MODULES: ModuleConfig[] = [
     description: 'Generazione automatica file Electronic Data Interchange per le spedizioni',
     icon: '📡', sidebar: 'IconEdi', hidden: false, moduleKey: 'edi',
   },
+  {
+    href: '/webddt', label: 'WebDDT', group: 'Logistica',
+    description: 'Scarica documenti di trasporto Ferrari in formato Excel per le spedizioni',
+    icon: '📊', sidebar: 'IconWebDdt', hidden: false, moduleKey: 'webddt',
+  },
 
   // ── Nascosti / in arrivo ───────────────────────────────────────────────────
   {

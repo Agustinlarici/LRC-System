@@ -154,6 +154,52 @@ export async function getShipmentPrices(shipmentIds: string[]): Promise<Shipment
   }
 }
 
+// ─── WebDDT (Ferrari-specific) ────────────────────────────────────────────────
+
+export interface WebDdtLine {
+  article_code:    string;
+  quantity:        number;
+  unit_of_measure: string;
+  contract_number: string | null;  // first word of LSA Your Reference (PO number)
+  lsa_task_no:     string | null;  // commessa / Ferrari job number (LSA Task No_)
+  lsa_line_no:     string | null;  // PO line number (LSA Line No_)
+}
+
+export async function getWebDdtLines(shipmentId: string): Promise<WebDdtLine[]> {
+  const pool = await sql.connect(getDynamicsConfig());
+  try {
+    const result = await pool.request()
+      .input('shipmentId', sql.VarChar(50), shipmentId)
+      .query(`
+        SELECT
+          l.[No_]                                                                             AS article_code,
+          l.[Quantity (Base)]                                                                 AS quantity,
+          l.[Unit of Measure]                                                                 AS unit_of_measure,
+          LEFT(lsa.[LSA Your Reference], CHARINDEX(' ', lsa.[LSA Your Reference] + ' ') - 1) AS contract_number,
+          LTRIM(RTRIM(ISNULL(lsa.[LSA Task No_], '')))                                       AS lsa_task_no,
+          LTRIM(RTRIM(ISNULL(CAST(lsa.[LSA Line No_] AS VARCHAR(20)), '')))                  AS lsa_line_no
+        FROM [${LINE_TABLE}] l
+        LEFT JOIN [${LSA_TABLE}] lsa
+          ON  lsa.[Document No_] = l.[Document No_]
+          AND lsa.[Line No_]     = l.[Line No_]
+        WHERE l.[Document No_] = @shipmentId
+          AND LTRIM(RTRIM(ISNULL(l.[No_], ''))) <> ''
+        ORDER BY l.[Line No_]
+      `);
+
+    return (result.recordset as Array<Record<string, unknown>>).map(r => ({
+      article_code:    String(r.article_code    ?? '').trim(),
+      quantity:        Number(r.quantity         ?? 0),
+      unit_of_measure: String(r.unit_of_measure ?? '').trim(),
+      contract_number: r.contract_number ? String(r.contract_number).trim() || null : null,
+      lsa_task_no:     r.lsa_task_no  ? String(r.lsa_task_no).trim()  || null : null,
+      lsa_line_no:     r.lsa_line_no  ? String(r.lsa_line_no).trim()  || null : null,
+    }));
+  } finally {
+    await pool.close();
+  }
+}
+
 export async function getShipmentLines(shipmentId: string, options?: { raw?: boolean }): Promise<DynamicsLine[]> {
   const pool = await sql.connect(getDynamicsConfig());
   const contractField = options?.raw

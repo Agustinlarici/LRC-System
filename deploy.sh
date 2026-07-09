@@ -110,6 +110,7 @@ run_migrations() {
     "db/migrate-monitor-stops.sql"
     "db/migrate-edi-ferrari-delins.sql"
     "db/migrate-edi-ferrari-delins-idx.sql"
+    "db/migrate-webddt.sql"
   )
   for f in "${MIGRATIONS[@]}"; do
     if [ -f "$f" ]; then

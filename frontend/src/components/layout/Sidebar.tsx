@@ -136,6 +136,15 @@ function IconEdi() {
     </svg>
   );
 }
+function IconWebDdt() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-5 h-5 shrink-0">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6M9 16h4M7 4H4a1 1 0 00-1 1v14a1 1 0 001 1h16a1 1 0 001-1V9l-5-5H7z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14 4v5h5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 13v6M9 16l3 3 3-3" />
+    </svg>
+  );
+}
 function IconChevron({ open }: { open: boolean }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
@@ -149,7 +158,7 @@ function IconChevron({ open }: { open: boolean }) {
 
 const ICON_MAP: Record<string, () => React.ReactElement> = {
   IconBox, IconTruck, IconMonitor, IconArchive, IconMap,
-  IconClipboard, IconFactory, IconSettings, IconTicket, IconChart, IconHeatmap, IconList, IconScan, IconEdi,
+  IconClipboard, IconFactory, IconSettings, IconTicket, IconChart, IconHeatmap, IconList, IconScan, IconEdi, IconWebDdt,
 };
 
 // ─── Group representative icons ───────────────────────────────────────────────
@@ -182,6 +191,7 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/spma':                    'spma',
   '/recepciones':             'recepciones',
   '/edi':                     'edi',
+  '/webddt':                  'webddt',
   '/admin/monitor/parate':    'monitor_parate',
   '/admin/monitor/motivi':    'monitor_motivi',
 };
