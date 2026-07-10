@@ -845,7 +845,6 @@ monitorRoutes.get('/executive', async (c) => {
         }
       }
     }
-    minuti_fermo = Math.round(minuti_fermo);
 
     // Current ferma: only meaningful for today (historical dates always = false)
     const lastTs = prodTimestamps[prodTimestamps.length - 1] ?? null;
@@ -856,14 +855,19 @@ monitorRoutes.get('/executive', async (c) => {
     const ferma_da_min = ferma_adesso && cycleTimeSec && elapsedSinceLastSec != null
       ? Math.round((elapsedSinceLastSec - cycleTimeSec) / 60)
       : null;
-    // Add ongoing stop to fermate list (only for today)
+    // Add ongoing stop to fermate list (only for today) — and count its elapsed
+    // duration towards minuti_fermo/disponibilità in real time, instead of only
+    // once the stop closes (which made the OEE freeze mid-stop and jump down
+    // all at once when production resumed).
     if (ferma_adesso && cycleTimeSec && lastTs) {
       fermate.push({
         inizio:     new Date(lastTs.getTime() + cycleTimeSec * 1000).toISOString(),
         fine:       null,
         durata_min: ferma_da_min ?? 0,
       });
+      minuti_fermo += (elapsedSinceLastSec! - cycleTimeSec) / 60;
     }
+    minuti_fermo = Math.round(minuti_fermo);
 
     // Avanzamento previsto — for historical dates use pezzi_pianificati (full day)
     let avanzamento_previsto = 0;
