@@ -100,6 +100,7 @@ export function computeHourlyCells(
   },
   webthronRows: WebthronEvent[],
   dateStr:      string,
+  now:          Date = new Date(),
 ): OeeHourCell[] {
   const combosSet  = new Set(combos.map(c => `${c.modello}|${c.componente}`));
   const prodTimes  = webthronRows
@@ -139,9 +140,18 @@ export function computeHourlyCells(
     const effStartMs = turnoStartTs
       ? Math.max(blockStartTs.getTime(), turnoStartTs.getTime())
       : blockStartTs.getTime();
-    const effEndMs   = turnoEndTs
+    const effEndMsFull = turnoEndTs
       ? Math.min(blockEndTs.getTime(), turnoEndTs.getTime())
       : blockEndTs.getTime();
+
+    // Clamp to "now" — the part of a block that hasn't happened yet isn't
+    // "available", it just hasn't occurred. Without this, the block currently
+    // in progress counted its whole (still future) span as planned time,
+    // which either diluted an ongoing stop or, with zero pieces so far,
+    // marked hours that haven't happened yet as fermo.
+    const nowMs        = now.getTime();
+    const effEndMs      = Math.min(effEndMsFull, nowMs);
+    const isOpenBlock   = nowMs > effStartMs && nowMs < effEndMsFull;
 
     const effMin = Math.max(0, (effEndMs - effStartMs) / 60_000);
 
@@ -182,6 +192,16 @@ export function computeHourlyCells(
           const gap = (blockProd[i].getTime() - blockProd[i - 1].getTime()) / 1000;
           if (gap > cycleTimeSec) {
             minuti_fermo += (gap - cycleTimeSec) / 60;
+            fermi_count++;
+          }
+        }
+        // Ongoing stop: block still in progress and nothing produced since —
+        // count it now instead of waiting for the next piece (or the block to
+        // end) to close the gap.
+        if (isOpenBlock) {
+          const tailGap = (effEndMs - blockProd[blockProd.length - 1].getTime()) / 1000;
+          if (tailGap > cycleTimeSec) {
+            minuti_fermo += (tailGap - cycleTimeSec) / 60;
             fermi_count++;
           }
         }
