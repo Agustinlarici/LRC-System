@@ -108,7 +108,10 @@ export async function queryWebthronEvents(
       ikExtra45Tab.stringa  AS componente,
       Extra186.stringa      AS cod_seriale,
       Extra30.stringa       AS commessa,
-      COALESCE(ikExtra136Tab.stringa, ikExtra71Tab.stringa, ikExtra41Tab.stringa) AS esito_delibera,
+      CASE WHEN ikExtra62Tab.stringa = 'DELIBERA VERNICIATURA'
+        THEN COALESCE(ikExtra71Tab.stringa, ikExtra41Tab.stringa)
+        ELSE ikExtra136Tab.stringa
+      END AS esito_delibera,
       ubi.datain            AS data_inserimento
     FROM ubidocum ubi
     LEFT JOIN ikExtra    Extra62    ON ubi.iddocu = Extra62.iddocu    AND Extra62.idcampo  = 62  AND Extra62.idcomm = 0 AND Extra62.seq = 0
