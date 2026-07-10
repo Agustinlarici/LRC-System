@@ -886,8 +886,17 @@ monitorRoutes.get('/executive', async (c) => {
       avanzamento_previsto = Math.round(pezzi_pianificati * elapsedSec / netShiftSec);
     }
 
-    // OEE — daily, based on total turno time for today
-    const net_planned   = net_planned_pre;
+    // OEE — disponibilità usa il tempo pianificato TRASCORSO finora quando il
+    // turno è ancora in corso (oggi), non l'intera giornata pianificata —
+    // altrimenti una fermata già avvenuta viene "diluita" dal tempo di turno
+    // che non è ancora passato, mascherando la gravità finché il turno non
+    // finisce. Per i giorni storici il turno è già concluso: uso il totale.
+    let net_planned = net_planned_pre;
+    if (!isHistorical && turno_oggi && turnoStartTs) {
+      const shiftEndTs      = turnoFineTs ?? now;
+      const elapsedShiftMin = Math.max(0, (Math.min(now.getTime(), shiftEndTs.getTime()) - turnoStartTs.getTime()) / 60000);
+      net_planned = Math.max(1, elapsedShiftMin - minuti_pausa);
+    }
     const disponibilita = turno_oggi
       ? Math.max(0, Math.min(1, (net_planned - minuti_fermo) / net_planned))
       : 0;
