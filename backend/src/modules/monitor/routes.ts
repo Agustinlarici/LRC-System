@@ -846,11 +846,16 @@ monitorRoutes.get('/executive', async (c) => {
       }
     }
 
-    // Current ferma: only meaningful for today (historical dates always = false)
+    // Current ferma: only meaningful for today (historical dates always = false).
+    // Reference point is the last piece produced — but if NOTHING has been
+    // produced yet today, fall back to turno start, otherwise a line stopped
+    // since the beginning of the shift (lastTs still null) was never flagged
+    // as "ferma_adesso" and stayed at 100% disponibilità all morning.
     const lastTs = prodTimestamps[prodTimestamps.length - 1] ?? null;
+    const fermaReferenceTs = lastTs ?? turnoStartTs;
     const inTurno = !isHistorical && turnoStartTs && turnoFineTs
       && now >= turnoStartTs && now <= turnoFineTs;
-    const elapsedSinceLastSec = (!isHistorical && lastTs) ? (now.getTime() - lastTs.getTime()) / 1000 : null;
+    const elapsedSinceLastSec = (!isHistorical && fermaReferenceTs) ? (now.getTime() - fermaReferenceTs.getTime()) / 1000 : null;
     const ferma_adesso = !!(inTurno && cycleTimeSec && elapsedSinceLastSec != null && elapsedSinceLastSec > cycleTimeSec);
     const ferma_da_min = ferma_adesso && cycleTimeSec && elapsedSinceLastSec != null
       ? Math.round((elapsedSinceLastSec - cycleTimeSec) / 60)
@@ -859,9 +864,9 @@ monitorRoutes.get('/executive', async (c) => {
     // duration towards minuti_fermo/disponibilità in real time, instead of only
     // once the stop closes (which made the OEE freeze mid-stop and jump down
     // all at once when production resumed).
-    if (ferma_adesso && cycleTimeSec && lastTs) {
+    if (ferma_adesso && cycleTimeSec && fermaReferenceTs) {
       fermate.push({
-        inizio:     new Date(lastTs.getTime() + cycleTimeSec * 1000).toISOString(),
+        inizio:     new Date(fermaReferenceTs.getTime() + cycleTimeSec * 1000).toISOString(),
         fine:       null,
         durata_min: ferma_da_min ?? 0,
       });
