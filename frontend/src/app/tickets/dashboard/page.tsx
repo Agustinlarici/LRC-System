@@ -148,8 +148,8 @@ function TrendChart({ refreshKey }: { refreshKey: number }) {
   const totalResolved = data.reduce((s, d) => s + d.resolved, 0);
 
   return (
-    <div className="card mb-4">
-      <div className="flex items-center justify-between mb-1">
+    <div className="card mb-8">
+      <div className="flex items-center justify-between mb-3">
         <h2 className="text-base font-semibold text-gray-700">Andamento ticket</h2>
         <p className="text-sm text-gray-400">Ultimi 14 giorni</p>
       </div>
@@ -392,13 +392,13 @@ export default function TicketDashboard() {
     <div className="flex flex-col h-full">
 
       {/* Top bar */}
-      <div className="mb-4">
+      <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900">Dashboard Ticket IT</h1>
-        {user && <p className="text-base text-gray-500">Benvenuto, {user.display_name}</p>}
+        {user && <p className="text-base text-gray-500 mt-1">Benvenuto, {user.display_name}</p>}
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-8">
         {['aperto','in_lavorazione','in_attesa','in_attesa_approvazione','risolto'].map(s => {
           const count = tickets.filter(t => t.status === s).length;
           return (
@@ -408,7 +408,7 @@ export default function TicketDashboard() {
               className={`card text-left cursor-pointer hover:shadow-md transition-shadow ${filterStatus === s ? 'ring-2 ring-blue-500' : ''}`}
             >
               <p className="text-3xl font-bold text-gray-900">{count}</p>
-              <p className="text-sm text-gray-500 mt-0.5">{STATUS_LABELS[s]}</p>
+              <p className="text-sm text-gray-500 mt-1.5">{STATUS_LABELS[s]}</p>
             </button>
           );
         })}
@@ -419,8 +419,8 @@ export default function TicketDashboard() {
 
       {/* Da prendere in carico */}
       {unassigned.length > 0 && (
-        <div className="mb-5">
-          <h2 className="text-base font-semibold text-gray-700 mb-2 flex items-center gap-2">
+        <div className="mb-8">
+          <h2 className="text-base font-semibold text-gray-700 mb-3 flex items-center gap-2">
             <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-400" />
             Da prendere in carico
             <span className="text-sm font-normal text-gray-400 ml-1">({unassigned.length})</span>
@@ -429,11 +429,11 @@ export default function TicketDashboard() {
             <table className="w-full text-base border-collapse">
               <thead>
                 <tr className="bg-orange-50 text-left text-base text-gray-500 uppercase tracking-wide">
-                  <th className="px-4 py-2.5 font-medium">Numero</th>
-                  <th className="px-4 py-2.5 font-medium">Titolo</th>
-                  <th className="px-4 py-2.5 font-medium">Richiedente</th>
-                  <th className="px-4 py-2.5 font-medium">Priorità</th>
-                  <th className="px-4 py-2.5 font-medium">Data</th>
+                  <th className="px-5 py-3 font-medium">Numero</th>
+                  <th className="px-5 py-3 font-medium">Titolo</th>
+                  <th className="px-5 py-3 font-medium">Richiedente</th>
+                  <th className="px-5 py-3 font-medium">Priorità</th>
+                  <th className="px-5 py-3 font-medium">Data</th>
                 </tr>
               </thead>
               <tbody>
@@ -443,16 +443,16 @@ export default function TicketDashboard() {
                     onClick={() => openTicket(t.id)}
                     className="border-t border-orange-100 hover:bg-orange-50 cursor-pointer transition-colors"
                   >
-                    <td className="px-4 py-2.5 font-mono text-lg font-semibold text-gray-800">{t.ticket_number}</td>
-                    <td className="px-4 py-2.5 max-w-64">
+                    <td className="px-5 py-3.5 font-mono text-lg font-semibold text-gray-800">{t.ticket_number}</td>
+                    <td className="px-5 py-3.5 max-w-64">
                       <span className="block truncate text-gray-800">{t.title}</span>
                       {t.blocca_lavoro && <span className="text-base text-red-600 font-medium">⚠ Blocca lavoro</span>}
                     </td>
-                    <td className="px-4 py-2.5 text-base text-gray-500">{t.caller_name}</td>
-                    <td className="px-4 py-2.5">
+                    <td className="px-5 py-3.5 text-base text-gray-500">{t.caller_name}</td>
+                    <td className="px-5 py-3.5">
                       <span className={`text-base font-semibold px-2.5 py-1 rounded-full ${PRIORITY_COLORS[t.priority] ?? ''}`}>{PRIORITY_LABELS[t.priority]}</span>
                     </td>
-                    <td className="px-4 py-2.5 text-base text-gray-400 whitespace-nowrap">{fmt(t.created_at)}</td>
+                    <td className="px-5 py-3.5 text-base text-gray-400 whitespace-nowrap">{fmt(t.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -463,8 +463,8 @@ export default function TicketDashboard() {
 
       {/* In attesa di approvazione */}
       {pendingApproval.length > 0 && (
-        <div className="mb-5">
-          <h2 className="text-base font-semibold text-gray-700 mb-2 flex items-center gap-2">
+        <div className="mb-8">
+          <h2 className="text-base font-semibold text-gray-700 mb-3 flex items-center gap-2">
             <span className="inline-block w-2.5 h-2.5 rounded-full bg-purple-400" />
             In attesa di approvazione
             <span className="text-sm font-normal text-gray-400 ml-1">({pendingApproval.length})</span>
@@ -473,11 +473,11 @@ export default function TicketDashboard() {
             <table className="w-full text-base border-collapse">
               <thead>
                 <tr className="bg-purple-50 text-left text-base text-gray-500 uppercase tracking-wide">
-                  <th className="px-4 py-2.5 font-medium">Numero</th>
-                  <th className="px-4 py-2.5 font-medium">Titolo</th>
-                  <th className="px-4 py-2.5 font-medium">Richiedente</th>
-                  <th className="px-4 py-2.5 font-medium">Categoria</th>
-                  <th className="px-4 py-2.5 font-medium">Data</th>
+                  <th className="px-5 py-3 font-medium">Numero</th>
+                  <th className="px-5 py-3 font-medium">Titolo</th>
+                  <th className="px-5 py-3 font-medium">Richiedente</th>
+                  <th className="px-5 py-3 font-medium">Categoria</th>
+                  <th className="px-5 py-3 font-medium">Data</th>
                 </tr>
               </thead>
               <tbody>
@@ -487,14 +487,14 @@ export default function TicketDashboard() {
                     onClick={() => openTicket(t.id)}
                     className="border-t border-purple-100 hover:bg-purple-50 cursor-pointer transition-colors"
                   >
-                    <td className="px-4 py-2.5 font-mono text-lg font-semibold text-gray-800">{t.ticket_number}</td>
-                    <td className="px-4 py-2.5 max-w-64">
+                    <td className="px-5 py-3.5 font-mono text-lg font-semibold text-gray-800">{t.ticket_number}</td>
+                    <td className="px-5 py-3.5 max-w-64">
                       <span className="block truncate text-gray-800">{t.title}</span>
                       {t.blocca_lavoro && <span className="text-base text-red-600 font-medium">⚠ Blocca lavoro</span>}
                     </td>
-                    <td className="px-4 py-2.5 text-base text-gray-500">{t.caller_name}</td>
-                    <td className="px-4 py-2.5 text-base text-gray-500">{t.category ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-base text-gray-400 whitespace-nowrap">{fmt(t.created_at)}</td>
+                    <td className="px-5 py-3.5 text-base text-gray-500">{t.caller_name}</td>
+                    <td className="px-5 py-3.5 text-base text-gray-500">{t.category ?? '—'}</td>
+                    <td className="px-5 py-3.5 text-base text-gray-400 whitespace-nowrap">{fmt(t.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -504,7 +504,7 @@ export default function TicketDashboard() {
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2.5 mb-4">
+      <div className="flex flex-wrap items-center gap-3 mb-6">
         {user && (
           <button
             type="button"
@@ -541,24 +541,24 @@ export default function TicketDashboard() {
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto border border-gray-200 rounded-xl">
         {loading ? (
-          <p className="text-base text-gray-400 py-8 text-center">Caricamento…</p>
+          <p className="text-base text-gray-400 py-10 text-center">Caricamento…</p>
         ) : tickets.length === 0 ? (
-          <p className="text-base text-gray-400 py-8 text-center">Nessun ticket trovato</p>
+          <p className="text-base text-gray-400 py-10 text-center">Nessun ticket trovato</p>
         ) : (
           <table className="w-full text-base border-collapse">
             <thead>
-              <tr className="border-b border-gray-200 text-left text-base text-gray-500 uppercase tracking-wide">
-                <th className="pb-3 pr-4 font-medium">Numero</th>
-                <th className="pb-3 pr-4 font-medium">Titolo</th>
-                <th className="pb-3 pr-4 font-medium">Richiedente</th>
-                <th className="pb-3 pr-4 font-medium">Categoria</th>
-                <th className="pb-3 pr-4 font-medium">Stato</th>
-                <th className="pb-3 pr-4 font-medium">Priorità</th>
-                <th className="pb-3 pr-4 font-medium">Assegnato</th>
-                <th className="pb-3 pr-4 font-medium">SLA</th>
-                <th className="pb-3 font-medium">Data</th>
+              <tr className="bg-gray-50 border-b border-gray-200 text-left text-base text-gray-500 uppercase tracking-wide">
+                <th className="px-5 py-3 font-medium">Numero</th>
+                <th className="px-5 py-3 font-medium">Titolo</th>
+                <th className="px-5 py-3 font-medium">Richiedente</th>
+                <th className="px-5 py-3 font-medium">Categoria</th>
+                <th className="px-5 py-3 font-medium">Stato</th>
+                <th className="px-5 py-3 font-medium">Priorità</th>
+                <th className="px-5 py-3 font-medium">Assegnato</th>
+                <th className="px-5 py-3 font-medium">SLA</th>
+                <th className="px-5 py-3 font-medium">Data</th>
               </tr>
             </thead>
             <tbody>
@@ -566,26 +566,26 @@ export default function TicketDashboard() {
                 <tr
                   key={t.id}
                   onClick={() => openTicket(t.id)}
-                  className="border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
+                  className="border-b border-gray-100 last:border-b-0 hover:bg-blue-50 cursor-pointer transition-colors"
                 >
-                  <td className="py-3.5 pr-4 font-mono text-lg font-semibold text-gray-800">{t.ticket_number}</td>
-                  <td className="py-3.5 pr-4 max-w-64">
+                  <td className="px-5 py-4 font-mono text-lg font-semibold text-gray-800">{t.ticket_number}</td>
+                  <td className="px-5 py-4 max-w-64">
                     <span className="block truncate text-gray-800 text-base">{t.title}</span>
                     {t.blocca_lavoro && <span className="text-base text-red-600 font-medium">⚠ Blocca lavoro</span>}
                   </td>
-                  <td className="py-3.5 pr-4 text-gray-600 text-base">{t.caller_name}{t.department_name ? <><br /><span className="text-gray-400 text-sm">{t.department_name}</span></> : null}</td>
-                  <td className="py-3.5 pr-4 text-gray-500 text-base">{t.category ?? '—'}</td>
-                  <td className="py-3.5 pr-4">
+                  <td className="px-5 py-4 text-gray-600 text-base">{t.caller_name}{t.department_name ? <><br /><span className="text-gray-400 text-sm">{t.department_name}</span></> : null}</td>
+                  <td className="px-5 py-4 text-gray-500 text-base">{t.category ?? '—'}</td>
+                  <td className="px-5 py-4">
                     <span className={`text-base font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[t.status] ?? ''}`}>{STATUS_LABELS[t.status]}</span>
                   </td>
-                  <td className="py-3.5 pr-4">
+                  <td className="px-5 py-4">
                     <span className={`text-base font-semibold px-2.5 py-1 rounded-full ${PRIORITY_COLORS[t.priority] ?? ''}`}>{PRIORITY_LABELS[t.priority]}</span>
                   </td>
-                  <td className="py-3.5 pr-4 text-base text-gray-500">{t.assigned_to_name ?? <span className="text-gray-300">—</span>}</td>
-                  <td className="py-3.5 pr-4">
+                  <td className="px-5 py-4 text-base text-gray-500">{t.assigned_to_name ?? <span className="text-gray-300">—</span>}</td>
+                  <td className="px-5 py-4">
                     <span className={`inline-block w-4 h-4 rounded-full ${SLA_DOT[t.sla_resolution_status]}`} title={`SLA risoluzione: ${t.sla_resolution_status}`} />
                   </td>
-                  <td className="py-3.5 text-base text-gray-400 whitespace-nowrap">{fmt(t.created_at)}</td>
+                  <td className="px-5 py-4 text-base text-gray-400 whitespace-nowrap">{fmt(t.created_at)}</td>
                 </tr>
               ))}
             </tbody>
@@ -595,7 +595,7 @@ export default function TicketDashboard() {
 
       {/* Pagination */}
       {total > PER_PAGE && (
-        <div className="flex items-center justify-between mt-3 text-base text-gray-500">
+        <div className="flex items-center justify-between mt-4 text-base text-gray-500">
           <span>{total} ticket totali</span>
           <div className="flex gap-2">
             <button disabled={page <= 1} onClick={() => { setPage(p => p - 1); loadTickets(page - 1); }}
