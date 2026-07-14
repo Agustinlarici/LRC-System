@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 
 export default function TicketsPage() {
-  const { canView, canManage } = useAuth();
+  const { user, canView, canManage } = useAuth();
 
   const options = [
     {
@@ -20,6 +20,13 @@ export default function TicketsPage() {
       description: 'Verifica lo stato di avanzamento di una segnalazione',
       icon:        '🔍',
       show:        true,
+    },
+    {
+      href:        '/tickets/miei',
+      title:       'I miei ticket',
+      description: 'Le segnalazioni che hai aperto tu',
+      icon:        '📋',
+      show:        !!user && user.role !== 'guest',
     },
     {
       href:        '/tickets/dashboard',

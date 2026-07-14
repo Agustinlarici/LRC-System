@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
 import { authRoutes, requireIT, requireAdmin } from './auth.js';
-import type { Env } from '../../lib/auth.js';
+import { requireAuth, getOptionalUser, type Env } from '../../lib/auth.js';
 import { computeSLADeadlines, slaStatus } from './sla.js';
 import { writeFile, mkdir } from 'fs/promises';
 import { join, extname } from 'path';
@@ -148,19 +148,25 @@ ticketRoutes.post('/', async (c) => {
     ? { response_due: null, resolution_due: null }
     : await computeSLADeadlines(db, priority, createdAt);
 
+  // Link the ticket to the logged-in account (if any) so they can find it under "I miei ticket"
+  const submitter = await getOptionalUser(c);
+  const createdByUserId = submitter && submitter.role !== 'guest' ? submitter.id : null;
+
   const [ticket] = await db`
     INSERT INTO tickets (
       ticket_number, year, seq,
       caller_name, caller_email, caller_phone, department_id,
       title, description, category, subcategory, blocca_lavoro,
       attachment_path, attachment_name,
-      priority, status, requires_approval, sla_response_due, sla_resolution_due
+      priority, status, requires_approval, sla_response_due, sla_resolution_due,
+      created_by_user_id
     ) VALUES (
       ${number}, ${year}, ${seq},
       ${fields.caller_name}, ${fields.caller_email ?? null}, ${fields.caller_phone ?? null}, ${fields.department_id ?? null},
       ${fields.title}, ${fields.description}, ${fields.category ?? null}, ${fields.subcategory ?? null}, ${fields.blocca_lavoro},
       ${attachmentPath}, ${attachmentName},
-      ${priority}, ${status}, ${requiresApproval}, ${sla.response_due?.toISOString() ?? null}, ${sla.resolution_due?.toISOString() ?? null}
+      ${priority}, ${status}, ${requiresApproval}, ${sla.response_due?.toISOString() ?? null}, ${sla.resolution_due?.toISOString() ?? null},
+      ${createdByUserId}
     )
     RETURNING *
   `;
@@ -195,6 +201,23 @@ ticketRoutes.get('/numero/:number', async (c) => {
   `;
 
   return c.json({ ...withSLAStatus(ticket), history });
+});
+
+// ─── Authenticated: tickets opened by the current user ─────────────────────
+
+ticketRoutes.get('/mine', requireAuth, async (c) => {
+  const user = c.get('user');
+
+  const tickets = await db`
+    SELECT t.*, d.name AS department_name, u.display_name AS assigned_to_name
+    FROM tickets t
+    LEFT JOIN ticket_departments d ON d.id = t.department_id
+    LEFT JOIN users u ON u.id = t.assigned_to
+    WHERE t.created_by_user_id = ${user.id}
+    ORDER BY t.created_at DESC
+  `;
+
+  return c.json(tickets.map(withSLAStatus));
 });
 
 // ─── IT: daily trend (created vs resolved) ─────────────────────────────────
@@ -302,12 +325,19 @@ ticketRoutes.get('/:id', requireIT, async (c) => {
 // ─── IT: update ticket (assign, change status/priority, resolve) ──────────
 
 const updateTicketSchema = z.object({
-  status:          z.enum(['aperto','in_lavorazione','in_attesa','risolto','chiuso','riaperto']).optional(),
+  status:          z.enum(['aperto','in_lavorazione','in_attesa','in_attesa_approvazione','risolto','chiuso','riaperto']).optional(),
   priority:        z.enum(['bassa','media','alta','critica']).optional(),
   assigned_to:     z.number().int().positive().nullable().optional(),
+  category:        z.string().max(100).nullable().optional(),
+  subcategory:     z.string().max(100).nullable().optional(),
   resolution_note: z.string().optional(),
   note:            z.string().optional(),
 });
+
+function categoryLabel(category: string | null, subcategory: string | null): string {
+  if (!category) return '—';
+  return subcategory ? `${category} / ${subcategory}` : category;
+}
 
 ticketRoutes.patch('/:id', requireIT, async (c) => {
   const id = parseInt(c.req.param('id') ?? '', 10);
@@ -343,6 +373,21 @@ ticketRoutes.patch('/:id', requireIT, async (c) => {
   if (body.assigned_to !== undefined) {
     updates.assigned_to = body.assigned_to;
     historyEntries.push({ action: 'assegnato', new_value: body.assigned_to?.toString() ?? 'nessuno' });
+  }
+
+  if (
+    (body.category    !== undefined && body.category    !== ticket.category) ||
+    (body.subcategory !== undefined && body.subcategory !== ticket.subcategory)
+  ) {
+    const newCategory    = body.category    !== undefined ? body.category    : ticket.category;
+    const newSubcategory = body.subcategory !== undefined ? body.subcategory : ticket.subcategory;
+    updates.category    = newCategory;
+    updates.subcategory = newSubcategory;
+    historyEntries.push({
+      action:    'categoria_cambiata',
+      old_value: categoryLabel(ticket.category, ticket.subcategory),
+      new_value: categoryLabel(newCategory, newSubcategory),
+    });
   }
 
   if (body.resolution_note !== undefined) {
@@ -429,7 +474,14 @@ ticketRoutes.get('/:id/attachment', requireIT, async (c) => {
 // ─── Admin: categories / departments management ────────────────────────────
 
 ticketRoutes.post('/admin/categories', requireAdmin, async (c) => {
-  const body = await parseBody(c, z.object({ category: z.string().min(1), subcategory: z.string().optional() }));
+  const body = await parseBody(c, z.object({
+    category:            z.string().min(1),
+    subcategory:         z.string().optional(),
+    // Priorità da assegnare alla categoria se non esiste già una regola (non sovrascrive quella esistente)
+    priority_blocca:     z.enum(['bassa', 'media', 'alta', 'critica']).default('alta'),
+    priority_non_blocca: z.enum(['bassa', 'media', 'alta', 'critica']).default('media'),
+    requires_approval:   z.boolean().default(false),
+  }));
   const [row] = await db`
     INSERT INTO ticket_categories (category, subcategory)
     VALUES (${body.category}, ${body.subcategory ?? null})
@@ -437,11 +489,22 @@ ticketRoutes.post('/admin/categories', requireAdmin, async (c) => {
     RETURNING *
   `;
   // Ogni categoria deve sempre avere una regola di priorità (bloccante/non bloccante),
-  // altrimenti i ticket in quella categoria ricadono silenziosamente su 'media'.
+  // altrimenti i ticket in quella categoria ricadono silenziosamente su 'media'. Se la
+  // categoria esiste già (es. aggiunta di una sottocategoria), la priorità scelta qui
+  // viene ignorata — non sovrascrive quella già configurata.
+  const priorityBlocca    = body.priority_blocca    ?? 'alta';
+  const priorityNonBlocca = body.priority_non_blocca ?? 'media';
+  const requiresApproval  = body.requires_approval   ?? false;
   await db`
     INSERT INTO ticket_priority_rules (category, blocca_lavoro, priority)
-    VALUES (${body.category}, TRUE, 'alta'), (${body.category}, FALSE, 'media')
+    VALUES (${body.category}, TRUE, ${priorityBlocca}), (${body.category}, FALSE, ${priorityNonBlocca})
     ON CONFLICT (category, blocca_lavoro) DO NOTHING
+  `;
+  // L'approvazione è specifica per la coppia categoria+sottocategoria appena creata/riattivata
+  await db`
+    INSERT INTO ticket_approval_rules (category, subcategory, requires_approval)
+    VALUES (${body.category}, ${body.subcategory ?? null}, ${requiresApproval})
+    ON CONFLICT (category, subcategory) DO UPDATE SET requires_approval = ${requiresApproval}
   `;
   return c.json(row, 201);
 });
@@ -468,13 +531,14 @@ ticketRoutes.patch('/admin/priority-rules', requireAdmin, async (c) => {
     blocca_lavoro: z.boolean(),
     priority:     z.enum(['bassa', 'media', 'alta', 'critica']),
   }));
+  // Upsert: alcune categorie esistenti da prima di questa funzionalità potrebbero
+  // non avere ancora una riga qui — salvare deve funzionare comunque.
   const [row] = await db`
-    UPDATE ticket_priority_rules
-    SET priority = ${body.priority}
-    WHERE category = ${body.category} AND blocca_lavoro = ${body.blocca_lavoro}
+    INSERT INTO ticket_priority_rules (category, blocca_lavoro, priority)
+    VALUES (${body.category}, ${body.blocca_lavoro}, ${body.priority})
+    ON CONFLICT (category, blocca_lavoro) DO UPDATE SET priority = ${body.priority}
     RETURNING *
   `;
-  if (!row) throw new HTTPException(404, { message: 'Regola non trovata' });
   return c.json(row);
 });
 

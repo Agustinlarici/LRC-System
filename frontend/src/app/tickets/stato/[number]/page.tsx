@@ -45,6 +45,7 @@ const ACTION_LABELS: Record<string, string> = {
   riaperto:          'Riaperto',
   allegato_aggiunto: 'Allegato aggiunto',
   approvato:         'Approvato',
+  categoria_cambiata: 'Categoria aggiornata',
 };
 
 type Ticket = {

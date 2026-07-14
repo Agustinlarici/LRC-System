@@ -15,6 +15,9 @@ services:
       - ./db/migrate-auth.sql:/docker-entrypoint-initdb.d/03_auth.sql:ro
       - ./db/migrate-tickets-user-profile.sql:/docker-entrypoint-initdb.d/03b_tickets_user_profile.sql:ro
       - ./db/migrate-tickets-approval.sql:/docker-entrypoint-initdb.d/03c_tickets_approval.sql:ro
+      - ./db/migrate-tickets-category-edit.sql:/docker-entrypoint-initdb.d/03d_tickets_category_edit.sql:ro
+      - ./db/migrate-tickets-created-by.sql:/docker-entrypoint-initdb.d/03e_tickets_created_by.sql:ro
+      - ./db/migrate-tickets-priority-backfill.sql:/docker-entrypoint-initdb.d/03f_tickets_priority_backfill.sql:ro
       - ./db/migrate-heatmap.sql:/docker-entrypoint-initdb.d/04_heatmap.sql:ro
       - ./db/migrate-heatmap-hourly.sql:/docker-entrypoint-initdb.d/05_heatmap_hourly.sql:ro
       - ./db/migrate.sql:/docker-entrypoint-initdb.d/06_migrate.sql:ro

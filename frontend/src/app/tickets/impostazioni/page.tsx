@@ -61,8 +61,12 @@ export default function TicketImpostazioniPage() {
   const [catSaving,        setCatSaving]        = useState(false);
   const [newCatCategory,   setNewCatCategory]   = useState('');
   const [newCatSub,        setNewCatSub]        = useState('');
+  const [newCatPrioBlocca, setNewCatPrioBlocca] = useState('alta');
+  const [newCatPrioLibera, setNewCatPrioLibera] = useState('media');
+  const [newCatApproval,   setNewCatApproval]   = useState(false);
   const [addingSubFor,     setAddingSubFor]     = useState<string | null>(null);
   const [addingSubVal,     setAddingSubVal]     = useState('');
+  const [addingSubApproval, setAddingSubApproval] = useState(false);
   const [editingSubId,     setEditingSubId]     = useState<number | null>(null);
   const [editingSubVal,    setEditingSubVal]    = useState('');
   const [editingCatGroup,  setEditingCatGroup]  = useState<string | null>(null);
@@ -124,9 +128,12 @@ export default function TicketImpostazioniPage() {
         body:    JSON.stringify({ category, blocca_lavoro, priority }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); setPrioError(d.message ?? 'Errore'); return; }
-      setPrioRules(prev => prev.map(r =>
-        r.category === category && r.blocca_lavoro === blocca_lavoro ? { ...r, priority } : r
-      ));
+      setPrioRules(prev => {
+        const exists = prev.find(r => r.category === category && r.blocca_lavoro === blocca_lavoro);
+        return exists
+          ? prev.map(r => r.category === category && r.blocca_lavoro === blocca_lavoro ? { ...r, priority } : r)
+          : [...prev, { category, blocca_lavoro, priority }];
+      });
     } catch { setPrioError('Errore di connessione'); }
     finally { setPrioSaving(null); }
   }
@@ -207,10 +214,17 @@ export default function TicketImpostazioniPage() {
     if (!newCatCategory.trim()) return;
     setCatSaving(true); setCatError('');
     try {
+      const subcategory = newCatSub.trim() || undefined;
       const res = await apiFetch('/api/tickets/admin/categories', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ category: newCatCategory.trim(), subcategory: newCatSub.trim() || undefined }),
+        body:    JSON.stringify({
+          category: newCatCategory.trim(),
+          subcategory,
+          priority_blocca:     newCatPrioBlocca,
+          priority_non_blocca: newCatPrioLibera,
+          requires_approval:   newCatApproval,
+        }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); setCatError(d.message ?? 'Errore'); return; }
       const row = await res.json();
@@ -218,7 +232,14 @@ export default function TicketImpostazioniPage() {
         const exists = prev.find(r => r.id === row.id);
         return exists ? prev.map(r => r.id === row.id ? row : r) : [...prev, row];
       });
-      setNewCatCategory(''); setNewCatSub('');
+      setApprovalRules(prev => {
+        const exists = prev.find(r => r.category === row.category && r.subcategory === row.subcategory);
+        const updated = { category: row.category, subcategory: row.subcategory, requires_approval: newCatApproval };
+        return exists
+          ? prev.map(r => r.category === row.category && r.subcategory === row.subcategory ? updated : r)
+          : [...prev, updated];
+      });
+      setNewCatCategory(''); setNewCatSub(''); setNewCatPrioBlocca('alta'); setNewCatPrioLibera('media'); setNewCatApproval(false);
     } catch { setCatError('Errore di connessione'); }
     finally { setCatSaving(false); }
   }
@@ -231,7 +252,7 @@ export default function TicketImpostazioniPage() {
       const res = await apiFetch('/api/tickets/admin/categories', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ category, subcategory: val }),
+        body:    JSON.stringify({ category, subcategory: val, requires_approval: addingSubApproval }),
       });
       if (!res.ok) { const d = await res.json().catch(() => ({})); setCatError(d.message ?? 'Errore'); return; }
       const row = await res.json();
@@ -239,7 +260,14 @@ export default function TicketImpostazioniPage() {
         const exists = prev.find(r => r.id === row.id);
         return exists ? prev.map(r => r.id === row.id ? row : r) : [...prev, row];
       });
-      setAddingSubFor(null); setAddingSubVal('');
+      setApprovalRules(prev => {
+        const exists = prev.find(r => r.category === row.category && r.subcategory === row.subcategory);
+        const updated = { category: row.category, subcategory: row.subcategory, requires_approval: addingSubApproval };
+        return exists
+          ? prev.map(r => r.category === row.category && r.subcategory === row.subcategory ? updated : r)
+          : [...prev, updated];
+      });
+      setAddingSubFor(null); setAddingSubVal(''); setAddingSubApproval(false);
     } catch { setCatError('Errore di connessione'); }
   }
 
@@ -327,58 +355,71 @@ export default function TicketImpostazioniPage() {
           <h2 className="font-semibold text-gray-800 mb-1">Priorità automatica</h2>
           <p className="text-xs text-gray-500 mb-4">
             Priorità assegnata automaticamente al momento della creazione del ticket, in base alla categoria e al flag "blocca lavoro".
+            Tutte le categorie esistenti sono elencate qui, anche quelle senza una regola salvata ancora (di default "Media"/"Alta").
           </p>
           {prioError && <p className="text-sm text-red-600 mb-3">{prioError}</p>}
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-gray-100">
-                <th className="pb-2 text-left font-medium">Categoria</th>
-                <th className="pb-2 text-center font-medium w-32">Blocca lavoro</th>
-                <th className="pb-2 text-left font-medium w-40">Priorità</th>
-                <th className="pb-2 w-16" />
-              </tr>
-            </thead>
-            <tbody>
-              {prioRules.map(r => {
-                const key = `${r.category}-${r.blocca_lavoro}`;
-                return (
-                  <tr key={key} className="border-b border-gray-50">
-                    <td className="py-2 pr-3 text-gray-700">{r.category}</td>
-                    <td className="py-2 text-center">
-                      {r.blocca_lavoro
-                        ? <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Sì</span>
-                        : <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">No</span>
-                      }
-                    </td>
-                    <td className="py-2 pr-3">
-                      <select
-                        value={r.priority}
-                        onChange={e => setPrioRules(prev => prev.map(x =>
-                          x.category === r.category && x.blocca_lavoro === r.blocca_lavoro
-                            ? { ...x, priority: e.target.value }
-                            : x
-                        ))}
-                        className={`border rounded-lg px-2 py-1 text-xs font-medium bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${PRIORITY_COLORS[r.priority] ?? ''}`}
-                      >
-                        {PRIORITY_OPTIONS.map(p => (
-                          <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="py-2">
-                      <button
-                        onClick={() => savePriorityRule(r.category, r.blocca_lavoro, r.priority)}
-                        disabled={prioSaving === key}
-                        className="text-xs bg-blue-600 text-white rounded-lg px-3 py-1 hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                      >
-                        {prioSaving === key ? '…' : 'Salva'}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          {categoryGroups.size === 0 ? (
+            <p className="text-sm text-gray-400">Nessuna categoria</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-500 uppercase tracking-wide border-b border-gray-100">
+                  <th className="pb-2 text-left font-medium">Categoria</th>
+                  <th className="pb-2 text-center font-medium w-32">Blocca lavoro</th>
+                  <th className="pb-2 text-left font-medium w-40">Priorità</th>
+                  <th className="pb-2 w-16" />
+                </tr>
+              </thead>
+              <tbody>
+                {[...categoryGroups.keys()].flatMap(catName => (
+                  [true, false].map(blocca => {
+                    const existing = prioRules.find(r => r.category === catName && r.blocca_lavoro === blocca);
+                    const priority = existing?.priority ?? (blocca ? 'alta' : 'media');
+                    const key = `${catName}-${blocca}`;
+                    return (
+                      <tr key={key} className="border-b border-gray-50">
+                        <td className="py-2 pr-3 text-gray-700">{catName}</td>
+                        <td className="py-2 text-center">
+                          {blocca
+                            ? <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Sì</span>
+                            : <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">No</span>
+                          }
+                        </td>
+                        <td className="py-2 pr-3">
+                          <select
+                            value={priority}
+                            onChange={e => {
+                              const newPriority = e.target.value;
+                              setPrioRules(prev => {
+                                const exists = prev.find(x => x.category === catName && x.blocca_lavoro === blocca);
+                                return exists
+                                  ? prev.map(x => x.category === catName && x.blocca_lavoro === blocca ? { ...x, priority: newPriority } : x)
+                                  : [...prev, { category: catName, blocca_lavoro: blocca, priority: newPriority }];
+                              });
+                            }}
+                            className={`border rounded-lg px-2 py-1 text-xs font-medium bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${PRIORITY_COLORS[priority] ?? ''}`}
+                          >
+                            {PRIORITY_OPTIONS.map(p => (
+                              <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="py-2">
+                          <button
+                            onClick={() => savePriorityRule(catName, blocca, priority)}
+                            disabled={prioSaving === key}
+                            className="text-xs bg-blue-600 text-white rounded-lg px-3 py-1 hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                          >
+                            {prioSaving === key ? '…' : 'Salva'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 
@@ -455,6 +496,31 @@ export default function TicketImpostazioniPage() {
                   {catSaving ? '…' : 'Aggiungi'}
                 </button>
               </div>
+
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Priorità (blocca lavoro)</label>
+                  <select value={newCatPrioBlocca} onChange={e => setNewCatPrioBlocca(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    {PRIORITY_OPTIONS.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Priorità (non blocca)</label>
+                  <select value={newCatPrioLibera} onChange={e => setNewCatPrioLibera(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    {PRIORITY_OPTIONS.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+                  </select>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer pb-1.5">
+                  <input type="checkbox" checked={newCatApproval} onChange={e => setNewCatApproval(e.target.checked)}
+                    className="w-4 h-4 rounded accent-purple-600" />
+                  <span className="text-sm text-gray-700">Richiede approvazione</span>
+                </label>
+              </div>
+              <p className="text-xs text-gray-400">
+                La priorità si applica solo se la categoria è nuova (non sovrascrive quella già configurata per una categoria esistente).
+              </p>
               {catError && <p className="text-sm text-red-600">{catError}</p>}
             </form>
           </div>
@@ -501,7 +567,11 @@ export default function TicketImpostazioniPage() {
                     </div>
 
                     <ul>
-                      {rows.map(row => (
+                      {rows.map(row => {
+                        const approvalRule = approvalRules.find(r => r.category === row.category && r.subcategory === row.subcategory);
+                        const rowRequiresApproval = approvalRule?.requires_approval ?? false;
+                        const approvalKey = `${row.category}-${row.subcategory ?? ''}`;
+                        return (
                         <li key={row.id} className="flex items-center justify-between px-3 py-2 border-b border-gray-50 last:border-b-0 text-sm gap-2">
                           {row.subcategory === null ? (
                             <span className="text-gray-400 italic text-xs flex-1">nessuna sottocategoria</span>
@@ -527,6 +597,21 @@ export default function TicketImpostazioniPage() {
                               {row.subcategory}
                             </button>
                           )}
+                          {row.subcategory !== null && (
+                            <button
+                              type="button"
+                              title="Richiede approvazione"
+                              onClick={() => setApprovalRequired(row.category, row.subcategory, !rowRequiresApproval)}
+                              disabled={approvalSaving === approvalKey}
+                              className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium transition-colors disabled:opacity-50 ${
+                                rowRequiresApproval
+                                  ? 'bg-purple-100 text-purple-700 hover:bg-gray-100 hover:text-gray-500'
+                                  : 'bg-gray-100 text-gray-500 hover:bg-purple-100 hover:text-purple-700'
+                              }`}
+                            >
+                              {approvalSaving === approvalKey ? '…' : rowRequiresApproval ? 'Approvazione: Sì' : 'Approvazione: No'}
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => toggleCategoryRow(row)}
@@ -546,10 +631,11 @@ export default function TicketImpostazioniPage() {
                             Elimina
                           </button>
                         </li>
-                      ))}
+                        );
+                      })}
 
                       {addingSubFor === catName && (
-                        <li className="flex items-center gap-2 px-3 py-2 bg-blue-50 border-t border-gray-100">
+                        <li className="flex items-center gap-2 px-3 py-2 bg-blue-50 border-t border-gray-100 flex-wrap">
                           <input
                             autoFocus
                             value={addingSubVal}
@@ -559,12 +645,17 @@ export default function TicketImpostazioniPage() {
                               if (e.key === 'Escape') { setAddingSubFor(null); setAddingSubVal(''); }
                             }}
                             placeholder="Nome sottocategoria…"
-                            className="flex-1 border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                            className="flex-1 min-w-32 border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                           />
+                          <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                            <input type="checkbox" checked={addingSubApproval} onChange={e => setAddingSubApproval(e.target.checked)}
+                              className="w-3.5 h-3.5 rounded accent-purple-600" />
+                            <span className="text-xs text-gray-600">Richiede approvazione</span>
+                          </label>
                           <button type="button" onClick={() => addSubcategoryToGroup(catName)} className="text-xs bg-blue-600 text-white rounded-lg px-3 py-1 hover:bg-blue-700 shrink-0">
                             Aggiungi
                           </button>
-                          <button type="button" onClick={() => { setAddingSubFor(null); setAddingSubVal(''); }} className="text-xs text-gray-500 hover:text-gray-700 shrink-0">
+                          <button type="button" onClick={() => { setAddingSubFor(null); setAddingSubVal(''); setAddingSubApproval(false); }} className="text-xs text-gray-500 hover:text-gray-700 shrink-0">
                             Annulla
                           </button>
                         </li>

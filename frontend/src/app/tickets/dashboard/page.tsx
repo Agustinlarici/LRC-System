@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -14,6 +13,7 @@ const BACKEND = typeof window !== 'undefined'
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ITUser = { id: number; username: string; display_name: string; role: string };
+type CategoryRow = { category: string; subcategory: string | null };
 
 type Ticket = {
   id: number;
@@ -84,7 +84,7 @@ const ACTION_LABELS: Record<string, string> = {
   creato: 'Creato', assegnato: 'Assegnato', stato_cambiato: 'Stato',
   priorita_cambiata: 'Priorità', commentato: 'Commento', risolto: 'Risolto',
   chiuso: 'Chiuso', riaperto: 'Riaperto', allegato_aggiunto: 'Allegato',
-  approvato: 'Approvato',
+  approvato: 'Approvato', categoria_cambiata: 'Categoria',
 };
 const SLA_DOT: Record<string, string> = { ok: 'bg-green-500', warning: 'bg-yellow-400', breached: 'bg-red-500' };
 
@@ -210,8 +210,7 @@ function TrendChart({ refreshKey }: { refreshKey: number }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function TicketDashboard() {
-  const router = useRouter();
-  const { user, logout: authLogout, canManage } = useAuth();
+  const { user } = useAuth();
 
   const [tickets,    setTickets]    = useState<Ticket[]>([]);
   const [total,      setTotal]      = useState(0);
@@ -220,6 +219,7 @@ export default function TicketDashboard() {
   const [selected,   setSelected]   = useState<TicketDetail | null>(null);
   const [itUsers,    setITUsers]    = useState<ITUser[]>([]);
   const [unassigned, setUnassigned] = useState<Ticket[]>([]);
+  const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [trendRefreshKey, setTrendRefreshKey] = useState(0);
 
   // Filters
@@ -232,6 +232,8 @@ export default function TicketDashboard() {
   const [updStatus,       setUpdStatus]       = useState('');
   const [updPriority,     setUpdPriority]     = useState('');
   const [updAssigned,     setUpdAssigned]     = useState('');
+  const [updCategory,     setUpdCategory]     = useState('');
+  const [updSubcategory,  setUpdSubcategory]  = useState('');
   const [updNote,         setUpdNote]         = useState('');
   const [updResolution,   setUpdResolution]   = useState('');
   const [updSaving,       setUpdSaving]       = useState(false);
@@ -248,6 +250,15 @@ export default function TicketDashboard() {
       .catch(() => {});
   }, []);
 
+  // ─── Load categories list ──────────────────────────────────────────────────
+
+  useEffect(() => {
+    apiFetch('/api/tickets/categories')
+      .then(r => r.json())
+      .then(data => setCategories(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, []);
+
   // ─── Load unassigned tickets ───────────────────────────────────────────────
 
   const loadUnassigned = useCallback(async () => {
@@ -258,6 +269,19 @@ export default function TicketDashboard() {
   }, []);
 
   useEffect(() => { loadUnassigned(); }, [loadUnassigned]);
+
+  // ─── Load tickets pending approval ─────────────────────────────────────────
+
+  const [pendingApproval, setPendingApproval] = useState<Ticket[]>([]);
+
+  const loadPendingApproval = useCallback(async () => {
+    const params = new URLSearchParams({ status: 'in_attesa_approvazione', per_page: '50' });
+    const r = await apiFetch(`/api/tickets?${params}`);
+    const d = await r.json();
+    setPendingApproval(d.tickets ?? []);
+  }, []);
+
+  useEffect(() => { loadPendingApproval(); }, [loadPendingApproval]);
 
   // ─── Load tickets ──────────────────────────────────────────────────────────
 
@@ -292,6 +316,8 @@ export default function TicketDashboard() {
     setUpdStatus(d.status);
     setUpdPriority(d.priority);
     setUpdAssigned(d.assigned_to?.toString() ?? '');
+    setUpdCategory(d.category ?? '');
+    setUpdSubcategory(d.subcategory ?? '');
     setUpdNote('');
     setUpdResolution(d.resolution_note ?? '');
     setUpdError('');
@@ -308,6 +334,8 @@ export default function TicketDashboard() {
     if (updPriority !== selected.priority)            body.priority    = updPriority;
     if (updAssigned !== (selected.assigned_to?.toString() ?? ''))
       body.assigned_to = updAssigned ? parseInt(updAssigned, 10) : null;
+    if (updCategory !== (selected.category ?? ''))       body.category    = updCategory || null;
+    if (updSubcategory !== (selected.subcategory ?? '')) body.subcategory = updSubcategory || null;
     if (updResolution !== (selected.resolution_note ?? '')) body.resolution_note = updResolution;
     if (updNote)     body.note = updNote;
 
@@ -329,14 +357,10 @@ export default function TicketDashboard() {
     await openTicket(selected.id);
     await loadTickets(page);
     await loadUnassigned();
+    await loadPendingApproval();
     setTrendRefreshKey(k => k + 1);
     setUpdSaving(false);
     setUpdNote('');
-  }
-
-  async function logout() {
-    await authLogout();
-    router.push('/login');
   }
 
   // ─── Approve ticket ─────────────────────────────────────────────────────────
@@ -357,6 +381,7 @@ export default function TicketDashboard() {
     await openTicket(selected.id);
     await loadTickets(page);
     await loadUnassigned();
+    await loadPendingApproval();
     setTrendRefreshKey(k => k + 1);
     setApproving(false);
   }
@@ -367,19 +392,9 @@ export default function TicketDashboard() {
     <div className="flex flex-col h-full">
 
       {/* Top bar */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard Ticket IT</h1>
-          {user && <p className="text-base text-gray-500">Benvenuto, {user.display_name}</p>}
-        </div>
-        <div className="flex items-center gap-3">
-          {canManage('tickets_admin') && (
-            <a href="/admin/system" className="text-base text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors">
-              ⚙ Admin
-            </a>
-          )}
-          <button onClick={logout} className="text-base text-gray-500 hover:text-gray-800 hover:underline">Esci</button>
-        </div>
+      <div className="mb-4">
+        <h1 className="text-3xl font-bold text-gray-900">Dashboard Ticket IT</h1>
+        {user && <p className="text-base text-gray-500">Benvenuto, {user.display_name}</p>}
       </div>
 
       {/* Stats row */}
@@ -437,6 +452,48 @@ export default function TicketDashboard() {
                     <td className="px-4 py-2.5">
                       <span className={`text-base font-semibold px-2.5 py-1 rounded-full ${PRIORITY_COLORS[t.priority] ?? ''}`}>{PRIORITY_LABELS[t.priority]}</span>
                     </td>
+                    <td className="px-4 py-2.5 text-base text-gray-400 whitespace-nowrap">{fmt(t.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* In attesa di approvazione */}
+      {pendingApproval.length > 0 && (
+        <div className="mb-5">
+          <h2 className="text-base font-semibold text-gray-700 mb-2 flex items-center gap-2">
+            <span className="inline-block w-2.5 h-2.5 rounded-full bg-purple-400" />
+            In attesa di approvazione
+            <span className="text-sm font-normal text-gray-400 ml-1">({pendingApproval.length})</span>
+          </h2>
+          <div className="border border-purple-200 rounded-xl overflow-hidden">
+            <table className="w-full text-base border-collapse">
+              <thead>
+                <tr className="bg-purple-50 text-left text-base text-gray-500 uppercase tracking-wide">
+                  <th className="px-4 py-2.5 font-medium">Numero</th>
+                  <th className="px-4 py-2.5 font-medium">Titolo</th>
+                  <th className="px-4 py-2.5 font-medium">Richiedente</th>
+                  <th className="px-4 py-2.5 font-medium">Categoria</th>
+                  <th className="px-4 py-2.5 font-medium">Data</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingApproval.map(t => (
+                  <tr
+                    key={t.id}
+                    onClick={() => openTicket(t.id)}
+                    className="border-t border-purple-100 hover:bg-purple-50 cursor-pointer transition-colors"
+                  >
+                    <td className="px-4 py-2.5 font-mono text-lg font-semibold text-gray-800">{t.ticket_number}</td>
+                    <td className="px-4 py-2.5 max-w-64">
+                      <span className="block truncate text-gray-800">{t.title}</span>
+                      {t.blocca_lavoro && <span className="text-base text-red-600 font-medium">⚠ Blocca lavoro</span>}
+                    </td>
+                    <td className="px-4 py-2.5 text-base text-gray-500">{t.caller_name}</td>
+                    <td className="px-4 py-2.5 text-base text-gray-500">{t.category ?? '—'}</td>
                     <td className="px-4 py-2.5 text-base text-gray-400 whitespace-nowrap">{fmt(t.created_at)}</td>
                   </tr>
                 ))}
@@ -639,6 +696,35 @@ export default function TicketDashboard() {
                   <option value="">— Non assegnato —</option>
                   {itUsers.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
                 </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Categoria</label>
+                  <select
+                    value={updCategory}
+                    onChange={e => { setUpdCategory(e.target.value); setUpdSubcategory(''); }}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-2 text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">— Nessuna —</option>
+                    {[...new Set(categories.map(c => c.category))].map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Sottocategoria</label>
+                  <select
+                    value={updSubcategory}
+                    onChange={e => setUpdSubcategory(e.target.value)}
+                    disabled={!updCategory}
+                    className="w-full border border-gray-300 rounded-lg px-2 py-2 text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400"
+                  >
+                    <option value="">— Nessuna —</option>
+                    {categories.filter(c => c.category === updCategory && c.subcategory !== null).map(c => (
+                      <option key={c.subcategory} value={c.subcategory as string}>{c.subcategory}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div>
                 <label className="block text-sm text-gray-600 mb-1">Nota interna</label>

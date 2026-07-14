@@ -122,6 +122,27 @@ export async function requireAuth(c: Context<Env>, next: Next) {
   await next();
 }
 
+// ─── Optional auth (public routes that behave differently when logged in) ──────
+
+/** Returns the current user if a valid session cookie is present, otherwise null. Never throws. */
+export async function getOptionalUser(c: Context): Promise<AuthUser | null> {
+  const token = getCookie(c, COOKIE_NAME);
+  if (!token) return null;
+
+  let payload: any;
+  try {
+    payload = verify(token, JWT_SECRET);
+  } catch {
+    return null;
+  }
+
+  const [permissions, profile] = await Promise.all([
+    loadPermissions(payload.id),
+    loadProfile(payload.id),
+  ]);
+  return { ...payload, ...profile, permissions };
+}
+
 // ─── Module permission middleware factories ────────────────────────────────────
 
 export function requireModule(moduleKey: ModuleKey) {
