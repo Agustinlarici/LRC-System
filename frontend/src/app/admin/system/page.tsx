@@ -625,7 +625,10 @@ function DepartmentsTab({ onChanged }: { onChanged: () => void }) {
   const [editingDeptVal, setEditingDeptVal] = useState('');
 
   useEffect(() => {
-    apiFetch('/api/tickets/admin/departments').then(r => r.json()).then(setDepartments).catch(() => {});
+    apiFetch('/api/tickets/admin/departments')
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('load failed')))
+      .then(data => setDepartments(Array.isArray(data) ? data : []))
+      .catch(() => {});
   }, []);
 
   async function createDept(e: React.FormEvent) {
@@ -1128,11 +1131,17 @@ export default function AdminSystemPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
 
   function reloadUsers() {
-    apiFetch('/api/auth/users').then(r => r.json()).then(setUsers).catch(() => {});
+    apiFetch('/api/auth/users')
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('load failed')))
+      .then(data => setUsers(Array.isArray(data) ? data : []))
+      .catch(() => {});
   }
 
   function reloadDepartments() {
-    apiFetch('/api/tickets/departments').then(r => r.json()).then(setDepartments).catch(() => {});
+    apiFetch('/api/tickets/departments')
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('load failed')))
+      .then(data => setDepartments(Array.isArray(data) ? data : []))
+      .catch(() => {});
   }
 
   useEffect(() => {
