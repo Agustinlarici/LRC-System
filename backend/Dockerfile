@@ -25,6 +25,8 @@ RUN NODE_ENV=development npm ci && npm prune --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY edi_generators ./edi_generators
 
+RUN mkdir -p /app/uploads/tickets && chown -R node:node /app/uploads
+
 EXPOSE 3001
 
 USER node

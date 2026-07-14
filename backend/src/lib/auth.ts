@@ -30,18 +30,31 @@ export type ModulePermission = {
 };
 
 export type AuthUser = {
-  id:           number;
-  username:     string;
-  display_name: string;
-  role:         'guest' | 'operator' | 'it' | 'admin';
-  permissions:  ModulePermission[];
+  id:              number;
+  username:        string;
+  display_name:    string;
+  role:            'guest' | 'operator' | 'it' | 'admin';
+  permissions:     ModulePermission[];
+  email:           string | null;
+  phone:           string | null;
+  department_id:   number | null;
+  department_name: string | null;
+};
+
+export type UserProfile = {
+  email:           string | null;
+  phone:           string | null;
+  department_id:   number | null;
+  department_name: string | null;
 };
 
 export type Env = { Variables: { user: AuthUser } };
 
 // ─── Token helpers ────────────────────────────────────────────────────────────
 
-export function signToken(payload: Omit<AuthUser, 'permissions'>): string {
+export type TokenPayload = Pick<AuthUser, 'id' | 'username' | 'display_name' | 'role'>;
+
+export function signToken(payload: TokenPayload): string {
   return sign(payload, JWT_SECRET, { expiresIn: '8h' });
 }
 
@@ -58,7 +71,7 @@ export function clearSessionCookie(c: Context) {
   deleteCookie(c, COOKIE_NAME, { path: '/' });
 }
 
-// ─── Load permissions from DB ─────────────────────────────────────────────────
+// ─── Load permissions / profile from DB ────────────────────────────────────────
 
 async function loadPermissions(userId: number): Promise<ModulePermission[]> {
   const rows = await db<ModulePermission[]>`
@@ -67,6 +80,24 @@ async function loadPermissions(userId: number): Promise<ModulePermission[]> {
     WHERE user_id = ${userId}
   `;
   return rows;
+}
+
+const EMPTY_PROFILE: UserProfile = { email: null, phone: null, department_id: null, department_name: null };
+
+export async function loadProfile(userId: number): Promise<UserProfile> {
+  try {
+    const [row] = await db<UserProfile[]>`
+      SELECT u.email, u.phone, u.department_id, d.name AS department_name
+      FROM users u
+      LEFT JOIN ticket_departments d ON d.id = u.department_id
+      WHERE u.id = ${userId}
+    `;
+    return row ?? EMPTY_PROFILE;
+  } catch {
+    // phone/department_id may not exist yet if migrate-tickets-user-profile.sql
+    // hasn't run on this DB — degrade gracefully instead of failing every request
+    return EMPTY_PROFILE;
+  }
 }
 
 // ─── Core middleware ───────────────────────────────────────────────────────────
@@ -82,8 +113,11 @@ export async function requireAuth(c: Context<Env>, next: Next) {
     throw new HTTPException(401, { message: 'Sessione scaduta' });
   }
 
-  const permissions = await loadPermissions(payload.id);
-  const user: AuthUser = { ...payload, permissions };
+  const [permissions, profile] = await Promise.all([
+    loadPermissions(payload.id),
+    loadProfile(payload.id),
+  ]);
+  const user: AuthUser = { ...payload, ...profile, permissions };
   c.set('user', user);
   await next();
 }

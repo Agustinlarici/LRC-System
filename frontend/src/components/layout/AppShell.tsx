@@ -11,7 +11,7 @@ import type { ModuleKey } from '@/types';
 
 function getModuleForPath(pathname: string): { key: ModuleKey; needsManage?: boolean } | null {
   if (pathname.startsWith('/tickets/dashboard'))      return { key: 'tickets_it' };
-  if (pathname.startsWith('/tickets/admin'))          return { key: 'impostazioni' };
+  if (pathname.startsWith('/admin/system'))           return { key: 'impostazioni' };
   if (pathname.startsWith('/tickets'))               return { key: 'tickets' };
   if (pathname.startsWith('/ingresso-merci'))        return { key: 'ingresso_merci' };
   if (pathname.startsWith('/packing/impostazioni'))  return { key: 'packing', needsManage: true };
@@ -50,10 +50,12 @@ function AccessDenied() {
 
 function LoadingShell() {
   return (
-    <>
-      <div className="w-[68px] min-h-full bg-zinc-900 shrink-0 animate-pulse" />
-      <main className="flex-1 bg-slate-50" />
-    </>
+    <div className="w-full min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-10 h-10 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
+        <p className="text-sm text-gray-400">Caricamento…</p>
+      </div>
+    </div>
   );
 }
 

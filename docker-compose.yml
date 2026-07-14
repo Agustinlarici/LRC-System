@@ -14,6 +14,8 @@ services:
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./db/migrate-tickets.sql:/docker-entrypoint-initdb.d/02_tickets.sql:ro
       - ./db/migrate-auth.sql:/docker-entrypoint-initdb.d/03_auth.sql:ro
+      - ./db/migrate-tickets-user-profile.sql:/docker-entrypoint-initdb.d/03b_tickets_user_profile.sql:ro
+      - ./db/migrate-tickets-approval.sql:/docker-entrypoint-initdb.d/03c_tickets_approval.sql:ro
       - ./db/migrate-heatmap.sql:/docker-entrypoint-initdb.d/04_heatmap.sql:ro
       - ./db/migrate-heatmap-hourly.sql:/docker-entrypoint-initdb.d/05_heatmap_hourly.sql:ro
       - ./db/migrate.sql:/docker-entrypoint-initdb.d/06_migrate.sql:ro
@@ -76,6 +78,8 @@ services:
       # Percorsi interni al container (fissi — il bind mount mappa l'host)
       SCAN_FOLDER:  /scansioni
       DOCS_FOLDER:  /documentos
+      # ─── Ticket IT — Allegati (percorso interno fisso, bind mount mappa l'host) ─
+      UPLOAD_DIR:   /app/uploads
       # SMB / Cartelle di rete (UNC — es. \\192.168.1.245\edi\...)
       SMB_USER:   ${SMB_USER:-}
       SMB_PASS:   ${SMB_PASS:-}
@@ -102,6 +106,7 @@ services:
     volumes:
       - ${SCAN_FOLDER_HOST:-./test-scansioni}:/scansioni:ro
       - ${DOCS_FOLDER_HOST:-./test-documentos}:/documentos
+      - ${TICKETS_UPLOADS_HOST:-./data/tickets-uploads}:/app/uploads
     ports:
       - "3001:3001"
     depends_on:

@@ -36,4 +36,6 @@ Contras.txt
 # Test data / local artifacts
 test-documentos/
 test-scansioni/
+data/tickets-uploads/
+backend/uploads/
 *.tar

@@ -99,13 +99,8 @@ export const MODULES: ModuleConfig[] = [
     icon: '🎫', sidebar: 'IconTicket', hidden: false, moduleKey: 'tickets',
   },
   {
-    href: '/tickets/admin', label: 'Impostazioni', group: 'IT',
-    description: 'Gestione utenti, permessi e configurazioni',
-    icon: '⚙️', sidebar: 'IconSettings', hidden: false, moduleKey: 'impostazioni',
-  },
-  {
     href: '/admin/system', label: 'Sistema', group: 'IT',
-    description: 'Stato servizi, sync jobs, alert e diagnostica',
+    description: 'Utenti, permessi, reparti, configurazioni e stato del sistema',
     icon: '🖥️', sidebar: 'IconMonitor', hidden: false, moduleKey: 'impostazioni',
   },
 

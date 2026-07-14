@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -23,6 +24,7 @@ const PRIORITY_COLORS: Record<string, string> = {
 
 export default function NuovoTicketPage() {
   const router = useRouter();
+  const { user } = useAuth();
 
   const [categories,    setCategories]    = useState<Category[]>([]);
   const [departments,   setDepartments]   = useState<Department[]>([]);
@@ -48,6 +50,15 @@ export default function NuovoTicketPage() {
     fetch(`${BACKEND}/api/tickets/departments`).then(r => r.json()).then(setDepartments);
     fetch(`${BACKEND}/api/tickets/priority-rules`).then(r => r.json()).then(setPriorityRules);
   }, []);
+
+  // Precompila i dati del richiedente se loggato con un account personale (non "Ospite")
+  useEffect(() => {
+    if (!user || user.role === 'guest') return;
+    setCallerName(user.display_name);
+    setCallerEmail(user.email ?? '');
+    setCallerPhone(user.phone ?? '');
+    setDepartmentId(user.department_id?.toString() ?? '');
+  }, [user]);
 
   // Derive unique top-level categories
   const topCategories = [...new Set(categories.map(c => c.category))];
@@ -248,11 +259,11 @@ export default function NuovoTicketPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Screenshot / Allegato</label>
             <input
               type="file"
-              accept="image/*,.pdf,.doc,.docx,.txt"
+              accept="image/*,.pdf"
               onChange={e => setAttachment(e.target.files?.[0] ?? null)}
               className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
             />
-            <p className="text-xs text-gray-400 mt-1">Max 10 MB — immagini, PDF, documenti</p>
+            <p className="text-xs text-gray-400 mt-1">Max 10 MB — immagini o PDF</p>
           </div>
         </div>
 

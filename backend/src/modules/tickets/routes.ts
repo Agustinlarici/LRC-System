@@ -126,11 +126,27 @@ ticketRoutes.post('/', async (c) => {
     } catch { /* table may not exist in older DB versions, use default */ }
   }
 
+  // Determine if this category/subcategory requires approval before work can start
+  let requiresApproval = false;
+  if (fields.category) {
+    try {
+      const [rule] = await db`
+        SELECT requires_approval FROM ticket_approval_rules
+        WHERE category = ${fields.category} AND subcategory IS NOT DISTINCT FROM ${fields.subcategory ?? null}
+      `;
+      requiresApproval = rule?.requires_approval ?? false;
+    } catch { /* table may not exist in older DB versions, no approval required */ }
+  }
+
   const year = new Date().getFullYear();
   const { number, seq } = await generateTicketNumber(year);
 
   const createdAt = new Date();
-  const sla = await computeSLADeadlines(db, priority, createdAt);
+  // While a ticket awaits approval, IT can't work it yet — SLA clock starts at approval instead
+  const status = requiresApproval ? 'in_attesa_approvazione' : 'aperto';
+  const sla = requiresApproval
+    ? { response_due: null, resolution_due: null }
+    : await computeSLADeadlines(db, priority, createdAt);
 
   const [ticket] = await db`
     INSERT INTO tickets (
@@ -138,13 +154,13 @@ ticketRoutes.post('/', async (c) => {
       caller_name, caller_email, caller_phone, department_id,
       title, description, category, subcategory, blocca_lavoro,
       attachment_path, attachment_name,
-      priority, sla_response_due, sla_resolution_due
+      priority, status, requires_approval, sla_response_due, sla_resolution_due
     ) VALUES (
       ${number}, ${year}, ${seq},
       ${fields.caller_name}, ${fields.caller_email ?? null}, ${fields.caller_phone ?? null}, ${fields.department_id ?? null},
       ${fields.title}, ${fields.description}, ${fields.category ?? null}, ${fields.subcategory ?? null}, ${fields.blocca_lavoro},
       ${attachmentPath}, ${attachmentName},
-      ${priority}, ${sla.response_due?.toISOString() ?? null}, ${sla.resolution_due?.toISOString() ?? null}
+      ${priority}, ${status}, ${requiresApproval}, ${sla.response_due?.toISOString() ?? null}, ${sla.resolution_due?.toISOString() ?? null}
     )
     RETURNING *
   `;
@@ -179,6 +195,39 @@ ticketRoutes.get('/numero/:number', async (c) => {
   `;
 
   return c.json({ ...withSLAStatus(ticket), history });
+});
+
+// ─── IT: daily trend (created vs resolved) ─────────────────────────────────
+
+ticketRoutes.get('/stats/trend', requireIT, async (c) => {
+  const days = Math.min(90, Math.max(1, parseInt(c.req.query('days') ?? '14', 10)));
+
+  const rows = await db`
+    SELECT
+      day::date AS date,
+      COALESCE(created.n, 0)  AS created,
+      COALESCE(resolved.n, 0) AS resolved
+    FROM generate_series(CURRENT_DATE - (${days - 1} || ' days')::interval, CURRENT_DATE, '1 day') AS day
+    LEFT JOIN (
+      SELECT created_at::date AS d, COUNT(*) AS n
+      FROM tickets
+      WHERE created_at >= CURRENT_DATE - (${days - 1} || ' days')::interval
+      GROUP BY 1
+    ) created ON created.d = day::date
+    LEFT JOIN (
+      SELECT resolved_at::date AS d, COUNT(*) AS n
+      FROM tickets
+      WHERE resolved_at IS NOT NULL AND resolved_at >= CURRENT_DATE - (${days - 1} || ' days')::interval
+      GROUP BY 1
+    ) resolved ON resolved.d = day::date
+    ORDER BY day
+  `;
+
+  return c.json(rows.map((r: any) => ({
+    date:     r.date instanceof Date ? r.date.toISOString().slice(0, 10) : r.date,
+    created:  Number(r.created),
+    resolved: Number(r.resolved),
+  })));
 });
 
 // ─── IT: list tickets ──────────────────────────────────────────────────────
@@ -324,6 +373,43 @@ ticketRoutes.patch('/:id', requireIT, async (c) => {
   return c.json(withSLAStatus(updated));
 });
 
+// ─── IT: approve a ticket pending approval ──────────────────────────────────
+
+ticketRoutes.patch('/:id/approve', requireIT, async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+
+  const itUser = c.get('user');
+  const [ticket] = await db`SELECT * FROM tickets WHERE id = ${id}`;
+  if (!ticket) throw new HTTPException(404, { message: 'Ticket non trovato' });
+  if (!ticket.requires_approval || ticket.status !== 'in_attesa_approvazione') {
+    throw new HTTPException(400, { message: 'Il ticket non è in attesa di approvazione' });
+  }
+
+  // Work starts now — SLA clock begins at approval, not at creation
+  const approvedAt = new Date();
+  const sla = await computeSLADeadlines(db, ticket.priority, approvedAt);
+
+  const [updated] = await db`
+    UPDATE tickets SET
+      status             = 'aperto',
+      approved_by        = ${itUser.id},
+      approved_by_name   = ${itUser.display_name},
+      approved_at        = ${approvedAt.toISOString()},
+      sla_response_due   = ${sla.response_due?.toISOString() ?? null},
+      sla_resolution_due = ${sla.resolution_due?.toISOString() ?? null}
+    WHERE id = ${id}
+    RETURNING *
+  `;
+
+  await db`
+    INSERT INTO ticket_history (ticket_id, changed_by_user_id, changed_by_name, action, note)
+    VALUES (${id}, ${itUser.id}, ${itUser.display_name}, 'approvato', ${'Ticket approvato'})
+  `;
+
+  return c.json(withSLAStatus(updated));
+});
+
 // ─── IT: serve attachment ──────────────────────────────────────────────────
 
 ticketRoutes.get('/:id/attachment', requireIT, async (c) => {
@@ -349,6 +435,13 @@ ticketRoutes.post('/admin/categories', requireAdmin, async (c) => {
     VALUES (${body.category}, ${body.subcategory ?? null})
     ON CONFLICT (category, subcategory) DO UPDATE SET is_active = TRUE
     RETURNING *
+  `;
+  // Ogni categoria deve sempre avere una regola di priorità (bloccante/non bloccante),
+  // altrimenti i ticket in quella categoria ricadono silenziosamente su 'media'.
+  await db`
+    INSERT INTO ticket_priority_rules (category, blocca_lavoro, priority)
+    VALUES (${body.category}, TRUE, 'alta'), (${body.category}, FALSE, 'media')
+    ON CONFLICT (category, blocca_lavoro) DO NOTHING
   `;
   return c.json(row, 201);
 });
@@ -382,6 +475,28 @@ ticketRoutes.patch('/admin/priority-rules', requireAdmin, async (c) => {
     RETURNING *
   `;
   if (!row) throw new HTTPException(404, { message: 'Regola non trovata' });
+  return c.json(row);
+});
+
+// ─── Admin: approval rules (per categoria/sottocategoria) ──────────────────
+
+ticketRoutes.get('/admin/approval-rules', requireAdmin, async (c) => {
+  const rows = await db`SELECT category, subcategory, requires_approval FROM ticket_approval_rules ORDER BY category, subcategory NULLS FIRST`;
+  return c.json(rows);
+});
+
+ticketRoutes.patch('/admin/approval-rules', requireAdmin, async (c) => {
+  const body = await parseBody(c, z.object({
+    category:          z.string().min(1),
+    subcategory:       z.string().nullable(),
+    requires_approval: z.boolean(),
+  }));
+  const [row] = await db`
+    INSERT INTO ticket_approval_rules (category, subcategory, requires_approval)
+    VALUES (${body.category}, ${body.subcategory}, ${body.requires_approval})
+    ON CONFLICT (category, subcategory) DO UPDATE SET requires_approval = ${body.requires_approval}
+    RETURNING *
+  `;
   return c.json(row);
 });
 
@@ -422,8 +537,49 @@ ticketRoutes.patch('/admin/categories/:id', requireAdmin, async (c) => {
   if (body.category    !== undefined) updates.category    = body.category;
   if (body.subcategory !== undefined) updates.subcategory = body.subcategory;
   if (!Object.keys(updates).length) throw new HTTPException(400, { message: 'Nessun campo da aggiornare' });
+
+  const [existing] = await db`SELECT category, subcategory FROM ticket_categories WHERE id = ${id}`;
+  if (!existing) throw new HTTPException(404, { message: 'Categoria non trovata' });
+
   const [row] = await db`UPDATE ticket_categories SET ${db(updates)} WHERE id = ${id} RETURNING *`;
   if (!row) throw new HTTPException(404, { message: 'Categoria non trovata' });
+
+  // Rinominare categoria/sottocategoria non deve rompere il mapping con le regole di approvazione
+  // (chiave esatta categoria+sottocategoria, una riga per riga di ticket_categories)
+  if (
+    (body.category    !== undefined && body.category    !== existing.category) ||
+    (body.subcategory !== undefined && body.subcategory !== existing.subcategory)
+  ) {
+    await db`
+      UPDATE ticket_approval_rules
+      SET category = ${row.category}, subcategory = ${row.subcategory}
+      WHERE category = ${existing.category} AND subcategory IS NOT DISTINCT FROM ${existing.subcategory}
+    `;
+  }
+
+  // Rinominare la categoria non deve rompere il mapping con le regole di priorità automatica
+  if (body.category !== undefined && body.category !== existing.category) {
+    // Garantisce che il nuovo nome abbia sempre regole di priorità (default se non esistevano già)
+    await db`
+      INSERT INTO ticket_priority_rules (category, blocca_lavoro, priority)
+      VALUES (${body.category}, TRUE, 'alta'), (${body.category}, FALSE, 'media')
+      ON CONFLICT (category, blocca_lavoro) DO NOTHING
+    `;
+    // Se nessun'altra sottocategoria usa ancora il nome vecchio, migra le priorità già
+    // configurate (invece di lasciarle come regole orfane) e rimuove quelle vecchie
+    const [{ count }] = await db`SELECT COUNT(*) AS count FROM ticket_categories WHERE category = ${existing.category}`;
+    if (parseInt(count, 10) === 0) {
+      const oldRules = await db`SELECT blocca_lavoro, priority FROM ticket_priority_rules WHERE category = ${existing.category}`;
+      for (const r of oldRules) {
+        await db`
+          UPDATE ticket_priority_rules SET priority = ${r.priority}
+          WHERE category = ${body.category} AND blocca_lavoro = ${r.blocca_lavoro}
+        `;
+      }
+      await db`DELETE FROM ticket_priority_rules WHERE category = ${existing.category}`;
+    }
+  }
+
   return c.json(row);
 });
 

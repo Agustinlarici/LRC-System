@@ -65,7 +65,8 @@ DB_NAME="${DB_NAME:-lrc_system}"
 # ─── Cartelle necessarie ──────────────────────────────────────────
 SCAN_HOST="${SCAN_FOLDER_HOST:-./test-scansioni}"
 DOCS_HOST="${DOCS_FOLDER_HOST:-./test-documentos}"
-mkdir -p "$SCAN_HOST" "$DOCS_HOST"
+TICKETS_HOST="${TICKETS_UPLOADS_HOST:-./data/tickets-uploads}"
+mkdir -p "$SCAN_HOST" "$DOCS_HOST" "$TICKETS_HOST"
 
 # ═══════════════════════════════════════════════════════════════════
 # Funzione: applica le migrazioni (stack deve essere running)
@@ -84,6 +85,8 @@ run_migrations() {
     "db/migrate.sql"
     "db/migrate-tickets.sql"
     "db/migrate-auth.sql"
+    "db/migrate-tickets-user-profile.sql"
+    "db/migrate-tickets-approval.sql"
     "db/migrate-heatmap.sql"
     "db/migrate-heatmap-hourly.sql"
     "db/migrate-dashboards.sql"

@@ -12,11 +12,15 @@ export interface ModulePermission {
 }
 
 export interface AuthUser {
-  id:           number;
-  username:     string;
-  display_name: string;
-  role:         'guest' | 'operator' | 'it' | 'admin';
-  permissions:  ModulePermission[];
+  id:              number;
+  username:        string;
+  display_name:    string;
+  role:            'guest' | 'operator' | 'it' | 'admin';
+  permissions:     ModulePermission[];
+  email:           string | null;
+  phone:           string | null;
+  department_id:   number | null;
+  department_name: string | null;
 }
 
 // ─── Ingresso Merci ───────────────────────────────────────────────────────────

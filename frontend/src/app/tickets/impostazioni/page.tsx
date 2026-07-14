@@ -10,6 +10,7 @@ type SLARule      = { priority: string; response_hours: number; resolution_hours
 type Department   = { id: number; name: string; is_active: boolean };
 type PriorityRule = { category: string; blocca_lavoro: boolean; priority: string };
 type CategoryRow  = { id: number; category: string; subcategory: string | null; is_active: boolean };
+type ApprovalRule = { category: string; subcategory: string | null; requires_approval: boolean };
 
 const PRIORITY_OPTIONS = ['bassa', 'media', 'alta', 'critica'];
 const PRIORITY_COLORS: Record<string, string> = {
@@ -25,7 +26,7 @@ async function apiFetch(path: string, opts?: RequestInit) {
   return res;
 }
 
-type Tab = 'priorita' | 'sla' | 'categorie' | 'reparti';
+type Tab = 'priorita' | 'sla' | 'categorie' | 'reparti' | 'approvazioni';
 
 export default function TicketImpostazioniPage() {
   const [tab, setTab] = useState<Tab>('priorita');
@@ -40,6 +41,11 @@ export default function TicketImpostazioniPage() {
   const [prioRules,  setPrioRules]  = useState<PriorityRule[]>([]);
   const [prioSaving, setPrioSaving] = useState<string | null>(null);
   const [prioError,  setPrioError]  = useState('');
+
+  // ─── Approval rules ────────────────────────────────────────────────────────
+  const [approvalRules,  setApprovalRules]  = useState<ApprovalRule[]>([]);
+  const [approvalSaving, setApprovalSaving] = useState<string | null>(null);
+  const [approvalError,  setApprovalError]  = useState('');
 
   // ─── Departments ───────────────────────────────────────────────────────────
   const [departments,    setDepartments]    = useState<Department[]>([]);
@@ -78,6 +84,7 @@ export default function TicketImpostazioniPage() {
     apiFetch('/api/tickets/admin/sla').then(r => r.json()).then(setSlaRules).catch(() => {});
     apiFetch('/api/tickets/admin/priority-rules').then(r => r.json()).then(setPrioRules).catch(() => {});
     apiFetch('/api/tickets/admin/categories').then(r => r.json()).then(setCategories).catch(() => {});
+    apiFetch('/api/tickets/admin/approval-rules').then(r => r.json()).then(setApprovalRules).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -122,6 +129,27 @@ export default function TicketImpostazioniPage() {
       ));
     } catch { setPrioError('Errore di connessione'); }
     finally { setPrioSaving(null); }
+  }
+
+  // ─── Approval rule handlers ────────────────────────────────────────────────
+  async function setApprovalRequired(category: string, subcategory: string | null, requires_approval: boolean) {
+    const key = `${category}-${subcategory ?? ''}`;
+    setApprovalSaving(key); setApprovalError('');
+    try {
+      const res = await apiFetch('/api/tickets/admin/approval-rules', {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ category, subcategory, requires_approval }),
+      });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); setApprovalError(d.message ?? 'Errore'); return; }
+      setApprovalRules(prev => {
+        const exists = prev.find(r => r.category === category && r.subcategory === subcategory);
+        return exists
+          ? prev.map(r => r.category === category && r.subcategory === subcategory ? { ...r, requires_approval } : r)
+          : [...prev, { category, subcategory, requires_approval }];
+      });
+    } catch { setApprovalError('Errore di connessione'); }
+    finally { setApprovalSaving(null); }
   }
 
   // ─── Department handlers ──────────────────────────────────────────────────
@@ -286,10 +314,11 @@ export default function TicketImpostazioniPage() {
       </div>
 
       <div className="flex gap-2 mb-6 flex-wrap">
-        <button className={tabClass('priorita')}  onClick={() => setTab('priorita')}>Priorità automatica</button>
-        <button className={tabClass('sla')}       onClick={() => setTab('sla')}>Regole SLA</button>
-        <button className={tabClass('categorie')} onClick={() => setTab('categorie')}>Categorie</button>
-        <button className={tabClass('reparti')}   onClick={() => setTab('reparti')}>Reparti</button>
+        <button className={tabClass('priorita')}     onClick={() => setTab('priorita')}>Priorità automatica</button>
+        <button className={tabClass('sla')}          onClick={() => setTab('sla')}>Regole SLA</button>
+        <button className={tabClass('categorie')}    onClick={() => setTab('categorie')}>Categorie</button>
+        <button className={tabClass('reparti')}      onClick={() => setTab('reparti')}>Reparti</button>
+        <button className={tabClass('approvazioni')} onClick={() => setTab('approvazioni')}>Approvazioni</button>
       </div>
 
       {/* ── PRIORITY RULES ── */}
@@ -617,6 +646,57 @@ export default function TicketImpostazioniPage() {
               </ul>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── APPROVALS ── */}
+      {tab === 'approvazioni' && (
+        <div className="card">
+          <h2 className="font-semibold text-gray-800 mb-1">Approvazioni</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            Se una categoria/sottocategoria richiede approvazione, i nuovi ticket restano in attesa
+            (senza poter essere lavorati) finché un operatore IT non li approva esplicitamente.
+          </p>
+          {approvalError && <p className="text-sm text-red-600 mb-3">{approvalError}</p>}
+          {categoryGroups.size === 0 ? (
+            <p className="text-sm text-gray-400">Nessuna categoria</p>
+          ) : (
+            <div className="space-y-4">
+              {[...categoryGroups.entries()].map(([catName, rows]) => (
+                <div key={catName} className="border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="px-3 py-2 bg-gray-50 border-b border-gray-200">
+                    <span className="text-sm font-semibold text-gray-800">{catName}</span>
+                  </div>
+                  <ul>
+                    {rows.map(row => {
+                      const rule = approvalRules.find(r => r.category === row.category && r.subcategory === row.subcategory);
+                      const requiresApproval = rule?.requires_approval ?? false;
+                      const key = `${row.category}-${row.subcategory ?? ''}`;
+                      return (
+                        <li key={row.id} className="flex items-center justify-between px-3 py-2 border-b border-gray-50 last:border-b-0 text-sm gap-2">
+                          <span className="text-gray-700 flex-1 min-w-0 truncate">
+                            {row.subcategory ?? <span className="text-gray-400 italic text-xs">nessuna sottocategoria</span>}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setApprovalRequired(row.category, row.subcategory, !requiresApproval)}
+                            disabled={approvalSaving === key}
+                            className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium transition-colors disabled:opacity-50 ${
+                              requiresApproval
+                                ? 'bg-purple-100 text-purple-700 hover:bg-gray-100 hover:text-gray-500'
+                                : 'bg-gray-100 text-gray-500 hover:bg-purple-100 hover:text-purple-700'
+                            }`}
+                          >
+                            {approvalSaving === key ? '…' : requiresApproval ? 'Sì' : 'No'}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

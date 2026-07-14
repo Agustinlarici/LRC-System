@@ -8,20 +8,22 @@ const BACKEND = typeof window !== 'undefined'
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
 const STATUS_LABELS: Record<string, string> = {
-  aperto:        'Aperto',
-  in_lavorazione:'In lavorazione',
-  in_attesa:     'In attesa',
-  risolto:       'Risolto',
-  chiuso:        'Chiuso',
-  riaperto:      'Riaperto',
+  aperto:                  'Aperto',
+  in_lavorazione:          'In lavorazione',
+  in_attesa:               'In attesa',
+  in_attesa_approvazione:  'In attesa di approvazione',
+  risolto:                 'Risolto',
+  chiuso:                  'Chiuso',
+  riaperto:                'Riaperto',
 };
 const STATUS_COLORS: Record<string, string> = {
-  aperto:         'bg-blue-100 text-blue-800',
-  in_lavorazione: 'bg-yellow-100 text-yellow-800',
-  in_attesa:      'bg-gray-100 text-gray-700',
-  risolto:        'bg-green-100 text-green-800',
-  chiuso:         'bg-gray-200 text-gray-600',
-  riaperto:       'bg-orange-100 text-orange-800',
+  aperto:                  'bg-blue-100 text-blue-800',
+  in_lavorazione:          'bg-yellow-100 text-yellow-800',
+  in_attesa:               'bg-gray-100 text-gray-700',
+  in_attesa_approvazione:  'bg-purple-100 text-purple-700',
+  risolto:                 'bg-green-100 text-green-800',
+  chiuso:                  'bg-gray-200 text-gray-600',
+  riaperto:                'bg-orange-100 text-orange-800',
 };
 const PRIORITY_LABELS: Record<string, string> = {
   bassa: 'Bassa', media: 'Media', alta: 'Alta', critica: 'Critica',
@@ -42,6 +44,7 @@ const ACTION_LABELS: Record<string, string> = {
   chiuso:            'Chiuso',
   riaperto:          'Riaperto',
   allegato_aggiunto: 'Allegato aggiunto',
+  approvato:         'Approvato',
 };
 
 type Ticket = {
