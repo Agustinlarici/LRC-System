@@ -20,6 +20,7 @@ services:
       - ./db/migrate-tickets-created-by.sql:/docker-entrypoint-initdb.d/03e_tickets_created_by.sql:ro
       - ./db/migrate-tickets-priority-backfill.sql:/docker-entrypoint-initdb.d/03f_tickets_priority_backfill.sql:ro
       - ./db/migrate-tickets-resolved-backfill.sql:/docker-entrypoint-initdb.d/03g_tickets_resolved_backfill.sql:ro
+      - ./db/migrate-tickets-reopen-backfill.sql:/docker-entrypoint-initdb.d/03h_tickets_reopen_backfill.sql:ro
       - ./db/migrate-heatmap.sql:/docker-entrypoint-initdb.d/04_heatmap.sql:ro
       - ./db/migrate-heatmap-hourly.sql:/docker-entrypoint-initdb.d/05_heatmap_hourly.sql:ro
       - ./db/migrate.sql:/docker-entrypoint-initdb.d/06_migrate.sql:ro

@@ -389,7 +389,14 @@ ticketRoutes.patch('/:id', requireIT, async (c) => {
       // ancora aperto anche se lo stato diceva "chiuso".
       if (!ticket.resolved_at) updates.resolved_at = now;
     }
-    if (body.status === 'riaperto') updates.reopen_count = (ticket.reopen_count ?? 0) + 1;
+    if (body.status === 'riaperto') {
+      updates.reopen_count = (ticket.reopen_count ?? 0) + 1;
+      // Un ticket riaperto torna a essere attivo — se resolved_at/closed_at
+      // restassero valorizzati, l'SLA e il grafico "Totale aperti" lo
+      // considererebbero ancora risolto anche se lo stato dice "riaperto".
+      updates.resolved_at = null;
+      updates.closed_at   = null;
+    }
     updates.status = body.status;
     historyEntries.push({ action: 'stato_cambiato', old_value: ticket.status, new_value: body.status });
   }
