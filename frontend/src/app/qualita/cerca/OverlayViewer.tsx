@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import type { QualitaReport } from '@/types';
+import { PALETTE } from '../palette';
+import { TintedDrawing } from '../TintedDrawing';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
-
-const PALETTE = ['#e11d48', '#2563eb', '#16a34a', '#d97706', '#9333ea', '#0d9488', '#dc2626', '#0369a1'];
 
 const SEVERITY_LABELS: Record<string, string> = { bassa: 'Bassa', media: 'Media', alta: 'Alta' };
 
@@ -27,47 +27,6 @@ function BaseImage({ src, alt }: { src: string; alt: string }) {
   }
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={src} alt={alt} onError={() => setFailed(true)} className="w-full h-auto block" />;
-}
-
-// Ricolora il disegno (tratti rossi su sfondo trasparente) nel colore di palette
-// assegnato, disegnandolo su un <canvas> invece di usare mask-image CSS — mask-image
-// ha comportamento incoerente tra browser (alpha vs luminance, prefissi -webkit-),
-// mentre "source-in" su canvas è supportato ovunque e dà un risultato prevedibile.
-function TintedDrawing({ src, color }: { src: string; color: string }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    // Nessun crossOrigin: il canvas risulta "tainted" per la lettura pixel (getImageData/
-    // toDataURL), ma disegnare (drawImage/composite) e mostrarlo a schermo funziona comunque
-    // — e i cookie di sessione vengono comunque inviati, come per un <img> normale.
-    const img = new window.Image();
-    img.onload = () => {
-      if (cancelled) return;
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      canvas.width  = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.drawImage(img, 0, 0);
-      ctx.globalCompositeOperation = 'source-in';
-      ctx.fillStyle = color;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      setReady(true);
-    };
-    img.src = src;
-    return () => { cancelled = true; };
-  }, [src, color]);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      className="absolute inset-0 w-full h-full pointer-events-none"
-      style={{ opacity: ready ? 0.85 : 0 }}
-    />
-  );
 }
 
 function PhotoThumb({ src, tablet }: { src: string; tablet?: boolean }) {

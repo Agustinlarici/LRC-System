@@ -1,6 +1,7 @@
 'use client';
 
 import { forwardRef, useImperativeHandle, useRef, useState, useCallback } from 'react';
+import { TintedDrawing } from '../TintedDrawing';
 
 export interface DrawingCanvasHandle {
   exportBlob: () => Promise<Blob | null>;
@@ -10,17 +11,26 @@ export interface DrawingCanvasHandle {
 
 interface Point { x: number; y: number; }
 
-const STROKE_COLOR = '#e11d48'; // colore fisso — non persistito, serve solo a rendere visibile il tratto
+interface HistoricalLayer {
+  src:   string;
+  color: string;
+}
 
 interface DrawingCanvasProps {
-  imageUrl:       string;
-  imageAlt:       string;
+  imageUrl:          string;
+  imageAlt:          string;
   /** Altezza massima del riquadro di disegno, in vh — più alta in modalità tablet a schermo intero. */
-  maxHeightVh?:   number;
+  maxHeightVh?:      number;
+  /** Colore del tratto per il disegno attivo — cambia automaticamente per ogni nuova segnalazione. */
+  strokeColor?:      string;
+  /** Segnalazioni già fatte in precedenza su questo componente/commessa, mostrate sotto il disegno attivo. */
+  historicalLayers?: HistoricalLayer[];
+  /** Avvisa il genitore se ci sono tratti disegnati ma non ancora salvati. */
+  onDirtyChange?:    (dirty: boolean) => void;
 }
 
 export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>(
-  function DrawingCanvas({ imageUrl, imageAlt, maxHeightVh = 70 }, ref) {
+  function DrawingCanvas({ imageUrl, imageAlt, maxHeightVh = 70, strokeColor = '#e11d48', historicalLayers = [], onDirtyChange }, ref) {
     const canvasRef  = useRef<HTMLCanvasElement>(null);
     const strokesRef = useRef<Point[][]>([]);
     const drawingRef = useRef<Point[] | null>(null);
@@ -34,7 +44,7 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.strokeStyle = STROKE_COLOR;
+      ctx.strokeStyle = strokeColor;
       ctx.lineWidth   = Math.max(2, canvas.width / 150);
       ctx.lineCap     = 'round';
       ctx.lineJoin    = 'round';
@@ -45,7 +55,7 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
         for (let i = 1; i < stroke.length; i++) ctx.lineTo(stroke[i].x, stroke[i].y);
         ctx.stroke();
       }
-    }, []);
+    }, [strokeColor]);
 
     function handleImageLoad(e: React.SyntheticEvent<HTMLImageElement>) {
       const img = e.currentTarget;
@@ -78,7 +88,7 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       const ctx = canvas?.getContext('2d');
       if (!canvas || !ctx) return;
       const pts = drawingRef.current;
-      ctx.strokeStyle = STROKE_COLOR;
+      ctx.strokeStyle = strokeColor;
       ctx.lineWidth   = Math.max(2, canvas.width / 150);
       ctx.lineCap     = 'round';
       ctx.lineJoin    = 'round';
@@ -88,10 +98,15 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       ctx.stroke();
     }
 
+    function updateHasStrokes(value: boolean) {
+      setHasStrokes(value);
+      onDirtyChange?.(value);
+    }
+
     function handlePointerUp() {
       if (drawingRef.current && drawingRef.current.length > 1) {
         strokesRef.current.push(drawingRef.current);
-        setHasStrokes(true);
+        updateHasStrokes(true);
       }
       drawingRef.current = null;
     }
@@ -104,12 +119,12 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       }),
       undo: () => {
         strokesRef.current.pop();
-        setHasStrokes(strokesRef.current.length > 0);
+        updateHasStrokes(strokesRef.current.length > 0);
         redraw();
       },
       clear: () => {
         strokesRef.current = [];
-        setHasStrokes(false);
+        updateHasStrokes(false);
         redraw();
       },
     }), [redraw]);
@@ -143,6 +158,9 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
                 className="absolute inset-0 w-full h-full object-contain pointer-events-none"
                 draggable={false}
               />
+              {historicalLayers.map((layer) => (
+                <TintedDrawing key={layer.src} src={layer.src} color={layer.color} opacity={0.7} />
+              ))}
               <canvas
                 ref={canvasRef}
                 className="absolute inset-0 w-full h-full touch-none cursor-crosshair"

@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import type { QualitaComponent } from '@/types';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import type { QualitaComponent, QualitaReport } from '@/types';
 import { DrawingCanvas, type DrawingCanvasHandle } from './DrawingCanvas';
+import { PALETTE } from '../palette';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -11,6 +12,10 @@ const BACKEND = typeof window !== 'undefined'
 type Step = 'component' | 'commessa' | 'draw';
 
 const SEVERITY_LABELS: Record<string, string> = { bassa: 'Bassa', media: 'Media', alta: 'Alta' };
+
+function fmtDateTime(ts: string): string {
+  return new Date(ts).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
 
 interface Props {
   /** Ingrandisce immagini, testi e riquadro di disegno per l'uso su tablet. */
@@ -25,6 +30,10 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
   const [component, setComponent] = useState<QualitaComponent | null>(null);
   const [commessa, setCommessa]   = useState('');
 
+  // Segnalazioni già fatte in precedenza su questo componente/commessa — mostrate
+  // sovrapposte, ciascuna con un colore diverso assegnato in automatico.
+  const [existingReports, setExistingReports] = useState<QualitaReport[]>([]);
+
   const [defectType, setDefectType] = useState('');
   const [severity, setSeverity]     = useState('');
   const [note, setNote]             = useState('');
@@ -32,8 +41,8 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState('');
-  const [savedCount, setSavedCount] = useState(0);
   const [justSaved, setJustSaved]   = useState(false);
+  const [hasUnsaved, setHasUnsaved] = useState(false);
 
   const canvasRef = useRef<DrawingCanvasHandle>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -52,6 +61,17 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
     return () => clearTimeout(t);
   }, [justSaved]);
 
+  const fetchExisting = useCallback(async (componentId: number, commessaValue: string) => {
+    try {
+      const params = new URLSearchParams({ commessa: commessaValue, component_id: String(componentId) });
+      const res = await fetch(`${BACKEND}/api/qualita/reports?${params}`, { credentials: 'include' });
+      if (!res.ok) throw new Error();
+      setExistingReports(await res.json());
+    } catch {
+      setExistingReports([]);
+    }
+  }, []);
+
   function pickComponent(c: QualitaComponent) {
     setComponent(c);
     setStep('commessa');
@@ -59,8 +79,8 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
 
   function confirmCommessa(e: React.FormEvent) {
     e.preventDefault();
-    if (!commessa.trim()) return;
-    setSavedCount(0);
+    if (!component || !commessa.trim()) return;
+    fetchExisting(component.id, commessa.trim());
     setStep('draw');
   }
 
@@ -70,13 +90,25 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
   }
 
   // "Termina segnalazione" — chiude la sessione su questo componente/commessa e
-  // torna alla scelta del componente, per iniziarne una nuova.
+  // torna alla scelta del componente, per iniziarne una nuova. Se c'è un disegno
+  // non ancora salvato andrebbe perso, quindi va confermato esplicitamente.
   function finishSegnalazione() {
+    if (hasUnsaved && !confirm('Hai un disegno non salvato su questo componente. Se termini ora, andrà perso. Continuare?')) {
+      return;
+    }
     setComponent(null);
     setCommessa('');
+    setExistingReports([]);
+    setHasUnsaved(false);
     resetDefectFields();
-    setSavedCount(0);
     setStep('component');
+  }
+
+  function goBackToCommessa() {
+    if (hasUnsaved && !confirm('Hai un disegno non salvato. Se torni indietro ora, andrà perso. Continuare?')) {
+      return;
+    }
+    setStep('commessa');
   }
 
   async function handleSubmit() {
@@ -104,9 +136,11 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
 
       // Segnalazione salvata: resta sul disegno per continuare a segnare altri
       // difetti sullo stesso componente/commessa, invece di tornare all'inizio.
+      // Ricarica le segnalazioni esistenti così quella appena salvata compare
+      // subito come livello storico, e la prossima ottiene un colore diverso.
       canvasRef.current?.clear();
       resetDefectFields();
-      setSavedCount(n => n + 1);
+      await fetchExisting(component.id, commessa.trim());
       setJustSaved(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Errore durante il salvataggio');
@@ -118,6 +152,14 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
   const thumbSize   = tablet ? 'w-36 h-36' : 'w-24 h-24';
   const stepMaxW    = tablet ? 'max-w-5xl' : 'max-w-3xl';
   const commessaMaxW = tablet ? 'max-w-2xl' : 'max-w-md';
+
+  const historicalLayers = component
+    ? existingReports.map((r, i) => ({
+        src:   `${BACKEND}/api/qualita/reports/${r.id}/drawing`,
+        color: PALETTE[i % PALETTE.length],
+      }))
+    : [];
+  const currentColor = PALETTE[existingReports.length % PALETTE.length];
 
   return (
     <div>
@@ -181,11 +223,30 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div>
                   <p className={`font-semibold text-gray-800 ${tablet ? 'text-lg' : ''}`}>{component.name} — Commessa {commessa}</p>
-                  {savedCount > 0 && (
-                    <p className="text-xs text-green-600 mt-0.5">
-                      {savedCount} segnalazion{savedCount === 1 ? 'e salvata' : 'i salvate'} su questa commessa
-                      {justSaved && ' ✓'}
-                    </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    {existingReports.length > 0 && (
+                      <p className="text-xs text-gray-500">
+                        {existingReports.length} segnalazion{existingReports.length === 1 ? 'e precedente' : 'i precedenti'} su questa commessa
+                        {justSaved && <span className="text-green-600 font-medium"> — salvata ✓</span>}
+                      </p>
+                    )}
+                    {existingReports.length === 0 && justSaved && (
+                      <p className="text-xs text-green-600 font-medium">Segnalazione salvata ✓</p>
+                    )}
+                  </div>
+                  {existingReports.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      {existingReports.map((r, i) => (
+                        <span
+                          key={r.id}
+                          title={`${fmtDateTime(r.created_at)} — ${r.created_by_name ?? 'Sconosciuto'}`}
+                          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border border-gray-200 text-gray-600 bg-gray-50"
+                        >
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: PALETTE[i % PALETTE.length] }} />
+                          {fmtDateTime(r.created_at)}
+                        </span>
+                      ))}
+                    </div>
                   )}
                 </div>
                 <div className="flex gap-2">
@@ -199,6 +260,9 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
                 imageUrl={`${BACKEND}/api/qualita/components/${component.id}/image`}
                 imageAlt={component.name}
                 maxHeightVh={tablet ? 88 : 80}
+                strokeColor={currentColor}
+                historicalLayers={historicalLayers}
+                onDirtyChange={setHasUnsaved}
               />
             </div>
 
@@ -239,7 +303,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
                 <button className={`btn btn-secondary w-full ${tablet ? 'text-lg py-3' : ''}`} onClick={finishSegnalazione}>
                   Termina segnalazione
                 </button>
-                <button className="btn w-full text-sm" onClick={() => setStep('commessa')}>Indietro (correggi commessa)</button>
+                <button className="btn w-full text-sm" onClick={goBackToCommessa}>Indietro (correggi commessa)</button>
               </div>
             </div>
           </div>
