@@ -100,9 +100,9 @@ async function apiFetch(path: string, opts?: RequestInit) {
 
 // ─── Trend chart (creati vs risolti, ultimi N giorni) ──────────────────────────
 
-type TrendPoint = { date: string; created: number; resolved: number };
+type TrendPoint = { date: string; created: number; resolved: number; open: number };
 
-const TREND_COLORS = { created: '#2a78d6', resolved: '#1baf7a' };
+const TREND_COLORS = { created: '#2a78d6', resolved: '#1baf7a', open: '#eda100' };
 
 function fmtDayShort(iso: string) {
   const [, m, d] = iso.split('-');
@@ -199,6 +199,12 @@ function TrendChart({ refreshKey }: { refreshKey: number }) {
                 dot={{ r: 4, fill: TREND_COLORS.resolved, strokeWidth: 0 }}
                 activeDot={{ r: 6 }}
               />
+              <Line
+                type="monotone" dataKey="open" name="Totale aperti"
+                stroke={TREND_COLORS.open} strokeWidth={2.5}
+                dot={{ r: 4, fill: TREND_COLORS.open, strokeWidth: 0 }}
+                activeDot={{ r: 6 }}
+              />
             </LineChart>
           </ResponsiveContainer>
         </>
@@ -221,6 +227,8 @@ export default function TicketDashboard() {
   const [unassigned, setUnassigned] = useState<Ticket[]>([]);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [trendRefreshKey, setTrendRefreshKey] = useState(0);
+  const [unassignedOpen,      setUnassignedOpen]      = useState(false);
+  const [pendingApprovalOpen, setPendingApprovalOpen] = useState(false);
 
   // Filters
   const [filterStatus,   setFilterStatus]   = useState('');
@@ -398,7 +406,7 @@ export default function TicketDashboard() {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
         {['aperto','in_lavorazione','in_attesa','in_attesa_approvazione','risolto'].map(s => {
           const count = tickets.filter(t => t.status === s).length;
           return (
@@ -412,6 +420,13 @@ export default function TicketDashboard() {
             </button>
           );
         })}
+        <button
+          onClick={() => setFilterAssigned(prev => prev === 'null' ? '' : 'null')}
+          className={`card text-left cursor-pointer hover:shadow-md transition-shadow ${filterAssigned === 'null' ? 'ring-2 ring-blue-500' : ''}`}
+        >
+          <p className="text-3xl font-bold text-gray-900">{unassigned.length}</p>
+          <p className="text-sm text-gray-500 mt-1.5">In attesa di assegnazione</p>
+        </button>
       </div>
 
       {/* Trend chart */}
@@ -420,11 +435,20 @@ export default function TicketDashboard() {
       {/* Da prendere in carico */}
       {unassigned.length > 0 && (
         <div className="mb-8">
-          <h2 className="text-base font-semibold text-gray-700 mb-3 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setUnassignedOpen(v => !v)}
+            className="w-full flex items-center gap-2 text-base font-semibold text-gray-700 mb-3 hover:text-gray-900 transition-colors"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+              className={`w-4 h-4 shrink-0 transition-transform duration-200 text-gray-400 ${unassignedOpen ? 'rotate-90' : ''}`}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
             <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-400" />
             Da prendere in carico
             <span className="text-sm font-normal text-gray-400 ml-1">({unassigned.length})</span>
-          </h2>
+          </button>
+          {unassignedOpen && (
           <div className="border border-orange-200 rounded-xl overflow-hidden">
             <table className="w-full text-base border-collapse">
               <thead>
@@ -458,17 +482,27 @@ export default function TicketDashboard() {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 
       {/* In attesa di approvazione */}
       {pendingApproval.length > 0 && (
         <div className="mb-8">
-          <h2 className="text-base font-semibold text-gray-700 mb-3 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPendingApprovalOpen(v => !v)}
+            className="w-full flex items-center gap-2 text-base font-semibold text-gray-700 mb-3 hover:text-gray-900 transition-colors"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+              className={`w-4 h-4 shrink-0 transition-transform duration-200 text-gray-400 ${pendingApprovalOpen ? 'rotate-90' : ''}`}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
             <span className="inline-block w-2.5 h-2.5 rounded-full bg-purple-400" />
             In attesa di approvazione
             <span className="text-sm font-normal text-gray-400 ml-1">({pendingApproval.length})</span>
-          </h2>
+          </button>
+          {pendingApprovalOpen && (
           <div className="border border-purple-200 rounded-xl overflow-hidden">
             <table className="w-full text-base border-collapse">
               <thead>
@@ -500,6 +534,7 @@ export default function TicketDashboard() {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 

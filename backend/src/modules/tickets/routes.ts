@@ -152,24 +152,33 @@ ticketRoutes.post('/', async (c) => {
   const submitter = await getOptionalUser(c);
   const createdByUserId = submitter && submitter.role !== 'guest' ? submitter.id : null;
 
-  const [ticket] = await db`
-    INSERT INTO tickets (
-      ticket_number, year, seq,
-      caller_name, caller_email, caller_phone, department_id,
-      title, description, category, subcategory, blocca_lavoro,
-      attachment_path, attachment_name,
-      priority, status, requires_approval, sla_response_due, sla_resolution_due,
-      created_by_user_id
-    ) VALUES (
-      ${number}, ${year}, ${seq},
-      ${fields.caller_name}, ${fields.caller_email ?? null}, ${fields.caller_phone ?? null}, ${fields.department_id ?? null},
-      ${fields.title}, ${fields.description}, ${fields.category ?? null}, ${fields.subcategory ?? null}, ${fields.blocca_lavoro},
-      ${attachmentPath}, ${attachmentName},
-      ${priority}, ${status}, ${requiresApproval}, ${sla.response_due?.toISOString() ?? null}, ${sla.resolution_due?.toISOString() ?? null},
-      ${createdByUserId}
-    )
-    RETURNING *
-  `;
+  const baseValues = {
+    ticket_number: number, year, seq,
+    caller_name: fields.caller_name, caller_email: fields.caller_email ?? null,
+    caller_phone: fields.caller_phone ?? null, department_id: fields.department_id ?? null,
+    title: fields.title, description: fields.description,
+    category: fields.category ?? null, subcategory: fields.subcategory ?? null,
+    blocca_lavoro: fields.blocca_lavoro,
+    attachment_path: attachmentPath, attachment_name: attachmentName,
+    priority, status, requires_approval: requiresApproval,
+    sla_response_due: sla.response_due?.toISOString() ?? null,
+    sla_resolution_due: sla.resolution_due?.toISOString() ?? null,
+  };
+
+  let ticket: any;
+  try {
+    [ticket] = await db`
+      INSERT INTO tickets ${db({ ...baseValues, created_by_user_id: createdByUserId })}
+      RETURNING *
+    `;
+  } catch {
+    // created_by_user_id may not exist yet if migrate-tickets-created-by.sql hasn't run —
+    // don't let a lagging migration take down ticket creation, the single most critical path.
+    [ticket] = await db`
+      INSERT INTO tickets ${db(baseValues)}
+      RETURNING *
+    `;
+  }
 
   // Log creation in history
   await db`
@@ -208,16 +217,20 @@ ticketRoutes.get('/numero/:number', async (c) => {
 ticketRoutes.get('/mine', requireAuth, async (c) => {
   const user = c.get('user');
 
-  const tickets = await db`
-    SELECT t.*, d.name AS department_name, u.display_name AS assigned_to_name
-    FROM tickets t
-    LEFT JOIN ticket_departments d ON d.id = t.department_id
-    LEFT JOIN users u ON u.id = t.assigned_to
-    WHERE t.created_by_user_id = ${user.id}
-    ORDER BY t.created_at DESC
-  `;
-
-  return c.json(tickets.map(withSLAStatus));
+  try {
+    const tickets = await db`
+      SELECT t.*, d.name AS department_name, u.display_name AS assigned_to_name
+      FROM tickets t
+      LEFT JOIN ticket_departments d ON d.id = t.department_id
+      LEFT JOIN users u ON u.id = t.assigned_to
+      WHERE t.created_by_user_id = ${user.id}
+      ORDER BY t.created_at DESC
+    `;
+    return c.json(tickets.map(withSLAStatus));
+  } catch {
+    // created_by_user_id may not exist yet if migrate-tickets-created-by.sql hasn't run
+    return c.json([]);
+  }
 });
 
 // ─── IT: daily trend (created vs resolved) ─────────────────────────────────
@@ -225,31 +238,44 @@ ticketRoutes.get('/mine', requireAuth, async (c) => {
 ticketRoutes.get('/stats/trend', requireIT, async (c) => {
   const days = Math.min(90, Math.max(1, parseInt(c.req.query('days') ?? '14', 10)));
 
+  // Tickets already open before the window starts — the running total's starting point
+  const [{ baseline }] = await db`
+    SELECT COUNT(*) AS baseline FROM tickets
+    WHERE created_at < CURRENT_DATE - (${days - 1} || ' days')::interval
+      AND (resolved_at IS NULL OR resolved_at >= CURRENT_DATE - (${days - 1} || ' days')::interval)
+  `;
+
   const rows = await db`
-    SELECT
-      day::date AS date,
-      COALESCE(created.n, 0)  AS created,
-      COALESCE(resolved.n, 0) AS resolved
-    FROM generate_series(CURRENT_DATE - (${days - 1} || ' days')::interval, CURRENT_DATE, '1 day') AS day
-    LEFT JOIN (
-      SELECT created_at::date AS d, COUNT(*) AS n
-      FROM tickets
-      WHERE created_at >= CURRENT_DATE - (${days - 1} || ' days')::interval
-      GROUP BY 1
-    ) created ON created.d = day::date
-    LEFT JOIN (
-      SELECT resolved_at::date AS d, COUNT(*) AS n
-      FROM tickets
-      WHERE resolved_at IS NOT NULL AND resolved_at >= CURRENT_DATE - (${days - 1} || ' days')::interval
-      GROUP BY 1
-    ) resolved ON resolved.d = day::date
-    ORDER BY day
+    WITH daily AS (
+      SELECT
+        day::date AS date,
+        COALESCE(created.n, 0)  AS created,
+        COALESCE(resolved.n, 0) AS resolved
+      FROM generate_series(CURRENT_DATE - (${days - 1} || ' days')::interval, CURRENT_DATE, '1 day') AS day
+      LEFT JOIN (
+        SELECT created_at::date AS d, COUNT(*) AS n
+        FROM tickets
+        WHERE created_at >= CURRENT_DATE - (${days - 1} || ' days')::interval
+        GROUP BY 1
+      ) created ON created.d = day::date
+      LEFT JOIN (
+        SELECT resolved_at::date AS d, COUNT(*) AS n
+        FROM tickets
+        WHERE resolved_at IS NOT NULL AND resolved_at >= CURRENT_DATE - (${days - 1} || ' days')::interval
+        GROUP BY 1
+      ) resolved ON resolved.d = day::date
+    )
+    SELECT date, created, resolved,
+      ${Number(baseline)} + SUM(created - resolved) OVER (ORDER BY date) AS open
+    FROM daily
+    ORDER BY date
   `;
 
   return c.json(rows.map((r: any) => ({
     date:     r.date instanceof Date ? r.date.toISOString().slice(0, 10) : r.date,
     created:  Number(r.created),
     resolved: Number(r.resolved),
+    open:     Number(r.open),
   })));
 });
 
