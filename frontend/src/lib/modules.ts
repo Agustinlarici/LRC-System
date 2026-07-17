@@ -125,6 +125,13 @@ export const MODULES: ModuleConfig[] = [
     icon: '📊', sidebar: 'IconWebDdt', hidden: false, moduleKey: 'webddt',
   },
 
+  // ── Qualità ────────────────────────────────────────────────────────────────
+  {
+    href: '/qualita', label: 'Difetti', group: 'Qualità',
+    description: 'Segnalazione difetti su disegno — marcatura a mano libera per componente e commessa',
+    icon: '🛠️', sidebar: 'IconClipboard', hidden: false, moduleKey: 'qualita',
+  },
+
   // ── Nascosti / in arrivo ───────────────────────────────────────────────────
   {
     href: '/production', label: 'Produzione', group: 'Altro',
@@ -140,7 +147,7 @@ export const MODULES: ModuleConfig[] = [
 
 export const visibleModules = MODULES.filter(m => !m.hidden);
 
-export const MODULE_GROUPS = ['Logistica', 'Produzione', 'Dashboard', 'IT'] as const;
+export const MODULE_GROUPS = ['Logistica', 'Produzione', 'Qualità', 'Dashboard', 'IT'] as const;
 export type ModuleGroup = typeof MODULE_GROUPS[number];
 
 export const modulesByGroup = (group: string) =>

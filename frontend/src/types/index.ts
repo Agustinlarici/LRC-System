@@ -3,7 +3,7 @@
 export type ModuleKey =
   | 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer'
   | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
-  | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt';
+  | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita';
 
 export interface ModulePermission {
   module_key: ModuleKey;
@@ -484,4 +484,34 @@ export interface Recepcion {
   escaner_id:    string;
   creado_at:     string;
   confirmado_at: string | null;
+}
+
+// ─── Qualità ────────────────────────────────────────────────────────────────
+
+export interface QualitaComponent {
+  id:                 number;
+  name:               string;
+  code:               string | null;
+  is_active:          boolean;
+  sort_order:         number;
+  created_by_name:    string | null;
+  created_at:         string;
+  warning?:           string;
+}
+
+export interface QualitaReport {
+  id:                 number;
+  component_id:       number;
+  component_name?:    string;
+  component_code?:    string | null;
+  commessa:           string;
+  drawing_path:       string;
+  defect_type:        string | null;
+  severity:           'bassa' | 'media' | 'alta' | null;
+  note:               string | null;
+  photo_path:          string | null;
+  photo_name:          string | null;
+  created_by_user_id: number | null;
+  created_by_name:    string | null;
+  created_at:         string;
 }

@@ -1,8 +1,9 @@
 import type { NextConfig } from 'next';
 
 // Security headers sent on every response.
-// connect-src is permissive (http:/https:/ws:/wss:) because the frontend
-// calls the backend on a different port (:3001) whose address is dynamic at runtime.
+// connect-src and img-src are permissive (http:/https:/ws:/wss:) because the frontend
+// calls the backend and loads files/images from it on a different port (:3001) whose
+// address is dynamic at runtime.
 const securityHeaders = [
   { key: 'X-Frame-Options',        value: 'SAMEORIGIN' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
@@ -15,7 +16,7 @@ const securityHeaders = [
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob:",
+      "img-src 'self' data: blob: http: https:",
       "font-src 'self'",
       "connect-src 'self' http: https: ws: wss:",
       "frame-ancestors 'self'",

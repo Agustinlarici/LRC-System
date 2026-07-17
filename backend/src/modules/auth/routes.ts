@@ -174,7 +174,7 @@ authRoutes.put('/users/:id/permissions', requireManage('tickets_admin'), async (
 
   const body = await parseBody(c, z.object({
     permissions: z.array(z.object({
-      module_key: z.enum(['ingresso_merci','packing','monitor','monitor_resumen','buffer','mappa','tickets','tickets_it','tickets_admin','impostazioni','dashboards','spma','recepciones','edi','monitor_parate','monitor_motivi','webddt']),
+      module_key: z.enum(['ingresso_merci','packing','monitor','monitor_resumen','buffer','mappa','tickets','tickets_it','tickets_admin','impostazioni','dashboards','spma','recepciones','edi','monitor_parate','monitor_motivi','webddt','qualita']),
       can_view:   z.boolean(),
       can_manage: z.boolean(),
     })),

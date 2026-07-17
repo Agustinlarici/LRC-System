@@ -12,7 +12,7 @@ type User = {
   phone: string | null; department_id: number | null; department_name: string | null;
   role: 'guest' | 'operator' | 'it' | 'admin'; is_active: boolean;
 };
-type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt';
+type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita';
 type Permission = { module_key: ModuleKey; can_view: boolean; can_manage: boolean };
 
 const ALL_MODULES: { key: ModuleKey; label: string }[] = [
@@ -33,6 +33,7 @@ const ALL_MODULES: { key: ModuleKey; label: string }[] = [
   { key: 'tickets_it',      label: 'Ticket IT — Dashboard' },
   { key: 'tickets_admin',   label: 'Ticket IT — Admin' },
   { key: 'impostazioni',    label: 'Impostazioni' },
+  { key: 'qualita',         label: 'Qualità' },
 ];
 
 async function apiFetch(path: string, opts?: RequestInit) {

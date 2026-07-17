@@ -166,6 +166,7 @@ const ICON_MAP: Record<string, () => React.ReactElement> = {
 const GROUP_ICON_MAP: Record<string, () => React.ReactElement> = {
   Logistica:  IconTruck,
   Produzione: IconMonitor,
+  Qualità:    IconClipboard,
   Dashboard:  IconChart,
   IT:         IconSettings,
 };
@@ -193,6 +194,7 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/webddt':                  'webddt',
   '/admin/monitor/parate':    'monitor_parate',
   '/admin/monitor/motivi':    'monitor_motivi',
+  '/qualita':                 'qualita',
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────

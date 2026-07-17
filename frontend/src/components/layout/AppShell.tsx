@@ -26,6 +26,8 @@ function getModuleForPath(pathname: string): { key: ModuleKey; needsManage?: boo
   if (pathname.startsWith('/spma'))                  return { key: 'spma' };
   if (pathname.startsWith('/recepciones'))           return { key: 'recepciones' };
   if (pathname.startsWith('/edi'))                   return { key: 'edi' };
+  if (pathname.startsWith('/qualita/impostazioni'))  return { key: 'qualita', needsManage: true };
+  if (pathname.startsWith('/qualita'))               return { key: 'qualita' };
   return null;
 }
 
@@ -68,7 +70,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Fullscreen routes (no sidebar, no auth check)
   const isFullscreen = pathname === '/login';
-  const isTablet     = pathname.endsWith('/tablet');
+  const isTablet     = pathname.endsWith('/tablet') || pathname.startsWith('/qualita/tablet/');
   const isMonitor    = /^\/monitor\/\d+/.test(pathname);
 
   // Redirect to login if not authenticated (after loading)

@@ -33,6 +33,18 @@ export function validateTicketFile(buf: Buffer, _filename: string): void {
   }
 }
 
+// Ritorna l'estensione corretta in base ai byte reali del file, non al nome dichiarato —
+// un file rinominato o incollato dagli appunti può avere un'estensione che non corrisponde
+// al contenuto (es. un PNG con nome "foto.jpg"), e servire poi Content-Type sbagliato con
+// nosniff attivo fa sì che il browser rifiuti di mostrare l'immagine.
+export function detectQualitaImageExt(buf: Buffer): '.png' | '.jpg' {
+  if (matchesMagic(buf, [0x89, 0x50, 0x4E, 0x47])) return '.png';
+  if (matchesMagic(buf, [0xFF, 0xD8, 0xFF]))       return '.jpg';
+  throw new HTTPException(400, {
+    message: 'Tipo di file non consentito. Accettati: JPG, PNG',
+  });
+}
+
 export function validateSpmaFile(buf: Buffer, filename: string): void {
   const ext = extOf(filename);
   if (!SPMA_EXTENSIONS.has(ext)) {

@@ -16,6 +16,7 @@ import { spmaRoutes } from './modules/spma/routes.js';
 import { recepcionesRoutes } from './modules/recepciones/routes.js';
 import { ediRoutes } from './modules/edi/routes.js';
 import { webddtRoutes } from './modules/webddt/routes.js';
+import { qualitaRoutes } from './modules/qualita/routes.js';
 import { logger } from './lib/logger.js';
 import { db } from './db/client.js';
 import { getWebthronPool } from './modules/monitor/mysql-client.js';
@@ -28,7 +29,11 @@ app.use('*', async (c, next) => {
   await next();
   logger.info({ method: c.req.method, path: c.req.path, status: c.res.status, ms: Date.now() - start }, 'request');
 });
-app.use('*', secureHeaders());
+// crossOriginResourcePolicy: 'cross-origin' — il frontend (porta 3000) carica immagini/file
+// direttamente dal backend (porta 3001), quindi sono origini diverse per design. Il default
+// 'same-origin' di Hono blocca silenziosamente questi <img src> lato browser (la richiesta
+// risponde 200 ma il browser rifiuta di renderizzarla) anche se CORS/cookie sono corretti.
+app.use('*', secureHeaders({ crossOriginResourcePolicy: 'cross-origin' }));
 app.use('*', corsMiddleware);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
@@ -91,6 +96,7 @@ app.route('/api/spma', spmaRoutes);
 app.route('/api/recepciones', recepcionesRoutes);
 app.route('/api/edi', ediRoutes);
 app.route('/api/webddt', webddtRoutes);
+app.route('/api/qualita', qualitaRoutes);
 
 // Stub para módulos aún no migrados
 const stub = (module: string) =>
