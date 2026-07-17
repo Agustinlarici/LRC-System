@@ -33,6 +33,33 @@ async function generateTicketNumber(year: number): Promise<{ number: string; seq
   return { number: `#TK-${year}-${padded}`, seq };
 }
 
+// Soft-delete filter — cached after the first check so we don't probe on every
+// request. Falls back to "no filter" if migrate-tickets-delete.sql hasn't run
+// yet, instead of taking down every ticket endpoint with a missing-column error.
+//
+// Split into an async "ensure checked" step and sync fragment getters on
+// purpose: an async function that returns a `db\`...\`` fragment as its last
+// expression gets that thenable auto-awaited (i.e. executed as a query) by
+// JS itself before the outer promise resolves, instead of handing back the
+// fragment object — so the fragment getters below must stay synchronous.
+let hasDeletedAtColumn: boolean | null = null;
+async function ensureDeletedAtChecked(): Promise<void> {
+  if (hasDeletedAtColumn === null) {
+    try {
+      await db`SELECT deleted_at FROM tickets LIMIT 0`;
+      hasDeletedAtColumn = true;
+    } catch {
+      hasDeletedAtColumn = false;
+    }
+  }
+}
+function notDeletedFilter() {
+  return hasDeletedAtColumn ? db`AND t.deleted_at IS NULL` : db``;
+}
+function notDeletedFilterBare() {
+  return hasDeletedAtColumn ? db`AND deleted_at IS NULL` : db``;
+}
+
 function withSLAStatus(ticket: any) {
   const now = new Date();
   return {
@@ -195,12 +222,13 @@ ticketRoutes.get('/numero/:number', async (c) => {
   const raw = c.req.param('number');
   // Accept both "TK-2026-0001" and "#TK-2026-0001"
   const number = raw.startsWith('#') ? raw : `#${raw}`;
+  await ensureDeletedAtChecked();
   const [ticket] = await db`
     SELECT t.*, d.name AS department_name, u.display_name AS assigned_to_name
     FROM tickets t
     LEFT JOIN ticket_departments d ON d.id = t.department_id
     LEFT JOIN users u ON u.id = t.assigned_to
-    WHERE t.ticket_number = ${number}
+    WHERE t.ticket_number = ${number} ${notDeletedFilter()}
   `;
   if (!ticket) throw new HTTPException(404, { message: 'Ticket non trovato' });
 
@@ -218,12 +246,13 @@ ticketRoutes.get('/mine', requireAuth, async (c) => {
   const user = c.get('user');
 
   try {
+    await ensureDeletedAtChecked();
     const tickets = await db`
       SELECT t.*, d.name AS department_name, u.display_name AS assigned_to_name
       FROM tickets t
       LEFT JOIN ticket_departments d ON d.id = t.department_id
       LEFT JOIN users u ON u.id = t.assigned_to
-      WHERE t.created_by_user_id = ${user.id}
+      WHERE t.created_by_user_id = ${user.id} ${notDeletedFilter()}
       ORDER BY t.created_at DESC
     `;
     return c.json(tickets.map(withSLAStatus));
@@ -238,11 +267,15 @@ ticketRoutes.get('/mine', requireAuth, async (c) => {
 ticketRoutes.get('/stats/trend', requireIT, async (c) => {
   const days = Math.min(90, Math.max(1, parseInt(c.req.query('days') ?? '14', 10)));
 
+  await ensureDeletedAtChecked();
+  const notDeleted = notDeletedFilterBare();
+
   // Tickets already open before the window starts — the running total's starting point
   const [{ baseline }] = await db`
     SELECT COUNT(*) AS baseline FROM tickets
     WHERE created_at < CURRENT_DATE - (${days - 1} || ' days')::interval
       AND (resolved_at IS NULL OR resolved_at >= CURRENT_DATE - (${days - 1} || ' days')::interval)
+      ${notDeleted}
   `;
 
   const rows = await db`
@@ -255,13 +288,13 @@ ticketRoutes.get('/stats/trend', requireIT, async (c) => {
       LEFT JOIN (
         SELECT created_at::date AS d, COUNT(*) AS n
         FROM tickets
-        WHERE created_at >= CURRENT_DATE - (${days - 1} || ' days')::interval
+        WHERE created_at >= CURRENT_DATE - (${days - 1} || ' days')::interval ${notDeleted}
         GROUP BY 1
       ) created ON created.d = day::date
       LEFT JOIN (
         SELECT resolved_at::date AS d, COUNT(*) AS n
         FROM tickets
-        WHERE resolved_at IS NOT NULL AND resolved_at >= CURRENT_DATE - (${days - 1} || ' days')::interval
+        WHERE resolved_at IS NOT NULL AND resolved_at >= CURRENT_DATE - (${days - 1} || ' days')::interval ${notDeleted}
         GROUP BY 1
       ) resolved ON resolved.d = day::date
     )
@@ -305,22 +338,40 @@ ticketRoutes.get('/', requireIT, async (c) => {
     ? db`AND (t.title ILIKE ${'%' + q + '%'} OR t.ticket_number ILIKE ${'%' + q + '%'} OR t.caller_name ILIKE ${'%' + q + '%'})`
     : db``;
 
+  await ensureDeletedAtChecked();
+  const notDeleted = notDeletedFilter();
+
   const tickets = await db`
     SELECT t.*, d.name AS department_name, u.display_name AS assigned_to_name
     FROM tickets t
     LEFT JOIN ticket_departments d ON d.id = t.department_id
     LEFT JOIN users u ON u.id = t.assigned_to
-    WHERE 1=1 ${statusFilter} ${priorityFilter} ${assignedFilter} ${searchFilter}
+    WHERE 1=1 ${statusFilter} ${priorityFilter} ${assignedFilter} ${searchFilter} ${notDeleted}
     ORDER BY t.created_at DESC
     LIMIT ${perPageNum} OFFSET ${offset}
   `;
 
   const [{ count }] = await db`
     SELECT COUNT(*) AS count FROM tickets t
-    WHERE 1=1 ${statusFilter} ${priorityFilter} ${assignedFilter} ${searchFilter}
+    WHERE 1=1 ${statusFilter} ${priorityFilter} ${assignedFilter} ${searchFilter} ${notDeleted}
   `;
 
   return c.json({ tickets: tickets.map(withSLAStatus), total: parseInt(count, 10), page: pageNum, per_page: perPageNum });
+});
+
+// ─── IT: users eligible to be assigned a ticket ─────────────────────────────
+// Must stay registered before GET /:id, otherwise "assignable-users" matches
+// the :id param first and fails with "ID non valido".
+
+ticketRoutes.get('/assignable-users', requireIT, async (c) => {
+  const rows = await db`
+    SELECT DISTINCT u.id, u.username, u.display_name
+    FROM users u
+    LEFT JOIN user_module_permissions p ON p.user_id = u.id AND p.module_key = 'tickets_admin'
+    WHERE u.is_active = TRUE AND (u.role = 'admin' OR p.can_view = TRUE)
+    ORDER BY u.display_name
+  `;
+  return c.json(rows);
 });
 
 // ─── IT: GET single ticket ─────────────────────────────────────────────────
@@ -329,12 +380,13 @@ ticketRoutes.get('/:id', requireIT, async (c) => {
   const id = parseInt(c.req.param('id') ?? '', 10);
   if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
 
+  await ensureDeletedAtChecked();
   const [ticket] = await db`
     SELECT t.*, d.name AS department_name, u.display_name AS assigned_to_name
     FROM tickets t
     LEFT JOIN ticket_departments d ON d.id = t.department_id
     LEFT JOIN users u ON u.id = t.assigned_to
-    WHERE t.id = ${id}
+    WHERE t.id = ${id} ${notDeletedFilter()}
   `;
   if (!ticket) throw new HTTPException(404, { message: 'Ticket non trovato' });
 
@@ -372,7 +424,8 @@ ticketRoutes.patch('/:id', requireIT, async (c) => {
   const body = await parseBody(c, updateTicketSchema);
   const itUser = c.get('user');
 
-  const [ticket] = await db`SELECT * FROM tickets WHERE id = ${id}`;
+  await ensureDeletedAtChecked();
+  const [ticket] = await db`SELECT * FROM tickets WHERE id = ${id} ${notDeletedFilterBare()}`;
   if (!ticket) throw new HTTPException(404, { message: 'Ticket non trovato' });
 
   const updates: Record<string, any> = {};
@@ -465,7 +518,8 @@ ticketRoutes.patch('/:id/approve', requireIT, async (c) => {
   if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
 
   const itUser = c.get('user');
-  const [ticket] = await db`SELECT * FROM tickets WHERE id = ${id}`;
+  await ensureDeletedAtChecked();
+  const [ticket] = await db`SELECT * FROM tickets WHERE id = ${id} ${notDeletedFilterBare()}`;
   if (!ticket) throw new HTTPException(404, { message: 'Ticket non trovato' });
   if (!ticket.requires_approval || ticket.status !== 'in_attesa_approvazione') {
     throw new HTTPException(400, { message: 'Il ticket non è in attesa di approvazione' });
@@ -495,13 +549,32 @@ ticketRoutes.patch('/:id/approve', requireIT, async (c) => {
   return c.json(withSLAStatus(updated));
 });
 
+// ─── Admin: delete a ticket (soft delete — hidden everywhere, kept in DB) ───
+
+ticketRoutes.delete('/:id', requireAdmin, async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+
+  const adminUser = c.get('user');
+  const [ticket] = await db`SELECT id, deleted_at FROM tickets WHERE id = ${id}`;
+  if (!ticket || ticket.deleted_at) throw new HTTPException(404, { message: 'Ticket non trovato' });
+
+  await db`
+    UPDATE tickets SET deleted_at = NOW(), deleted_by_user_id = ${adminUser.id}
+    WHERE id = ${id}
+  `;
+
+  return c.json({ message: 'Ticket eliminato' });
+});
+
 // ─── IT: serve attachment ──────────────────────────────────────────────────
 
 ticketRoutes.get('/:id/attachment', requireIT, async (c) => {
   const id = parseInt(c.req.param('id') ?? '', 10);
   if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
 
-  const [ticket] = await db`SELECT attachment_path, attachment_name FROM tickets WHERE id = ${id}`;
+  await ensureDeletedAtChecked();
+  const [ticket] = await db`SELECT attachment_path, attachment_name FROM tickets WHERE id = ${id} ${notDeletedFilterBare()}`;
   if (!ticket?.attachment_path) throw new HTTPException(404, { message: 'Nessun allegato' });
 
   const { readFile } = await import('fs/promises');

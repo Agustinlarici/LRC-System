@@ -107,6 +107,7 @@ run_migrations() {
     "db/migrate-tickets-priority-backfill.sql"
     "db/migrate-tickets-resolved-backfill.sql"
     "db/migrate-tickets-reopen-backfill.sql"
+    "db/migrate-tickets-delete.sql"
     "db/migrate-heatmap.sql"
     "db/migrate-heatmap-hourly.sql"
     "db/migrate-dashboards.sql"

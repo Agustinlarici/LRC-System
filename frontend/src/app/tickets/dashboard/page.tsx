@@ -216,7 +216,7 @@ function TrendChart({ refreshKey }: { refreshKey: number }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function TicketDashboard() {
-  const { user } = useAuth();
+  const { user, canManage } = useAuth();
 
   const [tickets,    setTickets]    = useState<Ticket[]>([]);
   const [total,      setTotal]      = useState(0);
@@ -249,12 +249,12 @@ export default function TicketDashboard() {
 
   const PER_PAGE = 25;
 
-  // ─── Load IT users list ────────────────────────────────────────────────────
+  // ─── Load assignable users (autorizzati su Ticket IT — Admin) ─────────────
 
   useEffect(() => {
-    apiFetch('/api/auth/users')
-      .then(r => r.json())
-      .then(setITUsers)
+    apiFetch('/api/tickets/assignable-users')
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('load failed')))
+      .then(data => setITUsers(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
 
@@ -392,6 +392,32 @@ export default function TicketDashboard() {
     await loadPendingApproval();
     setTrendRefreshKey(k => k + 1);
     setApproving(false);
+  }
+
+  // ─── Delete ticket ──────────────────────────────────────────────────────────
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting,          setDeleting]          = useState(false);
+  const [deleteError,       setDeleteError]       = useState('');
+
+  async function deleteTicket() {
+    if (!selected) return;
+    setDeleting(true);
+    setDeleteError('');
+    const r = await apiFetch(`/api/tickets/${selected.id}`, { method: 'DELETE' });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      setDeleteError(d.message ?? 'Errore');
+      setDeleting(false);
+      return;
+    }
+    setDeleting(false);
+    setShowDeleteConfirm(false);
+    setSelected(null);
+    await loadTickets(page);
+    await loadUnassigned();
+    await loadPendingApproval();
+    setTrendRefreshKey(k => k + 1);
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -659,7 +685,18 @@ export default function TicketDashboard() {
                   {selected.blocca_lavoro && <span className="text-sm font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700">Blocca lavoro</span>}
                 </div>
               </div>
-              <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-700 ml-4 mt-1 text-2xl leading-none">×</button>
+              <div className="flex items-start gap-3 ml-4 mt-1 shrink-0">
+                {canManage('tickets_admin') && (
+                  <button
+                    onClick={() => { setDeleteError(''); setShowDeleteConfirm(true); }}
+                    title="Elimina ticket"
+                    className="text-red-400 hover:text-red-600 text-sm border border-red-200 rounded-lg px-2.5 py-1 hover:bg-red-50 transition-colors"
+                  >
+                    🗑 Elimina
+                  </button>
+                )}
+                <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-700 text-2xl leading-none">×</button>
+              </div>
             </div>
 
             {/* Approval banner */}
@@ -802,6 +839,49 @@ export default function TicketDashboard() {
               </div>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation modal */}
+      {showDeleteConfirm && selected && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => !deleting && setShowDeleteConfirm(false)} />
+          <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-start gap-3">
+              <span className="text-3xl leading-none">⚠️</span>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Eliminare questo ticket?</h3>
+                <p className="text-sm text-gray-500 mt-1 font-mono">{selected.ticket_number} — {selected.title}</p>
+              </div>
+            </div>
+            <div className="mt-4 p-3 rounded-lg border border-amber-200 bg-amber-50 text-sm text-amber-800">
+              <strong>Non è consigliato eliminare i ticket</strong> — si perde tutto lo storico
+              (chi l'ha aperto, le note, le modifiche). Se il problema è chiuso, è meglio
+              cambiare lo stato in "Chiuso" invece di eliminarlo: il ticket resta comunque
+              nascosto dalle liste attive, ma la cronologia non va persa.
+            </div>
+            <p className="text-sm text-gray-600 mt-3">
+              Il ticket sparirà da tutte le liste e ricerche. L'azione non è disponibile dall'interfaccia
+              per tornare indietro.
+            </p>
+            {deleteError && <p className="text-sm text-red-600 mt-3">{deleteError}</p>}
+            <div className="flex items-center justify-end gap-3 mt-5">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+              >
+                Annulla
+              </button>
+              <button
+                onClick={deleteTicket}
+                disabled={deleting}
+                className="px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {deleting ? 'Elimino…' : 'Sì, elimina'}
+              </button>
+            </div>
           </div>
         </div>
       )}
