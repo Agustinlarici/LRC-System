@@ -380,8 +380,15 @@ ticketRoutes.patch('/:id', requireIT, async (c) => {
 
   if (body.status !== undefined && body.status !== ticket.status) {
     const now = new Date().toISOString();
-    if (body.status === 'risolto'   && !ticket.resolved_at)      updates.resolved_at      = now;
-    if (body.status === 'chiuso'    && !ticket.closed_at)         updates.closed_at        = now;
+    if (body.status === 'risolto' && !ticket.resolved_at) updates.resolved_at = now;
+    if (body.status === 'chiuso') {
+      if (!ticket.closed_at)   updates.closed_at   = now;
+      // Un ticket chiuso è per definizione risolto — se è passato direttamente
+      // da aperto a chiuso senza passare da "risolto", resolved_at restava
+      // NULL per sempre: l'SLA e il grafico "Totale aperti" lo consideravano
+      // ancora aperto anche se lo stato diceva "chiuso".
+      if (!ticket.resolved_at) updates.resolved_at = now;
+    }
     if (body.status === 'riaperto') updates.reopen_count = (ticket.reopen_count ?? 0) + 1;
     updates.status = body.status;
     historyEntries.push({ action: 'stato_cambiato', old_value: ticket.status, new_value: body.status });
