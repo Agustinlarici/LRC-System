@@ -67,10 +67,21 @@ SCAN_HOST="${SCAN_FOLDER_HOST:-./test-scansioni}"
 DOCS_HOST="${DOCS_FOLDER_HOST:-./test-documentos}"
 TICKETS_HOST="${TICKETS_UPLOADS_HOST:-./data/tickets-uploads}"
 mkdir -p "$SCAN_HOST" "$DOCS_HOST" "$TICKETS_HOST"
-# Il bind mount sovrascrive i permessi impostati nell'immagine (il chown nel
-# Dockerfile non basta): l'host directory deve essere scrivibile dall'utente
-# 'node' del container, qualunque sia l'utente host che l'ha creata.
-chmod -R 0777 "$TICKETS_HOST" 2>/dev/null || true
+
+# ═══════════════════════════════════════════════════════════════════
+# Funzione: sistema i permessi della cartella allegati ticket
+# Il bind mount sovrascrive i permessi impostati nell'immagine (il chown
+# nel Dockerfile non basta) con quelli della cartella host — che spesso
+# appartiene a root o a un utente diverso da quello che esegue questo
+# script, quindi un chmod lato host può fallire ("Operation not
+# permitted"). Si sistema da dentro il container, come root del
+# container: funziona a prescindere dai permessi dell'utente host.
+# ═══════════════════════════════════════════════════════════════════
+fix_upload_perms() {
+  docker compose exec -T -u root backend sh -c "mkdir -p /app/uploads/tickets && chown -R node:node /app/uploads" 2>/dev/null \
+    && info "Permessi cartella allegati ticket OK." \
+    || warn "Non sono riuscito a sistemare i permessi di /app/uploads (il backend potrebbe non essere ancora avviato)."
+}
 
 # ═══════════════════════════════════════════════════════════════════
 # Funzione: applica le migrazioni (stack deve essere running)
@@ -138,6 +149,7 @@ run_migrations() {
 # ═══════════════════════════════════════════════════════════════════
 if [ "$CMD" = "migrate" ]; then
   run_migrations
+  fix_upload_perms
   exit 0
 fi
 
@@ -156,6 +168,7 @@ if [ "$CMD" = "update" ]; then
 
   step "4/4  Swap container (~5 secondi di interruzione)..."
   docker compose up -d
+  fix_upload_perms
 
   info "Aggiornamento completato."
   echo ""
@@ -171,6 +184,7 @@ step "Avvio stack LRC System..."
 docker compose up --build -d
 
 run_migrations
+fix_upload_perms
 
 info "Stack avviato con successo!"
 echo ""
