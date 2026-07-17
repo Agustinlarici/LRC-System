@@ -67,6 +67,10 @@ SCAN_HOST="${SCAN_FOLDER_HOST:-./test-scansioni}"
 DOCS_HOST="${DOCS_FOLDER_HOST:-./test-documentos}"
 TICKETS_HOST="${TICKETS_UPLOADS_HOST:-./data/tickets-uploads}"
 mkdir -p "$SCAN_HOST" "$DOCS_HOST" "$TICKETS_HOST"
+# Il bind mount sovrascrive i permessi impostati nell'immagine (il chown nel
+# Dockerfile non basta): l'host directory deve essere scrivibile dall'utente
+# 'node' del container, qualunque sia l'utente host che l'ha creata.
+chmod -R 0777 "$TICKETS_HOST" 2>/dev/null || true
 
 # ═══════════════════════════════════════════════════════════════════
 # Funzione: applica le migrazioni (stack deve essere running)
