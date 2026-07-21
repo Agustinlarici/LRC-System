@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { EdiShipment } from '@/types';
 
@@ -118,11 +119,19 @@ export default function WebDdtPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">WebDDT Ferrari</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Seleziona le spedizioni e scarica il documento di trasporto in formato Excel.
-        </p>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">WebDDT Ferrari</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Seleziona le spedizioni e scarica il documento di trasporto in formato Excel.
+          </p>
+        </div>
+        <Link
+          href="/webddt/impostazioni"
+          className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-md transition-colors whitespace-nowrap"
+        >
+          ⚙ Impostazioni
+        </Link>
       </div>
 
       {/* Filters */}
@@ -233,6 +242,7 @@ export default function WebDdtPage() {
                   />
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Documento</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">Cliente</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Data spedizione</th>
                 <th className="px-4 py-3 text-right font-medium text-gray-600">Righe</th>
                 <th className="px-4 py-3 text-center font-medium text-gray-600">Scaricato</th>
@@ -262,6 +272,7 @@ export default function WebDdtPage() {
                       />
                     </td>
                     <td className="px-4 py-3 font-mono text-gray-900">{s.document_number}</td>
+                    <td className="px-4 py-3 text-gray-600">{s.customer_account}</td>
                     <td className="px-4 py-3 text-gray-600">{fmtDate(s.shipment_date)}</td>
                     <td className="px-4 py-3 text-right text-gray-600">{s.line_count}</td>
                     <td className="px-4 py-3 text-center">
@@ -282,7 +293,7 @@ export default function WebDdtPage() {
             </tbody>
           </table>
           <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 text-xs text-gray-500">
-            {shipments.length} spedizion{shipments.length === 1 ? 'e' : 'i'} · Cliente C558 (Ferrari)
+            {shipments.length} spedizion{shipments.length === 1 ? 'e' : 'i'} · Clienti C558 (Ferrari) · C3027
           </div>
         </div>
       )}

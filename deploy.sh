@@ -136,6 +136,7 @@ run_migrations() {
     "db/migrate-edi-ferrari-delins-idx.sql"
     "db/migrate-webddt.sql"
     "db/migrate-qualita.sql"
+    "db/migrate-webddt-po-mapping.sql"
   )
   for f in "${MIGRATIONS[@]}"; do
     if [ -f "$f" ]; then

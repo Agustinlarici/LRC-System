@@ -166,6 +166,33 @@ export interface WebDdtLine {
   lsa_line_no:     string | null;  // PO line number (LSA Line No_)
 }
 
+export async function getShipmentAccounts(shipmentIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (shipmentIds.length === 0) return map;
+
+  const pool = await sql.connect(getDynamicsConfig());
+  try {
+    const req = pool.request();
+    const placeholders = shipmentIds.map((sid, i) => {
+      req.input(`sid${i}`, sql.VarChar(50), sid);
+      return `@sid${i}`;
+    });
+    const result = await req.query(`
+      SELECT DISTINCT
+        l.[Document No_]    AS shipment_id,
+        l.[Destination No_] AS customer_account
+      FROM [${LINE_TABLE}] l
+      WHERE l.[Document No_] IN (${placeholders.join(', ')})
+    `);
+    for (const r of result.recordset as Array<{ shipment_id: unknown; customer_account: unknown }>) {
+      map.set(String(r.shipment_id).trim(), String(r.customer_account).trim());
+    }
+    return map;
+  } finally {
+    await pool.close();
+  }
+}
+
 export async function getWebDdtLines(shipmentId: string): Promise<WebDdtLine[]> {
   const pool = await sql.connect(getDynamicsConfig());
   try {

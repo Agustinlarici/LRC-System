@@ -1,14 +1,21 @@
 import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import * as XLSX from 'xlsx';
 import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
-import { requireModule } from '../../lib/auth.js';
-import { getShipments, getWebDdtLines } from '../edi/dynamics-client.js';
+import { requireModule, requireManage } from '../../lib/auth.js';
+import { validateSpmaFile } from '../../lib/mime-check.js';
+import { getShipments, getWebDdtLines, getShipmentAccounts } from '../edi/dynamics-client.js';
 
 export const webddtRoutes = new Hono();
 
-const FERRARI_ACCOUNT = 'C558';
+// Clienti abilitati al modulo WebDDT, con relativo Supplier ID (6 cifre)
+const SUPPLIER_CODES: Record<string, string> = {
+  C558:  '025391',
+  C3027: '207523',
+};
+const ACCOUNTS = Object.keys(SUPPLIER_CODES);
 
 // 28 columns per Ferrari WebDDT template (Template_Without_Containers)
 const COLUMNS = [
@@ -60,7 +67,7 @@ function normalizeUom(uom: string): string {
   return UOM_NORMALIZE[String(uom).toUpperCase().trim()] ?? uom;
 }
 
-// GET /api/webddt/shipments — lista spedizioni Ferrari (C558) con flag downloaded
+// GET /api/webddt/shipments — lista spedizioni (C558, C3027) con flag downloaded
 webddtRoutes.get('/shipments', requireModule('webddt'), async (c) => {
   try {
     const { from, to, search, limit: lStr, offset: oStr } = c.req.query();
@@ -68,7 +75,7 @@ webddtRoutes.get('/shipments', requireModule('webddt'), async (c) => {
     const offset = parseInt(oStr || '0', 10);
 
     const rows = await getShipments(
-      [FERRARI_ACCOUNT],
+      ACCOUNTS,
       from  || undefined,
       to    || undefined,
       { limit, offset, search: search || undefined },
@@ -102,31 +109,37 @@ webddtRoutes.post('/download', requireModule('webddt'), async (c) => {
   const body = await parseBody(c, DownloadSchema);
   const user = c.get('user');
 
-  // Leggi supplier_code dal client EDI Ferrari
-  const [ediClient] = await db`
-    SELECT supplier_code FROM edi_clients WHERE customer_account = ${FERRARI_ACCOUNT} LIMIT 1
+  // Determina il cliente (account) di ogni spedizione per scegliere il Supplier ID corretto
+  const accountByShipment = await getShipmentAccounts(body.shipment_ids);
+
+  // Codice articolo → PO number, usato per le righe senza commessa
+  const poMapRows = await db<{ article_code: string; po_number: string }[]>`
+    SELECT article_code, po_number FROM webddt_po_mapping
   `;
-  const supplierCode = ediClient?.supplier_code
-    ? String(ediClient.supplier_code).padStart(6, '0')
-    : '';
+  const poMap = new Map(poMapRows.map(r => [r.article_code, r.po_number]));
 
   const rows: Record<string, string | number>[] = [];
 
   for (const shipmentId of body.shipment_ids) {
-    const shipperNo = extractDocNo(shipmentId).padStart(6, '0');
+    const account       = accountByShipment.get(shipmentId) ?? '';
+    const supplierCode  = SUPPLIER_CODES[account] ?? '';
+    const shipperNo     = extractDocNo(shipmentId).padStart(6, '0');
     const lines = await getWebDdtLines(shipmentId);
 
     for (const line of lines) {
       const commessa  = line.lsa_task_no ?? '';
       const buyerPart = commessa
         ? `${commessa}   ${line.article_code}`
-        : line.article_code;
+        : `${' '.repeat(6)}   ${line.article_code}`;
 
       const row: Record<string, string | number> = {};
       for (const col of COLUMNS) row[col] = '';
 
-      const poNumber = line.contract_number
-        ? String(line.contract_number).padStart(9, '0')
+      const poNumberRaw = commessa
+        ? line.contract_number ?? ''
+        : poMap.get(line.article_code) ?? '';
+      const poNumber = poNumberRaw
+        ? String(poNumberRaw).padStart(9, '0')
         : '';
 
       row['Shipper number']           = shipperNo;
@@ -163,4 +176,107 @@ webddtRoutes.post('/download', requireModule('webddt'), async (c) => {
       'Content-Disposition': `attachment; filename="WebDDT_Ferrari_${dateStr}.xlsx"`,
     },
   });
+});
+
+// ─── Mapping codice articolo → PO number (usato quando manca la commessa) ─────
+
+const PoMappingSchema = z.object({
+  article_code: z.string().min(1).max(50),
+  po_number:    z.string().min(1).max(20),
+});
+
+// GET /api/webddt/po-mapping
+webddtRoutes.get('/po-mapping', requireModule('webddt'), async (c) => {
+  const rows = await db`SELECT * FROM webddt_po_mapping ORDER BY article_code`;
+  return c.json(rows);
+});
+
+// POST /api/webddt/po-mapping — crea o aggiorna (upsert per codice articolo)
+webddtRoutes.post('/po-mapping', requireManage('webddt'), async (c) => {
+  const body = await parseBody(c, PoMappingSchema);
+  const [row] = await db`
+    INSERT INTO webddt_po_mapping (article_code, po_number)
+    VALUES (${body.article_code.trim()}, ${body.po_number.trim()})
+    ON CONFLICT (article_code) DO UPDATE
+      SET po_number = EXCLUDED.po_number, updated_at = now()
+    RETURNING *
+  `;
+  return c.json(row, 201);
+});
+
+// DELETE /api/webddt/po-mapping/:id
+webddtRoutes.delete('/po-mapping/:id', requireManage('webddt'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  await db`DELETE FROM webddt_po_mapping WHERE id = ${id}`;
+  return c.body(null, 204);
+});
+
+// Trova la colonna dell'header che corrisponde a uno dei nomi candidati (case-insensitive)
+function pickCol(row: Record<string, unknown>, candidates: string[]): string | null {
+  const keys = Object.keys(row);
+  for (const cand of candidates) {
+    const hit = keys.find(k => k.trim().toLowerCase() === cand);
+    if (hit) return hit;
+  }
+  for (const cand of candidates) {
+    const hit = keys.find(k => k.trim().toLowerCase().includes(cand));
+    if (hit) return hit;
+  }
+  return null;
+}
+
+// POST /api/webddt/po-mapping/import — carica un Excel con colonne codice articolo / PO number
+webddtRoutes.post('/po-mapping/import', requireManage('webddt'), async (c) => {
+  let formData: FormData;
+  try {
+    formData = await c.req.formData();
+  } catch {
+    throw new HTTPException(400, { message: 'Richiesta multipart non valida' });
+  }
+
+  const file = formData.get('file') as File | null;
+  if (!file) throw new HTTPException(400, { message: 'File mancante (campo "file")' });
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  validateSpmaFile(buffer, file.name);
+
+  let workbook: XLSX.WorkBook;
+  try {
+    workbook = XLSX.read(buffer, { type: 'buffer' });
+  } catch {
+    throw new HTTPException(400, { message: 'File Excel non valido' });
+  }
+
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { raw: false, defval: null });
+
+  if (raw.length === 0) return c.json({ imported: 0, skipped: 0 });
+
+  const artCol = pickCol(raw[0], ['codice articolo', 'articolo', 'article code', 'codice']);
+  const poCol  = pickCol(raw[0], ['po number', 'numero po', 'po']);
+  if (!artCol || !poCol) {
+    throw new HTTPException(400, {
+      message: 'Colonne non trovate. Servono "Codice Articolo" e "PO Number"',
+    });
+  }
+
+  let imported = 0;
+  let skipped  = 0;
+
+  for (const row of raw) {
+    const articleCode = String(row[artCol] ?? '').trim();
+    const poNumber    = String(row[poCol]  ?? '').trim();
+    if (!articleCode || !poNumber) { skipped++; continue; }
+
+    await db`
+      INSERT INTO webddt_po_mapping (article_code, po_number)
+      VALUES (${articleCode}, ${poNumber})
+      ON CONFLICT (article_code) DO UPDATE
+        SET po_number = EXCLUDED.po_number, updated_at = now()
+    `;
+    imported++;
+  }
+
+  return c.json({ imported, skipped });
 });
