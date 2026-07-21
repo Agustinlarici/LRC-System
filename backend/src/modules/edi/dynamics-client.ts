@@ -193,6 +193,50 @@ export async function getShipmentAccounts(shipmentIds: string[]): Promise<Map<st
   }
 }
 
+export interface WebDdtLineStatus {
+  shipment_id:     string;
+  article_code:    string;
+  lsa_task_no:     string | null;  // commessa
+  contract_number: string | null;  // PO number (LSA Your Reference)
+}
+
+// Righe di tutte le spedizioni richieste, con solo i campi necessari per capire
+// se manca sia la commessa che il PO number (usato per evidenziare la lista)
+export async function getWebDdtLineStatuses(shipmentIds: string[]): Promise<WebDdtLineStatus[]> {
+  if (shipmentIds.length === 0) return [];
+
+  const pool = await sql.connect(getDynamicsConfig());
+  try {
+    const req = pool.request();
+    const placeholders = shipmentIds.map((sid, i) => {
+      req.input(`sid${i}`, sql.VarChar(50), sid);
+      return `@sid${i}`;
+    });
+    const result = await req.query(`
+      SELECT
+        l.[Document No_]                                                                    AS shipment_id,
+        l.[No_]                                                                              AS article_code,
+        LTRIM(RTRIM(ISNULL(lsa.[LSA Task No_], '')))                                        AS lsa_task_no,
+        LEFT(lsa.[LSA Your Reference], CHARINDEX(' ', lsa.[LSA Your Reference] + ' ') - 1)  AS contract_number
+      FROM [${LINE_TABLE}] l
+      LEFT JOIN [${LSA_TABLE}] lsa
+        ON  lsa.[Document No_] = l.[Document No_]
+        AND lsa.[Line No_]     = l.[Line No_]
+      WHERE l.[Document No_] IN (${placeholders.join(', ')})
+        AND LTRIM(RTRIM(ISNULL(l.[No_], ''))) <> ''
+    `);
+
+    return (result.recordset as Array<Record<string, unknown>>).map(r => ({
+      shipment_id:     String(r.shipment_id  ?? '').trim(),
+      article_code:    String(r.article_code ?? '').trim(),
+      lsa_task_no:     r.lsa_task_no     ? String(r.lsa_task_no).trim()     || null : null,
+      contract_number: r.contract_number ? String(r.contract_number).trim() || null : null,
+    }));
+  } finally {
+    await pool.close();
+  }
+}
+
 export async function getWebDdtLines(shipmentId: string): Promise<WebDdtLine[]> {
   const pool = await sql.connect(getDynamicsConfig());
   try {

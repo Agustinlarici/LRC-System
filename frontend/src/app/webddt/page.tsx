@@ -5,9 +5,23 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { EdiShipment } from '@/types';
 
-type WebDdtShipment = EdiShipment & { downloaded_at: string | null };
+type WebDdtShipment = EdiShipment & { downloaded_at: string | null; missing_po: boolean };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const CLIENT_COLORS: Record<string, string> = {
+  C558:  'bg-red-50 text-red-700 border-red-200',
+  C3027: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+};
+
+function ClientBadge({ account }: { account: string }) {
+  const cls = CLIENT_COLORS[account] ?? 'bg-gray-50 text-gray-700 border-gray-200';
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cls}`}>
+      {account}
+    </span>
+  );
+}
 
 function fmtDate(s: string | null | undefined) {
   if (!s) return '—';
@@ -255,8 +269,11 @@ export default function WebDdtPage() {
                   <tr
                     key={s.shipment_id}
                     onClick={() => toggleOne(s.shipment_id)}
+                    title={s.missing_po ? 'Manca commessa e PO number su almeno una riga' : undefined}
                     className={`border-b border-gray-100 cursor-pointer transition-colors ${
-                      isSelected
+                      s.missing_po
+                        ? isSelected ? 'bg-red-100 hover:bg-red-200' : 'bg-red-50 hover:bg-red-100'
+                        : isSelected
                         ? 'bg-blue-50 hover:bg-blue-100'
                         : idx % 2 === 0
                         ? 'bg-white hover:bg-gray-50'
@@ -272,7 +289,7 @@ export default function WebDdtPage() {
                       />
                     </td>
                     <td className="px-4 py-3 font-mono text-gray-900">{s.document_number}</td>
-                    <td className="px-4 py-3 text-gray-600">{s.customer_account}</td>
+                    <td className="px-4 py-3"><ClientBadge account={s.customer_account} /></td>
                     <td className="px-4 py-3 text-gray-600">{fmtDate(s.shipment_date)}</td>
                     <td className="px-4 py-3 text-right text-gray-600">{s.line_count}</td>
                     <td className="px-4 py-3 text-center">
@@ -292,8 +309,10 @@ export default function WebDdtPage() {
               })}
             </tbody>
           </table>
-          <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 text-xs text-gray-500">
-            {shipments.length} spedizion{shipments.length === 1 ? 'e' : 'i'} · Clienti C558 (Ferrari) · C3027
+          <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 text-xs text-gray-500 flex items-center gap-2">
+            <span>{shipments.length} spedizion{shipments.length === 1 ? 'e' : 'i'} · Clienti:</span>
+            <ClientBadge account="C558" />
+            <ClientBadge account="C3027" />
           </div>
         </div>
       )}

@@ -6,7 +6,7 @@ import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
 import { requireModule, requireManage } from '../../lib/auth.js';
 import { validateSpmaFile } from '../../lib/mime-check.js';
-import { getShipments, getWebDdtLines, getShipmentAccounts } from '../edi/dynamics-client.js';
+import { getShipments, getWebDdtLines, getShipmentAccounts, getWebDdtLineStatuses } from '../edi/dynamics-client.js';
 
 export const webddtRoutes = new Hono();
 
@@ -84,16 +84,29 @@ webddtRoutes.get('/shipments', requireModule('webddt'), async (c) => {
     if (rows.length === 0) return c.json([]);
 
     const ids = rows.map(r => r.shipment_id);
-    const dlRows = await db<{ shipment_id: string; downloaded_at: string }[]>`
-      SELECT shipment_id, downloaded_at::text
-      FROM webddt_downloads
-      WHERE shipment_id = ANY(${ids})
-    `;
+    const [dlRows, lineStatuses, poMapRows] = await Promise.all([
+      db<{ shipment_id: string; downloaded_at: string }[]>`
+        SELECT shipment_id, downloaded_at::text
+        FROM webddt_downloads
+        WHERE shipment_id = ANY(${ids})
+      `,
+      getWebDdtLineStatuses(ids),
+      db<{ article_code: string }[]>`SELECT article_code FROM webddt_po_mapping`,
+    ]);
     const dlMap = new Map(dlRows.map(r => [r.shipment_id, r.downloaded_at]));
+    const poCodes = new Set(poMapRows.map(r => r.article_code));
+
+    // Spedizioni con almeno una riga senza commessa e senza PO number (né da BC né dalla tabella)
+    const missingSet = new Set<string>();
+    for (const l of lineStatuses) {
+      const hasPo = l.lsa_task_no ? !!l.contract_number : poCodes.has(l.article_code);
+      if (!l.lsa_task_no && !hasPo) missingSet.add(l.shipment_id);
+    }
 
     return c.json(rows.map(r => ({
       ...r,
       downloaded_at: dlMap.get(r.shipment_id) ?? null,
+      missing_po:    missingSet.has(r.shipment_id),
     })));
   } catch (err: unknown) {
     return c.json({ error: String(err) }, 500);
