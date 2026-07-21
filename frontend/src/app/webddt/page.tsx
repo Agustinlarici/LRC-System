@@ -9,8 +9,12 @@ type WebDdtShipment = EdiShipment & { downloaded_at: string | null; missing_po: 
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+const CLIENT_LABELS: Record<string, string> = {
+  C558:  'Ferrari',
+  C3027: 'SMR',
+};
 const CLIENT_COLORS: Record<string, string> = {
-  C558:  'bg-red-50 text-red-700 border-red-200',
+  C558:  'bg-sky-50 text-sky-700 border-sky-200',
   C3027: 'bg-indigo-50 text-indigo-700 border-indigo-200',
 };
 
@@ -18,7 +22,7 @@ function ClientBadge({ account }: { account: string }) {
   const cls = CLIENT_COLORS[account] ?? 'bg-gray-50 text-gray-700 border-gray-200';
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${cls}`}>
-      {account}
+      {CLIENT_LABELS[account] ?? account}
     </span>
   );
 }
