@@ -15,7 +15,7 @@ const CLIENT_LABELS: Record<string, string> = {
 };
 const CLIENT_COLORS: Record<string, string> = {
   C558:  'bg-sky-50 text-sky-700 border-sky-200',
-  C3027: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  C3027: 'bg-amber-100 text-amber-800 border-amber-300',
 };
 
 function ClientBadge({ account }: { account: string }) {
