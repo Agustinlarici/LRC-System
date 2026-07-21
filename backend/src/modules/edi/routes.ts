@@ -441,6 +441,7 @@ ediRoutes.get('/ingresso/ordini', requireModule(MODULE), async (c) => {
       MAX(file_mtime)                               AS file_mtime,
       MIN(scanned_at)                               AS scanned_at,
       MAX(NULLIF(TRIM(commessa), '')) IS NOT NULL   AS has_commessa,
+      MAX(NULLIF(TRIM(commessa), ''))               AS commessa,
       BOOL_OR(tipo_documento = 'Forecast' OR tipo_schedulazione = 'Forecast') AS is_forecast
     FROM edi_ferrari_delins
     GROUP BY

@@ -892,6 +892,7 @@ function TabOrdiniFerrari() {
   const [selected,        setSelected]        = useState<Set<string>>(new Set());
   const [bulkLoading,     setBulkLoading]     = useState(false);
   const [bulkCsvLoading,  setBulkCsvLoading]  = useState(false);
+  const [search,          setSearch]          = useState('');
   const pollRef                       = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => { setDownloaded(getDownloadedSet()); }, []);
@@ -1035,6 +1036,14 @@ function TabOrdiniFerrari() {
     }
   }
 
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? ordini.filter(o =>
+        o.num_contratto.toLowerCase().includes(q) ||
+        (o.commessa ?? '').toLowerCase().includes(q)
+      )
+    : ordini;
+
   const lastScan = ordini.length > 0
     ? new Date(ordini[0].scanned_at).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' })
     : null;
@@ -1077,8 +1086,27 @@ function TabOrdiniFerrari() {
         </div>
       )}
 
+      {!loading && !error && ordini.length > 0 && q && filtered.length === 0 && (
+        <div className="text-center py-12 text-gray-400 text-sm">
+          Nessun ordine trovato per &ldquo;{search.trim()}&rdquo;.
+        </div>
+      )}
+
       {!loading && ordini.length > 0 && (
         <>
+        {/* Search */}
+        <div className="mb-3">
+          <input
+            type="search"
+            placeholder="Cerca per N° contratto o commessa…"
+            value={search}
+            onChange={e => { setSearch(e.target.value); setVisibili(PAGE_SIZE); }}
+            className="w-full max-w-sm px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          {q && (
+            <span className="ml-3 text-xs text-gray-500">{filtered.length} risultat{filtered.length === 1 ? 'o' : 'i'}</span>
+          )}
+        </div>
         {/* Legend */}
         <div className="flex flex-wrap gap-2 mb-3 text-xs">
           <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-violet-100 text-violet-700 font-medium">PRP — con commessa</span>
@@ -1094,9 +1122,9 @@ function TabOrdiniFerrari() {
                   <input
                     type="checkbox"
                     className="rounded"
-                    checked={ordini.slice(0, visibili).length > 0 && ordini.slice(0, visibili).every(o => selected.has(o.num_contratto))}
+                    checked={filtered.slice(0, visibili).length > 0 && filtered.slice(0, visibili).every(o => selected.has(o.num_contratto))}
                     onChange={e => {
-                      const visible = ordini.slice(0, visibili).map(o => o.num_contratto);
+                      const visible = filtered.slice(0, visibili).map(o => o.num_contratto);
                       setSelected(prev => {
                         const next = new Set(prev);
                         if (e.target.checked) visible.forEach(k => next.add(k));
@@ -1115,7 +1143,7 @@ function TabOrdiniFerrari() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {ordini.slice(0, visibili).map(o => {
+              {filtered.slice(0, visibili).map(o => {
                 const isDownloaded = downloaded.has(o.num_contratto);
                 const isSelected   = selected.has(o.num_contratto);
                 const tipo = getOrdTipo(o);
@@ -1179,13 +1207,13 @@ function TabOrdiniFerrari() {
             </tbody>
           </table>
         </div>
-        {visibili < ordini.length && (
+        {visibili < filtered.length && (
           <div className="mt-3 text-center">
             <button
               onClick={() => setVisibili(v => v + PAGE_SIZE)}
               className="px-5 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
             >
-              Carica altri ({Math.min(PAGE_SIZE, ordini.length - visibili)} di {ordini.length - visibili} rimanenti)
+              Carica altri ({Math.min(PAGE_SIZE, filtered.length - visibili)} di {filtered.length - visibili} rimanenti)
             </button>
           </div>
         )}
