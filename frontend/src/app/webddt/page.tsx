@@ -32,8 +32,8 @@ async function downloadExcel(shipmentIds: string[]): Promise<void> {
     signal:      AbortSignal.timeout(60_000),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { error?: string };
-    throw new Error(err.error ?? `HTTP ${res.status}`);
+    const err = await res.json().catch(() => ({})) as { error?: string; message?: string };
+    throw new Error(err.error ?? err.message ?? `HTTP ${res.status}`);
   }
   const blob = await res.blob();
   const url  = URL.createObjectURL(blob);

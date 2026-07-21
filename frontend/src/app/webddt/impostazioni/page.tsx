@@ -86,8 +86,8 @@ export default function WebDdtImpostazioniPage() {
         credentials: 'include',
         signal:      AbortSignal.timeout(60_000),
       });
-      const json = await res.json().catch(() => ({})) as { error?: string; imported?: number; skipped?: number };
-      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      const json = await res.json().catch(() => ({})) as { error?: string; message?: string; imported?: number; skipped?: number };
+      if (!res.ok) throw new Error(json.error ?? json.message ?? `HTTP ${res.status}`);
       setImportResult({ imported: json.imported ?? 0, skipped: json.skipped ?? 0 });
       await load();
     } catch (e: unknown) {
