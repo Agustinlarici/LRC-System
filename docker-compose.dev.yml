@@ -4,10 +4,12 @@ services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    command: postgres -c timezone=Europe/Rome
     environment:
       POSTGRES_DB:       lrc_system_dev
       POSTGRES_USER:     lrc
       POSTGRES_PASSWORD: lrc_password
+      TZ:                Europe/Rome
     volumes:
       - lrc-system-pgdata-dev:/var/lib/postgresql/data
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
