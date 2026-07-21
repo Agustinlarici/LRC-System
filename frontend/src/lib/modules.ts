@@ -132,12 +132,13 @@ export const MODULES: ModuleConfig[] = [
     icon: '🛠️', sidebar: 'IconClipboard', hidden: false, moduleKey: 'qualita',
   },
 
-  // ── Nascosti / in arrivo ───────────────────────────────────────────────────
   {
-    href: '/production', label: 'Produzione', group: 'Altro',
-    description: 'Sincronizzazione e monitoraggio ordini da Business Central',
-    icon: '🏭', sidebar: 'IconFactory', hidden: true, soon: true,
+    href: '/produzione', label: 'Programma Produzione', group: 'Logistica',
+    description: 'Ordini BC + Forecast EDI, caratteristiche e foglio di lavoro per area di montaggio',
+    icon: '🏭', sidebar: 'IconFactory', hidden: false, moduleKey: 'programma_produzione',
   },
+
+  // ── Nascosti / in arrivo ───────────────────────────────────────────────────
   {
     href: '/assistant', label: 'Assistente AI', group: 'Altro',
     description: 'Chat con dati di produzione via AI',

@@ -3,7 +3,8 @@
 export type ModuleKey =
   | 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer'
   | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
-  | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita';
+  | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita'
+  | 'programma_produzione';
 
 export interface ModulePermission {
   module_key: ModuleKey;
@@ -515,4 +516,81 @@ export interface QualitaReport {
   created_by_user_id: number | null;
   created_by_name:    string | null;
   created_at:         string;
+}
+
+// ─── Programma Produzione ─────────────────────────────────────────────────────
+
+export interface ProdArea {
+  id:          number;
+  code:        string;
+  description: string;
+}
+
+export interface ProdAreaArticle {
+  id:           number;
+  article_code: string;
+}
+
+export interface ProdSheetCategoria {
+  categoria:       string;
+  caratteristiche: string[];
+}
+
+export interface ProdSheetRow {
+  codice_articolo:   string;
+  commessa:          string;
+  descrizione:       string | null;
+  ubicazione:        string | null;
+  insertion_line_ts: string | null;
+  colore:            string | null;
+  categorie:         ProdSheetCategoria[];
+}
+
+export type ProdKeywordMode = 'simple' | 'proximity';
+
+export interface ProdKeywordRule {
+  id:                      number;
+  prefisso_commessa:       string;
+  categoria:               string;
+  caratteristica_derivata: string;
+  modo:                    ProdKeywordMode;
+  parola_chiave:           string | null;
+  parola_ancora:           string | null;
+  parola_obiettivo:        string | null;
+  distanza_max_caratteri:  number | null;
+  note:                    string | null;
+  active:                  boolean;
+}
+
+export interface ProdColorKeyword {
+  id:      number;
+  keyword: string;
+  color:   string;
+  active:  boolean;
+}
+
+export interface ProdItemAttributeLabel {
+  item_attribute_id: number;
+  categoria_label:   string;
+  active:            boolean;
+  updated_at:        string;
+}
+
+export interface ProdArticleInfo {
+  id:                      number;
+  codice_articolo:         string;
+  modello:                 string | null;
+  categoria:               string | null;
+  caratteristiche_manuali: string | null;
+}
+
+export interface ProdSyncLog {
+  id:                  number;
+  sync_type:           string;
+  started_at:          string;
+  finished_at:         string | null;
+  rows_upserted:       number | null;
+  rows_marked_absent:  number | null;
+  status:              string;
+  error_message:       string | null;
 }

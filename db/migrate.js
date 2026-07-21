@@ -223,44 +223,117 @@ const MIGRATIONS = [
     transform: (row) => ({ id: row.id, code: row.code, label: row.label }),
   },
 
-  // ── Production ───────────────────────────────────────────────────────────────
-  {
-    mysql: 'prod_order',
-    pg:    'prod_order',
-    columns: ['id', 'bc_order_no', 'description', 'item_no', 'quantity', 'due_date', 'status', 'routing_no', 'present_now', 'last_seen_at', 'row_sig', 'created_at', 'updated_at'],
-    transform: (row) => ({
-      id:           row.id,
-      bc_order_no:  row.bc_order_no,
-      description:  row.description,
-      item_no:      row.item_no,
-      quantity:     row.quantity,
-      due_date:     row.due_date,
-      status:       row.status,
-      routing_no:   row.routing_no,
-      present_now:  row.present_now ? true : false,
-      last_seen_at: row.last_seen_at || null,
-      row_sig:      row.row_sig,
-      created_at:   row.created_at,
-      updated_at:   row.updated_at,
-    }),
-  },
+  // ── Production (Programma Produzione) ─────────────────────────────────────────
+  // prod_order viejo (BC sync placeholder) nunca se llenó con datos reales —
+  // el nuevo prod_order tiene columnas distintas (ver migrate-programma-produzione.sql)
+  // y se llena directo desde Business Central via /api/prod/sync/orders, no desde
+  // esta migración MySQL→PG. No hay fila que migrar acá.
   {
     mysql: 'prod_area_montaggio',
     pg:    'prod_area_montaggio',
-    columns: ['id', 'code', 'description'],
-    transform: (row) => ({ id: row.id, code: row.code, description: row.description }),
+    // La tabla vieja no tenía columna "code", solo id + descrizione.
+    // Sintetizamos code = id (string) para cumplir con el UNIQUE NOT NULL nuevo.
+    columns: ['id', 'descrizione'],
+    transform: (row) => ({
+      id:          row.id,
+      code:        String(row.id),
+      description: row.descrizione,
+    }),
+  },
+  {
+    // El viejo "operator_id" era en realidad el id de área (así lo usaba
+    // /operator/:id == /area/:id en el frontend viejo) — se renombra a area_id.
+    mysql: 'prod_operator_assignment',
+    pg:    'prod_area_article',
+    columns: ['id', 'operator_id', 'codice_articolo'],
+    transform: (row) => ({
+      id:           row.id,
+      area_id:      row.operator_id,
+      article_code: row.codice_articolo,
+    }),
   },
   {
     mysql: 'prod_commessa_inserimenti',
     pg:    'prod_commessa_inserimenti',
-    columns: ['id', 'commessa', 'linea', 'insertion_line_ts', 'created_at', 'updated_at'],
+    // La tabla vieja no tenía "linea" ni "updated_at" — se dejan NULL / now().
+    columns: ['id', 'Commessa', 'InserimentoLinea', 'created_at'],
     transform: (row) => ({
       id:                 row.id,
-      commessa:           row.commessa,
-      linea:              row.linea,
-      insertion_line_ts:  row.insertion_line_ts || null,
+      commessa:           row.Commessa,
+      linea:              null,
+      insertion_line_ts:  row.InserimentoLinea || null,
       created_at:         row.created_at,
-      updated_at:         row.updated_at,
+      updated_at:         row.created_at,
+    }),
+  },
+  {
+    mysql: 'prod_keyword_rules',
+    pg:    'prod_keyword_rules',
+    // Todas las reglas viejas eran "simple" (no existía el modo proximidad).
+    columns: ['id', 'PrefissoCommessa', 'Categoria', 'ParolaChiave', 'CaratteristicaDerivata', 'Note'],
+    transform: (row) => ({
+      id:                      row.id,
+      prefisso_commessa:       row.PrefissoCommessa,
+      categoria:               row.Categoria,
+      caratteristica_derivata: row.CaratteristicaDerivata,
+      modo:                    'simple',
+      parola_chiave:           row.ParolaChiave,
+      note:                    row.Note || null,
+      active:                  true,
+    }),
+  },
+  {
+    mysql: 'prod_color_keywords',
+    pg:    'prod_color_keywords',
+    columns: ['id', 'ParolaChiave', 'Colore'],
+    transform: (row) => ({
+      id:      row.id,
+      keyword: row.ParolaChiave,
+      color:   row.Colore,
+      active:  true,
+    }),
+  },
+  {
+    // Tabla 100% derivada: se regenera por completo en el primer
+    // POST /api/prod/sync/keywords. Se migra solo para continuidad inmediata
+    // post-cutover; rule_id queda NULL (no hay forma de mapearlo a la regla vieja).
+    mysql: 'prod_article_auto',
+    pg:    'prod_article_auto',
+    columns: ['id', 'CodArticolo', 'Commessa', 'Categoria', 'Caratteristica', 'Fonte'],
+    transform: (row) => ({
+      id:              row.id,
+      codice_articolo: row.CodArticolo,
+      commessa:        row.Commessa,
+      categoria:       row.Categoria,
+      caratteristica:  row.Caratteristica,
+      fonte:           row.Fonte || 'keyword',
+      rule_id:         null,
+    }),
+  },
+  {
+    // La tabla vieja no guardaba FAPostingDate — queda NULL, lo que permite
+    // que la primera sincronización de color post-cutover la actualice libremente.
+    mysql: 'prod_article_color',
+    pg:    'prod_article_color',
+    columns: ['CodArticolo', 'Commessa', 'Colore', 'Fonte'],
+    transform: (row) => ({
+      codice_articolo: row.CodArticolo,
+      commessa:        row.Commessa,
+      colore:          row.Colore,
+      fonte:           row.Fonte || null,
+      fa_posting_date: null,
+    }),
+  },
+  {
+    mysql: 'prod_article_info',
+    pg:    'prod_article_info',
+    columns: ['id', 'CodArticolo', 'Modello', 'Categoria', 'CaratteristicheManuali'],
+    transform: (row) => ({
+      id:                      row.id,
+      codice_articolo:         row.CodArticolo,
+      modello:                 row.Modello || null,
+      categoria:               row.Categoria || null,
+      caratteristiche_manuali: row.CaratteristicheManuali || null,
     }),
   },
 ];

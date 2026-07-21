@@ -124,6 +124,16 @@ export async function runSpmaImport(buffer: Buffer, fileName: string): Promise<S
   const warnings: string[] = [];
   const importedCodes = new Set<string>();
   const calendarDatesToFill = new Map<string, { lineId: number; dateStr: string }>();
+  const lineNameCache = new Map<number, string>();
+
+  async function lineName(lineId: number): Promise<string> {
+    const cached = lineNameCache.get(lineId);
+    if (cached) return cached;
+    const [row] = await db`SELECT name FROM spma_line WHERE id = ${lineId}`;
+    const name = row ? String(row.name) : String(lineId);
+    lineNameCache.set(lineId, name);
+    return name;
+  }
 
   for (const sheetName of sheets) {
     const sheet = workbook.Sheets[sheetName];
@@ -226,6 +236,17 @@ export async function runSpmaImport(buffer: Buffer, fileName: string): Promise<S
             pos_index     = EXCLUDED.pos_index
         `;
         importedCodes.add(commCode);
+
+        // Stessa importazione aggiorna anche la data di ingresso in linea
+        // usata dal modulo Programma Produzione (tabella separata, stesso file).
+        await db`
+          INSERT INTO prod_commessa_inserimenti (commessa, linea, insertion_line_ts, updated_at)
+          VALUES (${commCode}, ${await lineName(lineId)}, ${dt.toISOString()}, now())
+          ON CONFLICT (commessa) DO UPDATE SET
+            linea             = EXCLUDED.linea,
+            insertion_line_ts = EXCLUDED.insertion_line_ts,
+            updated_at        = now()
+        `.catch(err => logger.warn({ err, commCode }, 'programma-produzione: aggiornamento prod_commessa_inserimenti fallito'));
 
         const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(dt);
         const calKey  = `${lineId}:${dateStr}`;

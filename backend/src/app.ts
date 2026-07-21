@@ -17,6 +17,7 @@ import { recepcionesRoutes } from './modules/recepciones/routes.js';
 import { ediRoutes } from './modules/edi/routes.js';
 import { webddtRoutes } from './modules/webddt/routes.js';
 import { qualitaRoutes } from './modules/qualita/routes.js';
+import { programmaProduzioneRoutes } from './modules/programma-produzione/routes.js';
 import { logger } from './lib/logger.js';
 import { db } from './db/client.js';
 import { getWebthronPool } from './modules/monitor/mysql-client.js';
@@ -97,13 +98,13 @@ app.route('/api/recepciones', recepcionesRoutes);
 app.route('/api/edi', ediRoutes);
 app.route('/api/webddt', webddtRoutes);
 app.route('/api/qualita', qualitaRoutes);
+app.route('/api/prod', programmaProduzioneRoutes);
 
 // Stub para módulos aún no migrados
 const stub = (module: string) =>
   new Hono().all('*', (c) =>
     c.json({ error: `Module '${module}' not yet migrated` }, 501)
   );
-app.route('/api/prod', stub('production'));
 app.route('/api/ask-ai', stub('assistant'));
 
 // ─── Error handler ────────────────────────────────────────────────────────────

@@ -16,7 +16,7 @@ const SALES_LINE_TABLE = 'STR$Sales Line$437dbf0e-84ff-417a-965d-ed2bb9650972';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-function getDynamicsConfig(): sql.config {
+export function getDynamicsConfig(): sql.config {
   return {
     server:   process.env.BC_SERVER   ?? '',
     database: process.env.BC_DATABASE ?? '',
