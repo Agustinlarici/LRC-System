@@ -40,7 +40,12 @@ BEGIN
      ) THEN
     EXECUTE format('SELECT count(*) FROM %I', tbl) INTO cnt;
     IF cnt = 0 THEN
-      EXECUTE format('DROP TABLE %I', tbl);
+      -- CASCADE: su un DB dove il modulo ha già girato parzialmente in passato
+      -- puo' già esistere un FK di prod_article_auto.rule_id verso
+      -- prod_keyword_rules(id) (valido anche sul placeholder, che ha un "id").
+      -- Senza CASCADE il DROP fallisce per quel vincolo; il FK viene
+      -- ricreato subito dopo dalla ALTER TABLE dedicata più sotto.
+      EXECUTE format('DROP TABLE %I CASCADE', tbl);
     ELSE
       RAISE EXCEPTION '% esiste nella forma vecchia (schema.sql) e contiene % righe — controllare manualmente prima di rieseguire la migrazione', tbl, cnt;
     END IF;
@@ -227,6 +232,20 @@ CREATE TABLE IF NOT EXISTS prod_article_auto (
 );
 
 CREATE INDEX IF NOT EXISTS prod_article_auto_commessa_idx ON prod_article_auto (commessa);
+
+-- Se prod_article_auto esisteva già (quindi la CREATE TABLE sopra è stata
+-- saltata) e il CASCADE del replace-placeholder ha tolto il FK verso
+-- prod_keyword_rules, lo ripristiniamo qui.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'prod_article_auto_rule_id_fkey'
+  ) THEN
+    ALTER TABLE prod_article_auto
+      ADD CONSTRAINT prod_article_auto_rule_id_fkey
+      FOREIGN KEY (rule_id) REFERENCES prod_keyword_rules(id) ON DELETE SET NULL;
+  END IF;
+END$$;
 
 -- ─── Colore rilevato per articolo + commessa ──────────────────────────────────
 
