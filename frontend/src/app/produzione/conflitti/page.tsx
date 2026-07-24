@@ -11,7 +11,9 @@ export default function ProduzioneConflittiPage() {
   const [error,     setError]     = useState<string | null>(null);
 
   useEffect(() => {
-    api.get<ProdComponentConflict[]>('/api/prod/component-conflicts')
+    // Scansiona tutto prod_order_unified senza filtro data — può richiedere
+    // più del timeout di default (15s) su dataset grandi.
+    api.get<ProdComponentConflict[]>('/api/prod/component-conflicts', 60_000)
       .then(setConflicts)
       .catch(e => setError((e as Error).message))
       .finally(() => setLoading(false));

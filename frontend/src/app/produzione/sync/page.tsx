@@ -43,6 +43,11 @@ function SyncButton({ label, busyText, onRun }: SyncButtonProps) {
   );
 }
 
+// Le sync leggono/rigenerano decine di migliaia di righe (BC + EDI Forecast)
+// — il timeout di default dell'api client (15s) è troppo corto.
+const SYNC_TIMEOUT_MS     = 120_000;
+const SYNC_ALL_TIMEOUT_MS = 300_000; // incatena tutte e 4 le sync in sequenza
+
 const SYNC_TYPE_LABEL: Record<string, string> = {
   bc_orders:        'Ordini BC',
   item_attributes:  'Attributi BC',
@@ -73,27 +78,27 @@ export default function ProduzioneSyncPage() {
         <SyncButton
           label="🌀 Tutto in sequenza"
           busyText="Sincronizzazione in corso..."
-          onRun={async () => { const r = await api.post('/api/prod/sync/all'); refreshLog(); return r; }}
+          onRun={async () => { const r = await api.post('/api/prod/sync/all', undefined, SYNC_ALL_TIMEOUT_MS); refreshLog(); return r; }}
         />
         <SyncButton
           label="📥 Ordini da Business Central"
           busyText="Importazione in corso..."
-          onRun={async () => { const r = await api.post('/api/prod/sync/orders'); refreshLog(); return r; }}
+          onRun={async () => { const r = await api.post('/api/prod/sync/orders', undefined, SYNC_TIMEOUT_MS); refreshLog(); return r; }}
         />
         <SyncButton
           label="🏷️ Attributi articolo (BC)"
           busyText="Lettura attributi..."
-          onRun={async () => { const r = await api.post('/api/prod/sync/item-attributes'); refreshLog(); return r; }}
+          onRun={async () => { const r = await api.post('/api/prod/sync/item-attributes', undefined, SYNC_TIMEOUT_MS); refreshLog(); return r; }}
         />
         <SyncButton
           label="✨ Genera caratteristiche (parole chiave)"
           busyText="Generazione in corso..."
-          onRun={async () => { const r = await api.post('/api/prod/sync/keywords'); refreshLog(); return r; }}
+          onRun={async () => { const r = await api.post('/api/prod/sync/keywords', undefined, SYNC_TIMEOUT_MS); refreshLog(); return r; }}
         />
         <SyncButton
           label="🎨 Rileva colore"
           busyText="Analisi in corso..."
-          onRun={async () => { const r = await api.post('/api/prod/sync/colors'); refreshLog(); return r; }}
+          onRun={async () => { const r = await api.post('/api/prod/sync/colors', undefined, SYNC_TIMEOUT_MS); refreshLog(); return r; }}
         />
       </div>
 
