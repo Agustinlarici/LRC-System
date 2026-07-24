@@ -10,10 +10,10 @@ import { getShipments, getWebDdtLines, getShipmentAccounts, getWebDdtLineStatuse
 
 export const webddtRoutes = new Hono();
 
-// Clienti abilitati al modulo WebDDT, con relativo Supplier ID (8 cifre)
+// Clienti abilitati al modulo WebDDT, con relativo Supplier ID (6 cifre)
 const SUPPLIER_CODES: Record<string, string> = {
-  C558:  '00025391',
-  C3027: '00207523',
+  C558:  '025391',
+  C3027: '207523',
 };
 const ACCOUNTS = Object.keys(SUPPLIER_CODES);
 
