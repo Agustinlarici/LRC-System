@@ -119,7 +119,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <ToastProvider>
       <Sidebar />
-      <main className="flex-1 overflow-auto bg-slate-50">
+      <main className="flex-1 min-w-0 overflow-auto bg-slate-50">
         {hasAccess
           ? <div className="p-6">{children}</div>
           : <AccessDenied />
