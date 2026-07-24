@@ -66,6 +66,8 @@ async function downloadExcel(shipmentIds: string[]): Promise<void> {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 40;
+
 export default function WebDdtPage() {
   const [shipments,    setShipments]    = useState<WebDdtShipment[]>([]);
   const [loading,      setLoading]      = useState(true);
@@ -76,6 +78,7 @@ export default function WebDdtPage() {
   const [from,         setFrom]         = useState('');
   const [to,           setTo]           = useState('');
   const [search,       setSearch]       = useState('');
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,6 +91,7 @@ export default function WebDdtPage() {
       const data = await api.get<WebDdtShipment[]>(`/api/webddt/shipments?${params}`, 60_000);
       setShipments(data);
       setSelected(new Set());
+      setVisibleCount(PAGE_SIZE);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -267,7 +271,7 @@ export default function WebDdtPage() {
               </tr>
             </thead>
             <tbody>
-              {shipments.map((s, idx) => {
+              {shipments.slice(0, visibleCount).map((s, idx) => {
                 const isSelected = selected.has(s.shipment_id);
                 return (
                   <tr
@@ -313,8 +317,20 @@ export default function WebDdtPage() {
               })}
             </tbody>
           </table>
+          {visibleCount < shipments.length && (
+            <div className="flex justify-center py-3 border-t border-gray-100">
+              <button
+                onClick={() => setVisibleCount(v => v + PAGE_SIZE)}
+                className="px-4 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded-md transition-colors"
+              >
+                Mostra altro ({shipments.length - visibleCount} rimanenti)
+              </button>
+            </div>
+          )}
           <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 text-xs text-gray-500 flex items-center gap-2">
-            <span>{shipments.length} spedizion{shipments.length === 1 ? 'e' : 'i'} · Clienti:</span>
+            <span>
+              {Math.min(visibleCount, shipments.length)} di {shipments.length} spedizion{shipments.length === 1 ? 'e' : 'i'} · Clienti:
+            </span>
             <ClientBadge account="C558" />
             <ClientBadge account="C3027" />
           </div>

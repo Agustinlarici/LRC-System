@@ -195,6 +195,7 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/admin/monitor/parate':    'monitor_parate',
   '/admin/monitor/motivi':    'monitor_motivi',
   '/qualita':                 'qualita',
+  '/produzione':              'programma_produzione',
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────

@@ -10,10 +10,10 @@ import { getShipments, getWebDdtLines, getShipmentAccounts, getWebDdtLineStatuse
 
 export const webddtRoutes = new Hono();
 
-// Clienti abilitati al modulo WebDDT, con relativo Supplier ID (6 cifre)
+// Clienti abilitati al modulo WebDDT, con relativo Supplier ID (8 cifre)
 const SUPPLIER_CODES: Record<string, string> = {
-  C558:  '025391',
-  C3027: '207523',
+  C558:  '00025391',
+  C3027: '00207523',
 };
 const ACCOUNTS = Object.keys(SUPPLIER_CODES);
 
@@ -136,7 +136,7 @@ webddtRoutes.post('/download', requireModule('webddt'), async (c) => {
   for (const shipmentId of body.shipment_ids) {
     const account       = accountByShipment.get(shipmentId) ?? '';
     const supplierCode  = SUPPLIER_CODES[account] ?? '';
-    const shipperNo     = extractDocNo(shipmentId).padStart(6, '0');
+    const shipperNo     = extractDocNo(shipmentId).padStart(5, '0');
     const lines = await getWebDdtLines(shipmentId);
 
     for (const line of lines) {

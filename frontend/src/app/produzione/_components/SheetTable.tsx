@@ -28,6 +28,7 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
         <thead>
           <tr className="bg-gray-100">
             <th className="border border-gray-300 px-2 py-1.5">#</th>
+            <th className="border border-gray-300 px-2 py-1.5 text-left">Stato</th>
             <th className="border border-gray-300 px-2 py-1.5 text-left">Commessa</th>
             <th className="border border-gray-300 px-2 py-1.5 text-left">Codice</th>
             <th className="border border-gray-300 px-2 py-1.5 text-left whitespace-nowrap">Ingresso Linea</th>
@@ -43,6 +44,13 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
           {rows.map((row, idx) => (
             <tr key={`${row.codice_articolo}-${row.commessa}`} className="hover:bg-gray-50">
               <td className="border border-gray-200 px-2 py-1 text-center">{idx + 1}</td>
+              <td className="border border-gray-200 px-2 py-1">
+                <span className={`inline-block text-xs px-2 py-0.5 rounded font-medium whitespace-nowrap ${
+                  row.fonte_ordine === 'confermato' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                }`}>
+                  {row.fonte_ordine === 'confermato' ? 'Confermato' : 'Forecast'}
+                </span>
+              </td>
               <td className="border border-gray-200 px-2 py-1 font-mono">{row.commessa}</td>
               <td className="border border-gray-200 px-2 py-1 font-mono">{row.codice_articolo}</td>
               <td className="border border-gray-200 px-2 py-1 whitespace-nowrap">
