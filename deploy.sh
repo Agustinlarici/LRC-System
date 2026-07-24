@@ -137,6 +137,7 @@ run_migrations() {
     "db/migrate-webddt.sql"
     "db/migrate-qualita.sql"
     "db/migrate-webddt-po-mapping.sql"
+    "db/migrate-programma-produzione.sql"
   )
   for f in "${MIGRATIONS[@]}"; do
     if [ -f "$f" ]; then

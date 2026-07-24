@@ -1,26 +1,47 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { ProdSheetRow } from '@/types';
 import { SheetTable } from '../_components/SheetTable';
 
+const PAGE_SIZE = 500;
+
 interface SheetResponse {
-  rows: ProdSheetRow[];
+  rows:  ProdSheetRow[];
+  total: number;
 }
 
 export default function ProduzioneTuttoPage() {
-  const [rows,    setRows]    = useState<ProdSheetRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState<string | null>(null);
+  const [rows,       setRows]       = useState<ProdSheetRow[]>([]);
+  const [total,      setTotal]      = useState(0);
+  const [loading,    setLoading]    = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error,      setError]      = useState<string | null>(null);
+
+  const loadPage = useCallback(async (offset: number) => {
+    const d = await api.get<SheetResponse>(`/api/prod/foglio?limit=${PAGE_SIZE}&offset=${offset}`);
+    setTotal(d.total);
+    setRows(prev => offset === 0 ? d.rows : [...prev, ...d.rows]);
+  }, []);
 
   useEffect(() => {
-    api.get<SheetResponse>('/api/prod/foglio')
-      .then(d => setRows(d.rows))
+    loadPage(0)
       .catch(e => setError((e as Error).message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [loadPage]);
+
+  async function loadMore() {
+    setLoadingMore(true);
+    try {
+      await loadPage(rows.length);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   return (
     <div className="print-a4" style={{ fontSize: '0.78rem' }}>
@@ -44,7 +65,21 @@ export default function ProduzioneTuttoPage() {
       ) : error ? (
         <div className="p-4 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>
       ) : (
-        <SheetTable rows={rows} />
+        <>
+          <SheetTable rows={rows} />
+          {rows.length < total && (
+            <div className="d-print-none mt-4 text-center">
+              <p className="text-sm text-gray-500 mb-2">Mostrando {rows.length} di {total}</p>
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {loadingMore ? 'Caricamento...' : `Carica altri ${Math.min(PAGE_SIZE, total - rows.length)}`}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

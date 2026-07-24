@@ -29,6 +29,7 @@ export interface BcSalesOrderLine {
   planned_shipment_date:   string | null;
   shipment_date:           string | null;
   fa_posting_date:         string | null;
+  data_registrazione:      string | null;
 }
 
 export interface BcItemAttribute {
@@ -71,7 +72,8 @@ export async function getProductionSalesOrders(): Promise<BcSalesOrderLine[]> {
         ISNULL(sl.[Location Code], '')                               AS ubicazione,
         CONVERT(VARCHAR(10), sl.[Planned Shipment Date], 23)        AS planned_shipment_date,
         CONVERT(VARCHAR(10), sl.[Shipment Date], 23)                AS shipment_date,
-        CONVERT(VARCHAR(10), sl.[FA Posting Date], 23)              AS fa_posting_date
+        CONVERT(VARCHAR(10), sl.[FA Posting Date], 23)              AS fa_posting_date,
+        CONVERT(VARCHAR(10), sl.[Posting Date], 23)                 AS data_registrazione
       FROM [${SALES_LINE_TABLE}] sl WITH (NOLOCK)
       INNER JOIN [${SALES_LINE_LSA_TABLE}] lsa WITH (NOLOCK)
         ON  sl.[Document Type] = lsa.[Document Type]
@@ -99,6 +101,7 @@ export async function getProductionSalesOrders(): Promise<BcSalesOrderLine[]> {
       planned_shipment_date: r.planned_shipment_date ? String(r.planned_shipment_date) : null,
       shipment_date:         r.shipment_date ? String(r.shipment_date) : null,
       fa_posting_date:       r.fa_posting_date ? String(r.fa_posting_date) : null,
+      data_registrazione:    r.data_registrazione ? String(r.data_registrazione) : null,
     })).filter(r => r.codice_articolo.length > 0);
   } finally {
     await pool.close();

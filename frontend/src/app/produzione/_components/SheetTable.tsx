@@ -63,7 +63,17 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
                 const match = row.categorie.find(c => c.categoria === cat);
                 return (
                   <td key={cat} className={`border border-gray-200 px-2 py-1 ${cat === 'X.EXTRA' ? 'max-w-[220px] whitespace-normal' : 'whitespace-nowrap'}`}>
-                    {match ? match.caratteristiche.join(', ') : <span className="text-gray-300">–</span>}
+                    {match ? match.caratteristiche.map((c, i) => (
+                      <React.Fragment key={c.valore}>
+                        {i > 0 && ', '}
+                        <span
+                          className={c.daAltroComponente ? 'text-amber-600' : undefined}
+                          title={c.daAltroComponente ? 'Trovata nella descrizione di un altro componente della stessa commessa' : undefined}
+                        >
+                          {c.valore}
+                        </span>
+                      </React.Fragment>
+                    )) : <span className="text-gray-300">–</span>}
                   </td>
                 );
               })}

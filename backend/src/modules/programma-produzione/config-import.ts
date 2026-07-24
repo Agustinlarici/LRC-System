@@ -58,32 +58,6 @@ export async function importAree(buffer: Buffer): Promise<ImportResult> {
   return { total_rows: rows.length, upserted, skipped, warnings: warnings.slice(0, 100) };
 }
 
-// ─── Articoli assegnati a un'area ──────────────────────────────────────────────
-// Colonna: Codice Articolo. Sostituisce interamente la lista dell'area (come il
-// textarea manuale).
-
-export async function importAreaArticoli(areaId: number, buffer: Buffer): Promise<ImportResult> {
-  const rows = readRows(buffer);
-  if (rows.length === 0) return emptyResult(0, 'File vuoto');
-
-  const headers = Object.keys(rows[0] ?? {});
-  const colCode = pickCol(headers, 'Codice Articolo', 'Articolo', 'Codice', 'Article Code');
-  if (!colCode) return emptyResult(rows.length, 'Colonna Codice Articolo mancante');
-
-  const codes = [...new Set(rows.map(r => str(r[colCode])).filter(Boolean))];
-
-  await db.begin(async (txRaw) => {
-    const tx = txRaw as unknown as typeof db;
-    await tx`DELETE FROM prod_area_article WHERE area_id = ${areaId}`;
-    if (codes.length > 0) {
-      const values = codes.map(article_code => ({ area_id: areaId, article_code }));
-      await tx`INSERT INTO prod_area_article ${tx(values)}`;
-    }
-  });
-
-  return { total_rows: rows.length, upserted: codes.length, skipped: rows.length - codes.length, warnings: [] };
-}
-
 // ─── Regole parole chiave ──────────────────────────────────────────────────────
 // Colonne: Prefisso Commessa, Categoria, Parola Chiave, Significato (=
 // Caratteristica Derivata), Note. Per il modo prossimità (opzionale):
@@ -255,5 +229,71 @@ export async function importArticleInfo(buffer: Buffer): Promise<ImportResult> {
     `;
     upserted++;
   }
+  return { total_rows: rows.length, upserted, skipped, warnings: warnings.slice(0, 100) };
+}
+
+// ─── Categoria + Area per articolo (rimpiazzo "vince l'ultimo" + assegnazione) ─
+// Una riga per codice, con Categoria e Area indipendenti (entrambe opzionali,
+// upsert — una colonna vuota lascia intatto il valore già salvato). L'Area
+// deve già esistere (creata prima nella tab "Aree").
+
+export async function importArticleCategoryArea(buffer: Buffer): Promise<ImportResult> {
+  const rows = readRows(buffer);
+  if (rows.length === 0) return emptyResult(0, 'File vuoto');
+
+  const headers = Object.keys(rows[0] ?? {});
+  const colCode = pickCol(headers, 'Codice Articolo', 'Articolo', 'Codice', 'Article Code');
+  const colCat  = pickCol(headers, 'Categoria');
+  const colArea = pickCol(headers, 'Area', 'Codice Area');
+  if (!colCode) return emptyResult(rows.length, 'Colonna Codice Articolo mancante');
+
+  const areas = await db<{ id: number; code: string }[]>`SELECT id, code FROM prod_area_montaggio`;
+  const areaIdByCode = new Map(areas.map(a => [a.code.toLowerCase(), a.id]));
+
+  let upserted = 0, skipped = 0;
+  const warnings: string[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const codice = str(rows[i][colCode]);
+    const categoria = colCat ? str(rows[i][colCat]) : '';
+    const areaCode  = colArea ? str(rows[i][colArea]) : '';
+    if (!codice) { skipped++; warnings.push(`Riga ${i + 2}: Codice Articolo mancante`); continue; }
+
+    let areaId: number | null = null;
+    if (areaCode) {
+      areaId = areaIdByCode.get(areaCode.toLowerCase()) ?? null;
+      if (areaId == null) {
+        warnings.push(`Riga ${i + 2}: Area "${areaCode}" non trovata — creala prima nella tab "Aree" (categoria comunque salvata)`);
+      }
+    }
+
+    if (!categoria && areaId == null) {
+      skipped++; warnings.push(`Riga ${i + 2}: né Categoria né Area valide, riga saltata`);
+      continue;
+    }
+
+    if (categoria && areaId != null) {
+      await db`
+        INSERT INTO prod_article_component_category (codice_articolo, categoria, area_id)
+        VALUES (${codice}, ${categoria}, ${areaId})
+        ON CONFLICT (codice_articolo) DO UPDATE SET categoria = EXCLUDED.categoria, area_id = EXCLUDED.area_id
+      `;
+    } else if (categoria) {
+      await db`
+        INSERT INTO prod_article_component_category (codice_articolo, categoria)
+        VALUES (${codice}, ${categoria})
+        ON CONFLICT (codice_articolo) DO UPDATE SET categoria = EXCLUDED.categoria
+      `;
+    } else {
+      await db`
+        INSERT INTO prod_article_component_category (codice_articolo, area_id)
+        VALUES (${codice}, ${areaId})
+        ON CONFLICT (codice_articolo) DO UPDATE SET area_id = EXCLUDED.area_id
+      `;
+    }
+
+    upserted++;
+  }
+
   return { total_rows: rows.length, upserted, skipped, warnings: warnings.slice(0, 100) };
 }

@@ -7,11 +7,12 @@ import { requireModule, requireManage } from '../../lib/auth.js';
 import { logger } from '../../lib/logger.js';
 import { syncProductionOrders, syncItemAttributes } from './order-sync.js';
 import { runKeywordEngine, runColorEngine } from './keyword-engine.js';
-import { buildFoglio } from './sheet.js';
+import { buildFoglio, findComponentConflicts } from './sheet.js';
 import { validateSpmaFile } from '../../lib/mime-check.js';
 import {
-  importAree, importAreaArticoli, importKeywordRules,
+  importAree, importKeywordRules,
   importColorKeywords, importItemAttributeLabels, importArticleInfo,
+  importArticleCategoryArea,
 } from './config-import.js';
 
 export const programmaProduzioneRoutes = new Hono();
@@ -26,6 +27,11 @@ function parseId(raw: string | undefined): number {
     throw new HTTPException(400, { message: 'ID non valido' });
   }
   return id;
+}
+
+function requireParam(raw: string | undefined, label: string): string {
+  if (!raw || !raw.trim()) throw new HTTPException(400, { message: `${label} mancante` });
+  return raw;
 }
 
 async function readUploadedFile(c: Context): Promise<Buffer> {
@@ -68,62 +74,51 @@ programmaProduzioneRoutes.delete('/aree/:id', requireManage(MODULE), async (c) =
   return c.json({ status: 'deleted' });
 });
 
-programmaProduzioneRoutes.get('/aree/:id/articoli', requireModule(MODULE), async (c) => {
-  const id = parseId(c.req.param('id'));
-  const rows = await db`
-    SELECT id, article_code FROM prod_area_article WHERE area_id = ${id} ORDER BY article_code
-  `;
-  return c.json(rows);
-});
-
-programmaProduzioneRoutes.put('/aree/:id/articoli', requireManage(MODULE), async (c) => {
-  const id = parseId(c.req.param('id'));
-  const body = await parseBody(c, z.object({ articleCodes: z.array(z.string().min(1)) }));
-  const codes = [...new Set(body.articleCodes.map(s => s.trim()).filter(Boolean))];
-
-  await db.begin(async (txRaw) => {
-    const tx = txRaw as unknown as typeof db;
-    await tx`DELETE FROM prod_area_article WHERE area_id = ${id}`;
-    if (codes.length > 0) {
-      const values = codes.map(article_code => ({ area_id: id, article_code }));
-      await tx`INSERT INTO prod_area_article ${tx(values)}`;
-    }
-  });
-
-  return c.json({ status: 'updated', count: codes.length });
-});
-
 programmaProduzioneRoutes.post('/aree/import-excel', requireManage(MODULE), async (c) => {
   const buffer = await readUploadedFile(c);
   return c.json(await importAree(buffer));
 });
 
-programmaProduzioneRoutes.post('/aree/:id/articoli/import-excel', requireManage(MODULE), async (c) => {
-  const id = parseId(c.req.param('id'));
-  const buffer = await readUploadedFile(c);
-  return c.json(await importAreaArticoli(id, buffer));
-});
+// L'area si assegna direttamente per codice articolo (prod_article_component_category.area_id)
+// — usato internamente da /aree/:id/foglio.
+async function articleCodesForArea(areaId: number): Promise<string[]> {
+  const rows = await db<{ codice_articolo: string }[]>`
+    SELECT codice_articolo FROM prod_article_component_category WHERE area_id = ${areaId}
+  `;
+  return rows.map(r => r.codice_articolo);
+}
 
 // ─── Foglio di lavoro (vista finale per l'operatore) ──────────────────────────
 
+const DEFAULT_FOGLIO_LIMIT = 500;
+
+function parsePageParams(c: Context): { limit: number; offset: number } {
+  const limitRaw  = c.req.query('limit');
+  const offsetRaw = c.req.query('offset');
+  const limit  = limitRaw  != null ? Math.max(1, Math.min(2000, parseInt(limitRaw, 10) || DEFAULT_FOGLIO_LIMIT)) : DEFAULT_FOGLIO_LIMIT;
+  const offset = offsetRaw != null ? Math.max(0, parseInt(offsetRaw, 10) || 0) : 0;
+  return { limit, offset };
+}
+
 // Vista globale: TUTTI gli ordini con data di ingresso in linea registrata,
-// senza bisogno di nessuna area di montaggio configurata.
+// senza bisogno di nessuna area di montaggio configurata. Paginata — senza
+// filtro articolo si arriva facilmente a 20k+ righe, troppe per il browser.
 programmaProduzioneRoutes.get('/foglio', requireModule(MODULE), async (c) => {
-  const rows = await buildFoglio(null);
-  return c.json({ area: null, rows });
+  const { limit, offset } = parsePageParams(c);
+  const { rows, total } = await buildFoglio(null, { limit, offset });
+  return c.json({ area: null, rows, total, limit, offset });
 });
 
 programmaProduzioneRoutes.get('/aree/:id/foglio', requireModule(MODULE), async (c) => {
   const id = parseId(c.req.param('id'));
+  const { limit, offset } = parsePageParams(c);
 
   const area = await db`SELECT id, code, description FROM prod_area_montaggio WHERE id = ${id}`;
   if (area.length === 0) throw new HTTPException(404, { message: 'Area non trovata' });
 
-  const assigned = await db<{ article_code: string }[]>`
-    SELECT article_code FROM prod_area_article WHERE area_id = ${id}
-  `;
-  const rows = await buildFoglio(assigned.map(a => a.article_code));
-  return c.json({ area: area[0], rows });
+  const codes = await articleCodesForArea(id);
+  const { rows, total } = await buildFoglio(codes, { limit, offset });
+  return c.json({ area: area[0], rows, total, limit, offset });
 });
 
 // ─── Regole parole chiave (caratteristiche) ───────────────────────────────────
@@ -409,4 +404,73 @@ programmaProduzioneRoutes.get('/sync/log', requireModule(MODULE), async (c) => {
     LIMIT 50
   `;
   return c.json(rows);
+});
+
+// ─── Categoria + Area per articolo (rimpiazzo "vince l'ultimo" + assegnazione) ─
+// Una riga per codice: categoria (per il motore di rimpiazzo — se due articoli
+// della stessa categoria arrivano per la stessa commessa, buildFoglio ne
+// tiene uno solo, Confermato > Forecast poi il più recente; i perdenti
+// finiscono in /component-conflicts) e area (dove compare nel foglio),
+// completamente indipendenti tra loro.
+
+programmaProduzioneRoutes.get('/article-assignments', requireModule(MODULE), async (c) => {
+  const search = (c.req.query('search') ?? '').trim();
+  const rows = search
+    ? await db`
+        SELECT pacc.codice_articolo, pacc.categoria, pacc.area_id,
+               a.code AS area_code, a.description AS area_description
+        FROM prod_article_component_category pacc
+        LEFT JOIN prod_area_montaggio a ON a.id = pacc.area_id
+        WHERE pacc.codice_articolo ILIKE ${'%' + search + '%'}
+           OR pacc.categoria ILIKE ${'%' + search + '%'}
+        ORDER BY pacc.codice_articolo
+        LIMIT 500
+      `
+    : await db`
+        SELECT pacc.codice_articolo, pacc.categoria, pacc.area_id,
+               a.code AS area_code, a.description AS area_description
+        FROM prod_article_component_category pacc
+        LEFT JOIN prod_area_montaggio a ON a.id = pacc.area_id
+        ORDER BY pacc.codice_articolo
+        LIMIT 500
+      `;
+  return c.json(rows);
+});
+
+const ArticleAssignmentSchema = z.object({
+  codiceArticolo: z.string().min(1).max(100),
+  categoria:      z.string().max(100).nullish(),
+  areaId:         z.number().int().positive().nullish(),
+});
+
+programmaProduzioneRoutes.post('/article-assignments', requireManage(MODULE), async (c) => {
+  const body = await parseBody(c, ArticleAssignmentSchema);
+  const [row] = await db`
+    INSERT INTO prod_article_component_category (codice_articolo, categoria, area_id)
+    VALUES (${body.codiceArticolo}, ${body.categoria ?? null}, ${body.areaId ?? null})
+    ON CONFLICT (codice_articolo) DO UPDATE SET
+      categoria = EXCLUDED.categoria, area_id = EXCLUDED.area_id
+    RETURNING *
+  `;
+  return c.json(row, 201);
+});
+
+programmaProduzioneRoutes.delete('/article-assignments/:codice', requireManage(MODULE), async (c) => {
+  const codice = requireParam(c.req.param('codice'), 'Codice');
+  await db`DELETE FROM prod_article_component_category WHERE codice_articolo = ${codice}`;
+  return c.json({ status: 'deleted' });
+});
+
+// Carica veloce: un solo file con Codice Articolo + Categoria + Area (entrambe
+// opzionali) — upsert per codice in un colpo solo. Le aree devono già esistere.
+programmaProduzioneRoutes.post('/article-category-area/import-excel', requireManage(MODULE), async (c) => {
+  const buffer = await readUploadedFile(c);
+  return c.json(await importArticleCategoryArea(buffer));
+});
+
+// ─── Conflitti da risolvere in Dynamics ────────────────────────────────────────
+
+programmaProduzioneRoutes.get('/component-conflicts', requireModule(MODULE), async (c) => {
+  const conflicts = await findComponentConflicts();
+  return c.json(conflicts);
 });

@@ -29,15 +29,19 @@ export default function ProduzionePage() {
         <div className="flex gap-2 flex-wrap">
           <Link href="/produzione/tutto"
             className="flex items-center gap-1.5 text-sm bg-gray-900 text-white px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors">
-            📋 Vedi tutto
+            Vedi tutto
           </Link>
           <Link href="/produzione/sync"
             className="flex items-center gap-1.5 text-sm bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-            🔄 Sincronizza
+            Sincronizza
+          </Link>
+          <Link href="/produzione/conflitti"
+            className="flex items-center gap-1.5 text-sm bg-yellow-100 text-yellow-800 px-3 py-2 rounded-lg hover:bg-yellow-200 transition-colors">
+            Conflitti
           </Link>
           <Link href="/produzione/impostazioni"
             className="flex items-center gap-1.5 text-sm border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
-            ⚙ Impostazioni
+            Impostazioni
           </Link>
         </div>
       </div>

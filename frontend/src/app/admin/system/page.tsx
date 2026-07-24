@@ -12,13 +12,14 @@ type User = {
   phone: string | null; department_id: number | null; department_name: string | null;
   role: 'guest' | 'operator' | 'it' | 'admin'; is_active: boolean;
 };
-type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita';
+type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'programma_produzione';
 type Permission = { module_key: ModuleKey; can_view: boolean; can_manage: boolean };
 
 const ALL_MODULES: { key: ModuleKey; label: string }[] = [
   { key: 'ingresso_merci',  label: 'Ingresso Merci' },
   { key: 'packing',         label: 'Packing' },
   { key: 'spma',            label: 'Avanzamento Prod' },
+  { key: 'programma_produzione', label: 'Programma Produzione' },
   { key: 'recepciones',    label: 'Ricezione DDT' },
   { key: 'edi',             label: 'EDI' },
   { key: 'webddt',          label: 'WebDDT' },

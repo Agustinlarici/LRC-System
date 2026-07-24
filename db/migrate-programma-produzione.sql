@@ -40,14 +40,9 @@ CREATE TABLE IF NOT EXISTS prod_area_montaggio (
     description  VARCHAR(255)
 );
 
-CREATE TABLE IF NOT EXISTS prod_area_article (
-    id            SERIAL PRIMARY KEY,
-    area_id       INTEGER NOT NULL REFERENCES prod_area_montaggio(id) ON DELETE CASCADE,
-    article_code  VARCHAR(100) NOT NULL,
-    UNIQUE (area_id, article_code)
-);
-
-CREATE INDEX IF NOT EXISTS prod_area_article_area_idx ON prod_area_article (area_id);
+-- prod_area_article (lista piatta di codici articolo per area) non è mai
+-- stata usata — droppata (vedi sotto per lo storico dei tentativi successivi).
+DROP TABLE IF EXISTS prod_area_article;
 
 -- ─── Ordini confermati da Business Central (sync incrementale via row_sig) ────
 
@@ -71,6 +66,11 @@ CREATE TABLE IF NOT EXISTS prod_order (
 
 CREATE INDEX IF NOT EXISTS prod_order_commessa_articolo_idx ON prod_order (commessa, codice_articolo);
 CREATE INDEX IF NOT EXISTS prod_order_present_now_idx       ON prod_order (present_now);
+
+-- Data di registrazione dell'ordine in BC (Sales Line."Posting Date") — usata
+-- per decidere quale riga è "l'ultima" quando due Confermato per la stessa
+-- commessa+categoria componente si sovrappongono (vedi prod_article_component_category).
+ALTER TABLE prod_order ADD COLUMN IF NOT EXISTS data_registrazione DATE;
 
 -- ─── Data di ingresso in linea per commessa (tabella propria, separata da SPMA) ─
 -- Popolata dallo stesso upload usato in /spma/import (vedi import-logic.ts):
@@ -254,9 +254,65 @@ CREATE TABLE IF NOT EXISTS prod_sync_log (
 
 CREATE INDEX IF NOT EXISTS prod_sync_log_type_idx ON prod_sync_log (sync_type, started_at DESC);
 
+-- ─── Indice per il filtro Forecast su edi_ferrari_delins ──────────────────────
+-- edi_ferrari_delins ha ~180k righe "Forecast", di cui solo quelle con
+-- commessa/codice_articolo valorizzati ci servono (~20k). Senza un indice
+-- dedicato, prod_order_unified fa un Seq Scan sull'intera tabella ad ogni
+-- query — misurato a 5-6s da solo. Indice parziale sulle stesse condizioni
+-- del filtro nella view sottostante.
+
+CREATE INDEX IF NOT EXISTS edi_ferrari_delins_forecast_commessa_idx
+  ON edi_ferrari_delins (commessa, codice_articolo)
+  WHERE (tipo_documento = 'Forecast' OR tipo_schedulazione = 'Forecast')
+    AND commessa <> '' AND codice_articolo <> '';
+
+-- ─── Categoria componente + area per articolo ─────────────────────────────────
+-- Una riga per codice articolo, con due campi indipendenti:
+--   categoria: per il rimpiazzo "vince l'ultimo" (vedi sheet.ts) — se più
+--     articoli della stessa categoria arrivano per la stessa commessa, se ne
+--     tiene uno solo: Confermato batte Forecast, a parità di fonte vince il
+--     più recente (fonte_recency). La categoria NON dipende dall'area: due
+--     codici della stessa categoria ma di aree diverse continuano a competere
+--     tra loro (utile per scoprire errori cross-modello in Dynamics).
+--   area_id: quale area di montaggio mostra questo codice nel foglio —
+--     indipendente dalla categoria, così due aree possono avere codici
+--     diversi della stessa categoria senza inventare nomi tipo
+--     "PARAURTI-LINEA1"/"PARAURTI-LINEA2".
+
+CREATE TABLE IF NOT EXISTS prod_article_component_category (
+    id              SERIAL PRIMARY KEY,
+    codice_articolo VARCHAR(100) NOT NULL UNIQUE,
+    categoria       VARCHAR(100) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS prod_article_component_category_categoria_idx
+  ON prod_article_component_category (categoria);
+
+ALTER TABLE prod_article_component_category ALTER COLUMN categoria DROP NOT NULL;
+ALTER TABLE prod_article_component_category ADD COLUMN IF NOT EXISTS area_id INTEGER REFERENCES prod_area_montaggio(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS prod_article_component_category_area_idx ON prod_article_component_category (area_id);
+
+-- Backfill da prod_area_categoria (modello precedente: area↔categoria) prima
+-- di droppare la tabella — non perde le assegnazioni già fatte a mano.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'prod_area_categoria') THEN
+    UPDATE prod_article_component_category pacc
+    SET area_id = pac.area_id
+    FROM prod_area_categoria pac
+    WHERE pac.categoria = pacc.categoria
+      AND pacc.area_id IS NULL;
+  END IF;
+END$$;
+
+DROP TABLE IF EXISTS prod_area_categoria;
+
 -- ─── Vista unificata: Confermato (BC) sempre vince su Forecast (EDI) ──────────
 -- Per la stessa coppia (commessa, codice_articolo): se esiste un ordine BC
 -- presente (present_now), il Forecast per quella coppia viene scartato.
+-- fonte_recency: segnale per decidere "l'ultimo" tra due righe della stessa
+-- fonte (stessa categoria componente, stessa commessa, articoli diversi) —
+-- data di registrazione BC per Confermato, data/scan del file EDI per Forecast.
 
 CREATE OR REPLACE VIEW prod_order_unified AS
 SELECT
@@ -269,7 +325,8 @@ SELECT
     po.planned_shipment_date,
     po.shipment_date,
     po.fa_posting_date,
-    NULL::TEXT                   AS data_consegna_forecast
+    NULL::TEXT                   AS data_consegna_forecast,
+    po.data_registrazione::TIMESTAMPTZ AS fonte_recency
 FROM prod_order po
 WHERE po.present_now = TRUE
   AND po.codice_articolo <> ''
@@ -287,7 +344,8 @@ SELECT
     NULL::DATE                   AS planned_shipment_date,
     NULL::DATE                   AS shipment_date,
     NULL::DATE                   AS fa_posting_date,
-    d.data_consegna
+    d.data_consegna,
+    COALESCE(d.file_mtime, d.scanned_at) AS fonte_recency
 FROM edi_ferrari_delins d
 WHERE (d.tipo_documento = 'Forecast' OR d.tipo_schedulazione = 'Forecast')
   AND d.codice_articolo <> ''

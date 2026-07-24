@@ -5,23 +5,21 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import type {
   ProdArea, ProdKeywordRule, ProdKeywordMode, ProdColorKeyword,
-  ProdItemAttributeLabel, ProdArticleInfo,
+  ProdItemAttributeLabel, ProdArticleInfo, ProdArticleAssignment,
 } from '@/types';
 import { ExcelImportButton } from '../_components/ExcelImportButton';
 
-type Tab = 'Aree' | 'Regole Parole Chiave' | 'Colori' | 'Attributi BC' | 'Caratteristiche Manuali';
-const TABS: Tab[] = ['Aree', 'Regole Parole Chiave', 'Colori', 'Attributi BC', 'Caratteristiche Manuali'];
+type Tab = 'Aree' | 'Categoria & Area' | 'Regole Parole Chiave' | 'Colori' | 'Attributi BC' | 'Caratteristiche Manuali';
+const TABS: Tab[] = ['Aree', 'Categoria & Area', 'Regole Parole Chiave', 'Colori', 'Attributi BC', 'Caratteristiche Manuali'];
 
 // ─── Aree di montaggio ─────────────────────────────────────────────────────────
 
 function TabAree() {
-  const [aree,     setAree]     = useState<ProdArea[]>([]);
-  const [code,     setCode]     = useState('');
-  const [descr,    setDescr]    = useState('');
-  const [selected, setSelected] = useState<number | null>(null);
-  const [codes,    setCodes]    = useState('');
-  const [loading,  setLoading]  = useState(true);
-  const [busy,     setBusy]     = useState(false);
+  const [aree,    setAree]    = useState<ProdArea[]>([]);
+  const [code,    setCode]    = useState('');
+  const [descr,   setDescr]   = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy,    setBusy]    = useState(false);
 
   const load = useCallback(() => {
     api.get<ProdArea[]>('/api/prod/aree').then(setAree).finally(() => setLoading(false));
@@ -38,87 +36,173 @@ function TabAree() {
   }
 
   async function delArea(id: number) {
-    if (!confirm('Eliminare quest\'area? Vengono rimosse anche le assegnazioni articolo.')) return;
+    if (!confirm('Eliminare quest\'area? I codici assegnati restano con la loro categoria, ma perdono l\'area.')) return;
     await api.delete(`/api/prod/aree/${id}`);
-    if (selected === id) setSelected(null);
     load();
-  }
-
-  async function selectArea(id: number) {
-    setSelected(id);
-    const rows = await api.get<{ article_code: string }[]>(`/api/prod/aree/${id}/articoli`);
-    setCodes(rows.map(r => r.article_code).join('\n'));
-  }
-
-  async function saveArticoli() {
-    if (selected == null) return;
-    setBusy(true);
-    try {
-      const articleCodes = codes.split(/[\n,]/).map(s => s.trim()).filter(Boolean);
-      await api.put(`/api/prod/aree/${selected}/articoli`, { articleCodes });
-    } finally { setBusy(false); }
   }
 
   if (loading) return <p className="text-gray-400">Caricamento...</p>;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div>
-        <div className="flex gap-2 mb-4">
-          <input value={code} onChange={e => setCode(e.target.value)} placeholder="Codice (es. LINEA1)"
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <input value={descr} onChange={e => setDescr(e.target.value)} placeholder="Descrizione area"
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            onKeyDown={e => e.key === 'Enter' && addArea()} />
-          <button onClick={addArea} disabled={busy}
-            className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
-            Aggiungi
-          </button>
-        </div>
+    <div>
+      <p className="text-xs text-gray-500 mb-3">
+        Per assegnare codici articolo a un&apos;area, vai alla tab &quot;Categoria &amp; Area&quot;.
+      </p>
 
-        <div className="mb-4">
-          <ExcelImportButton endpoint="/api/prod/aree/import-excel" onDone={load} label="Carica aree da Excel (Codice, Descrizione)" />
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
-          {aree.length === 0 && <p className="text-sm text-gray-400 py-4 text-center">Nessuna area</p>}
-          {aree.map(a => (
-            <div key={a.id}
-              onClick={() => selectArea(a.id)}
-              className={`px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50 ${selected === a.id ? 'bg-blue-50' : ''}`}>
-              <div>
-                <p className="font-medium text-gray-800">{a.description}</p>
-                <p className="text-xs text-gray-400">{a.code}</p>
-              </div>
-              <button onClick={e => { e.stopPropagation(); delArea(a.id); }}
-                className="text-xs text-red-500 hover:text-red-700">Elimina</button>
-            </div>
-          ))}
-        </div>
+      <div className="flex gap-2 mb-4">
+        <input value={code} onChange={e => setCode(e.target.value)} placeholder="Codice (es. LINEA1)"
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        <input value={descr} onChange={e => setDescr(e.target.value)} placeholder="Descrizione area"
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          onKeyDown={e => e.key === 'Enter' && addArea()} />
+        <button onClick={addArea} disabled={busy}
+          className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          Aggiungi
+        </button>
       </div>
 
-      <div>
-        {selected == null ? (
-          <p className="text-sm text-gray-400">Seleziona un&apos;area per assegnare gli articoli.</p>
-        ) : (
-          <>
-            <p className="text-sm font-medium text-gray-700 mb-2">
-              Articoli assegnati (uno per riga, o separati da virgola)
-            </p>
-            <textarea value={codes} onChange={e => setCodes(e.target.value)} rows={14}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <div className="mt-2 flex items-center gap-2">
-              <button onClick={saveArticoli} disabled={busy}
-                className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
-                Salva
-              </button>
-              <ExcelImportButton
-                endpoint={`/api/prod/aree/${selected}/articoli/import-excel`}
-                onDone={() => selectArea(selected)}
-                label="Carica da Excel (Codice Articolo)"
-              />
+      <div className="mb-4">
+        <ExcelImportButton endpoint="/api/prod/aree/import-excel" onDone={load} label="Carica aree da Excel (Codice, Descrizione)" />
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+        {aree.length === 0 && <p className="text-sm text-gray-400 py-4 text-center">Nessuna area</p>}
+        {aree.map(a => (
+          <div key={a.id} className="px-4 py-3 flex items-center justify-between">
+            <div>
+              <p className="font-medium text-gray-800">{a.description}</p>
+              <p className="text-xs text-gray-400">{a.code}</p>
             </div>
-          </>
+            <button onClick={() => delArea(a.id)} className="text-xs text-red-500 hover:text-red-700">Elimina</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Categoria & Area per articolo (rimpiazzo "vince l'ultimo" + assegnazione) ─
+
+function TabCategoriaArea() {
+  const [rows,      setRows]      = useState<ProdArticleAssignment[]>([]);
+  const [areas,     setAreas]     = useState<ProdArea[]>([]);
+  const [search,    setSearch]    = useState('');
+  const [codice,    setCodice]    = useState('');
+  const [categoria, setCategoria] = useState('');
+  const [areaId,    setAreaId]    = useState('');
+  const [loading,   setLoading]   = useState(true);
+  const [busy,      setBusy]      = useState(false);
+
+  const load = useCallback((q: string) => {
+    const qs = q ? `?search=${encodeURIComponent(q)}` : '';
+    Promise.all([
+      api.get<ProdArticleAssignment[]>(`/api/prod/article-assignments${qs}`),
+      api.get<ProdArea[]>('/api/prod/aree'),
+    ]).then(([r, a]) => { setRows(r); setAreas(a); }).finally(() => setLoading(false));
+  }, []);
+  useEffect(() => { load(''); }, [load]);
+
+  function onSearch(v: string) {
+    setSearch(v);
+    load(v);
+  }
+
+  async function addRow() {
+    if (!codice.trim()) return;
+    setBusy(true);
+    try {
+      await api.post('/api/prod/article-assignments', {
+        codiceArticolo: codice.trim(),
+        categoria:      categoria.trim() || null,
+        areaId:         areaId ? parseInt(areaId, 10) : null,
+      });
+      setCodice(''); setCategoria(''); setAreaId('');
+      load(search);
+    } finally { setBusy(false); }
+  }
+
+  async function delRow(codiceArticolo: string) {
+    await api.delete(`/api/prod/article-assignments/${encodeURIComponent(codiceArticolo)}`);
+    load(search);
+  }
+
+  if (loading) return <p className="text-gray-400">Caricamento...</p>;
+
+  return (
+    <div>
+      <p className="text-xs text-gray-500 mb-3">
+        Ogni codice articolo ha una <strong>categoria</strong> (per il motore di rimpiazzo &quot;vince
+        l&apos;ultimo&quot; — se due articoli della stessa categoria arrivano per la stessa commessa, il
+        foglio ne mostra uno solo: un ordine Confermato batte sempre un Forecast, a parità di fonte
+        vince il più recente; i perdenti compaiono nella
+        sezione <Link href="/produzione/conflitti" className="underline">Conflitti</Link>) e
+        un&apos;<strong>area</strong> (dove compare nel foglio) — completamente indipendenti tra loro.
+      </p>
+
+      <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 mb-4">
+        <p className="text-xs text-blue-800 mb-2">
+          <strong>Carica veloce:</strong> un solo file con Codice Articolo, Categoria e Area
+          (entrambe opzionali) — assegna tutto in un colpo solo. Le aree devono già esistere (tab &quot;Aree&quot;).
+        </p>
+        <ExcelImportButton
+          endpoint="/api/prod/article-category-area/import-excel"
+          onDone={() => load(search)}
+          label="Carica Excel (Codice Articolo, Categoria, Area)"
+        />
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
+        <p className="text-sm font-medium text-gray-700 mb-2">Aggiungi / modifica un codice</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <input value={codice} onChange={e => setCodice(e.target.value)} placeholder="Codice Articolo"
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <input value={categoria} onChange={e => setCategoria(e.target.value)} placeholder="Categoria (es. PARAURTI)"
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <select value={areaId} onChange={e => setAreaId(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">— Nessuna area —</option>
+            {areas.map(a => <option key={a.id} value={a.id}>{a.description}</option>)}
+          </select>
+        </div>
+        <button onClick={addRow} disabled={busy || !codice.trim()}
+          className="mt-2 bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          Salva
+        </button>
+      </div>
+
+      <input value={search} onChange={e => onSearch(e.target.value)} placeholder="Cerca per codice o categoria..."
+        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-200 bg-gray-50 text-gray-500">
+              <th className="py-2.5 px-4 text-left font-medium">Codice Articolo</th>
+              <th className="py-2.5 px-4 text-left font-medium">Categoria</th>
+              <th className="py-2.5 px-4 text-left font-medium">Area</th>
+              <th className="py-2.5 px-4" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 && (
+              <tr><td colSpan={4} className="text-center text-gray-400 py-6">Nessun codice trovato</td></tr>
+            )}
+            {rows.map(r => (
+              <tr key={r.codice_articolo} className="border-b border-gray-100 hover:bg-gray-50">
+                <td className="py-2 px-4 font-mono">{r.codice_articolo}</td>
+                <td className="py-2 px-4">{r.categoria ?? <span className="text-gray-300">–</span>}</td>
+                <td className="py-2 px-4">{r.area_description ?? <span className="text-gray-300">–</span>}</td>
+                <td className="py-2 px-4 text-right">
+                  <button onClick={() => delRow(r.codice_articolo)} className="text-xs text-red-500 hover:text-red-700">Elimina</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows.length === 500 && (
+          <p className="text-xs text-gray-400 px-4 py-2 border-t border-gray-100">
+            Mostrando i primi 500 risultati — usa la ricerca per affinare.
+          </p>
         )}
       </div>
     </div>
@@ -550,6 +634,7 @@ export default function ProduzioneImpostazioniPage() {
       </div>
 
       {tab === 'Aree' && <TabAree />}
+      {tab === 'Categoria & Area' && <TabCategoriaArea />}
       {tab === 'Regole Parole Chiave' && <TabRegole />}
       {tab === 'Colori' && <TabColori />}
       {tab === 'Attributi BC' && <TabAttributi />}

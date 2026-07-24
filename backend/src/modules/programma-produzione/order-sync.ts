@@ -35,11 +35,12 @@ export async function syncProductionOrders(): Promise<OrderSyncStats> {
         planned_shipment_date:  l.planned_shipment_date,
         shipment_date:          l.shipment_date,
         fa_posting_date:        l.fa_posting_date,
+        data_registrazione:     l.data_registrazione,
         present_now:            true,
         last_seen_at:           now,
         row_sig: rowSig([
           l.codice_articolo, l.commessa, l.description, l.description_extension,
-          l.ubicazione, l.planned_shipment_date, l.shipment_date, l.fa_posting_date,
+          l.ubicazione, l.planned_shipment_date, l.shipment_date, l.fa_posting_date, l.data_registrazione,
         ]),
       };
     }

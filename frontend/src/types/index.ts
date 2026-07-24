@@ -526,14 +526,14 @@ export interface ProdArea {
   description: string;
 }
 
-export interface ProdAreaArticle {
-  id:           number;
-  article_code: string;
+export interface ProdSheetCaratteristica {
+  valore:            string;
+  daAltroComponente: boolean;
 }
 
 export interface ProdSheetCategoria {
   categoria:       string;
-  caratteristiche: string[];
+  caratteristiche: ProdSheetCaratteristica[];
 }
 
 export interface ProdSheetRow {
@@ -594,4 +594,26 @@ export interface ProdSyncLog {
   rows_marked_absent:  number | null;
   status:              string;
   error_message:       string | null;
+}
+
+export interface ProdArticleAssignment {
+  codice_articolo:  string;
+  categoria:        string | null;
+  area_id:          number | null;
+  area_code:        string | null;
+  area_description: string | null;
+}
+
+export interface ProdComponentConflictCandidate {
+  codice_articolo: string;
+  fonte_ordine:    'confermato' | 'forecast';
+  fonte_recency:   string | null;
+  descrizione:     string | null;
+  is_winner:       boolean;
+}
+
+export interface ProdComponentConflict {
+  categoria:  string;
+  commessa:   string;
+  candidates: ProdComponentConflictCandidate[];
 }
