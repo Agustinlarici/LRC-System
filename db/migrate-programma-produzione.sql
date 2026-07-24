@@ -13,13 +13,40 @@
 -- modulo era uno stub 501 in app.ts) e sono già state ridisegnate qui sotto
 -- la prima volta che questo file è stato eseguito.
 --
--- IMPORTANTE: nessuna istruzione DROP TABLE in questo file. Una volta che
--- il modulo è in uso, queste tabelle contengono config caricata a mano
+-- IMPORTANTE: nessuna istruzione DROP TABLE diretta in questo file. Una volta
+-- che il modulo è in uso, queste tabelle contengono config caricata a mano
 -- (regole, aree, ecc.) — un DROP TABLE qui la cancellerebbe ad ogni
 -- ri-esecuzione. Tutto è IF NOT EXISTS / ADD COLUMN IF NOT EXISTS / DO
 -- block difensivo, così questo file è sicuro da ri-eseguire quante volte
 -- serve per aggiungere pezzi nuovi.
--- ============================================================
+--
+-- ECCEZIONE: su un database dove questo modulo non ha MAI girato (es. server
+-- nuovo), "CREATE TABLE IF NOT EXISTS" salta la creazione perché il
+-- placeholder vuoto di schema.sql esiste già con colonne completamente
+-- diverse (es. prod_order.item_no invece di codice_articolo) — le colonne
+-- nuove non vengono mai aggiunte e la sync/gli import falliscono con
+-- "column ... does not exist". _prod_replace_if_legacy_placeholder() lo
+-- rileva (colonna distintiva assente) e ricrea la tabella SOLO se è vuota;
+-- se contiene righe si ferma con un errore invece di rischiare di cancellarle.
+CREATE OR REPLACE FUNCTION _prod_replace_if_legacy_placeholder(tbl text, distinguishing_col text)
+RETURNS void AS $fn$
+DECLARE
+  cnt BIGINT;
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = tbl)
+     AND NOT EXISTS (
+       SELECT 1 FROM information_schema.columns
+       WHERE table_name = tbl AND column_name = distinguishing_col
+     ) THEN
+    EXECUTE format('SELECT count(*) FROM %I', tbl) INTO cnt;
+    IF cnt = 0 THEN
+      EXECUTE format('DROP TABLE %I', tbl);
+    ELSE
+      RAISE EXCEPTION '% esiste nella forma vecchia (schema.sql) e contiene % righe — controllare manualmente prima di rieseguire la migrazione', tbl, cnt;
+    END IF;
+  END IF;
+END;
+$fn$ LANGUAGE plpgsql;
 
 -- ─── Modulo & permessi ─────────────────────────────────────────────────────────
 
@@ -45,6 +72,8 @@ CREATE TABLE IF NOT EXISTS prod_area_montaggio (
 DROP TABLE IF EXISTS prod_area_article;
 
 -- ─── Ordini confermati da Business Central (sync incrementale via row_sig) ────
+
+SELECT _prod_replace_if_legacy_placeholder('prod_order', 'codice_articolo');
 
 CREATE TABLE IF NOT EXISTS prod_order (
     id                     BIGSERIAL PRIMARY KEY,
@@ -100,6 +129,8 @@ DO $$ BEGIN
   CREATE TYPE prod_keyword_mode AS ENUM ('simple', 'proximity');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+SELECT _prod_replace_if_legacy_placeholder('prod_keyword_rules', 'prefisso_commessa');
 
 CREATE TABLE IF NOT EXISTS prod_keyword_rules (
     id                      SERIAL PRIMARY KEY,
@@ -181,6 +212,8 @@ ON CONFLICT (key) DO NOTHING;
 -- Granularità per articolo + commessa (non solo articolo): un articolo può
 -- avere caratteristiche diverse in commesse diverse.
 
+SELECT _prod_replace_if_legacy_placeholder('prod_article_auto', 'codice_articolo');
+
 CREATE TABLE IF NOT EXISTS prod_article_auto (
     id              BIGSERIAL PRIMARY KEY,
     codice_articolo VARCHAR(100) NOT NULL,
@@ -197,6 +230,8 @@ CREATE INDEX IF NOT EXISTS prod_article_auto_commessa_idx ON prod_article_auto (
 
 -- ─── Colore rilevato per articolo + commessa ──────────────────────────────────
 
+SELECT _prod_replace_if_legacy_placeholder('prod_article_color', 'codice_articolo');
+
 CREATE TABLE IF NOT EXISTS prod_article_color (
     codice_articolo VARCHAR(100) NOT NULL,
     commessa        VARCHAR(100) NOT NULL,
@@ -210,6 +245,8 @@ CREATE TABLE IF NOT EXISTS prod_article_color (
 -- ─── Caratteristiche manuali per articolo (curate a mano) ─────────────────────
 -- Una riga può coprire più categorie/caratteristiche separate da virgola,
 -- fedele al comportamento del vecchio prod_article_info.
+
+SELECT _prod_replace_if_legacy_placeholder('prod_article_info', 'codice_articolo');
 
 CREATE TABLE IF NOT EXISTS prod_article_info (
     id                      SERIAL PRIMARY KEY,
@@ -371,3 +408,7 @@ WHERE (d.tipo_documento = 'Forecast' OR d.tipo_schedulazione = 'Forecast')
       AND po2.commessa        = d.commessa
       AND po2.codice_articolo = d.codice_articolo
   );
+
+-- Helper usato solo sopra per sanare gli eventuali placeholder di schema.sql
+-- — non serve lasciarlo in giro nello schema.
+DROP FUNCTION IF EXISTS _prod_replace_if_legacy_placeholder(text, text);
