@@ -162,6 +162,21 @@ BEGIN
   END IF;
 END$$;
 
+-- Priorità: se più parole chiave trovano match nella stessa descrizione, vince
+-- quella con priorità più bassa. Le righe esistenti restano a 50 (neutro),
+-- tranne "ExtraCampionario" che va a 999 (perdeva sempre anche nel
+-- comportamento precedente, hardcoded nel codice).
+ALTER TABLE prod_color_keywords ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 50;
+UPDATE prod_color_keywords SET priority = 999 WHERE lower(color) = 'extracampionario' AND priority = 50;
+
+-- Range di caratteri della descrizione in cui cercare le parole chiave colore
+-- — uguale per tutte, configurabile da Impostazioni invece che hardcoded
+-- (prima era .slice(0, 60) fisso nel codice).
+INSERT INTO system_config (key, value) VALUES
+  ('prod_color_search_start', '0'),
+  ('prod_color_search_end',   '60')
+ON CONFLICT (key) DO NOTHING;
+
 -- ─── Caratteristiche derivate (output del motore parole chiave) ───────────────
 -- Granularità per articolo + commessa (non solo articolo): un articolo può
 -- avere caratteristiche diverse in commesse diverse.

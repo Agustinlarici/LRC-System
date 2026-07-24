@@ -4,13 +4,13 @@ import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import type {
-  ProdArea, ProdKeywordRule, ProdKeywordMode, ProdColorKeyword,
+  ProdArea, ProdKeywordRule, ProdKeywordMode, ProdColorKeyword, ProdColorSettings,
   ProdItemAttributeLabel, ProdArticleInfo, ProdArticleAssignment,
 } from '@/types';
 import { ExcelImportButton } from '../_components/ExcelImportButton';
 
-type Tab = 'Aree' | 'Categoria & Area' | 'Regole Parole Chiave' | 'Colori' | 'Attributi BC' | 'Caratteristiche Manuali';
-const TABS: Tab[] = ['Aree', 'Categoria & Area', 'Regole Parole Chiave', 'Colori', 'Attributi BC', 'Caratteristiche Manuali'];
+type Tab = 'Aree' | 'Categoria - Area' | 'Regole Parole Chiave' | 'Colori' | 'Attributi BC' | 'Caratteristiche Manuali';
+const TABS: Tab[] = ['Aree', 'Categoria - Area', 'Regole Parole Chiave', 'Colori', 'Attributi BC', 'Caratteristiche Manuali'];
 
 // ─── Aree di montaggio ─────────────────────────────────────────────────────────
 
@@ -46,7 +46,7 @@ function TabAree() {
   return (
     <div>
       <p className="text-xs text-gray-500 mb-3">
-        Per assegnare codici articolo a un&apos;area, vai alla tab &quot;Categoria &amp; Area&quot;.
+        Per assegnare codici articolo a un&apos;area, vai alla tab &quot;Categoria - Area&quot;.
       </p>
 
       <div className="flex gap-2 mb-4">
@@ -81,7 +81,7 @@ function TabAree() {
   );
 }
 
-// ─── Categoria & Area per articolo (rimpiazzo "vince l'ultimo" + assegnazione) ─
+// ─── Categoria - Area per articolo (rimpiazzo "vince l'ultimo" + assegnazione) ─
 
 function TabCategoriaArea() {
   const [rows,      setRows]      = useState<ProdArticleAssignment[]>([]);
@@ -232,7 +232,7 @@ function TabRegole() {
   useEffect(() => { load(); }, [load]);
 
   async function add() {
-    if (!prefisso.trim() || !categoria.trim() || !caratt.trim()) return;
+    if (!categoria.trim() || !caratt.trim()) return;
     setBusy(true);
     try {
       const noteVal = note.trim() || undefined;
@@ -270,7 +270,7 @@ function TabRegole() {
         </div>
 
         <div className="grid grid-cols-3 gap-2">
-          <input value={prefisso} onChange={e => setPrefisso(e.target.value)} placeholder="Prefisso commessa (es. 40)"
+          <input value={prefisso} onChange={e => setPrefisso(e.target.value)} placeholder="Prefisso commessa (vuoto = tutte)"
             className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           <input value={categoria} onChange={e => setCategoria(e.target.value)} placeholder="Categoria"
             className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
@@ -303,7 +303,7 @@ function TabRegole() {
           <ExcelImportButton
             endpoint="/api/prod/keyword-rules/import-excel"
             onDone={load}
-            label="Carica da Excel (Prefisso, Categoria, Parola Chiave, Significato, Note)"
+            label="Carica da Excel (Prefisso , Categoria, Significato, Note, Parola Chiave [simple] Parola Ancora, Parola Obiettivo, Distanza Max Caratteri [prossimità])"
           />
         </div>
       </div>
@@ -327,7 +327,7 @@ function TabRegole() {
             )}
             {rules.map(r => (
               <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="py-2 px-4 font-mono">{r.prefisso_commessa}</td>
+                <td className="py-2 px-4 font-mono">{r.prefisso_commessa || <span className="italic text-gray-400">tutte</span>}</td>
                 <td className="py-2 px-4">{r.categoria}</td>
                 <td className="py-2 px-4">{r.caratteristica_derivata}</td>
                 <td className="py-2 px-4 text-gray-500">
@@ -354,14 +354,28 @@ function TabRegole() {
 // ─── Parole chiave colore ──────────────────────────────────────────────────────
 
 function TabColori() {
-  const [rows,    setRows]    = useState<ProdColorKeyword[]>([]);
-  const [keyword, setKeyword] = useState('');
-  const [color,   setColor]   = useState('');
-  const [loading, setLoading] = useState(true);
-  const [busy,    setBusy]    = useState(false);
+  const [rows,     setRows]     = useState<ProdColorKeyword[]>([]);
+  const [keyword,  setKeyword]  = useState('');
+  const [color,    setColor]    = useState('');
+  const [priority, setPriority] = useState('50');
+  const [loading,  setLoading]  = useState(true);
+  const [busy,     setBusy]     = useState(false);
+
+  const [settings,     setSettings]     = useState<ProdColorSettings | null>(null);
+  const [rangeStart,   setRangeStart]   = useState('');
+  const [rangeEnd,     setRangeEnd]     = useState('');
+  const [rangeBusy,    setRangeBusy]    = useState(false);
 
   const load = useCallback(() => {
-    api.get<ProdColorKeyword[]>('/api/prod/color-keywords').then(setRows).finally(() => setLoading(false));
+    Promise.all([
+      api.get<ProdColorKeyword[]>('/api/prod/color-keywords'),
+      api.get<ProdColorSettings>('/api/prod/color-settings'),
+    ]).then(([r, s]) => {
+      setRows(r);
+      setSettings(s);
+      setRangeStart(String(s.searchStart));
+      setRangeEnd(String(s.searchEnd));
+    }).finally(() => setLoading(false));
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -369,8 +383,11 @@ function TabColori() {
     if (!keyword.trim() || !color.trim()) return;
     setBusy(true);
     try {
-      await api.post('/api/prod/color-keywords', { keyword: keyword.trim(), color: color.trim() });
-      setKeyword(''); setColor(''); load();
+      await api.post('/api/prod/color-keywords', {
+        keyword: keyword.trim(), color: color.trim(),
+        priority: priority.trim() ? parseInt(priority, 10) : undefined,
+      });
+      setKeyword(''); setColor(''); setPriority('50'); load();
     } finally { setBusy(false); }
   }
 
@@ -379,20 +396,65 @@ function TabColori() {
     load();
   }
 
+  async function savePriority(r: ProdColorKeyword, value: string) {
+    const n = parseInt(value, 10);
+    if (!Number.isInteger(n) || n === r.priority) return;
+    await api.put(`/api/prod/color-keywords/${r.id}/priority`, { priority: n });
+    load();
+  }
+
   async function del(id: number) {
     await api.delete(`/api/prod/color-keywords/${id}`);
     load();
+  }
+
+  async function saveRange() {
+    const start = parseInt(rangeStart, 10);
+    const end   = parseInt(rangeEnd, 10);
+    if (!Number.isInteger(start) || !Number.isInteger(end) || end <= start) return;
+    setRangeBusy(true);
+    try {
+      await api.put('/api/prod/color-settings', { searchStart: start, searchEnd: end });
+      load();
+    } finally { setRangeBusy(false); }
   }
 
   if (loading) return <p className="text-gray-400">Caricamento...</p>;
 
   return (
     <div className="space-y-4">
+      <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+        <p className="text-xs text-blue-800 mb-2">
+          Range di caratteri della descrizione in cui cercare le parole chiave colore — <strong>uguale per tutte</strong>.
+          Se trova più colori nella stessa descrizione, vince quello con priorità più bassa (vedi tabella sotto).
+        </p>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-600">Dal carattere</span>
+          <input value={rangeStart} onChange={e => setRangeStart(e.target.value)} type="number" min={0}
+            className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <span className="text-sm text-gray-600">al carattere</span>
+          <input value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} type="number" min={1}
+            className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <button onClick={saveRange} disabled={rangeBusy}
+            className="bg-blue-600 text-white px-3 py-1.5 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+            Salva
+          </button>
+          {settings && (
+            <span className="text-xs text-gray-400">
+              (attuale: {settings.searchStart}–{settings.searchEnd})
+            </span>
+          )}
+        </div>
+      </div>
+
       <div className="flex gap-2">
         <input value={keyword} onChange={e => setKeyword(e.target.value)} placeholder="Parola chiave"
           className="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500" />
         <input value={color} onChange={e => setColor(e.target.value)} placeholder="Colore"
           className="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          onKeyDown={e => e.key === 'Enter' && add()} />
+        <input value={priority} onChange={e => setPriority(e.target.value)} type="number" placeholder="Priorità" title="Priorità (0 = massima, vince sulle altre)"
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-blue-500"
           onKeyDown={e => e.key === 'Enter' && add()} />
         <button onClick={add} disabled={busy}
           className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
@@ -400,7 +462,7 @@ function TabColori() {
         </button>
       </div>
 
-      <ExcelImportButton endpoint="/api/prod/color-keywords/import-excel" onDone={load} label="Carica da Excel (Parola Chiave, Colore)" />
+      <ExcelImportButton endpoint="/api/prod/color-keywords/import-excel" onDone={load} label="Carica da Excel (Parola Chiave, Colore, Priorità opzionale)" />
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
@@ -408,18 +470,23 @@ function TabColori() {
             <tr className="border-b border-gray-200 bg-gray-50 text-gray-500">
               <th className="py-2.5 px-4 text-left font-medium">Parola chiave</th>
               <th className="py-2.5 px-4 text-left font-medium">Colore</th>
+              <th className="py-2.5 px-4 text-left font-medium">Priorità</th>
               <th className="py-2.5 px-4 text-center font-medium">Attiva</th>
               <th className="py-2.5 px-4" />
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={4} className="text-center text-gray-400 py-6">Nessuna parola chiave</td></tr>
+              <tr><td colSpan={5} className="text-center text-gray-400 py-6">Nessuna parola chiave</td></tr>
             )}
             {rows.map(r => (
               <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="py-2 px-4">{r.keyword}</td>
                 <td className="py-2 px-4">{r.color}</td>
+                <td className="py-2 px-4">
+                  <input type="number" defaultValue={r.priority} onBlur={e => savePriority(r, e.target.value)}
+                    className="border border-gray-200 rounded-lg px-2 py-1 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </td>
                 <td className="py-2 px-4 text-center">
                   <input type="checkbox" checked={r.active} onChange={() => toggleActive(r)} />
                 </td>
@@ -634,7 +701,7 @@ export default function ProduzioneImpostazioniPage() {
       </div>
 
       {tab === 'Aree' && <TabAree />}
-      {tab === 'Categoria & Area' && <TabCategoriaArea />}
+      {tab === 'Categoria - Area' && <TabCategoriaArea />}
       {tab === 'Regole Parole Chiave' && <TabRegole />}
       {tab === 'Colori' && <TabColori />}
       {tab === 'Attributi BC' && <TabAttributi />}

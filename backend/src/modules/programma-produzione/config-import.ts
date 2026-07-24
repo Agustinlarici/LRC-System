@@ -59,9 +59,10 @@ export async function importAree(buffer: Buffer): Promise<ImportResult> {
 }
 
 // ─── Regole parole chiave ──────────────────────────────────────────────────────
-// Colonne: Prefisso Commessa, Categoria, Parola Chiave, Significato (=
-// Caratteristica Derivata), Note. Per il modo prossimità (opzionale):
-// Parola Ancora, Parola Obiettivo, Distanza Max Caratteri.
+// Colonne: Prefisso Commessa (vuoto = regola globale, vale per tutte le
+// commesse), Categoria, Parola Chiave, Significato (= Caratteristica
+// Derivata), Note. Per il modo prossimità (opzionale): Parola Ancora,
+// Parola Obiettivo, Distanza Max Caratteri.
 // Riga con "Parola Chiave" → modo simple. Riga senza, ma con Ancora+Obiettivo → proximity.
 
 export async function importKeywordRules(buffer: Buffer): Promise<ImportResult> {
@@ -96,8 +97,9 @@ export async function importKeywordRules(buffer: Buffer): Promise<ImportResult> 
     const obiettivo = colObiett ? str(row[colObiett]) : '';
     const distanza = colDist ? parseInt(str(row[colDist]), 10) : NaN;
 
-    if (!prefisso || !categoria || !significato) {
-      skipped++; warnings.push(`Riga ${i + 2}: Prefisso/Categoria/Significato mancante`);
+    // Prefisso vuoto = regola globale, valida per tutte le commesse.
+    if (!categoria || !significato) {
+      skipped++; warnings.push(`Riga ${i + 2}: Categoria/Significato mancante`);
       continue;
     }
 
@@ -129,15 +131,16 @@ export async function importKeywordRules(buffer: Buffer): Promise<ImportResult> 
 }
 
 // ─── Parole chiave colore ──────────────────────────────────────────────────────
-// Colonne: Parola Chiave, Colore
+// Colonne: Parola Chiave, Colore, Priorità (opzionale, default 50 — più bassa vince)
 
 export async function importColorKeywords(buffer: Buffer): Promise<ImportResult> {
   const rows = readRows(buffer);
   if (rows.length === 0) return emptyResult(0, 'File vuoto');
 
   const headers = Object.keys(rows[0] ?? {});
-  const colParola = pickCol(headers, 'Parola Chiave', 'ParolaChiave', 'Keyword');
-  const colColore = pickCol(headers, 'Colore', 'Color');
+  const colParola   = pickCol(headers, 'Parola Chiave', 'ParolaChiave', 'Keyword');
+  const colColore   = pickCol(headers, 'Colore', 'Color');
+  const colPriorita = pickCol(headers, 'Priorità', 'Priorita', 'Priority');
   if (!colParola || !colColore) {
     return emptyResult(rows.length, 'Colonne minime mancanti: Parola Chiave, Colore');
   }
@@ -147,14 +150,23 @@ export async function importColorKeywords(buffer: Buffer): Promise<ImportResult>
   for (let i = 0; i < rows.length; i++) {
     const keyword = str(rows[i][colParola]);
     const color = str(rows[i][colColore]);
+    const prioritaRaw = colPriorita ? str(rows[i][colPriorita]) : '';
+    const priorita = prioritaRaw ? parseInt(prioritaRaw, 10) : NaN;
     if (!keyword || !color) {
       skipped++; warnings.push(`Riga ${i + 2}: Parola Chiave/Colore mancante`);
       continue;
     }
-    await db`
-      INSERT INTO prod_color_keywords (keyword, color) VALUES (${keyword}, ${color})
-      ON CONFLICT (keyword) DO UPDATE SET color = EXCLUDED.color
-    `;
+    if (Number.isInteger(priorita)) {
+      await db`
+        INSERT INTO prod_color_keywords (keyword, color, priority) VALUES (${keyword}, ${color}, ${priorita})
+        ON CONFLICT (keyword) DO UPDATE SET color = EXCLUDED.color, priority = EXCLUDED.priority
+      `;
+    } else {
+      await db`
+        INSERT INTO prod_color_keywords (keyword, color) VALUES (${keyword}, ${color})
+        ON CONFLICT (keyword) DO UPDATE SET color = EXCLUDED.color
+      `;
+    }
     upserted++;
   }
   return { total_rows: rows.length, upserted, skipped, warnings: warnings.slice(0, 100) };

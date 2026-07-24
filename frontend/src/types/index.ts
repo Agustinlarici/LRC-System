@@ -564,10 +564,16 @@ export interface ProdKeywordRule {
 }
 
 export interface ProdColorKeyword {
-  id:      number;
-  keyword: string;
-  color:   string;
-  active:  boolean;
+  id:       number;
+  keyword:  string;
+  color:    string;
+  priority: number;
+  active:   boolean;
+}
+
+export interface ProdColorSettings {
+  searchStart: number;
+  searchEnd:   number;
 }
 
 export interface ProdItemAttributeLabel {

@@ -123,10 +123,12 @@ programmaProduzioneRoutes.get('/aree/:id/foglio', requireModule(MODULE), async (
 
 // ─── Regole parole chiave (caratteristiche) ───────────────────────────────────
 
+// prefissoCommessa vuoto ("") = regola globale, si applica a tutte le commesse
+// indipendentemente dal prefisso (vedi runKeywordEngine in keyword-engine.ts).
 const KeywordRuleSchema = z.discriminatedUnion('modo', [
   z.object({
     modo:                    z.literal('simple'),
-    prefissoCommessa:        z.string().min(1).max(10),
+    prefissoCommessa:        z.string().max(10),
     categoria:               z.string().min(1).max(100),
     caratteristicaDerivata:  z.string().min(1).max(150),
     parolaChiave:            z.string().min(1).max(150),
@@ -134,7 +136,7 @@ const KeywordRuleSchema = z.discriminatedUnion('modo', [
   }),
   z.object({
     modo:                    z.literal('proximity'),
-    prefissoCommessa:        z.string().min(1).max(10),
+    prefissoCommessa:        z.string().max(10),
     categoria:               z.string().min(1).max(100),
     caratteristicaDerivata:  z.string().min(1).max(150),
     parolaAncora:            z.string().min(1).max(150),
@@ -239,17 +241,24 @@ programmaProduzioneRoutes.post('/keyword-rules/import-excel', requireManage(MODU
 });
 
 // ─── Parole chiave colore ──────────────────────────────────────────────────────
+// priority: se più parole chiave trovano match nella stessa descrizione, vince
+// quella con priority più bassa (0 = massima priorità).
 
 programmaProduzioneRoutes.get('/color-keywords', requireModule(MODULE), async (c) => {
-  const rows = await db`SELECT id, keyword, color, active FROM prod_color_keywords ORDER BY keyword`;
+  const rows = await db`SELECT id, keyword, color, priority, active FROM prod_color_keywords ORDER BY priority, keyword`;
   return c.json(rows);
 });
 
 programmaProduzioneRoutes.post('/color-keywords', requireManage(MODULE), async (c) => {
-  const body = await parseBody(c, z.object({ keyword: z.string().min(1).max(100), color: z.string().min(1).max(100) }));
+  const body = await parseBody(c, z.object({
+    keyword:  z.string().min(1).max(100),
+    color:    z.string().min(1).max(100),
+    priority: z.number().int().min(0).max(9999).optional(),
+  }));
   const [row] = await db`
-    INSERT INTO prod_color_keywords (keyword, color) VALUES (${body.keyword}, ${body.color})
-    RETURNING id, keyword, color, active
+    INSERT INTO prod_color_keywords (keyword, color, priority)
+    VALUES (${body.keyword}, ${body.color}, ${body.priority ?? 50})
+    RETURNING id, keyword, color, priority, active
   `;
   return c.json(row, 201);
 });
@@ -264,6 +273,16 @@ programmaProduzioneRoutes.put('/color-keywords/:id/active', requireManage(MODULE
   return c.json(row);
 });
 
+programmaProduzioneRoutes.put('/color-keywords/:id/priority', requireManage(MODULE), async (c) => {
+  const id = parseId(c.req.param('id'));
+  const body = await parseBody(c, z.object({ priority: z.number().int().min(0).max(9999) }));
+  const [row] = await db`
+    UPDATE prod_color_keywords SET priority = ${body.priority} WHERE id = ${id} RETURNING id, priority
+  `;
+  if (!row) throw new HTTPException(404, { message: 'Parola chiave non trovata' });
+  return c.json(row);
+});
+
 programmaProduzioneRoutes.delete('/color-keywords/:id', requireManage(MODULE), async (c) => {
   const id = parseId(c.req.param('id'));
   await db`DELETE FROM prod_color_keywords WHERE id = ${id}`;
@@ -273,6 +292,36 @@ programmaProduzioneRoutes.delete('/color-keywords/:id', requireManage(MODULE), a
 programmaProduzioneRoutes.post('/color-keywords/import-excel', requireManage(MODULE), async (c) => {
   const buffer = await readUploadedFile(c);
   return c.json(await importColorKeywords(buffer));
+});
+
+// Range di caratteri della descrizione in cui cercare le parole chiave colore
+// — un'unica coppia (start, end) globale, uguale per tutte le parole.
+programmaProduzioneRoutes.get('/color-settings', requireModule(MODULE), async (c) => {
+  const rows = await db<{ key: string; value: string }[]>`
+    SELECT key, value FROM system_config WHERE key IN ('prod_color_search_start', 'prod_color_search_end')
+  `;
+  const byKey = new Map(rows.map(r => [r.key, r.value]));
+  return c.json({
+    searchStart: parseInt(byKey.get('prod_color_search_start') ?? '0', 10),
+    searchEnd:   parseInt(byKey.get('prod_color_search_end')   ?? '60', 10),
+  });
+});
+
+programmaProduzioneRoutes.put('/color-settings', requireManage(MODULE), async (c) => {
+  const body = await parseBody(c, z.object({
+    searchStart: z.number().int().min(0).max(9999),
+    searchEnd:   z.number().int().min(1).max(9999),
+  }));
+  if (body.searchEnd <= body.searchStart) {
+    throw new HTTPException(400, { message: 'La fine del range deve essere maggiore dell\'inizio' });
+  }
+  await db`
+    INSERT INTO system_config (key, value, updated_at) VALUES
+      ('prod_color_search_start', ${String(body.searchStart)}, now()),
+      ('prod_color_search_end',   ${String(body.searchEnd)},   now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+  `;
+  return c.json(body);
 });
 
 // ─── Nomi categoria per attributi BC ───────────────────────────────────────────

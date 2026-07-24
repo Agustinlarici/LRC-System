@@ -7,8 +7,9 @@ const SALES_LINE_TABLE     = 'STR$Sales Line$437dbf0e-84ff-417a-965d-ed2bb965097
 const SALES_LINE_LSA_TABLE = 'STR$Sales Line$34bccc94-c43f-4899-8aa8-c820f9e64421';
 const SALES_HEADER_TABLE   = 'STR$Sales Header$437dbf0e-84ff-417a-965d-ed2bb9650972';
 
-const ITEM_ATTR_MAPPING_TABLE = 'STR$Item Attribute Value Mapping$437dbf0e-84ff-417a-965d-ed2bb9650972';
-const ITEM_ATTR_VALUE_TABLE   = 'STR$Item Attribute Value$437dbf0e-84ff-417a-965d-ed2bb9650972';
+const ITEM_ATTR_MAPPING_TABLE  = 'STR$Item Attribute Value Mapping$437dbf0e-84ff-417a-965d-ed2bb9650972';
+const ITEM_ATTR_VALUE_TABLE    = 'STR$Item Attribute Value$437dbf0e-84ff-417a-965d-ed2bb9650972';
+const ITEM_ATTR_DEF_TABLE      = 'STR$Item Attribute$437dbf0e-84ff-417a-965d-ed2bb9650972';
 
 // Clienti / filtri di dominio (stessi del vecchio prod_ins_routes.py)
 const CUSTOMER_ACCOUNTS = ['C558', 'C3027', 'C850'];
@@ -37,6 +38,11 @@ export interface BcItemAttribute {
   item_attribute_id:        number;
   item_attribute_value_id:  number | null;
   value:                    string | null;
+}
+
+export interface BcItemAttributeDefinition {
+  id:   number;
+  name: string;
 }
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
@@ -73,7 +79,7 @@ export async function getProductionSalesOrders(): Promise<BcSalesOrderLine[]> {
         CONVERT(VARCHAR(10), sl.[Planned Shipment Date], 23)        AS planned_shipment_date,
         CONVERT(VARCHAR(10), sl.[Shipment Date], 23)                AS shipment_date,
         CONVERT(VARCHAR(10), sl.[FA Posting Date], 23)              AS fa_posting_date,
-        CONVERT(VARCHAR(10), sl.[Posting Date], 23)                 AS data_registrazione
+        CONVERT(VARCHAR(10), sh.[Posting Date], 23)                 AS data_registrazione
       FROM [${SALES_LINE_TABLE}] sl WITH (NOLOCK)
       INNER JOIN [${SALES_LINE_LSA_TABLE}] lsa WITH (NOLOCK)
         ON  sl.[Document Type] = lsa.[Document Type]
@@ -154,6 +160,28 @@ export async function getItemAttributesForArticles(articleCodes: string[]): Prom
       }
     }
     return out;
+  } finally {
+    await pool.close();
+  }
+}
+
+/**
+ * Nome reale (BC: [Name]) di ogni Item Attribute ID — tabella di anagrafica
+ * piccola (poche decine di righe), letta per intero una volta a sync invece
+ * che joinata riga per riga sulla mapping (che può avere migliaia di righe).
+ * Usata solo come default suggerito per prod_item_attribute_label.categoria_label
+ * al primo avvistamento di un ID nuovo — non sovrascrive rinomine manuali.
+ */
+export async function getItemAttributeDefinitions(): Promise<BcItemAttributeDefinition[]> {
+  const pool = await sql.connect(getDynamicsConfig());
+  try {
+    const result = await pool.request().query(`
+      SELECT [ID] AS id, [Name] AS name
+      FROM [${ITEM_ATTR_DEF_TABLE}] WITH (NOLOCK)
+    `);
+    return (result.recordset as Array<Record<string, unknown>>)
+      .map(r => ({ id: Number(r.id), name: String(r.name ?? '').trim() }))
+      .filter(r => r.name.length > 0);
   } finally {
     await pool.close();
   }

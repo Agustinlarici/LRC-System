@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { db } from '../../db/client.js';
 import { logger } from '../../lib/logger.js';
-import { getProductionSalesOrders, getItemAttributesForArticles } from './dynamics-client.js';
+import { getProductionSalesOrders, getItemAttributesForArticles, getItemAttributeDefinitions } from './dynamics-client.js';
 
 // ─── Sync ordini Business Central → prod_order (incrementale via row_sig) ─────
 
@@ -131,7 +131,12 @@ export async function syncItemAttributes(): Promise<{ rows: number; articles: nu
       return { rows: 0, articles: 0 };
     }
 
-    const attributes = await getItemAttributesForArticles(codes);
+    // Sequenziali, non Promise.all: sql.connect() di mssql usa un pool globale
+    // condiviso — due connect() in parallelo si chiudono a vicenda il pool
+    // sotto i piedi (ECONNCLOSED) quando la prima query finisce prima.
+    const attributes  = await getItemAttributesForArticles(codes);
+    const definitions = await getItemAttributeDefinitions();
+    const nameById = new Map(definitions.map(d => [d.id, d.name]));
 
     await db.begin(async (txRaw) => {
       const tx = txRaw as unknown as typeof db;
@@ -151,16 +156,30 @@ export async function syncItemAttributes(): Promise<{ rows: number; articles: nu
       }
     });
 
-    // Assicura un nome (anche solo di default) per ogni Item Attribute ID nuovo,
-    // cosi' l'admin lo trova gia' in lista pronto per essere rinominato.
+    // Assicura un nome per ogni Item Attribute ID nuovo — usa il [Name] reale
+    // da BC quando disponibile, altrimenti un placeholder. Non sovrascrive mai
+    // un'etichetta già rinominata a mano (ON CONFLICT DO NOTHING).
     const distinctIds = [...new Set(attributes.map(a => a.item_attribute_id))];
     if (distinctIds.length > 0) {
+      const labelDefaults = distinctIds.map(id => ({
+        item_attribute_id: id,
+        categoria_label:   nameById.get(id) ?? `Attributo #${id}`,
+      }));
       await db`
-        INSERT INTO prod_item_attribute_label (item_attribute_id, categoria_label)
-        SELECT id, 'Attributo #' || id
-        FROM UNNEST(${distinctIds}::int[]) AS id
+        INSERT INTO prod_item_attribute_label ${db(labelDefaults)}
         ON CONFLICT (item_attribute_id) DO NOTHING
       `;
+      // Se una label è rimasta al placeholder generico (mai rinominata a mano)
+      // e ora conosciamo il nome reale da BC, la aggiorniamo.
+      for (const { item_attribute_id, categoria_label } of labelDefaults) {
+        if (categoria_label === `Attributo #${item_attribute_id}`) continue;
+        await db`
+          UPDATE prod_item_attribute_label
+          SET categoria_label = ${categoria_label}, updated_at = now()
+          WHERE item_attribute_id = ${item_attribute_id}
+            AND categoria_label = ${`Attributo #${item_attribute_id}`}
+        `;
+      }
     }
 
     await db`
