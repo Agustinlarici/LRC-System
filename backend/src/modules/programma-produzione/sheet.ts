@@ -127,15 +127,14 @@ async function queryUnifiedOrders(articleCodes: string[] | null): Promise<Unifie
           u.commessa,
           u.descrizione,
           u.ubicazione,
-          CASE WHEN u.fonte_ordine = 'confermato' THEN ci.insertion_line_ts::text ELSE NULL END AS insertion_line_ts,
+          ci.insertion_line_ts::text AS insertion_line_ts,
           col.colore,
           u.fonte_recency::text AS fonte_recency
         FROM prod_order_unified u
-        LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = u.commessa AND u.fonte_ordine = 'confermato'
+        LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = u.commessa
         LEFT JOIN prod_article_color col
           ON col.codice_articolo = u.codice_articolo AND col.commessa = u.commessa
         WHERE u.codice_articolo = ANY(${articleCodes})
-          AND (u.fonte_ordine = 'forecast' OR ci.insertion_line_ts IS NOT NULL)
       `
     : db<UnifiedOrderRow[]>`
         SELECT
@@ -144,27 +143,30 @@ async function queryUnifiedOrders(articleCodes: string[] | null): Promise<Unifie
           u.commessa,
           u.descrizione,
           u.ubicazione,
-          CASE WHEN u.fonte_ordine = 'confermato' THEN ci.insertion_line_ts::text ELSE NULL END AS insertion_line_ts,
+          ci.insertion_line_ts::text AS insertion_line_ts,
           col.colore,
           u.fonte_recency::text AS fonte_recency
         FROM prod_order_unified u
-        LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = u.commessa AND u.fonte_ordine = 'confermato'
+        LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = u.commessa
         LEFT JOIN prod_article_color col
           ON col.codice_articolo = u.codice_articolo AND col.commessa = u.commessa
-        WHERE u.fonte_ordine = 'forecast' OR ci.insertion_line_ts IS NOT NULL
       `;
 }
 
 /**
  * Costruisce il foglio di lavoro (righe con caratteristiche unite: manuali +
  * automatiche da parole chiave + attributi BC). Se `articleCodes` è null,
- * non filtra per articolo — mostra tutto ciò che ha una data di ingresso in
- * linea registrata, senza richiedere che esista un'area di montaggio.
+ * non filtra per articolo — mostra tutto, con o senza area di montaggio.
  *
- * Confermato: richiede una data di ingresso in linea reale (import SPMA) per
- * comparire, come prima. Forecast: compare SEMPRE, senza data (mai presa "per
- * caso" da prod_commessa_inserimenti), ordinato in fondo — la data arriva solo
- * quando l'ordine diventa Confermato tramite l'import del planning.
+ * Confermato e Forecast compaiono SEMPRE (con o senza data di ingresso in
+ * linea) e la data — quando esiste — viene dalla stessa
+ * prod_commessa_inserimenti popolata dall'import SPMA per entrambe le fonti:
+ * una commessa già pianificata mostra la data anche se l'ordine è ancora
+ * Forecast in BC. Senza data va in fondo alla lista (vedi sortByInsertionTs).
+ * Prima un Confermato senza data veniva nascosto, il che lo faceva sparire
+ * del tutto se esisteva anche un Forecast per la stessa coppia (l'anti-join
+ * della vista prod_order_unified scarta il Forecast non appena un Confermato
+ * present_now esiste, indipendentemente dalla data).
  *
  * Rimpiazzo per categoria componente: se due articoli mappati alla stessa
  * categoria (es. "PARAURTI") arrivano per la stessa commessa, se ne tiene
