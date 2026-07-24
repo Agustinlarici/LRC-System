@@ -877,7 +877,7 @@ const TIPO_STYLE: Record<OrdTipo, { row: string; badge: string }> = {
   Forecast: { row: 'bg-gray-50   hover:bg-gray-100',   badge: 'bg-gray-200   text-gray-500'   },
 };
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 40;
 
 function TabOrdiniFerrari() {
   const [ordini,      setOrdini]      = useState<EdiOrdineFerrari[]>([]);
