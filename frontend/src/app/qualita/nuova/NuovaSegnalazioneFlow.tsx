@@ -13,6 +13,16 @@ type Step = 'component' | 'commessa' | 'draw';
 
 const SEVERITY_LABELS: Record<string, string> = { bassa: 'Bassa', media: 'Media', alta: 'Alta' };
 
+// Ricorda componente/commessa/step in sessionStorage così un refresh accidentale
+// (frequente su tablet) non fa perdere il punto in cui si era arrivati.
+const SESSION_KEY = 'qualita_nuova_session';
+
+interface SavedSession {
+  componentId: number;
+  commessa:    string;
+  step:        Step;
+}
+
 function fmtDateTime(ts: string): string {
   return new Date(ts).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
@@ -43,6 +53,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
   const [error, setError]           = useState('');
   const [justSaved, setJustSaved]   = useState(false);
   const [hasUnsaved, setHasUnsaved] = useState(false);
+  const [exporting, setExporting]   = useState(false);
 
   const canvasRef = useRef<DrawingCanvasHandle>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -72,6 +83,38 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
     }
   }, []);
 
+  // Ripristina componente/commessa/step da sessionStorage al primo caricamento
+  // (dopo aver caricato i componenti, serve per risolvere il componentId salvato).
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current || loadingComponents) return;
+    restoredRef.current = true;
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    try {
+      const saved = JSON.parse(raw) as SavedSession;
+      const comp = components.find(c => c.id === saved.componentId);
+      if (!comp || !saved.commessa) return;
+      setComponent(comp);
+      setCommessa(saved.commessa);
+      if (saved.step === 'draw') fetchExisting(comp.id, saved.commessa);
+      if (saved.step === 'draw' || saved.step === 'commessa') setStep(saved.step);
+    } catch {
+      sessionStorage.removeItem(SESSION_KEY);
+    }
+  }, [loadingComponents, components, fetchExisting]);
+
+  // Salva lo stato corrente ad ogni cambio, così un refresh accidentale (frequente
+  // su tablet) riporta l'utente dove era invece di fargli perdere tutto.
+  useEffect(() => {
+    if (step === 'component' || !component) {
+      sessionStorage.removeItem(SESSION_KEY);
+      return;
+    }
+    const saved: SavedSession = { componentId: component.id, commessa, step };
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(saved));
+  }, [step, component, commessa]);
+
   function pickComponent(c: QualitaComponent) {
     setComponent(c);
     setStep('commessa');
@@ -89,13 +132,36 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
     if (photoInputRef.current) photoInputRef.current.value = '';
   }
 
-  // "Termina segnalazione" — chiude la sessione su questo componente/commessa e
-  // torna alla scelta del componente, per iniziarne una nuova. Se c'è un disegno
-  // non ancora salvato andrebbe perso, quindi va confermato esplicitamente.
-  function finishSegnalazione() {
-    if (hasUnsaved && !confirm('Hai un disegno non salvato su questo componente. Se termini ora, andrà perso. Continuare?')) {
-      return;
+  // "Termina segnalazione" — se c'è un disegno non ancora salvato lo salva prima
+  // di procedere, poi esporta il PDF con le segnalazioni fatte su questo
+  // componente/commessa (se ce n'è almeno una) e torna alla scelta del componente.
+  async function finishSegnalazione() {
+    let justSubmitted = false;
+    if (hasUnsaved) {
+      justSubmitted = await handleSubmit();
+      if (!justSubmitted) return;
     }
+
+    if (component && (justSubmitted || existingReports.length > 0)) {
+      setExporting(true);
+      try {
+        const res = await fetch(`${BACKEND}/api/qualita/export`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ component_id: component.id, commessa: commessa.trim() }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setError(data.message ?? 'Errore durante l\'esportazione del PDF. Le segnalazioni restano comunque salvate.');
+        }
+      } catch {
+        setError('Errore di connessione durante l\'esportazione del PDF. Le segnalazioni restano comunque salvate.');
+      } finally {
+        setExporting(false);
+      }
+    }
+
     setComponent(null);
     setCommessa('');
     setExistingReports([]);
@@ -111,11 +177,11 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
     setStep('commessa');
   }
 
-  async function handleSubmit() {
-    if (!component) return;
+  async function handleSubmit(): Promise<boolean> {
+    if (!component) return false;
     setError('');
     const drawingBlob = await canvasRef.current?.exportBlob();
-    if (!drawingBlob) { setError('Nessun disegno da salvare'); return; }
+    if (!drawingBlob) { setError('Nessun disegno da salvare'); return false; }
 
     setSubmitting(true);
     try {
@@ -142,8 +208,10 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
       resetDefectFields();
       await fetchExisting(component.id, commessa.trim());
       setJustSaved(true);
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Errore durante il salvataggio');
+      return false;
     } finally {
       setSubmitting(false);
     }
@@ -197,7 +265,16 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
             <QualitaThumb src={`${BACKEND}/api/qualita/components/${component.id}/image`} alt={component.name} className={tablet ? 'w-20 h-20' : 'w-14 h-14'} />
             <div>
               <p className={`font-semibold text-gray-800 ${tablet ? 'text-lg' : ''}`}>{component.name}</p>
-              <button type="button" className="text-xs text-blue-500 hover:underline" onClick={() => setStep('component')}>Cambia componente</button>
+              <button
+                type="button"
+                className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+                onClick={() => setStep('component')}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-3.5 h-3.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M4 9a8 8 0 0114.5-4.5M20 15a8 8 0 01-14.5 4.5" />
+                </svg>
+                Cambia componente
+              </button>
             </div>
           </div>
           <div>
@@ -208,6 +285,8 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
               placeholder="Numero commessa"
               value={commessa}
               onChange={e => setCommessa(e.target.value)}
+              inputMode="numeric"
+              pattern="[0-9]*"
               required
             />
           </div>
@@ -218,31 +297,23 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
       {/* ── Step 3: disegno + form — a schermo intero, sopra tutto (anche il menu laterale) ── */}
       {step === 'draw' && component && (
         <div className="fixed inset-0 z-40 bg-white overflow-y-auto p-4 sm:p-6">
-          <div className={`grid grid-cols-1 ${tablet ? 'lg:grid-cols-[1fr_360px]' : 'lg:grid-cols-[1fr_320px]'} gap-6 items-start`}>
+          <div className={`grid grid-cols-1 ${tablet ? 'lg:grid-cols-[1fr_260px]' : 'lg:grid-cols-[1fr_240px]'} gap-6 items-start`}>
             <div className="space-y-3">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div>
                   <p className={`font-semibold text-gray-800 ${tablet ? 'text-lg' : ''}`}>{component.name} — Commessa {commessa}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    {existingReports.length > 0 && (
-                      <p className="text-xs text-gray-500">
-                        {existingReports.length} segnalazion{existingReports.length === 1 ? 'e precedente' : 'i precedenti'} su questa commessa
-                        {justSaved && <span className="text-green-600 font-medium"> — salvata ✓</span>}
-                      </p>
-                    )}
-                    {existingReports.length === 0 && justSaved && (
-                      <p className="text-xs text-green-600 font-medium">Segnalazione salvata ✓</p>
-                    )}
-                  </div>
+                  {justSaved && (
+                    <p className="text-xs text-green-600 font-medium mt-1">Segnalazione salvata ✓</p>
+                  )}
                   {existingReports.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    <div className="flex flex-wrap gap-2 mt-2">
                       {existingReports.map((r, i) => (
                         <span
                           key={r.id}
                           title={`${fmtDateTime(r.created_at)} — ${r.created_by_name ?? 'Sconosciuto'}`}
-                          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border border-gray-200 text-gray-600 bg-gray-50"
+                          className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-full border border-gray-200 text-gray-700 bg-gray-50"
                         >
-                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: PALETTE[i % PALETTE.length] }} />
+                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: PALETTE[i % PALETTE.length] }} />
                           {fmtDateTime(r.created_at)}
                         </span>
                       ))}
@@ -250,8 +321,26 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <button className="btn text-xs" onClick={() => canvasRef.current?.undo()}>Annulla tratto</button>
-                  <button className="btn text-xs" onClick={() => canvasRef.current?.clear()}>Cancella tutto</button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+                    onClick={() => canvasRef.current?.undo()}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l-4-4 4-4M5 10h9a5 5 0 015 5v1" />
+                    </svg>
+                    Annulla tratto
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                    onClick={() => canvasRef.current?.clear()}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m2 0-1 12a1 1 0 01-1 1H8a1 1 0 01-1-1L6 7h12z" />
+                    </svg>
+                    Cancella tutto
+                  </button>
                 </div>
               </div>
 
@@ -300,10 +389,19 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
                 <button className={`btn btn-primary w-full ${tablet ? 'text-lg py-3' : ''}`} disabled={submitting} onClick={handleSubmit}>
                   {submitting ? 'Salvataggio...' : 'Salva segnalazione'}
                 </button>
-                <button className={`btn btn-secondary w-full ${tablet ? 'text-lg py-3' : ''}`} onClick={finishSegnalazione}>
-                  Termina segnalazione
+                <button className={`btn btn-secondary w-full ${tablet ? 'text-lg py-3' : ''}`} disabled={submitting || exporting} onClick={finishSegnalazione}>
+                  {exporting ? 'Esportazione PDF in corso...' : submitting ? 'Salvataggio...' : 'Termina segnalazione'}
                 </button>
-                <button className="btn w-full text-sm" onClick={goBackToCommessa}>Indietro (correggi commessa)</button>
+                <button
+                  className={`btn-secondary w-full flex items-center justify-center gap-2 ${tablet ? 'text-lg py-3' : ''}`}
+                  disabled={submitting || exporting}
+                  onClick={goBackToCommessa}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
+                  Indietro
+                </button>
               </div>
             </div>
           </div>

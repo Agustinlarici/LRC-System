@@ -7,21 +7,18 @@ const options = [
   {
     href:        '/qualita/nuova',
     title:       'Nuova segnalazione',
-    description: 'Segna un difetto disegnando sull\'immagine del componente',
     icon:        '✏️',
     needsManage: false,
   },
   {
     href:        '/qualita/cerca',
     title:       'Cerca',
-    description: 'Cerca per commessa e componente, confronta le segnalazioni',
     icon:        '🔍',
     needsManage: false,
   },
   {
     href:        '/qualita/impostazioni',
     title:       'Impostazioni',
-    description: 'Gestisci il catalogo componenti e le immagini di riferimento',
     icon:        '⚙️',
     needsManage: true,
   },
@@ -46,7 +43,6 @@ export function QualitaMenu() {
               <h2 className="font-semibold text-gray-800 group-hover:text-blue-600">
                 {opt.title}
               </h2>
-              <p className="text-sm text-gray-500 mt-1">{opt.description}</p>
             </div>
           </div>
         </Link>

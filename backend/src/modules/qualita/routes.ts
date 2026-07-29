@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { db } from '../../db/client.js';
 import { requireModule, requireManage, type Env } from '../../lib/auth.js';
 import { detectQualitaImageExt } from '../../lib/mime-check.js';
+import { writeEdiFile } from '../../lib/smb-writer.js';
+import { compositeImage, buildReportPdf, PALETTE, type ExportReport } from './export-pdf.js';
 import { writeFile, mkdir, readFile } from 'fs/promises';
 import { join, extname } from 'path';
 import { randomBytes } from 'crypto';
@@ -160,6 +162,26 @@ qualitaRoutes.patch('/components/:id', requireManage('qualita'), async (c) => {
   return c.json(warning ? { ...component, warning } : component);
 });
 
+// ─── Impostazioni (cartella di esportazione PDF) ────────────────────────────
+
+const REPORT_FOLDER_KEY = 'qualita_report_folder';
+
+qualitaRoutes.get('/settings', requireManage('qualita'), async (c) => {
+  const [row] = await db`SELECT value FROM system_config WHERE key = ${REPORT_FOLDER_KEY}`;
+  return c.json({ report_folder: row?.value ?? null });
+});
+
+qualitaRoutes.patch('/settings', requireManage('qualita'), async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const reportFolder = typeof body.report_folder === 'string' ? body.report_folder.trim() : '';
+  await db`
+    INSERT INTO system_config (key, value, updated_at)
+    VALUES (${REPORT_FOLDER_KEY}, ${reportFolder}, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+  `;
+  return c.json({ report_folder: reportFolder });
+});
+
 // ─── Segnalazioni (marcature difetti) ───────────────────────────────────────
 
 const reportFieldsSchema = z.object({
@@ -259,4 +281,79 @@ qualitaRoutes.get('/reports/:id/photo', requireModule('qualita'), async (c) => {
   if (!report?.photo_path) throw new HTTPException(404, { message: 'Nessuna foto' });
 
   return serveFile(c, report.photo_path);
+});
+
+// ─── Export PDF: immagine combinata + dettagli, salvato nella cartella configurata ──
+
+function sanitizeForFilename(s: string): string {
+  return s.replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'senza_nome';
+}
+
+const exportSchema = z.object({
+  component_id: z.number().int().positive(),
+  commessa:     z.string().min(1).max(100),
+});
+
+qualitaRoutes.post('/export', requireModule('qualita'), async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = exportSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new HTTPException(400, { message: parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ') });
+  }
+  const { component_id, commessa } = parsed.data;
+
+  const [folderRow] = await db`SELECT value FROM system_config WHERE key = ${REPORT_FOLDER_KEY}`;
+  const reportFolder = folderRow?.value?.trim();
+  if (!reportFolder) {
+    throw new HTTPException(400, { message: 'Cartella di esportazione non configurata. Vai su Impostazioni Qualità per configurarla.' });
+  }
+
+  const [component] = await db`SELECT id, name, image_path FROM qualita_component WHERE id = ${component_id}`;
+  if (!component) throw new HTTPException(400, { message: 'Componente non valido' });
+
+  const reports = await db`
+    SELECT id, created_at, created_by_name, defect_type, severity, note, drawing_path, photo_path
+    FROM qualita_report
+    WHERE component_id = ${component_id} AND commessa = ${commessa.trim()}
+    ORDER BY created_at ASC
+  `;
+  if (reports.length === 0) {
+    throw new HTTPException(400, { message: 'Nessuna segnalazione da esportare per questo componente/commessa' });
+  }
+
+  const baseImage = await readFile(join(UPLOAD_DIR, component.image_path));
+  const exportReports: ExportReport[] = await Promise.all(reports.map(async (r: any) => ({
+    id: r.id,
+    created_at: r.created_at,
+    created_by_name: r.created_by_name,
+    defect_type: r.defect_type,
+    severity: r.severity,
+    note: r.note,
+    drawing: await readFile(join(UPLOAD_DIR, r.drawing_path)),
+    photo: r.photo_path ? await readFile(join(UPLOAD_DIR, r.photo_path)).catch(() => null) : null,
+  })));
+
+  const combined = await compositeImage(
+    baseImage,
+    exportReports.map((r, i) => ({ buf: r.drawing, color: PALETTE[i % PALETTE.length] })),
+  );
+
+  const pdf = await buildReportPdf({
+    componentName: component.name,
+    commessa: commessa.trim(),
+    compositeImage: combined,
+    reports: exportReports,
+  });
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `${sanitizeForFilename(component.name)}_${sanitizeForFilename(commessa.trim())}_${timestamp}.pdf`;
+
+  try {
+    await writeEdiFile(reportFolder, filename, pdf);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Errore sconosciuto';
+    throw new HTTPException(502, { message: `Impossibile salvare il PDF nella cartella configurata: ${message}` });
+  }
+
+  return c.json({ ok: true, filename });
 });

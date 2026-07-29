@@ -13,7 +13,7 @@ const _require = createRequire(import.meta.url);
 const SMB2 = _require('@marsaud/smb2') as new (cfg: {
   share: string; username: string; password: string; domain: string; autoCloseTimeout?: number;
 }) => {
-  writeFile(path: string, data: string, opts: { encoding: string }): Promise<void>;
+  writeFile(path: string, data: string | Buffer, opts?: { encoding: string }): Promise<void>;
   readFile(path: string): Promise<Buffer>;
   readdir(path: string): Promise<string[]>;
   close(): void;
@@ -106,10 +106,12 @@ export async function readUncFile(uncFolder: string, filename: string): Promise<
   }
 }
 
+// content può essere testo (es. file EDI) o binario (es. PDF) — l'encoding si applica
+// solo alle stringhe, i Buffer vengono scritti così come sono.
 export async function writeEdiFile(
   outputFolder: string,
   filename: string,
-  content: string,
+  content: string | Buffer,
 ): Promise<void> {
   if (isUncPath(outputFolder)) {
     const { share, subPath } = parseUnc(outputFolder);
@@ -123,11 +125,15 @@ export async function writeEdiFile(
       autoCloseTimeout: 0,
     });
     try {
-      await smb.writeFile(remotePath, content, { encoding: 'utf8' });
+      if (typeof content === 'string') {
+        await smb.writeFile(remotePath, content, { encoding: 'utf8' });
+      } else {
+        await smb.writeFile(remotePath, content);
+      }
     } finally {
       smb.close();
     }
   } else {
-    await writeFile(join(outputFolder, filename), content, 'utf-8');
+    await writeFile(join(outputFolder, filename), content);
   }
 }

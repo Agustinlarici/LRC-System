@@ -7,11 +7,7 @@ export const metadata: Metadata = { title: 'Qualità' };
 export default function QualitaPage() {
   return (
     <div>
-      <div className="mb-8 flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Qualità — Difetti</h1>
-          <p className="mt-1 text-gray-500">Segnalazione digitale dei difetti su disegno, per componente e commessa</p>
-        </div>
+      <div className="mb-8 flex items-start justify-end">
         <Link
           href="/qualita/tablet"
           className="flex items-center gap-2 text-sm text-gray-500 border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors"

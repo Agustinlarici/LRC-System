@@ -41,6 +41,12 @@ export function ImpostazioniFlow() {
   const [warning, setWarning] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [reportFolder, setReportFolder]         = useState('');
+  const [loadingFolder, setLoadingFolder]       = useState(true);
+  const [savingFolder, setSavingFolder]         = useState(false);
+  const [folderMsg, setFolderMsg]               = useState('');
+  const [folderErr, setFolderErr]               = useState('');
+
   const fetchComponents = useCallback(async () => {
     setLoading(true);
     try {
@@ -54,7 +60,44 @@ export function ImpostazioniFlow() {
     }
   }, []);
 
+  const fetchSettings = useCallback(async () => {
+    setLoadingFolder(true);
+    try {
+      const res = await fetch(`${BACKEND}/api/qualita/settings`, { credentials: 'include' });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setReportFolder(data.report_folder ?? '');
+    } catch {
+      // se il caricamento fallisce si lascia il campo vuoto — l'utente può comunque ricompilarlo
+    } finally {
+      setLoadingFolder(false);
+    }
+  }, []);
+
   useEffect(() => { fetchComponents(); }, [fetchComponents]);
+  useEffect(() => { fetchSettings(); }, [fetchSettings]);
+
+  async function saveFolder(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingFolder(true); setFolderErr(''); setFolderMsg('');
+    try {
+      const res = await fetch(`${BACKEND}/api/qualita/settings`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ report_folder: reportFolder.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message ?? 'Errore durante il salvataggio');
+      }
+      setFolderMsg('Cartella salvata.');
+    } catch (e) {
+      setFolderErr(e instanceof Error ? e.message : 'Errore durante il salvataggio');
+    } finally {
+      setSavingFolder(false);
+    }
+  }
 
   function startEdit(c: QualitaComponent) {
     setEditId(c.id);
@@ -115,7 +158,30 @@ export function ImpostazioniFlow() {
   }
 
   return (
-    <div className="card max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-4xl mx-auto">
+      <div className="card">
+        <h2 className="font-semibold text-gray-700 mb-1">Esportazione PDF</h2>
+        <p className="text-xs text-gray-500 mb-3">
+          Quando un operatore tocca "Termina segnalazione", viene generato un PDF con l'immagine combinata
+          e i dettagli di ogni segnalazione, salvato in questa cartella (percorso di rete UNC, es. <code>\\server\cartella</code>).
+        </p>
+        {folderErr && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2 mb-3">{folderErr}</p>}
+        {folderMsg && <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-2 mb-3">{folderMsg}</p>}
+        <form onSubmit={saveFolder} className="flex gap-3">
+          <input
+            className="input flex-1"
+            placeholder="\\192.168.1.245\qualita\report"
+            value={reportFolder}
+            onChange={e => { setReportFolder(e.target.value); setFolderMsg(''); }}
+            disabled={loadingFolder}
+          />
+          <button type="submit" disabled={savingFolder || loadingFolder} className="btn btn-primary whitespace-nowrap">
+            {savingFolder ? '...' : 'Salva'}
+          </button>
+        </form>
+      </div>
+
+      <div className="card">
       <h2 className="font-semibold text-gray-700 mb-3">{editId ? 'Modifica componente' : 'Nuovo componente'}</h2>
 
       {error   && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2 mb-3">{error}</p>}
@@ -189,6 +255,7 @@ export function ImpostazioniFlow() {
           </tbody>
         </table>
       )}
+      </div>
     </div>
   );
 }

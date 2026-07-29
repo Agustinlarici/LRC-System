@@ -62,6 +62,8 @@ export function CercaFlow({ tablet = false }: Props) {
           placeholder="Numero commessa"
           value={commessa}
           onChange={e => setCommessa(e.target.value)}
+          inputMode="numeric"
+          pattern="[0-9]*"
           required
         />
         <select className={`input bg-white ${tablet ? 'text-lg py-3' : ''}`} value={componentId} onChange={e => setComponentId(e.target.value)}>

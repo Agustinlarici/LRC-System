@@ -9,21 +9,18 @@ const options = [
   {
     href:        '/qualita/tablet/nuova',
     title:       'Nuova segnalazione',
-    description: 'Segna un difetto disegnando sull\'immagine del componente',
     icon:        '✏️',
     needsManage: false,
   },
   {
     href:        '/qualita/tablet/cerca',
     title:       'Cerca',
-    description: 'Cerca per commessa e componente, confronta le segnalazioni',
     icon:        '🔍',
     needsManage: false,
   },
   {
     href:        '/qualita/tablet/impostazioni',
     title:       'Impostazioni',
-    description: 'Gestisci il catalogo componenti e le immagini di riferimento',
     icon:        '⚙️',
     needsManage: true,
   },
@@ -43,7 +40,6 @@ function TabletMenu() {
         >
           <span className="text-5xl block mb-4">{opt.icon}</span>
           <h2 className="font-semibold text-lg text-gray-800 group-hover:text-blue-600">{opt.title}</h2>
-          <p className="text-sm text-gray-500 mt-2">{opt.description}</p>
         </Link>
       ))}
     </div>
@@ -54,7 +50,7 @@ export default function QualitaTabletHubPage() {
   useEffect(() => { document.title = 'Qualità — Tablet'; }, []);
 
   return (
-    <TabletShell title="Qualità" backHref="/qualita" backLabel="Esci dalla modalità tablet">
+    <TabletShell title="" backHref="/qualita" backLabel="Esci dalla modalità tablet">
       <TabletMenu />
     </TabletShell>
   );
