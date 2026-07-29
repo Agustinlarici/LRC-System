@@ -1,5 +1,6 @@
 import sharp from 'sharp';
 import PDFDocument from 'pdfkit';
+import { logger } from '../../lib/logger.js';
 
 // Stessa palette usata nel frontend (NuovaSegnalazioneFlow / OverlayViewer) — l'ordine
 // cronologico delle segnalazioni determina l'indice, quindi i colori nel PDF combaciano
@@ -77,6 +78,20 @@ export async function buildReportPdf(params: {
   doc.fontSize(13).fillColor('#111').text(`Segnalazioni (${reports.length})`);
   doc.moveDown(0.3);
 
+  // Ripassa ogni foto con sharp (che decodifica in modo affidabile qualsiasi JPEG di
+  // fotocamera, incluse le varianti che il decoder interno di pdfkit non riconosce) e
+  // applica la rotazione EXIF — altrimenti doc.image() falliva silenziosamente e la
+  // foto spariva dal PDF senza errore visibile.
+  const safePhotos = await Promise.all(reports.map(async (r) => {
+    if (!r.photo) return null;
+    try {
+      return await sharp(r.photo).rotate().resize({ width: 400, height: 400, fit: 'inside', withoutEnlargement: true }).png().toBuffer();
+    } catch (err) {
+      logger.warn({ err, reportId: r.id }, 'Qualità export: foto non convertibile, esclusa dal PDF');
+      return null;
+    }
+  }));
+
   reports.forEach((r, i) => {
     if (doc.y > doc.page.height - doc.page.margins.bottom - 120) doc.addPage();
 
@@ -95,14 +110,11 @@ export async function buildReportPdf(params: {
     if (r.note) {
       doc.fontSize(10).fillColor('#444').text(r.note, doc.page.margins.left + 14, doc.y, { width: pageWidth - 14 });
     }
-    if (r.photo) {
-      try {
-        doc.image(r.photo, doc.page.margins.left + 14, doc.y + 2, { fit: [90, 90] });
-        doc.moveDown(0.2);
-        doc.y += 92;
-      } catch {
-        // foto corrotta o formato non supportato da pdfkit — non blocca l'export del resto
-      }
+    const photo = safePhotos[i];
+    if (photo) {
+      doc.image(photo, doc.page.margins.left + 14, doc.y + 2, { fit: [90, 90] });
+      doc.moveDown(0.2);
+      doc.y += 92;
     }
     doc.moveDown(0.6);
   });

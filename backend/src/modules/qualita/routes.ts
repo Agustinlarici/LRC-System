@@ -285,11 +285,13 @@ qualitaRoutes.get('/reports/:id/photo', requireModule('qualita'), async (c) => {
 
 // ─── Export PDF: immagine combinata + dettagli, salvato nella cartella configurata ──
 
+// Toglie solo i caratteri non ammessi nei nomi file su Windows/SMB — spazi e lettere
+// accentate restano, per un nome leggibile invece che pieno di underscore.
 function sanitizeForFilename(s: string): string {
-  return s.replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'senza_nome';
+  return s.replace(/[\\/:*?"<>|]+/g, '_').trim().replace(/\s+/g, ' ') || 'senza nome';
 }
 
-// gg-mm-aa_hh-mm — i due punti non sono ammessi nei nomi file su Windows/SMB.
+// gg-mm-aa hh-mm — i due punti non sono ammessi nei nomi file su Windows/SMB.
 function fmtFilenameTimestamp(d: Date): string {
   const parts = new Intl.DateTimeFormat('it-IT', {
     timeZone: 'Europe/Rome',
@@ -297,7 +299,7 @@ function fmtFilenameTimestamp(d: Date): string {
     hour: '2-digit', minute: '2-digit', hour12: false,
   }).formatToParts(d);
   const get = (type: string) => parts.find(p => p.type === type)?.value ?? '';
-  return `${get('day')}-${get('month')}-${get('year')}_${get('hour')}-${get('minute')}`;
+  return `${get('day')}-${get('month')}-${get('year')} ${get('hour')}-${get('minute')}`;
 }
 
 const exportSchema = z.object({
@@ -356,7 +358,7 @@ qualitaRoutes.post('/export', requireModule('qualita'), async (c) => {
     reports: exportReports,
   });
 
-  const filename = `${sanitizeForFilename(commessa.trim())}_${sanitizeForFilename(component.name)}_${fmtFilenameTimestamp(new Date())}.pdf`;
+  const filename = `${sanitizeForFilename(commessa.trim())} ${sanitizeForFilename(component.name)} ${fmtFilenameTimestamp(new Date())}.pdf`;
 
   try {
     await writeEdiFile(reportFolder, filename, pdf);
