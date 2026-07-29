@@ -4,20 +4,8 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { tmpdir } from 'os';
 import { randomBytes } from 'crypto';
-import { createRequire } from 'module';
 
 const execFileAsync = promisify(execFile);
-
-// SMB2 library — used only for writeEdiFile (read/list use smbclient instead)
-const _require = createRequire(import.meta.url);
-const SMB2 = _require('@marsaud/smb2') as new (cfg: {
-  share: string; username: string; password: string; domain: string; autoCloseTimeout?: number;
-}) => {
-  writeFile(path: string, data: string | Buffer, opts?: { encoding: string }): Promise<void>;
-  readFile(path: string): Promise<Buffer>;
-  readdir(path: string): Promise<string[]>;
-  close(): void;
-};
 
 export function isUncPath(p: string): boolean {
   return p.startsWith('\\\\') || p.startsWith('//');
@@ -115,23 +103,18 @@ export async function writeEdiFile(
 ): Promise<void> {
   if (isUncPath(outputFolder)) {
     const { share, subPath } = parseUnc(outputFolder);
-    const remotePath = subPath ? `${subPath}\\${filename}` : filename;
+    const smbShare   = share.replace(/\\/g, '/');
+    const remotePath = (subPath ? `${subPath}\\${filename}` : filename).replace(/\\/g, '/');
+    const tmpFile    = join(tmpdir(), `smb_${randomBytes(8).toString('hex')}_${filename}`);
 
-    const smb = new SMB2({
-      share,
-      username: process.env.SMB_USER    ?? '',
-      password: process.env.SMB_PASS    ?? '',
-      domain:   process.env.SMB_DOMAIN  ?? '',
-      autoCloseTimeout: 0,
-    });
     try {
-      if (typeof content === 'string') {
-        await smb.writeFile(remotePath, content, { encoding: 'utf8' });
-      } else {
-        await smb.writeFile(remotePath, content);
-      }
+      await writeFile(tmpFile, typeof content === 'string' ? Buffer.from(content, 'utf8') : content);
+      await execFileAsync('smbclient', smbClientArgs(smbShare, `put "${tmpFile}" "${remotePath}"`));
+    } catch (err: unknown) {
+      const e = err as Error & { stderr?: string };
+      throw new Error(`Impossibile scrivere "${outputFolder}/${filename}": ${e.stderr?.trim() || e.message}`);
     } finally {
-      smb.close();
+      await unlink(tmpFile).catch(() => {});
     }
   } else {
     await writeFile(join(outputFolder, filename), content);
