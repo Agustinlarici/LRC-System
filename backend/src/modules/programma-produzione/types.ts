@@ -18,6 +18,9 @@ export interface ProdSheetRow {
   descrizione:       string | null;
   ubicazione:        string | null;
   insertion_line_ts: string | null;
+  // true se la data viene da una riga "Schedulato" nell'import SPMA (non
+  // ancora fisicamente in linea) invece che "avviato"/"in sequenza".
+  insertion_schedulato: boolean;
   colore:            string | null;
   categorie:         ProdSheetCategoria[];
 }

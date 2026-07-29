@@ -128,6 +128,11 @@ BEGIN
   END IF;
 END$$;
 
+-- TRUE quando la data viene da una riga con Stato "Schedulato" nell'import
+-- SPMA (non ancora fisicamente in linea) invece di "avviato"/"in sequenza"
+-- — il foglio la mostra con un flag "data da controllare".
+ALTER TABLE prod_commessa_inserimenti ADD COLUMN IF NOT EXISTS schedulato BOOLEAN NOT NULL DEFAULT FALSE;
+
 -- ─── Motore parole chiave: modo semplice o prossimità ─────────────────────────
 
 DO $$ BEGIN

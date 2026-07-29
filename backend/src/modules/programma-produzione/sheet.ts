@@ -8,6 +8,7 @@ interface UnifiedOrderRow {
   descrizione:       string | null;
   ubicazione:        string | null;
   insertion_line_ts: string | null;
+  insertion_schedulato: boolean;
   colore:            string | null;
   fonte_recency:     string | null;
 }
@@ -128,6 +129,7 @@ async function queryUnifiedOrders(articleCodes: string[] | null): Promise<Unifie
           u.descrizione,
           u.ubicazione,
           ci.insertion_line_ts::text AS insertion_line_ts,
+          COALESCE(ci.schedulato, FALSE) AS insertion_schedulato,
           col.colore,
           u.fonte_recency::text AS fonte_recency
         FROM prod_order_unified u
@@ -144,6 +146,7 @@ async function queryUnifiedOrders(articleCodes: string[] | null): Promise<Unifie
           u.descrizione,
           u.ubicazione,
           ci.insertion_line_ts::text AS insertion_line_ts,
+          COALESCE(ci.schedulato, FALSE) AS insertion_schedulato,
           col.colore,
           u.fonte_recency::text AS fonte_recency
         FROM prod_order_unified u
@@ -317,6 +320,7 @@ export async function buildFoglio(
       descrizione:       r.descrizione,
       ubicazione:        r.ubicazione,
       insertion_line_ts: r.insertion_line_ts,
+      insertion_schedulato: r.insertion_schedulato,
       colore:            r.colore,
       categorie:         categorieOut,
     };
@@ -349,8 +353,8 @@ export interface ComponentConflict {
 export async function findComponentConflicts(): Promise<ComponentConflict[]> {
   const orderRows = await db<UnifiedOrderRow[]>`
     SELECT u.fonte_ordine, u.codice_articolo, u.commessa, u.descrizione,
-           NULL::text AS ubicazione, NULL::text AS insertion_line_ts, NULL::text AS colore,
-           u.fonte_recency::text AS fonte_recency
+           NULL::text AS ubicazione, NULL::text AS insertion_line_ts, FALSE AS insertion_schedulato,
+           NULL::text AS colore, u.fonte_recency::text AS fonte_recency
     FROM prod_order_unified u
   `;
   const deduped = dedupByArticoloCommessa(orderRows);

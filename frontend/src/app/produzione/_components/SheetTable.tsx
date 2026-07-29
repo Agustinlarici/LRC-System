@@ -54,9 +54,21 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
               <td className="border border-gray-200 px-2 py-1 font-mono">{row.commessa}</td>
               <td className="border border-gray-200 px-2 py-1 font-mono">{row.codice_articolo}</td>
               <td className="border border-gray-200 px-2 py-1 whitespace-nowrap">
-                {row.insertion_line_ts ? new Date(row.insertion_line_ts).toLocaleString('it-IT', {
-                  day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-                }) : '–'}
+                {row.insertion_line_ts ? (
+                  <>
+                    {new Date(row.insertion_line_ts).toLocaleString('it-IT', {
+                      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+                    })}
+                    {row.insertion_schedulato && (
+                      <span
+                        className="ml-1 text-amber-600"
+                        title="Data da Schedulato — non ancora fisicamente in linea, da controllare"
+                      >
+                        ⚠
+                      </span>
+                    )}
+                  </>
+                ) : '–'}
               </td>
               <td className="border border-gray-200 px-2 py-1">{row.colore ?? <span className="text-gray-300">–</span>}</td>
               {categorieUniche.map(cat => {

@@ -54,14 +54,34 @@ export function normalizeCommessa(val: unknown): string | null {
   return s;
 }
 
+// Formato europeo GG/MM/AAAA (o GG-MM-AAAA) — se non lo forziamo esplicitamente,
+// new Date(stringa) di JS assume MM/GG/AAAA (US) e interpreta silenziosamente
+// male qualsiasi data con giorno <= 12 (es. "04/09/2026" letto come 9 aprile
+// invece di 4 settembre), senza nessun errore o avviso.
+function parseEuropeanDate(s: string): Date | null {
+  const match = s.trim().match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (!match) return null;
+  const [, dd, mm, yyyy] = match;
+  const day = parseInt(dd, 10), month = parseInt(mm, 10), year = parseInt(yyyy, 10);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(year, month - 1, day);
+  return isNaN(date.getTime()) ? null : date;
+}
+
 export function combineDateTime(dateVal: unknown, timeVal: unknown): Date | null {
   if (dateVal == null) return null;
   let date: Date;
   if (dateVal instanceof Date) {
     date = dateVal;
   } else {
-    date = new Date(String(dateVal));
-    if (isNaN(date.getTime())) return null;
+    const str = String(dateVal);
+    const european = parseEuropeanDate(str);
+    if (european) {
+      date = european;
+    } else {
+      date = new Date(str);
+      if (isNaN(date.getTime())) return null;
+    }
   }
 
   if (timeVal == null) return date;
@@ -180,9 +200,17 @@ export async function runSpmaImport(buffer: Buffer, fileName: string): Promise<S
       const row = rows[i];
 
       try {
+        // "schedulato" aggiorna solo prod_commessa_inserimenti (Programma
+        // Produzione, con il flag "da verificare" — non è ancora fisicamente
+        // in linea) e NON spma_commessa, per non alterare il tabellone SPMA.
+        let statoSchedulatoOnly = false;
         if (colStato && row[colStato] != null) {
           const stato = String(row[colStato]).trim().toLowerCase();
-          if (!['avviato', 'in sequenza'].includes(stato)) { skipped++; continue; }
+          if (stato === 'schedulato') {
+            statoSchedulatoOnly = true;
+          } else if (!['avviato', 'in sequenza'].includes(stato)) {
+            skipped++; continue;
+          }
         }
 
         const commCode = normalizeCommessa(row[colComm!]);
@@ -224,26 +252,32 @@ export async function runSpmaImport(buffer: Buffer, fileName: string): Promise<S
           if (!isNaN(pv)) posIndex = Math.round(pv);
         }
 
-        await db`
-          INSERT INTO spma_commessa
-            (commessa_code, model_code, line_id, line_entry_ts, pos_index)
-          VALUES
-            (${commCode}, ${modelCode}, ${lineId}, ${dt.toISOString()}, ${posIndex})
-          ON CONFLICT (commessa_code) DO UPDATE SET
-            model_code    = EXCLUDED.model_code,
-            line_id       = EXCLUDED.line_id,
-            line_entry_ts = EXCLUDED.line_entry_ts,
-            pos_index     = EXCLUDED.pos_index
-        `;
-        importedCodes.add(commCode);
+        if (!statoSchedulatoOnly) {
+          await db`
+            INSERT INTO spma_commessa
+              (commessa_code, model_code, line_id, line_entry_ts, pos_index)
+            VALUES
+              (${commCode}, ${modelCode}, ${lineId}, ${dt.toISOString()}, ${posIndex})
+            ON CONFLICT (commessa_code) DO UPDATE SET
+              model_code    = EXCLUDED.model_code,
+              line_id       = EXCLUDED.line_id,
+              line_entry_ts = EXCLUDED.line_entry_ts,
+              pos_index     = EXCLUDED.pos_index
+          `;
+          importedCodes.add(commCode);
+        }
 
         // Stessa importazione aggiorna anche la data di ingresso in linea
         // usata dal modulo Programma Produzione (tabella separata, stesso file).
+        // schedulato=TRUE quando la riga aveva Stato "Schedulato" (non ancora
+        // fisicamente in linea) — il foglio la mostra con un flag "da
+        // verificare" invece di darla per confermata come avviato/in sequenza.
         await db`
-          INSERT INTO prod_commessa_inserimenti (commessa, linea, insertion_line_ts, updated_at)
-          VALUES (${commCode}, ${await lineName(lineId)}, ${dt.toISOString()}, now())
+          INSERT INTO prod_commessa_inserimenti (commessa, linea, insertion_line_ts, schedulato, updated_at)
+          VALUES (${commCode}, ${await lineName(lineId)}, ${dt.toISOString()}, ${statoSchedulatoOnly}, now())
           ON CONFLICT (commessa) DO UPDATE SET
             linea             = EXCLUDED.linea,
+            schedulato        = EXCLUDED.schedulato,
             insertion_line_ts = EXCLUDED.insertion_line_ts,
             updated_at        = now()
         `.catch(err => logger.warn({ err, commCode }, 'programma-produzione: aggiornamento prod_commessa_inserimenti fallito'));

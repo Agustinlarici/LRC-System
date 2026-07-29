@@ -543,6 +543,7 @@ export interface ProdSheetRow {
   descrizione:       string | null;
   ubicazione:        string | null;
   insertion_line_ts: string | null;
+  insertion_schedulato: boolean;
   colore:            string | null;
   categorie:         ProdSheetCategoria[];
 }
