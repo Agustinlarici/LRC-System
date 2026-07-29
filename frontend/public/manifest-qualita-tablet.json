@@ -1,0 +1,13 @@
+{
+  "name": "Qualità — Tablet",
+  "short_name": "Qualità",
+  "start_url": "/qualita/tablet",
+  "scope": "/qualita/tablet/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f3f4f6",
+  "theme_color": "#e30514",
+  "icons": [
+    { "src": "/icons/qualita-tablet.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
