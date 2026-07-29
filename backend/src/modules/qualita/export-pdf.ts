@@ -85,7 +85,10 @@ export async function buildReportPdf(params: {
   const safePhotos = await Promise.all(reports.map(async (r) => {
     if (!r.photo) return null;
     try {
-      return await sharp(r.photo).rotate().resize({ width: 400, height: 400, fit: 'inside', withoutEnlargement: true }).png().toBuffer();
+      const buf = await sharp(r.photo).rotate().resize({ width: 1200, fit: 'inside', withoutEnlargement: true }).png().toBuffer();
+      const meta = await sharp(buf).metadata();
+      if (!meta.width || !meta.height) return null;
+      return { buf, width: meta.width, height: meta.height };
     } catch (err) {
       logger.warn({ err, reportId: r.id }, 'Qualità export: foto non convertibile, esclusa dal PDF');
       return null;
@@ -112,9 +115,16 @@ export async function buildReportPdf(params: {
     }
     const photo = safePhotos[i];
     if (photo) {
-      doc.image(photo, doc.page.margins.left + 14, doc.y + 2, { fit: [90, 90] });
-      doc.moveDown(0.2);
-      doc.y += 92;
+      // Occupa quasi tutta la larghezza della pagina — limitata in altezza solo per
+      // non far sparire il resto della segnalazione su più pagine con foto verticali.
+      const maxW = pageWidth - 14;
+      const maxH = 380;
+      const scale = Math.min(maxW / photo.width, maxH / photo.height, 1);
+      const renderW = photo.width * scale;
+      const renderH = photo.height * scale;
+      if (doc.y + renderH > doc.page.height - doc.page.margins.bottom) doc.addPage();
+      doc.image(photo.buf, doc.page.margins.left + 14, doc.y + 4, { width: renderW, height: renderH });
+      doc.y += renderH + 8;
     }
     doc.moveDown(0.6);
   });
