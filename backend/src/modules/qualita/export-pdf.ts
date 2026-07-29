@@ -67,8 +67,8 @@ export async function buildReportPdf(params: {
 
   const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
 
-  doc.fontSize(18).fillColor('#111').text(`Qualità — ${componentName}`);
-  doc.fontSize(11).fillColor('#666').text(`Commessa ${commessa}  ·  generato il ${new Date().toLocaleString('it-IT')}`);
+  doc.fontSize(18).fillColor('#111').text(`${componentName} — Commessa ${commessa}`);
+  doc.fontSize(11).fillColor('#666').text(`Generato il ${fmtDateTime(new Date().toISOString())}`);
   doc.moveDown();
 
   doc.image(img, { fit: [pageWidth, 420], align: 'center' });

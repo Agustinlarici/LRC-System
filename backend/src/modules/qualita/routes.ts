@@ -289,6 +289,17 @@ function sanitizeForFilename(s: string): string {
   return s.replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'senza_nome';
 }
 
+// gg-mm-aa_hh-mm — i due punti non sono ammessi nei nomi file su Windows/SMB.
+function fmtFilenameTimestamp(d: Date): string {
+  const parts = new Intl.DateTimeFormat('it-IT', {
+    timeZone: 'Europe/Rome',
+    day: '2-digit', month: '2-digit', year: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(d);
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? '';
+  return `${get('day')}-${get('month')}-${get('year')}_${get('hour')}-${get('minute')}`;
+}
+
 const exportSchema = z.object({
   component_id: z.number().int().positive(),
   commessa:     z.string().min(1).max(100),
@@ -345,8 +356,7 @@ qualitaRoutes.post('/export', requireModule('qualita'), async (c) => {
     reports: exportReports,
   });
 
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `${sanitizeForFilename(component.name)}_${sanitizeForFilename(commessa.trim())}_${timestamp}.pdf`;
+  const filename = `${sanitizeForFilename(commessa.trim())}_${sanitizeForFilename(component.name)}_${fmtFilenameTimestamp(new Date())}.pdf`;
 
   try {
     await writeEdiFile(reportFolder, filename, pdf);
