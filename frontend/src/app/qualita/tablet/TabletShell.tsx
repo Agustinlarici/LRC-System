@@ -29,6 +29,21 @@ export function TabletShell({ title, backHref, backLabel = 'Indietro', requireMa
     }
   }, [loading, user, router, pathname]);
 
+  // Il fullscreen si può richiedere solo dentro un gesto utente genuino — un timer non
+  // basta, il browser lo rifiuta comunque. Aggancia quindi la richiesta al primo tocco
+  // sullo schermo (qualsiasi punto, non un bottone specifico): copre l'apertura diretta
+  // da un'icona/collegamento in home, senza bisogno che l'utente cerchi un bottone.
+  useEffect(() => {
+    function onFirstTouch() {
+      document.removeEventListener('pointerdown', onFirstTouch, true);
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    }
+    document.addEventListener('pointerdown', onFirstTouch, true);
+    return () => document.removeEventListener('pointerdown', onFirstTouch, true);
+  }, []);
+
   if (loading || !user) {
     return (
       <div className="w-full min-h-screen flex items-center justify-center bg-gray-50">
