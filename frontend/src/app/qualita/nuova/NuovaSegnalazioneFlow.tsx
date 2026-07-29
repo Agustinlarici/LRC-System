@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import type { QualitaComponent, QualitaReport } from '@/types';
 import { DrawingCanvas, type DrawingCanvasHandle } from './DrawingCanvas';
 import { PALETTE } from '../palette';
@@ -57,6 +58,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
 
   const canvasRef = useRef<DrawingCanvasHandle>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const commessaInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch(`${BACKEND}/api/qualita/components`, { credentials: 'include' })
@@ -116,8 +118,15 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
   }, [step, component, commessa]);
 
   function pickComponent(c: QualitaComponent) {
-    setComponent(c);
-    setStep('commessa');
+    // flushSync + focus sincrono nello stesso gesto di tap dell'utente, altrimenti
+    // su tablet/mobile la tastiera non si apre finché non si tocca di nuovo il campo
+    // (i browser mobili aprono la tastiera solo se il focus avviene nello stesso
+    // event handler del tocco, non in un useEffect dopo il re-render).
+    flushSync(() => {
+      setComponent(c);
+      setStep('commessa');
+    });
+    commessaInputRef.current?.focus();
   }
 
   function confirmCommessa(e: React.FormEvent) {
@@ -280,6 +289,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
           <div>
             <label className={`block font-medium text-gray-700 mb-1 ${tablet ? 'text-base' : 'text-sm'}`}>Commessa <span className="text-red-500">*</span></label>
             <input
+              ref={commessaInputRef}
               autoFocus
               className={`input w-full ${tablet ? 'text-2xl py-4' : 'text-lg'}`}
               placeholder="Numero commessa"
@@ -348,7 +358,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
                 ref={canvasRef}
                 imageUrl={`${BACKEND}/api/qualita/components/${component.id}/image`}
                 imageAlt={component.name}
-                maxHeightVh={tablet ? 88 : 80}
+                maxHeightVh={tablet ? 68 : 80}
                 strokeColor={currentColor}
                 historicalLayers={historicalLayers}
                 onDirtyChange={setHasUnsaved}
@@ -379,6 +389,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
                     ref={photoInputRef}
                     type="file"
                     accept="image/png,image/jpeg"
+                    capture="environment"
                     onChange={e => setPhoto(e.target.files?.[0] ?? null)}
                     className="w-full text-xs text-gray-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                   />
