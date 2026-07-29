@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { QualitaComponent, QualitaReport } from '@/types';
 import { OverlayViewer } from './OverlayViewer';
+import { showVirtualKeyboard } from '../virtual-keyboard';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -62,6 +63,7 @@ export function CercaFlow({ tablet = false }: Props) {
           placeholder="Numero commessa"
           value={commessa}
           onChange={e => setCommessa(e.target.value)}
+          onFocus={showVirtualKeyboard}
           inputMode="numeric"
           pattern="[0-9]*"
           required

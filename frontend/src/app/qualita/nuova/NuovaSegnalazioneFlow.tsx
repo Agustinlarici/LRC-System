@@ -5,6 +5,7 @@ import { flushSync } from 'react-dom';
 import type { QualitaComponent, QualitaReport } from '@/types';
 import { DrawingCanvas, type DrawingCanvasHandle } from './DrawingCanvas';
 import { PALETTE } from '../palette';
+import { showVirtualKeyboard } from '../virtual-keyboard';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -127,6 +128,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
       setStep('commessa');
     });
     commessaInputRef.current?.focus();
+    showVirtualKeyboard();
   }
 
   function confirmCommessa(e: React.FormEvent) {
@@ -295,6 +297,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
               placeholder="Numero commessa"
               value={commessa}
               onChange={e => setCommessa(e.target.value)}
+              onFocus={showVirtualKeyboard}
               inputMode="numeric"
               pattern="[0-9]*"
               required
