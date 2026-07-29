@@ -51,7 +51,7 @@ export function TabletShell({ title, backHref, backLabel = 'Indietro', requireMa
   }
 
   return (
-    <div className="p-4 sm:p-6 min-h-screen bg-gray-50">
+    <div className="p-4 sm:p-6 min-h-screen bg-gray-100">
       <div className="mb-4 flex items-center justify-end max-w-6xl mx-auto">
         {title && <h1 className="text-xl font-bold text-gray-900 mr-auto">{title}</h1>}
         <Link
