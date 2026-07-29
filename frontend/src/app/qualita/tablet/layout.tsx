@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { RegisterSW } from './RegisterSW';
 
 // Manifest dedicato solo alla modalità tablet di Qualità: aggiunto a schermata
 // home su Android apre l'app senza barra degli indirizzi (display: standalone).
@@ -7,5 +8,10 @@ export const metadata: Metadata = {
 };
 
 export default function QualitaTabletLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return (
+    <>
+      <RegisterSW />
+      {children}
+    </>
+  );
 }
