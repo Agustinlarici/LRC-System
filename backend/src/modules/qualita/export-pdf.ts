@@ -73,7 +73,10 @@ export async function buildReportPdf(params: {
   doc.moveDown();
 
   doc.image(img, { fit: [pageWidth, 420], align: 'center' });
-  doc.moveDown();
+
+  // L'elenco delle segnalazioni parte sempre da una pagina nuova, separato
+  // dall'immagine combinata anche quando ci sarebbe spazio per iniziare subito dopo.
+  doc.addPage();
 
   doc.fontSize(13).fillColor('#111').text(`Segnalazioni (${reports.length})`);
   doc.moveDown(0.3);
@@ -127,6 +130,14 @@ export async function buildReportPdf(params: {
       doc.y += renderH + 8;
     }
     doc.moveDown(0.6);
+
+    if (i < reports.length - 1) {
+      if (doc.y > doc.page.height - doc.page.margins.bottom - 20) doc.addPage();
+      const lineY = doc.y;
+      doc.moveTo(doc.page.margins.left, lineY).lineTo(doc.page.width - doc.page.margins.right, lineY)
+        .lineWidth(0.5).strokeColor('#ddd').stroke();
+      doc.moveDown(0.6);
+    }
   });
 
   doc.end();
