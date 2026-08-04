@@ -46,9 +46,10 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
               <td className="border border-gray-200 px-2 py-1 text-center">{idx + 1}</td>
               <td className="border border-gray-200 px-2 py-1">
                 <span className={`inline-block text-xs px-2 py-0.5 rounded font-medium whitespace-nowrap ${
-                  row.fonte_ordine === 'confermato' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                  row.chiuso ? 'bg-gray-200 text-gray-600'
+                    : row.fonte_ordine === 'confermato' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
                 }`}>
-                  {row.fonte_ordine === 'confermato' ? 'Confermato' : 'Forecast'}
+                  {row.chiuso ? 'Chiuso' : row.fonte_ordine === 'confermato' ? 'Confermato' : 'Forecast'}
                 </span>
               </td>
               <td className="border border-gray-200 px-2 py-1 font-mono">{row.commessa}</td>

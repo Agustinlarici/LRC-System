@@ -21,6 +21,9 @@ export interface ProdSheetRow {
   // true se la data viene da una riga "Schedulato" nell'import SPMA (non
   // ancora fisicamente in linea) invece che "avviato"/"in sequenza".
   insertion_schedulato: boolean;
+  // TRUE se l'ordine Confermato è stato chiuso/evaso in BC (present_now =
+  // FALSE) — resta visibile come storico invece di sparire dal foglio.
+  chiuso:            boolean;
   colore:            string | null;
   categorie:         ProdSheetCategoria[];
 }

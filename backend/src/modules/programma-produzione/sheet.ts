@@ -11,6 +11,11 @@ interface UnifiedOrderRow {
   insertion_schedulato: boolean;
   colore:            string | null;
   fonte_recency:     string | null;
+  // TRUE per un ordine Confermato chiuso in BC (present_now = FALSE) — non
+  // sparisce più dal foglio, resta come storico. Non compete mai per una
+  // categoria componente (vedi groupByCategoriaCommessa): un ordine chiuso
+  // non deve mai "vincere" su uno ancora attivo, né viceversa nasconderlo.
+  chiuso:            boolean;
 }
 
 interface ManualInfoRow {
@@ -44,7 +49,11 @@ function dedupByArticoloCommessa(rows: UnifiedOrderRow[]): UnifiedOrderRow[] {
   const map = new Map<string, UnifiedOrderRow>();
   for (const r of rows) {
     const k = JSON.stringify([r.codice_articolo, r.commessa]);
-    if (!map.has(k)) map.set(k, r);
+    const existing = map.get(k);
+    // Se esistono sia una riga attiva che una chiusa per la stessa coppia
+    // (raro: la stessa commessa+articolo è stata riaperta come nuovo ordine),
+    // vince quella attiva — quella chiusa è solo storico.
+    if (!existing || (existing.chiuso && !r.chiuso)) map.set(k, r);
   }
   return [...map.values()];
 }
@@ -77,7 +86,9 @@ function groupByCategoriaCommessa(rows: UnifiedOrderRow[], categoryMap: Map<stri
   const grouped = new Map<string, CategoriaCommessaGroup>();
   const unmapped: UnifiedOrderRow[] = [];
   for (const r of rows) {
-    const categoria = categoryMap.get(r.codice_articolo);
+    // Un ordine chiuso è storico, non un duplicato da risolvere — non
+    // compete mai per una categoria componente (passa sempre diretto).
+    const categoria = r.chiuso ? undefined : categoryMap.get(r.codice_articolo);
     if (!categoria) { unmapped.push(r); continue; }
     const key = JSON.stringify([categoria, r.commessa]);
     const group = grouped.get(key) ?? { categoria, commessa: r.commessa, rows: [] };
@@ -119,41 +130,92 @@ function sortByInsertionTs(rows: UnifiedOrderRow[]): UnifiedOrderRow[] {
 
 // ─── Query base condivisa ──────────────────────────────────────────────────────
 
-async function queryUnifiedOrders(articleCodes: string[] | null): Promise<UnifiedOrderRow[]> {
+// Ordini Confermato chiusi in BC (present_now = FALSE) — non spariscono più
+// dal foglio quando l'ordine viene evaso/spedito, restano come storico
+// (vedi groupByCategoriaCommessa/dedupByArticoloCommessa: non competono mai
+// con un ordine ancora attivo). Nessun limite di tempo: cresce nel tempo,
+// ma resta paginato come il resto del foglio.
+async function queryClosedOrders(articleCodes: string[] | null): Promise<UnifiedOrderRow[]> {
   return articleCodes != null
     ? db<UnifiedOrderRow[]>`
         SELECT
-          u.fonte_ordine,
-          u.codice_articolo,
-          u.commessa,
-          u.descrizione,
-          u.ubicazione,
+          'confermato'::VARCHAR(12) AS fonte_ordine,
+          po.codice_articolo,
+          po.commessa,
+          po.description AS descrizione,
+          po.ubicazione,
           ci.insertion_line_ts::text AS insertion_line_ts,
           COALESCE(ci.schedulato, FALSE) AS insertion_schedulato,
           col.colore,
-          u.fonte_recency::text AS fonte_recency
-        FROM prod_order_unified u
-        LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = u.commessa
+          po.data_registrazione::text AS fonte_recency,
+          TRUE AS chiuso
+        FROM prod_order po
+        LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = po.commessa
         LEFT JOIN prod_article_color col
-          ON col.codice_articolo = u.codice_articolo AND col.commessa = u.commessa
-        WHERE u.codice_articolo = ANY(${articleCodes})
+          ON col.codice_articolo = po.codice_articolo AND col.commessa = po.commessa
+        WHERE po.present_now = FALSE AND po.codice_articolo = ANY(${articleCodes})
       `
     : db<UnifiedOrderRow[]>`
         SELECT
-          u.fonte_ordine,
-          u.codice_articolo,
-          u.commessa,
-          u.descrizione,
-          u.ubicazione,
+          'confermato'::VARCHAR(12) AS fonte_ordine,
+          po.codice_articolo,
+          po.commessa,
+          po.description AS descrizione,
+          po.ubicazione,
           ci.insertion_line_ts::text AS insertion_line_ts,
           COALESCE(ci.schedulato, FALSE) AS insertion_schedulato,
           col.colore,
-          u.fonte_recency::text AS fonte_recency
-        FROM prod_order_unified u
-        LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = u.commessa
+          po.data_registrazione::text AS fonte_recency,
+          TRUE AS chiuso
+        FROM prod_order po
+        LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = po.commessa
         LEFT JOIN prod_article_color col
-          ON col.codice_articolo = u.codice_articolo AND col.commessa = u.commessa
+          ON col.codice_articolo = po.codice_articolo AND col.commessa = po.commessa
+        WHERE po.present_now = FALSE
       `;
+}
+
+async function queryUnifiedOrders(articleCodes: string[] | null): Promise<UnifiedOrderRow[]> {
+  const [active, closed] = await Promise.all([
+    articleCodes != null
+      ? db<UnifiedOrderRow[]>`
+          SELECT
+            u.fonte_ordine,
+            u.codice_articolo,
+            u.commessa,
+            u.descrizione,
+            u.ubicazione,
+            ci.insertion_line_ts::text AS insertion_line_ts,
+            COALESCE(ci.schedulato, FALSE) AS insertion_schedulato,
+            col.colore,
+            u.fonte_recency::text AS fonte_recency,
+            FALSE AS chiuso
+          FROM prod_order_unified u
+          LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = u.commessa
+          LEFT JOIN prod_article_color col
+            ON col.codice_articolo = u.codice_articolo AND col.commessa = u.commessa
+          WHERE u.codice_articolo = ANY(${articleCodes})
+        `
+      : db<UnifiedOrderRow[]>`
+          SELECT
+            u.fonte_ordine,
+            u.codice_articolo,
+            u.commessa,
+            u.descrizione,
+            u.ubicazione,
+            ci.insertion_line_ts::text AS insertion_line_ts,
+            COALESCE(ci.schedulato, FALSE) AS insertion_schedulato,
+            col.colore,
+            u.fonte_recency::text AS fonte_recency,
+            FALSE AS chiuso
+          FROM prod_order_unified u
+          LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = u.commessa
+          LEFT JOIN prod_article_color col
+            ON col.codice_articolo = u.codice_articolo AND col.commessa = u.commessa
+        `,
+    queryClosedOrders(articleCodes),
+  ]);
+  return [...active, ...closed];
 }
 
 /**
@@ -321,6 +383,7 @@ export async function buildFoglio(
       ubicazione:        r.ubicazione,
       insertion_line_ts: r.insertion_line_ts,
       insertion_schedulato: r.insertion_schedulato,
+      chiuso:            r.chiuso,
       colore:            r.colore,
       categorie:         categorieOut,
     };
@@ -354,7 +417,7 @@ export async function findComponentConflicts(): Promise<ComponentConflict[]> {
   const orderRows = await db<UnifiedOrderRow[]>`
     SELECT u.fonte_ordine, u.codice_articolo, u.commessa, u.descrizione,
            NULL::text AS ubicazione, NULL::text AS insertion_line_ts, FALSE AS insertion_schedulato,
-           NULL::text AS colore, u.fonte_recency::text AS fonte_recency
+           NULL::text AS colore, u.fonte_recency::text AS fonte_recency, FALSE AS chiuso
     FROM prod_order_unified u
   `;
   const deduped = dedupByArticoloCommessa(orderRows);
