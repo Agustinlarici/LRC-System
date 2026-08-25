@@ -66,6 +66,7 @@ services:
       BC_DATABASE:    ${BC_DATABASE:-STR}
       BC_USER:        ${BC_USER:-}
       BC_PASSWORD:    ${BC_PASSWORD:-}
+      BC_DOMAIN:      ${BC_DOMAIN:-}
       # WebThron (MySQL) — monitor data
       WEBTHRON_HOST:  ${WEBTHRON_HOST:-}
       WEBTHRON_PORT:  ${WEBTHRON_PORT:-3306}

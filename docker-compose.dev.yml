@@ -75,6 +75,7 @@ services:
       BC_DATABASE:         ${BC_DATABASE:-STR}
       BC_USER:             ${BC_USER}
       BC_PASSWORD:         ${BC_PASSWORD}
+      BC_DOMAIN:           ${BC_DOMAIN:-}
       JWT_SECRET:          ${JWT_SECRET:-dev-secret-change-in-production}
       DELIBERA_FASI:       "DELIBERA FINALE - PROX"
       DELIBERA_ESITO_OK:   "Accettato"
