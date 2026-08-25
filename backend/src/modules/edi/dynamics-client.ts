@@ -5,8 +5,17 @@ import sql from 'mssql';
 // Righe spedizione (EOS CWS Shipment Line) — usata per tutti i clienti EDI
 const LINE_TABLE = 'STR$EOS CWS Shipment Line$a879d9e1-a8d9-4dc8-87d8-69d278c5e003';
 
-// Estensione LSA — contiene LSA Your Reference (Purchase Order McLaren/Audi)
-const LSA_TABLE  = 'STR$EOS CWS Shipment Line$34bccc94-c43f-4899-8aa8-c820f9e64421';
+// Tabella "$ext" (companion) di EOS CWS Shipment Line — contiene i campi
+// dell'estensione LSA: LSA Your Reference (Purchase Order McLaren/Audi),
+// LSA Task No_ (commessa) e LSA Line No_. Dalla versione piattaforma BC
+// installata su STRSQL02/LIVE in poi, i campi di TUTTE le estensioni che
+// aggiungono colonne a una tabella base vivono in un'unica tabella
+// "<Company>$<TabellaBase>$<AppIdBase>$ext", con le colonne suffissate dal
+// GUID dell'app che le ha aggiunte — non più una tabella separata per app.
+const LSA_TABLE  = 'STR$EOS CWS Shipment Line$a879d9e1-a8d9-4dc8-87d8-69d278c5e003$ext';
+const LSA_TASK_NO  = 'LSA Task No_$34bccc94-c43f-4899-8aa8-c820f9e64421';
+const LSA_YOUR_REF = 'LSA Your Reference$34bccc94-c43f-4899-8aa8-c820f9e64421';
+const LSA_LINE_NO  = 'LSA Line No_$34bccc94-c43f-4899-8aa8-c820f9e64421';
 
 // Righe ordine di vendita — contiene Unit Price
 const SALES_LINE_TABLE = 'STR$Sales Line$437dbf0e-84ff-417a-965d-ed2bb9650972';
@@ -17,17 +26,37 @@ const SALES_LINE_TABLE = 'STR$Sales Line$437dbf0e-84ff-417a-965d-ed2bb9650972';
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 export function getDynamicsConfig(): sql.config {
-  return {
+  const base = {
     server:   process.env.BC_SERVER   ?? '',
     database: process.env.BC_DATABASE ?? '',
-    user:     process.env.BC_USER     ?? '',
-    password: process.env.BC_PASSWORD ?? '',
     options: {
       encrypt:                false,
       trustServerCertificate: true,
     },
     connectionTimeout: 15_000,
     requestTimeout:    60_000,
+  };
+
+  // STRSQL02 (server BC dal 2026) accetta solo l'utente di dominio Windows
+  // usrnav@STRLAN — richiede autenticazione NTLM, non un login SQL nativo.
+  if (process.env.BC_DOMAIN) {
+    return {
+      ...base,
+      authentication: {
+        type: 'ntlm',
+        options: {
+          domain:   process.env.BC_DOMAIN,
+          userName: process.env.BC_USER     ?? '',
+          password: process.env.BC_PASSWORD ?? '',
+        },
+      },
+    };
+  }
+
+  return {
+    ...base,
+    user:     process.env.BC_USER     ?? '',
+    password: process.env.BC_PASSWORD ?? '',
   };
 }
 
@@ -114,6 +143,56 @@ export async function getShipments(
       ...r,
       is_extra_cee: Boolean(r.is_extra_cee),
       line_count:   Number(r.line_count),
+    }));
+  } finally {
+    await pool.close();
+  }
+}
+
+export interface ShippedPair {
+  article_code: string;
+  lsa_task_no:  string;
+}
+
+/**
+ * Coppie (articolo, commessa) spedite in BC negli ultimi `monthsBack` mesi —
+ * usata da programma-produzione/forecast-closer.ts per capire se un Forecast
+ * EDI (mai diventato ordine BC) è in realtà già stato prodotto e spedito.
+ *
+ * Filtra su l.[Posting Date] (colonna nativa della riga, sargable) invece che
+ * sulla commessa (LSA Task No_, che vive in una tabella joinata e richiede
+ * LTRIM/RTRIM/ISNULL per normalizzarla — un'espressione calcolata nel WHERE
+ * non può usare un indice). La prima versione filtrava a chunk di 200
+ * commesse proprio su quell'espressione: con migliaia di commesse candidate
+ * (~4500 misurate) diventavano altrettante scansioni complete della tabella
+ * spedizioni, minuti su minuti senza mai finire. Una singola query bloccata
+ * per data è ordini di grandezza più veloce; l'abbinamento per commessa si
+ * fa poi in JS su un Set (vedi closeShippedForecasts).
+ */
+export async function getShippedPairsSince(monthsBack = 18): Promise<ShippedPair[]> {
+  const pool = await sql.connect(getDynamicsConfig());
+  try {
+    const from = new Date();
+    from.setMonth(from.getMonth() - monthsBack);
+
+    const result = await pool.request()
+      .input('from', sql.Date, from)
+      .query(`
+        SELECT DISTINCT
+          l.[No_]                                       AS article_code,
+          LTRIM(RTRIM(ISNULL(lsa.[${LSA_TASK_NO}], ''))) AS lsa_task_no
+        FROM [${LINE_TABLE}] l
+        LEFT JOIN [${LSA_TABLE}] lsa
+          ON  lsa.[Document No_] = l.[Document No_]
+          AND lsa.[Line No_]     = l.[Line No_]
+        WHERE l.[Posting Date] >= @from
+          AND LTRIM(RTRIM(ISNULL(l.[No_], ''))) <> ''
+          AND LTRIM(RTRIM(ISNULL(lsa.[${LSA_TASK_NO}], ''))) <> ''
+      `);
+
+    return (result.recordset as Array<Record<string, unknown>>).map(r => ({
+      article_code: String(r.article_code ?? '').trim(),
+      lsa_task_no:  String(r.lsa_task_no  ?? '').trim(),
     }));
   } finally {
     await pool.close();
@@ -216,8 +295,8 @@ export async function getWebDdtLineStatuses(shipmentIds: string[]): Promise<WebD
       SELECT
         l.[Document No_]                                                                    AS shipment_id,
         l.[No_]                                                                              AS article_code,
-        LTRIM(RTRIM(ISNULL(lsa.[LSA Task No_], '')))                                        AS lsa_task_no,
-        LEFT(lsa.[LSA Your Reference], CHARINDEX(' ', lsa.[LSA Your Reference] + ' ') - 1)  AS contract_number
+        LTRIM(RTRIM(ISNULL(lsa.[${LSA_TASK_NO}], '')))                                                AS lsa_task_no,
+        LEFT(lsa.[${LSA_YOUR_REF}], CHARINDEX(' ', lsa.[${LSA_YOUR_REF}] + ' ') - 1)                   AS contract_number
       FROM [${LINE_TABLE}] l
       LEFT JOIN [${LSA_TABLE}] lsa
         ON  lsa.[Document No_] = l.[Document No_]
@@ -247,9 +326,9 @@ export async function getWebDdtLines(shipmentId: string): Promise<WebDdtLine[]> 
           l.[No_]                                                                             AS article_code,
           l.[Quantity (Base)]                                                                 AS quantity,
           l.[Unit of Measure]                                                                 AS unit_of_measure,
-          LEFT(lsa.[LSA Your Reference], CHARINDEX(' ', lsa.[LSA Your Reference] + ' ') - 1) AS contract_number,
-          LTRIM(RTRIM(ISNULL(lsa.[LSA Task No_], '')))                                       AS lsa_task_no,
-          LTRIM(RTRIM(ISNULL(CAST(lsa.[LSA Line No_] AS VARCHAR(20)), '')))                  AS lsa_line_no
+          LEFT(lsa.[${LSA_YOUR_REF}], CHARINDEX(' ', lsa.[${LSA_YOUR_REF}] + ' ') - 1)        AS contract_number,
+          LTRIM(RTRIM(ISNULL(lsa.[${LSA_TASK_NO}], '')))                                      AS lsa_task_no,
+          LTRIM(RTRIM(ISNULL(CAST(lsa.[${LSA_LINE_NO}] AS VARCHAR(20)), '')))                 AS lsa_line_no
         FROM [${LINE_TABLE}] l
         LEFT JOIN [${LSA_TABLE}] lsa
           ON  lsa.[Document No_] = l.[Document No_]
@@ -275,8 +354,8 @@ export async function getWebDdtLines(shipmentId: string): Promise<WebDdtLine[]> 
 export async function getShipmentLines(shipmentId: string, options?: { raw?: boolean }): Promise<DynamicsLine[]> {
   const pool = await sql.connect(getDynamicsConfig());
   const contractField = options?.raw
-    ? `LTRIM(RTRIM(lsa.[LSA Your Reference]))`
-    : `LEFT(lsa.[LSA Your Reference], CHARINDEX(' ', lsa.[LSA Your Reference] + ' ') - 1)`;
+    ? `LTRIM(RTRIM(lsa.[${LSA_YOUR_REF}]))`
+    : `LEFT(lsa.[${LSA_YOUR_REF}], CHARINDEX(' ', lsa.[${LSA_YOUR_REF}] + ' ') - 1)`;
   try {
     const result = await pool.request()
       .input('shipmentId', sql.VarChar(50), shipmentId)

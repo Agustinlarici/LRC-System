@@ -1,21 +1,47 @@
 import sql from 'mssql';
 import { db } from '../../db/client.js';
 
+// Tabella "$ext" di Item — contiene i campi dell'estensione EOS User Defined
+// Field, tra cui il campo 22 usato qui come famiglia articolo. Vedi il
+// commento su LSA_TABLE in edi/dynamics-client.ts per il perché del "$ext".
+const ITEM_EXT_TABLE = 'STR$Item$437dbf0e-84ff-417a-965d-ed2bb9650972$ext';
+const EOS_UDF_22      = 'EOS User Defined Field 22$5d2c2370-931f-423b-bfb5-2128499f89ff';
+
 function getBcConfig(): sql.config {
   if (!process.env.BC_USER || !process.env.BC_PASSWORD) {
     throw new Error('BC_USER e BC_PASSWORD sono richiesti per la sync con Business Central');
   }
-  return {
+  const base = {
     server:   process.env.BC_SERVER   ?? '192.168.1.159',
     database: process.env.BC_DATABASE ?? 'STR',
-    user:     process.env.BC_USER,
-    password: process.env.BC_PASSWORD,
     options: {
       encrypt:                false,
       trustServerCertificate: true,
     },
     connectionTimeout: 15000,
     requestTimeout:    120000,
+  };
+
+  // STRSQL02 (server BC dal 2026) accetta solo l'utente di dominio Windows
+  // usrnav@STRLAN — richiede autenticazione NTLM, non un login SQL nativo.
+  if (process.env.BC_DOMAIN) {
+    return {
+      ...base,
+      authentication: {
+        type: 'ntlm',
+        options: {
+          domain:   process.env.BC_DOMAIN,
+          userName: process.env.BC_USER,
+          password: process.env.BC_PASSWORD,
+        },
+      },
+    };
+  }
+
+  return {
+    ...base,
+    user:     process.env.BC_USER,
+    password: process.env.BC_PASSWORD,
   };
 }
 
@@ -30,11 +56,11 @@ async function queryBcArticles(): Promise<BcArticle[]> {
   try {
     const result = await pool.request().query(`
       SELECT
-        A.[No_]                       AS code,
-        A.[Description]               AS description,
-        B.[EOS User Defined Field 22] AS family
+        A.[No_]              AS code,
+        A.[Description]      AS description,
+        B.[${EOS_UDF_22}]    AS family
       FROM [STR$Item$437dbf0e-84ff-417a-965d-ed2bb9650972] A
-      LEFT JOIN [STR$Item$5d2c2370-931f-423b-bfb5-2128499f89ff] B
+      LEFT JOIN [${ITEM_EXT_TABLE}] B
         ON B.[No_] = A.[No_]
     `);
     return (result.recordset as Array<{ code: unknown; description: unknown; family: unknown }>).map(r => ({

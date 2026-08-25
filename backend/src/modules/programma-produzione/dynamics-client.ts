@@ -4,7 +4,11 @@ import { getDynamicsConfig } from '../edi/dynamics-client.js';
 // ─── Tabelle Dynamics (DB: STR) ───────────────────────────────────────────────
 
 const SALES_LINE_TABLE     = 'STR$Sales Line$437dbf0e-84ff-417a-965d-ed2bb9650972';
-const SALES_LINE_LSA_TABLE = 'STR$Sales Line$34bccc94-c43f-4899-8aa8-c820f9e64421';
+// Tabella "$ext" di Sales Line — vedi il commento su LSA_TABLE in
+// edi/dynamics-client.ts per il perché del "$ext" e del GUID nel nome colonna.
+const SALES_LINE_LSA_TABLE = 'STR$Sales Line$437dbf0e-84ff-417a-965d-ed2bb9650972$ext';
+const LSA_TASK_NO   = 'LSA Task No_$34bccc94-c43f-4899-8aa8-c820f9e64421';
+const LSA_DESC_EXT  = 'LSA Description Extension$34bccc94-c43f-4899-8aa8-c820f9e64421';
 const SALES_HEADER_TABLE   = 'STR$Sales Header$437dbf0e-84ff-417a-965d-ed2bb9650972';
 
 const ITEM_ATTR_MAPPING_TABLE  = 'STR$Item Attribute Value Mapping$437dbf0e-84ff-417a-965d-ed2bb9650972';
@@ -72,9 +76,9 @@ export async function getProductionSalesOrders(): Promise<BcSalesOrderLine[]> {
     const result = await req.query(`
       SELECT
         sl.[No_]                                                    AS codice_articolo,
-        LTRIM(RTRIM(ISNULL(lsa.[LSA Task No_], '')))                AS commessa,
+        LTRIM(RTRIM(ISNULL(lsa.[${LSA_TASK_NO}], '')))              AS commessa,
         ISNULL(sl.[Description], '')                                AS description,
-        ISNULL(lsa.[LSA Description Extension], '')                 AS description_extension,
+        ISNULL(lsa.[${LSA_DESC_EXT}], '')                           AS description_extension,
         ISNULL(sl.[Location Code], '')                               AS ubicazione,
         CONVERT(VARCHAR(10), sl.[Planned Shipment Date], 23)        AS planned_shipment_date,
         CONVERT(VARCHAR(10), sl.[Shipment Date], 23)                AS shipment_date,
@@ -94,7 +98,7 @@ export async function getProductionSalesOrders(): Promise<BcSalesOrderLine[]> {
         AND sl.[No_] NOT IN (${excludedParams.join(', ')})
         AND sl.[Outstanding Quantity] <> 0
         AND sl.[Location Code] IN (${locationParams.join(', ')})
-        AND LTRIM(RTRIM(ISNULL(lsa.[LSA Task No_], ''))) <> ''
+        AND LTRIM(RTRIM(ISNULL(lsa.[${LSA_TASK_NO}], ''))) <> ''
         AND sh.[Order Date] > DATEADD(MONTH, -6, GETDATE())
     `);
 
