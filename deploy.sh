@@ -47,7 +47,7 @@ if [ ! -f .env ]; then
   error "File .env non trovato!\nCopia .env.example → .env e compila le variabili."
 fi
 
-required_vars=(POSTGRES_PASSWORD NEXT_PUBLIC_API_URL CORS_ORIGINS BC_USER BC_PASSWORD)
+required_vars=(POSTGRES_PASSWORD SERVER_IP NEXT_PUBLIC_API_URL CORS_ORIGINS BC_USER BC_PASSWORD)
 missing=0
 for var in "${required_vars[@]}"; do
   val=$(grep -E "^${var}=" .env | cut -d= -f2-)
@@ -67,6 +67,12 @@ SCAN_HOST="${SCAN_FOLDER_HOST:-./test-scansioni}"
 DOCS_HOST="${DOCS_FOLDER_HOST:-./test-documentos}"
 TICKETS_HOST="${TICKETS_UPLOADS_HOST:-./data/tickets-uploads}"
 mkdir -p "$SCAN_HOST" "$DOCS_HOST" "$TICKETS_HOST"
+
+# ─── Certificati HTTPS (CA locale, generati una sola volta) ───────
+if [ ! -f certs/server-cert.pem ]; then
+  step "Genero i certificati HTTPS (prima esecuzione)..."
+  bash certs/generate-certs.sh
+fi
 
 # ═══════════════════════════════════════════════════════════════════
 # Funzione: sistema i permessi della cartella allegati ticket
@@ -177,7 +183,7 @@ if [ "$CMD" = "update" ]; then
 
   info "Aggiornamento completato."
   echo ""
-  echo "  Frontend  →  http://$(grep NEXT_PUBLIC_API_URL .env | cut -d= -f2- | sed 's/:3001//' | sed 's|http://||'):3000"
+  echo "  Frontend  →  https://$(grep -E '^SERVER_IP=' .env | cut -d= -f2-):3000"
   echo "  Log live  →  ./deploy.sh logs"
   exit 0
 fi
@@ -193,8 +199,12 @@ fix_upload_perms
 
 info "Stack avviato con successo!"
 echo ""
-echo "  Frontend  →  http://$(grep NEXT_PUBLIC_API_URL .env | cut -d= -f2- | sed 's/:3001//' | sed 's|http://||'):3000"
-echo "  Backend   →  $(grep NEXT_PUBLIC_API_URL .env | cut -d= -f2-)/health"
+SERVER_IP_ECHO="$(grep -E '^SERVER_IP=' .env | cut -d= -f2-)"
+echo "  Frontend  →  https://${SERVER_IP_ECHO}:3000"
+echo "  Backend   →  https://${SERVER_IP_ECHO}:3001/health"
+echo ""
+echo "  Prima volta: installa certs/ca-cert.pem come CA attendibile sui tablet"
+echo "  (Impostazioni > Sicurezza > Crittografia e credenziali > Installa certificato > CA)."
 echo ""
 echo "  Log live  →  ./deploy.sh logs"
 echo "  Stop      →  ./deploy.sh stop"

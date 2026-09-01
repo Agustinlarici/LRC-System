@@ -116,8 +116,8 @@ services:
       - ${SCAN_FOLDER_HOST:-./test-scansioni}:/scansioni:ro
       - ${DOCS_FOLDER_HOST:-./test-documentos}:/documentos
       - ${TICKETS_UPLOADS_HOST:-./data/tickets-uploads}:/app/uploads
-    ports:
-      - "3001:3001"
+    expose:
+      - "3001"
     depends_on:
       db:
         condition: service_healthy
@@ -133,9 +133,23 @@ services:
     environment:
       INTERNAL_API_URL: http://backend:3001
       BACKEND_URL:      http://backend:3001
+    expose:
+      - "3000"
+    depends_on:
+      - backend
+
+  # ─── nginx (TLS — HTTPS su 3000/3001, richiesto per PWA/installazione su tablet) ──
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
     ports:
       - "3000:3000"
+      - "3001:3001"
     depends_on:
+      - frontend
       - backend
 
   # ─── Adminer ────────────────────────────────────────────────────────────────
