@@ -116,8 +116,8 @@ services:
       - ${SCAN_FOLDER_HOST:-./test-scansioni}:/scansioni:ro
       - ${DOCS_FOLDER_HOST:-./test-documentos}:/documentos
       - ${TICKETS_UPLOADS_HOST:-./data/tickets-uploads}:/app/uploads
-    expose:
-      - "3001"
+    ports:
+      - "3001:3001"
     depends_on:
       db:
         condition: service_healthy
@@ -133,12 +133,15 @@ services:
     environment:
       INTERNAL_API_URL: http://backend:3001
       BACKEND_URL:      http://backend:3001
-    expose:
-      - "3000"
+    ports:
+      - "3000:3000"
     depends_on:
       - backend
 
-  # ─── nginx (TLS — HTTPS su 3000/3001, richiesto per PWA/installazione su tablet) ──
+  # ─── nginx (TLS — porte dedicate 3443/3444, SOLO per installazione PWA su tablet) ──
+  # L'ufficio continua a usare http://<ip>:3000 come sempre (frontend/backend sopra
+  # pubblicano ancora diretti). Queste porte servono solo per chi vuole accedere via
+  # HTTPS (richiesto da Chrome per installare la PWA come app sul tablet).
   nginx:
     image: nginx:alpine
     restart: unless-stopped
@@ -146,8 +149,8 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./certs:/etc/nginx/certs:ro
     ports:
-      - "3000:3000"
-      - "3001:3001"
+      - "3443:3443"
+      - "3444:3444"
     depends_on:
       - frontend
       - backend

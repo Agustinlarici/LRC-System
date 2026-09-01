@@ -183,7 +183,9 @@ if [ "$CMD" = "update" ]; then
 
   info "Aggiornamento completato."
   echo ""
-  echo "  Frontend  →  https://$(grep -E '^SERVER_IP=' .env | cut -d= -f2-):3000"
+  SERVER_IP_ECHO="$(grep -E '^SERVER_IP=' .env | cut -d= -f2-)"
+  echo "  Frontend (ufficio)  →  http://${SERVER_IP_ECHO}:3000"
+  echo "  Frontend (tablet)   →  https://${SERVER_IP_ECHO}:3443"
   echo "  Log live  →  ./deploy.sh logs"
   exit 0
 fi
@@ -200,10 +202,11 @@ fix_upload_perms
 info "Stack avviato con successo!"
 echo ""
 SERVER_IP_ECHO="$(grep -E '^SERVER_IP=' .env | cut -d= -f2-)"
-echo "  Frontend  →  https://${SERVER_IP_ECHO}:3000"
-echo "  Backend   →  https://${SERVER_IP_ECHO}:3001/health"
+echo "  Frontend (ufficio)  →  http://${SERVER_IP_ECHO}:3000"
+echo "  Backend  (ufficio)  →  http://${SERVER_IP_ECHO}:3001/health"
+echo "  Frontend (tablet)   →  https://${SERVER_IP_ECHO}:3443"
 echo ""
-echo "  Prima volta: installa certs/ca-cert.pem come CA attendibile sui tablet"
+echo "  Per il tablet: installa certs/ca-cert.pem come CA attendibile"
 echo "  (Impostazioni > Sicurezza > Crittografia e credenziali > Installa certificato > CA)."
 echo ""
 echo "  Log live  →  ./deploy.sh logs"

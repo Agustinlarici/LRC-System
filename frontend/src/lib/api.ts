@@ -1,9 +1,10 @@
 /**
- * API client — browser calls backend directly on port 3001 (no Next.js proxy hop).
+ * API client — browser calls backend directly (no Next.js proxy hop).
+ * Porta 3001 su HTTP (accesso normale ufficio), 3444 su HTTPS (nginx TLS — tablet/PWA).
  */
 
 const BACKEND = typeof window !== 'undefined'
-  ? `${window.location.protocol}//${window.location.hostname}:3001`  // browser → mismo host, puerto 3001
+  ? `${window.location.protocol}//${window.location.hostname}:${window.location.protocol === 'https:' ? 3444 : 3001}`
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');          // SSR → Docker service
 
 const REQUEST_TIMEOUT_MS = 15_000;
