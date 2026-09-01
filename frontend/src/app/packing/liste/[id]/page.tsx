@@ -281,6 +281,15 @@ function DoganaView({ dispatch, downloadRef }: {
 
   const cartoneTareKgNum = parseFloat(cartoneTareStr) || 0;
 
+  function cartonePalletTare(items: PalletItem[], palletId: number): number {
+    return groupPalletItems(items).reduce((sum, g, gi) => {
+      const lineKey = `${palletId}-${gi}`;
+      const ov = cartoneLineOverrides[lineKey]?.tare;
+      const val = ov !== undefined ? (parseFloat(ov) || 0) : g.count * cartoneTareKgNum;
+      return sum + val;
+    }, 0);
+  }
+
   const nonEmptyPallets = dispatch.pallets.filter(p => p.items.length > 0);
   const missingItems    = nonEmptyPallets.flatMap(p => p.items).filter(it =>
     it.missing_weight || it.missing_container ||
@@ -307,7 +316,7 @@ function DoganaView({ dispatch, downloadRef }: {
       const dimsText   = hasDims ? `${extra.L || 0}×${extra.W || 0}×${extra.H || 0} mm` : '—';
       const pNet       = pallet.items.reduce((s, it) => s + (it.net_kg ?? 0), 0);
       const pContTare  = cartoneMode
-        ? pallet.items.length * cartoneTareKgNum
+        ? cartonePalletTare(pallet.items, pallet.id)
         : pallet.items.reduce((s, it) => s + (it.container_tare_kg ?? 0), 0);
       const pGross     = pNet + pContTare + palletTare;
       const pCost      = prezziOrdineMode
@@ -407,7 +416,7 @@ function DoganaView({ dispatch, downloadRef }: {
       const palletTare = extra.palletTareKg !== undefined && extra.palletTareKg !== '' ? Number(extra.palletTareKg) : 6;
       const pNet      = p.items.reduce((s, it) => s + (it.net_kg    ?? 0), 0);
       const pContTare = cartoneMode
-        ? p.items.length * cartoneTareKgNum
+        ? cartonePalletTare(p.items, p.id)
         : p.items.reduce((s, it) => s + (it.container_tare_kg ?? 0), 0);
       const pCost = prezziOrdineMode
         ? p.items.reduce((s, it) => {
@@ -422,7 +431,7 @@ function DoganaView({ dispatch, downloadRef }: {
       tCost  += pCost;
     }
     return { totalNetKg: tNet, totalGrossKg: tGross, totalCost: tCost };
-  }, [nonEmptyPallets, palletExtras, cartoneMode, cartoneTareKgNum, prezziOrdineMode, bcPrices, priceOverrides]);
+  }, [nonEmptyPallets, palletExtras, cartoneMode, cartoneTareKgNum, cartoneLineOverrides, prezziOrdineMode, bcPrices, priceOverrides]);
 
   const dispatchQtyByArticle = useMemo(() => {
     const map: Record<string, number> = {};
@@ -691,7 +700,7 @@ function DoganaView({ dispatch, downloadRef }: {
         const dimsText   = hasDims ? `${extra.L || 0}×${extra.W || 0}×${extra.H || 0} mm` : null;
         const pNet       = pallet.items.reduce((s, it) => s + (it.net_kg ?? 0), 0);
         const pContTare  = cartoneMode
-          ? pallet.items.length * cartoneTareKgNum
+          ? cartonePalletTare(pallet.items, pallet.id)
           : pallet.items.reduce((s, it) => s + (it.container_tare_kg ?? 0), 0);
         const pGross     = pNet + pContTare + palletTare;
         const pCost      = prezziOrdineMode
