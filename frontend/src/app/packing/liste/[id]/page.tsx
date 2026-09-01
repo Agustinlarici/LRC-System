@@ -188,7 +188,7 @@ function DoganaView({ dispatch, downloadRef }: {
   const [cartoneLabel,        setCartoneLabel]        = useState(() => localStorage.getItem(`cartoneLabel:${id}`)  || 'Box');
   const [cartoneTareStr,      setCartoneTareStr]      = useState(() => localStorage.getItem(`cartoneTare:${id}`)   || '1.5');
   const [cartoneDimsStr,      setCartoneDimsStr]      = useState(() => localStorage.getItem(`cartoneDims:${id}`)   || '1000×800×300');
-  const [cartoneLineOverrides, setCartoneLineOverrides] = useState<Record<string, { name?: string; dims?: string }>>(() => {
+  const [cartoneLineOverrides, setCartoneLineOverrides] = useState<Record<string, { name?: string; dims?: string; tare?: string }>>(() => {
     try { return JSON.parse(localStorage.getItem(`cartoneLines:${id}`) || '{}'); } catch { return {}; }
   });
   const [ordiniMode,       setOrdiniMode]       = useState(() => localStorage.getItem(`ordini:${id}`)    === 'true');
@@ -342,6 +342,9 @@ function DoganaView({ dispatch, downloadRef }: {
         const lineKey     = `${pallet.id}-${gi}`;
         const excelName   = cartoneMode ? (cartoneLineOverrides[lineKey]?.name ?? cartoneLabel) : (it.container_name ?? '!');
         const excelDims   = cartoneMode ? (cartoneLineOverrides[lineKey]?.dims ?? cartoneDimsStr) : rawDims;
+        const excelTareKg = cartoneMode
+          ? (cartoneLineOverrides[lineKey]?.tare !== undefined ? parseFloat(cartoneLineOverrides[lineKey].tare!) || 0 : g.count * cartoneTareKgNum)
+          : g.sumContTare;
         rows.push([
           `${g.count}x`,
           it.article_code,
@@ -356,9 +359,9 @@ function DoganaView({ dispatch, downloadRef }: {
             return uc != null ? uc : '–';
           })(),
           it.unit_weight_kg != null ? it.unit_weight_kg : '–',
-          cartoneMode ? Number((g.count * cartoneTareKgNum).toFixed(3))                : Number(g.sumContTare.toFixed(3)),
+          Number(excelTareKg.toFixed(3)),
           Number(g.sumNet.toFixed(3)),
-          cartoneMode ? Number((g.sumNet + g.count * cartoneTareKgNum).toFixed(3))     : Number(g.sumGross.toFixed(3)),
+          Number((g.sumNet + excelTareKg).toFixed(3)),
           (() => {
             if (!prezziOrdineMode) return g.missingCost ? '–' : Number(g.sumCost.toFixed(2));
             const uc = priceOverrides[it.article_code] !== undefined
@@ -771,8 +774,10 @@ function DoganaView({ dispatch, downloadRef }: {
                   const lineKey         = `${pallet.id}-${idx}`;
                   const displayContName = cartoneMode ? (cartoneLineOverrides[lineKey]?.name ?? cartoneLabel) : it.container_name;
                   const displayDims     = cartoneMode ? (cartoneLineOverrides[lineKey]?.dims ?? cartoneDimsStr) : rawDims;
-                  const displayContTare = cartoneMode ? g.count * cartoneTareKgNum : g.sumContTare;
-                  const displayGross    = cartoneMode ? g.sumNet + g.count * cartoneTareKgNum : g.sumGross;
+                  const displayContTare = cartoneMode
+                    ? (cartoneLineOverrides[lineKey]?.tare !== undefined ? parseFloat(cartoneLineOverrides[lineKey].tare!) || 0 : g.count * cartoneTareKgNum)
+                    : g.sumContTare;
+                  const displayGross    = cartoneMode ? g.sumNet + displayContTare : g.sumGross;
                   return (
                     <tr key={idx} className={rowCls}>
                       <td className="c col-nx">{g.count}x</td>
@@ -813,7 +818,17 @@ function DoganaView({ dispatch, downloadRef }: {
                         ) : (it.unit_cost != null ? it.unit_cost.toFixed(2) : '–')}
                       </td>
                       <td className="c col-unitkg">{it.unit_weight_kg != null ? it.unit_weight_kg.toFixed(4) : <span style={{ color: '#f87171' }}>-</span>}</td>
-                      <td className="c col-tare">{displayContTare.toFixed(3)}</td>
+                      <td className="c col-tare">
+                        {cartoneMode ? (
+                          <input
+                            className="dogana-input"
+                            style={{ width: '60px' }}
+                            type="number" min="0" step="0.001"
+                            value={cartoneLineOverrides[lineKey]?.tare ?? String(g.count * cartoneTareKgNum)}
+                            onChange={e => setCartoneLineOverrides(prev => ({ ...prev, [lineKey]: { ...prev[lineKey], tare: e.target.value } }))}
+                          />
+                        ) : displayContTare.toFixed(3)}
+                      </td>
                       <td className="c col-lnet">{g.sumNet.toFixed(3)}</td>
                       <td className="c col-lgross" style={{ fontWeight: 600 }}>{displayGross.toFixed(3)}</td>
                       <td className="c col-lcost">{(() => {
