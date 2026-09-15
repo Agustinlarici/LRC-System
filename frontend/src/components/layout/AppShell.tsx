@@ -9,7 +9,7 @@ import type { ModuleKey } from '@/types';
 
 // ─── Route → module mapping ───────────────────────────────────────────────────
 
-function getModuleForPath(pathname: string): { key: ModuleKey; needsManage?: boolean } | null {
+function getModuleForPath(pathname: string): { key: ModuleKey | ModuleKey[]; needsManage?: boolean } | null {
   if (pathname.startsWith('/tickets/dashboard'))      return { key: 'tickets_it' };
   if (pathname.startsWith('/admin/system'))           return { key: 'impostazioni' };
   if (pathname.startsWith('/tickets'))               return { key: 'tickets' };
@@ -23,11 +23,14 @@ function getModuleForPath(pathname: string): { key: ModuleKey; needsManage?: boo
   if (pathname.startsWith('/buffer'))                return { key: 'buffer' };
   if (pathname.startsWith('/mappa'))                 return { key: 'mappa' };
   if (pathname.startsWith('/dashboards'))            return { key: 'dashboards' };
+  // accessibile con il permesso "spma" o quello di "Programma Produzione" (import sequenza usato da entrambi)
+  if (pathname.startsWith('/spma/import'))           return { key: ['spma', 'programma_produzione'] };
   if (pathname.startsWith('/spma'))                  return { key: 'spma' };
   if (pathname.startsWith('/recepciones'))           return { key: 'recepciones' };
   if (pathname.startsWith('/edi'))                   return { key: 'edi' };
   if (pathname.startsWith('/qualita/impostazioni'))  return { key: 'qualita', needsManage: true };
   if (pathname.startsWith('/qualita'))               return { key: 'qualita' };
+  if (pathname.startsWith('/produzione'))            return { key: 'programma_produzione' };
   return null;
 }
 
@@ -69,7 +72,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading, canView, canManage } = useAuth();
 
   // Fullscreen routes (no sidebar, no auth check)
-  const isFullscreen = pathname === '/login';
+  const isFullscreen = pathname === '/login' || pathname === '/device-pair';
   const isTablet     = pathname.endsWith('/tablet') || pathname.startsWith('/qualita/tablet/');
   const isMonitor    = /^\/monitor\/\d+/.test(pathname);
 
@@ -110,16 +113,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // ── Permission check for current module ───────────────────────────────────
 
   const currentModule = getModuleForPath(pathname);
-  const hasAccess = !currentModule || (
-    currentModule.needsManage
-      ? canManage(currentModule.key)
-      : canView(currentModule.key)
+  const moduleKeys = currentModule ? [currentModule.key].flat() : [];
+  const hasAccess = !currentModule || moduleKeys.some(key =>
+    currentModule.needsManage ? canManage(key) : canView(key)
   );
 
   return (
     <ToastProvider>
       <Sidebar />
-      <main className="flex-1 min-w-0 overflow-auto bg-slate-50">
+      <main className="flex-1 min-w-0 overflow-auto bg-slate-50 print:overflow-visible print:w-full">
         {hasAccess
           ? <div className="p-6">{children}</div>
           : <AccessDenied />

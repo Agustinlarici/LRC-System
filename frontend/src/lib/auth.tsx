@@ -20,6 +20,35 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+// ─── Device pairing (kiosk tablets that skip login) ────────────────────────────
+
+export const DEVICE_TOKEN_KEY = 'lrc_device_token';
+
+/** Scambia il token di dispositivo salvato in questo browser per una sessione normale. */
+async function tryDeviceLogin(): Promise<boolean> {
+  let deviceToken: string | null = null;
+  try { deviceToken = localStorage.getItem(DEVICE_TOKEN_KEY); } catch { return false; }
+  if (!deviceToken) return false;
+
+  try {
+    const res = await fetch(`${BACKEND}/api/auth/devices/login`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body:    JSON.stringify({ device_token: deviceToken }),
+      signal:  AbortSignal.timeout(10_000),
+    });
+    if (res.ok) return true;
+    if (res.status === 401) {
+      // Token revocato o sconosciuto: non ha senso ritentare ad ogni caricamento
+      try { localStorage.removeItem(DEVICE_TOKEN_KEY); } catch {}
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -28,10 +57,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch(`${BACKEND}/api/auth/me`, {
+      let res = await fetch(`${BACKEND}/api/auth/me`, {
         credentials: 'include',
         signal: AbortSignal.timeout(10_000),
       });
+      if (res.status === 401 && await tryDeviceLogin()) {
+        res = await fetch(`${BACKEND}/api/auth/me`, {
+          credentials: 'include',
+          signal: AbortSignal.timeout(10_000),
+        });
+      }
       if (res.ok) {
         const data = await res.json();
         setUser(data.user);

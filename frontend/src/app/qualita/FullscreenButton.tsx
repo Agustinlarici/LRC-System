@@ -2,30 +2,33 @@
 
 import { useRouter } from 'next/navigation';
 
+interface Props {
+  href: string;
+}
+
 // La richiesta di fullscreen deve avvenire in modo sincrono nello stesso gesto di
 // click dell'utente, altrimenti il browser la rifiuta (serve l'attivazione utente).
-// Per questo non si può farla nella pagina /qualita/tablet dopo la navigazione, va
+// Per questo non si può farla nella pagina di destinazione dopo la navigazione, va
 // agganciata qui, al click che avvia la modalità tablet.
-export function TabletModeLink() {
+export function FullscreenButton({ href }: Props) {
   const router = useRouter();
 
   function handleClick(e: React.MouseEvent) {
     e.preventDefault();
     document.documentElement.requestFullscreen().catch(() => {});
-    router.push('/qualita/tablet');
+    router.push(href);
   }
 
   return (
     <a
-      href="/qualita/tablet"
+      href={href}
       onClick={handleClick}
-      className="flex items-center gap-2 text-sm text-gray-500 border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors"
+      className="flex items-center gap-2 text-sm text-gray-500 border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors whitespace-nowrap"
     >
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4">
-        <rect x="5" y="2" width="14" height="20" rx="2" strokeLinecap="round" strokeLinejoin="round" />
-        <circle cx="12" cy="18" r="0.5" fill="currentColor" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 9V5a1 1 0 0 1 1-1h4M4 15v4a1 1 0 0 0 1 1h4M20 9V5a1 1 0 0 0-1-1h-4M20 15v4a1 1 0 0 1-1 1h-4" />
       </svg>
-      Modalità Tablet
+      Schermo intero
     </a>
   );
 }

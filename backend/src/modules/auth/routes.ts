@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { compare, hash } from 'bcryptjs';
+import { randomBytes, randomInt, createHash } from 'crypto';
 import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
 import {
@@ -197,4 +198,144 @@ authRoutes.put('/users/:id/permissions', requireManage('tickets_admin'), async (
     FROM user_module_permissions WHERE user_id = ${id}
   `;
   return c.json(perms);
+});
+
+// ─── Device pairing (kiosk tablets that skip login) ────────────────────────────
+// Un dispositivo condiviso (es. tablet montato in produzione) può restare
+// autenticato senza password: un admin genera un codice a 6 cifre valido 10
+// minuti per un utente specifico, il dispositivo lo scambia una sola volta con
+// un token lungo salvato in localStorage, e ad ogni apertura lo scambia con una
+// sessione normale. Il token è revocabile singolarmente da /admin/system.
+
+const PAIRING_CODE_TTL_MS = 10 * 60 * 1000;
+
+function hashDeviceToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function requestIp(c: any): string | null {
+  return c.req.header('x-forwarded-for')?.split(',')[0].trim() ?? c.req.header('x-real-ip') ?? null;
+}
+
+authRoutes.post('/devices/pair/generate', requireManage('tickets_admin'), async (c) => {
+  const body = await parseBody(c, z.object({
+    user_id: z.number().int().positive(),
+    label:   z.string().min(1).max(100),
+  }));
+
+  const [target] = await db<{ id: number }[]>`SELECT id FROM users WHERE id = ${body.user_id} AND is_active`;
+  if (!target) throw new HTTPException(404, { message: 'Utente non trovato' });
+
+  await db`DELETE FROM device_pairing_codes WHERE expires_at < now()`;
+
+  const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+  const expiresAt = new Date(Date.now() + PAIRING_CODE_TTL_MS);
+
+  await db`
+    INSERT INTO device_pairing_codes (code, user_id, label, expires_at)
+    VALUES (${code}, ${body.user_id}, ${body.label}, ${expiresAt})
+  `;
+
+  const actor = c.get('user');
+  await auditLog({ userId: actor.id, username: actor.username, action: 'device_pair_code_generated', entity: 'device_tokens', details: { for_user_id: body.user_id, label: body.label } });
+
+  return c.json({ code, expires_at: expiresAt });
+});
+
+authRoutes.post('/devices/pair/redeem', loginRateLimit, async (c) => {
+  const ip = requestIp(c);
+  const body = await parseBody(c, z.object({ code: z.string().length(6) }));
+
+  const [pairing] = await db<{ user_id: number; label: string }[]>`
+    SELECT user_id, label FROM device_pairing_codes
+    WHERE code = ${body.code} AND expires_at > now()
+  `;
+  if (!pairing) {
+    await auditLog({ action: 'device_pair_redeem_failed', ip, details: { reason: 'invalid_or_expired_code' } });
+    throw new HTTPException(401, { message: 'Codice non valido o scaduto' });
+  }
+
+  const [user] = await db<{ id: number; username: string; display_name: string; role: string; is_active: boolean }[]>`
+    SELECT id, username, display_name, role, is_active FROM users WHERE id = ${pairing.user_id}
+  `;
+  if (!user || !user.is_active) throw new HTTPException(401, { message: 'Utente non attivo' });
+
+  const deviceToken = randomBytes(32).toString('hex');
+  await db`
+    INSERT INTO device_tokens (user_id, token_hash, label)
+    VALUES (${pairing.user_id}, ${hashDeviceToken(deviceToken)}, ${pairing.label})
+  `;
+  await db`DELETE FROM device_pairing_codes WHERE code = ${body.code}`;
+
+  const [permissions, profile] = await Promise.all([
+    db<{ module_key: string; can_view: boolean; can_manage: boolean }[]>`
+      SELECT module_key, can_view, can_manage FROM user_module_permissions WHERE user_id = ${user.id}
+    `,
+    loadProfile(user.id),
+  ]);
+
+  const payload: TokenPayload = { id: user.id, username: user.username, display_name: user.display_name, role: user.role as TokenPayload['role'] };
+  setSessionCookie(c, signToken(payload));
+  await auditLog({ userId: user.id, username: user.username, action: 'device_paired', ip, details: { label: pairing.label } });
+
+  return c.json({ device_token: deviceToken, user: { ...payload, ...profile, permissions } });
+});
+
+authRoutes.post('/devices/login', loginRateLimit, async (c) => {
+  const ip = requestIp(c);
+  const body = await parseBody(c, z.object({ device_token: z.string().min(32) }));
+  const tokenHash = hashDeviceToken(body.device_token);
+
+  const [device] = await db<{ id: number; user_id: number }[]>`
+    SELECT id, user_id FROM device_tokens WHERE token_hash = ${tokenHash} AND revoked_at IS NULL
+  `;
+  if (!device) {
+    await auditLog({ action: 'device_login_failed', ip, details: { reason: 'unknown_or_revoked_token' } });
+    throw new HTTPException(401, { message: 'Dispositivo non riconosciuto' });
+  }
+
+  const [user] = await db<{ id: number; username: string; display_name: string; role: string; is_active: boolean }[]>`
+    SELECT id, username, display_name, role, is_active FROM users WHERE id = ${device.user_id}
+  `;
+  if (!user || !user.is_active) throw new HTTPException(401, { message: 'Utente non attivo' });
+
+  const [permissions, profile] = await Promise.all([
+    db<{ module_key: string; can_view: boolean; can_manage: boolean }[]>`
+      SELECT module_key, can_view, can_manage FROM user_module_permissions WHERE user_id = ${user.id}
+    `,
+    loadProfile(user.id),
+  ]);
+
+  const payload: TokenPayload = { id: user.id, username: user.username, display_name: user.display_name, role: user.role as TokenPayload['role'] };
+  setSessionCookie(c, signToken(payload));
+  await db`UPDATE device_tokens SET last_used_at = now() WHERE id = ${device.id}`;
+
+  return c.json({ user: { ...payload, ...profile, permissions } });
+});
+
+authRoutes.get('/devices', requireManage('tickets_admin'), async (c) => {
+  const devices = await db`
+    SELECT dt.id, dt.label, dt.created_at, dt.last_used_at, dt.revoked_at,
+           u.id AS user_id, u.display_name AS user_display_name
+    FROM device_tokens dt
+    JOIN users u ON u.id = dt.user_id
+    ORDER BY dt.revoked_at IS NOT NULL, dt.created_at DESC
+  `;
+  return c.json(devices);
+});
+
+authRoutes.delete('/devices/:id', requireManage('tickets_admin'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+
+  const [revoked] = await db`
+    UPDATE device_tokens SET revoked_at = now() WHERE id = ${id} AND revoked_at IS NULL
+    RETURNING id, label
+  `;
+  if (!revoked) throw new HTTPException(404, { message: 'Dispositivo non trovato o già revocato' });
+
+  const actor = c.get('user');
+  await auditLog({ userId: actor.id, username: actor.username, action: 'device_revoked', entity: 'device_tokens', entityId: id, details: { label: revoked.label } });
+
+  return c.json({ status: 'ok' });
 });

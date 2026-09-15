@@ -816,12 +816,15 @@ function severityBadge(s: string) {
 
 const JOB_LABELS: Record<string, string> = {
   sync_incremental:  'Sync WebThron (10 min)',
+  sync_full:         'Sync WebThron — prima esecuzione',
   sync_full_day:     'Sync Full Day (01:00)',
   heatmap_snapshot:  'Snapshot OEE (01:00)',
   lookup_refresh:    'Lookup Tables (02:00)',
   bc_sync:           'Sync Business Central (03:00)',
   buffer_refresh:    'Buffer Refresh (30 min)',
   spma_onedrive_poll: 'OneDrive SPMA (10 min)',
+  edi_ferrari_scan:  'EDI Ferrari DELINS (06:00)',
+  edi_auto_generate: 'EDI Auto-generate (23:45)',
 };
 
 function SystemCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -974,11 +977,13 @@ function AggiornamentiTab() {
             <SystemCard title="Azioni manuali">
               <div className="space-y-2">
                 {([
-                  ['force-sync',           'Sync WebThron ora'],
-                  ['force-bc-sync',        'Sync Business Central ora'],
-                  ['force-lookup',         'Refresh lookup tables'],
-                  ['force-snapshot',       'Snapshot OEE ieri'],
-                  ['force-onedrive-poll',  'Poll OneDrive SPMA ora'],
+                  ['force-sync',              'Sync WebThron ora'],
+                  ['force-bc-sync',           'Sync Business Central ora'],
+                  ['force-lookup',            'Refresh lookup tables'],
+                  ['force-snapshot',          'Snapshot OEE ieri'],
+                  ['force-onedrive-poll',     'Poll OneDrive SPMA ora'],
+                  ['force-buffer',            'Refresh Buffer ora'],
+                  ['force-edi-autogenerate',  'Genera EDI auto ora'],
                 ] as [string, string][]).map(([ep, label]) => (
                   <button
                     key={ep}
@@ -1119,9 +1124,163 @@ function AggiornamentiTab() {
   );
 }
 
+// ─── Dispositivi (pairing senza password) ──────────────────────────────────────
+
+type Device = {
+  id: number; label: string; created_at: string; last_used_at: string | null; revoked_at: string | null;
+  user_id: number; user_display_name: string;
+};
+
+function DevicesTab({ users }: { users: User[] }) {
+  const [devices,   setDevices]   = useState<Device[]>([]);
+  const [userId,    setUserId]    = useState<number | ''>('');
+  const [label,     setLabel]     = useState('');
+  const [code,      setCode]      = useState<{ code: string; expires_at: string } | null>(null);
+  const [error,     setError]     = useState('');
+  const [generating, setGenerating] = useState(false);
+
+  function reload() {
+    apiFetch('/api/auth/devices')
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('load failed')))
+      .then(data => setDevices(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }
+
+  useEffect(() => { reload(); }, []);
+
+  async function generate() {
+    if (!userId || !label.trim()) return;
+    setGenerating(true); setError(''); setCode(null);
+    try {
+      const res = await apiFetch('/api/auth/devices/pair/generate', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ user_id: userId, label: label.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.message ?? 'Errore'); return; }
+      setCode(data);
+      reload();
+    } catch { setError('Errore di connessione'); }
+    finally { setGenerating(false); }
+  }
+
+  async function revoke(id: number) {
+    if (!confirm('Revocare questo dispositivo? Dovrà essere accoppiato di nuovo.')) return;
+    try {
+      const res = await apiFetch(`/api/auth/devices/${id}`, { method: 'DELETE' });
+      if (res.ok) reload();
+    } catch { /* noop */ }
+  }
+
+  const fmt = (d: string | null) => d ? new Date(d).toLocaleString('it-IT') : '—';
+
+  return (
+    <div className="space-y-6">
+      <div className="card space-y-4">
+        <div>
+          <h2 className="font-semibold text-gray-800 mb-1">Accoppia un dispositivo</h2>
+          <p className="text-xs text-gray-500">
+            Genera un codice a 6 cifre (valido 10 minuti). Sul tablet, in Modalità Tablet, apri
+            "Associa questo dispositivo" e inseriscilo: da quel momento il dispositivo entrerà
+            sempre con questo utente, senza chiedere la password.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Utente</label>
+            <select
+              value={userId}
+              onChange={e => setUserId(e.target.value ? Number(e.target.value) : '')}
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 w-56"
+            >
+              <option value="">— Seleziona utente —</option>
+              {users.map(u => (
+                <option key={u.id} value={u.id}>{u.display_name} ({u.username})</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Nome dispositivo</label>
+            <input
+              value={label}
+              onChange={e => setLabel(e.target.value)}
+              placeholder="es. Tablet Qualità linea 3"
+              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <button
+            onClick={generate}
+            disabled={generating || !userId || !label.trim()}
+            className="bg-blue-600 text-white rounded-lg px-4 py-2 text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          >
+            {generating ? 'Generazione…' : 'Genera codice'}
+          </button>
+        </div>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        {code && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+            <p className="text-xs text-blue-700 mb-1">Codice di accoppiamento — valido fino alle {fmt(code.expires_at)}</p>
+            <p className="text-4xl font-bold tracking-widest text-blue-900">{code.code}</p>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h2 className="font-semibold text-gray-800 mb-3">Dispositivi accoppiati</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-gray-500 text-xs border-b border-gray-200">
+                <th className="py-2 pr-4">Dispositivo</th>
+                <th className="py-2 pr-4">Utente</th>
+                <th className="py-2 pr-4">Creato</th>
+                <th className="py-2 pr-4">Ultimo utilizzo</th>
+                <th className="py-2 pr-4">Stato</th>
+                <th className="py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {devices.map(d => (
+                <tr key={d.id} className="border-b border-gray-100">
+                  <td className="py-2 pr-4">{d.label}</td>
+                  <td className="py-2 pr-4">{d.user_display_name}</td>
+                  <td className="py-2 pr-4 text-gray-500 text-xs whitespace-nowrap">{fmt(d.created_at)}</td>
+                  <td className="py-2 pr-4 text-gray-500 text-xs whitespace-nowrap">{fmt(d.last_used_at)}</td>
+                  <td className="py-2 pr-4 text-xs">
+                    {d.revoked_at
+                      ? <span className="text-red-500 font-medium">Revocato</span>
+                      : <span className="text-green-600 font-medium">Attivo</span>}
+                  </td>
+                  <td className="py-2 text-right">
+                    {!d.revoked_at && (
+                      <button
+                        onClick={() => revoke(d.id)}
+                        className="text-xs text-red-600 hover:underline"
+                      >
+                        Revoca
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {devices.length === 0 && (
+                <tr><td colSpan={6} className="py-4 text-center text-gray-400 text-sm">Nessun dispositivo accoppiato</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-type Tab = 'utenti' | 'modifica' | 'reparti' | 'permessi' | 'avanzata' | 'iknow' | 'aggiornamenti';
+type Tab = 'utenti' | 'modifica' | 'reparti' | 'permessi' | 'dispositivi' | 'avanzata' | 'iknow' | 'aggiornamenti';
 
 export default function AdminSystemPage() {
   const [tab, setTab] = useState<Tab>('utenti');
@@ -1210,6 +1369,7 @@ export default function AdminSystemPage() {
         <button className={tabClass('modifica')}      onClick={() => setTab('modifica')}>Modifica utente</button>
         <button className={tabClass('reparti')}       onClick={() => setTab('reparti')}>Reparti</button>
         <button className={tabClass('permessi')}      onClick={() => setTab('permessi')}>Permessi</button>
+        <button className={tabClass('dispositivi')}   onClick={() => setTab('dispositivi')}>Dispositivi</button>
         <button className={tabClass('avanzata')}      onClick={() => setTab('avanzata')}>Avanzata</button>
         <button className={tabClass('iknow')}         onClick={() => setTab('iknow')}>Fasi iKnow</button>
         <button className={tabClass('aggiornamenti')} onClick={() => setTab('aggiornamenti')}>Aggiornamenti sistema</button>
@@ -1270,6 +1430,9 @@ export default function AdminSystemPage() {
             )}
           </div>
         )}
+
+        {/* ── DISPOSITIVI ── */}
+        {tab === 'dispositivi' && <DevicesTab users={users} />}
 
         {/* ── AVANZATA ── */}
         {tab === 'avanzata' && <AvanzataTab />}

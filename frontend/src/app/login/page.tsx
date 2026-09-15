@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 
 const BACKEND = typeof window !== 'undefined'
@@ -108,6 +109,12 @@ export default function LoginPage() {
             >
               Accedi senza credenziali
             </button>
+          </div>
+
+          <div className="mt-3 text-center">
+            <Link href="/device-pair" className="text-xs text-gray-400 hover:text-gray-600 hover:underline">
+              Associa questo dispositivo
+            </Link>
           </div>
         </div>
       </div>
