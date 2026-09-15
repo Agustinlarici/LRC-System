@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { usePathname } from 'next/navigation';
 import { flushSync } from 'react-dom';
 import type { QualitaComponent, QualitaReport } from '@/types';
 import { DrawingCanvas, type DrawingCanvasHandle } from './DrawingCanvas';
@@ -35,12 +36,19 @@ interface Props {
 }
 
 export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
+  // "tablet" è solo un flag di stile (ingrandisce testi/riquadri) — è true anche
+  // nella pagina normale /qualita/nuova. Il fullscreen deve dipendere solo dal
+  // trovarsi davvero sotto /qualita/tablet, altrimenti riapre il fullscreen anche
+  // in modalità normale.
+  const pathname = usePathname();
+  const isTabletRoute = pathname?.startsWith('/qualita/tablet') ?? false;
+
   // Rientra in fullscreen ad ogni passo del flusso, solo in modalità tablet — su
   // alcuni tablet la tastiera virtuale o il file picker della foto fanno uscire
   // dal fullscreen, e senza questo l'utente si ritroverebbe con le barre del
   // browser visibili finché non tocca di nuovo fuori da un bottone.
   function reenterFullscreen() {
-    if (tablet && !document.fullscreenElement) {
+    if (isTabletRoute && !document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
     }
   }

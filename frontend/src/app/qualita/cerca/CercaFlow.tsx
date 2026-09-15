@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { usePathname } from 'next/navigation';
 import type { QualitaComponent, QualitaReport, QualitaReportGroup } from '@/types';
 import { OverlayViewer } from './OverlayViewer';
 import { showVirtualKeyboard } from '../virtual-keyboard';
@@ -25,6 +26,11 @@ function groupKey(g: { commessa: string; component_id: number }): string {
 }
 
 export function CercaFlow({ tablet = false }: Props) {
+  // "tablet" è solo un flag di stile — il fullscreen deve dipendere dal trovarsi
+  // davvero sotto /qualita/tablet, non dal prop (vedi NuovaSegnalazioneFlow).
+  const pathname = usePathname();
+  const isTabletRoute = pathname?.startsWith('/qualita/tablet') ?? false;
+
   const [components, setComponents] = useState<QualitaComponent[]>([]);
   const [commessa, setCommessa]     = useState('');
   const [componentId, setComponentId] = useState('');
@@ -91,7 +97,7 @@ export function CercaFlow({ tablet = false }: Props) {
     e.preventDefault();
     // Rientra in fullscreen ad ogni ricerca, solo in modalità tablet — su alcuni
     // tablet la tastiera virtuale fa uscire dal fullscreen.
-    if (tablet && !document.fullscreenElement) {
+    if (isTabletRoute && !document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
     }
     if (!commessa.trim()) return;
