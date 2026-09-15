@@ -50,7 +50,7 @@ export default function QualitaTabletHubPage() {
   useEffect(() => { document.title = 'Qualità — Tablet'; }, []);
 
   return (
-    <TabletShell title="" backHref="/qualita" backLabel="Esci dalla modalità tablet">
+    <TabletShell title="">
       <TabletMenu />
     </TabletShell>
   );

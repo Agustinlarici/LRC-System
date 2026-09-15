@@ -35,6 +35,16 @@ interface Props {
 }
 
 export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
+  // Rientra in fullscreen ad ogni passo del flusso, solo in modalità tablet — su
+  // alcuni tablet la tastiera virtuale o il file picker della foto fanno uscire
+  // dal fullscreen, e senza questo l'utente si ritroverebbe con le barre del
+  // browser visibili finché non tocca di nuovo fuori da un bottone.
+  function reenterFullscreen() {
+    if (tablet && !document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+  }
+
   const [step, setStep] = useState<Step>('component');
 
   const [components, setComponents] = useState<QualitaComponent[]>([]);
@@ -119,6 +129,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
   }, [step, component, commessa]);
 
   function pickComponent(c: QualitaComponent) {
+    reenterFullscreen();
     // flushSync + focus sincrono nello stesso gesto di tap dell'utente, altrimenti
     // su tablet/mobile la tastiera non si apre finché non si tocca di nuovo il campo
     // (i browser mobili aprono la tastiera solo se il focus avviene nello stesso
@@ -133,6 +144,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
 
   function confirmCommessa(e: React.FormEvent) {
     e.preventDefault();
+    reenterFullscreen();
     if (!component || !commessa.trim()) return;
     fetchExisting(component.id, commessa.trim());
     setStep('draw');
@@ -147,6 +159,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
   // di procedere, poi esporta il PDF con le segnalazioni fatte su questo
   // componente/commessa (se ce n'è almeno una) e torna alla scelta del componente.
   async function finishSegnalazione() {
+    reenterFullscreen();
     let justSubmitted = false;
     if (hasUnsaved) {
       justSubmitted = await handleSubmit();
@@ -182,6 +195,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
   }
 
   function goBackToCommessa() {
+    reenterFullscreen();
     if (hasUnsaved && !confirm('Hai un disegno non salvato. Se torni indietro ora, andrà perso. Continuare?')) {
       return;
     }
@@ -189,6 +203,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
   }
 
   async function handleSubmit(): Promise<boolean> {
+    reenterFullscreen();
     if (!component) return false;
     setError('');
     const drawingBlob = await canvasRef.current?.exportBlob();

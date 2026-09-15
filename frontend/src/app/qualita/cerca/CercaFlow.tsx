@@ -33,6 +33,11 @@ export function CercaFlow({ tablet = false }: Props) {
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
+    // Rientra in fullscreen ad ogni ricerca, solo in modalità tablet — su alcuni
+    // tablet la tastiera virtuale fa uscire dal fullscreen.
+    if (tablet && !document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
     if (!commessa.trim()) return;
     setLoading(true); setError(''); setSearched(true);
     try {
