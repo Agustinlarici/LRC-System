@@ -69,7 +69,7 @@ export function OverlayViewer({ componentId, componentName, reports, tablet = fa
         {componentName} — {reports.length} segnalazion{reports.length === 1 ? 'e' : 'i'}
       </h2>
 
-      <div className={`grid grid-cols-1 ${tablet ? 'lg:grid-cols-[1fr_420px]' : 'lg:grid-cols-[1fr_280px]'} gap-6`}>
+      <div className={`grid grid-cols-1 items-start ${tablet ? 'lg:grid-cols-[1fr_420px]' : 'lg:grid-cols-[1fr_280px]'} gap-6`}>
         <div className="relative w-full bg-gray-100 border border-gray-200 rounded-lg overflow-hidden">
           <BaseImage src={imageUrl} alt={componentName} />
           {reports.map((r, i) => visible.has(r.id) && (
