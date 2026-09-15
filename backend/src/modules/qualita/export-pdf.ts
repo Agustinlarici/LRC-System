@@ -93,8 +93,8 @@ export async function buildReportPdf(params: {
 
   // Intestazione "letterhead" — ridisegnata su ogni pagina (anche quelle aggiunte
   // automaticamente da pdfkit quando un testo trabocca), così ogni foglio è identificabile.
-  // Sfondo bianco pulito: logo + titolo a sinistra, sottile riga grigia a separare
-  // l'intestazione dal contenuto.
+  // Sfondo bianco pulito: logo + titolo a sinistra, sottile riga rossa (colore del
+  // logo) a separare l'intestazione dal contenuto.
   const logoH = 22;
   const logoW = logoH * STR_LOGO_RATIO;
   const logoY = (BAND_HEIGHT - logoH) / 2 - 2;
@@ -108,7 +108,7 @@ export async function buildReportPdf(params: {
     doc.fillColor(MUTED).font('Helvetica').fontSize(8)
       .text(subtitle, textX, 32, { width: pageWidth - logoW - 16, lineBreak: false });
 
-    doc.moveTo(0, BAND_HEIGHT).lineTo(doc.page.width, BAND_HEIGHT).lineWidth(0.75).strokeColor(BORDER).stroke();
+    doc.moveTo(0, BAND_HEIGHT).lineTo(doc.page.width, BAND_HEIGHT).lineWidth(0.75).strokeColor(STR_RED).stroke();
     doc.x = doc.page.margins.left;
   }
   doc.on('pageAdded', drawBand);
