@@ -34,6 +34,7 @@ const INK        = '#0f172a';
 const MUTED      = '#64748b';
 const STR_RED    = '#e20513'; // colore del logo STR, usato come unico accento del letterhead
 const BORDER     = '#e2e8f0';
+const DIVIDER    = '#cbd5e1'; // separatori tra segnalazioni — più marcati del bordo generico
 const ROW_ALT_BG = '#f8fafc';
 
 const BAND_HEIGHT = 58;
@@ -92,28 +93,22 @@ export async function buildReportPdf(params: {
 
   // Intestazione "letterhead" — ridisegnata su ogni pagina (anche quelle aggiunte
   // automaticamente da pdfkit quando un testo trabocca), così ogni foglio è identificabile.
-  // Sfondo bianco pulito: logo + titolo a sinistra, etichetta a destra, sottile
-  // riga rossa (colore del logo) a separare l'intestazione dal contenuto.
+  // Sfondo bianco pulito: logo + titolo a sinistra, sottile riga grigia a separare
+  // l'intestazione dal contenuto.
   const logoH = 22;
   const logoW = logoH * STR_LOGO_RATIO;
   const logoY = (BAND_HEIGHT - logoH) / 2 - 2;
   const textX = doc.page.margins.left + logoW + 16;
-  const labelW = 130;
 
   function drawBand() {
     doc.image(STR_LOGO, doc.page.margins.left, logoY, { height: logoH });
 
     doc.fillColor(INK).font('Helvetica-Bold').fontSize(13)
-      .text(title, textX, 15, { width: pageWidth - logoW - 16 - labelW, lineBreak: false, ellipsis: true });
+      .text(title, textX, 15, { width: pageWidth - logoW - 16, lineBreak: false, ellipsis: true });
     doc.fillColor(MUTED).font('Helvetica').fontSize(8)
-      .text(subtitle, textX, 32, { width: pageWidth - logoW - 16 - labelW, lineBreak: false });
+      .text(subtitle, textX, 32, { width: pageWidth - logoW - 16, lineBreak: false });
 
-    doc.fillColor(MUTED).font('Helvetica-Bold').fontSize(7.5)
-      .text('REPORT QUALITÀ', doc.page.width - doc.page.margins.right - labelW, 24, {
-        width: labelW, align: 'right', characterSpacing: 1.2,
-      });
-
-    doc.rect(0, BAND_HEIGHT - 2, doc.page.width, 2).fill(STR_RED);
+    doc.moveTo(0, BAND_HEIGHT).lineTo(doc.page.width, BAND_HEIGHT).lineWidth(0.75).strokeColor(BORDER).stroke();
     doc.x = doc.page.margins.left;
   }
   doc.on('pageAdded', drawBand);
@@ -254,7 +249,7 @@ export async function buildReportPdf(params: {
       ensureSpace(16);
       const lineY = doc.y;
       doc.moveTo(cardX, lineY).lineTo(doc.page.width - doc.page.margins.right, lineY)
-        .lineWidth(0.5).strokeColor(BORDER).stroke();
+        .lineWidth(1).strokeColor(DIVIDER).stroke();
       doc.moveDown(0.7);
     }
   });
