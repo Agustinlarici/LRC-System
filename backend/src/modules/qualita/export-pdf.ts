@@ -232,10 +232,10 @@ export async function buildReportPdf(params: {
 
     const photo = safePhotos[i];
     if (photo) {
-      // Occupa quasi tutta la larghezza della pagina — limitata in altezza solo per
-      // non far sparire il resto della segnalazione su più pagine con foto verticali.
+      // Altezza limitata così, tipicamente, due segnalazioni con foto entrano nella
+      // stessa pagina invece di occuparne una ciascuna.
       const maxW = pageWidth - 32;
-      const maxH = 360;
+      const maxH = 230;
       const scale = Math.min(maxW / photo.width, maxH / photo.height, 1);
       const pRenderW = photo.width * scale;
       const pRenderH = photo.height * scale;
