@@ -246,16 +246,19 @@ qualitaRoutes.post('/reports', requireModule('qualita'), async (c) => {
 });
 
 qualitaRoutes.get('/reports', requireModule('qualita'), async (c) => {
-  const { commessa, component_id, exact } = c.req.query();
+  const { commessa, component_id, mode } = c.req.query();
   if (!commessa) throw new HTTPException(400, { message: 'Parametro commessa richiesto' });
 
   const componentFilter = component_id
     ? db`AND r.component_id = ${parseInt(component_id, 10)}`
     : db``;
 
-  const commessaFilter = exact === 'true'
-    ? db`r.commessa = ${commessa.trim()}`
-    : db`r.commessa ILIKE ${'%' + commessa.trim() + '%'}`;
+  // La commessa è un identificativo — il match esatto è il default corretto, il
+  // match "contiene" è un'eccezione esplicita (mode=loose) da usare solo per una
+  // ricerca libera, mai come comportamento predefinito di un filtro per ID.
+  const commessaFilter = mode === 'loose'
+    ? db`r.commessa ILIKE ${'%' + commessa.trim() + '%'}`
+    : db`r.commessa = ${commessa.trim()}`;
 
   const rows = await db`
     SELECT r.*, cc.name AS component_name, cc.code AS component_code

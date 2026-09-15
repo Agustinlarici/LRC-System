@@ -81,7 +81,7 @@ export function CercaFlow({ tablet = false }: Props) {
     if (expandedReports[key]) return;
     setExpandedLoading(true);
     try {
-      const params = new URLSearchParams({ commessa: g.commessa, component_id: String(g.component_id), exact: 'true' });
+      const params = new URLSearchParams({ commessa: g.commessa, component_id: String(g.component_id) });
       const res = await fetch(`${BACKEND}/api/qualita/reports?${params}`, { credentials: 'include' });
       if (!res.ok) throw new Error();
       const data: QualitaReport[] = await res.json();
@@ -103,7 +103,7 @@ export function CercaFlow({ tablet = false }: Props) {
     if (!commessa.trim()) return;
     setLoading(true); setError(''); setSearched(true);
     try {
-      const params = new URLSearchParams({ commessa: commessa.trim(), exact: 'true' });
+      const params = new URLSearchParams({ commessa: commessa.trim() });
       if (componentId) params.set('component_id', componentId);
       const res = await fetch(`${BACKEND}/api/qualita/reports?${params}`, { credentials: 'include' });
       if (!res.ok) throw new Error();
