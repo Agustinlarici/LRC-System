@@ -74,14 +74,17 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
   const [justSaved, setJustSaved]   = useState(false);
   const [hasUnsaved, setHasUnsaved] = useState(false);
   const [exporting, setExporting]   = useState(false);
-  // true quando le segnalazioni salvate per il componente/commessa corrente sono
-  // già state esportate in PDF — evita di rigenerare lo stesso PDF ogni volta che
-  // si va avanti e indietro senza aver salvato nulla di nuovo nel frattempo.
-  const [pdfExported, setPdfExported] = useState(true);
 
   const canvasRef = useRef<DrawingCanvasHandle>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const commessaInputRef = useRef<HTMLInputElement>(null);
+  // true quando le segnalazioni salvate per il componente/commessa corrente sono
+  // già state esportate in PDF — evita di rigenerare lo stesso PDF ogni volta che
+  // si va avanti e indietro senza aver salvato nulla di nuovo nel frattempo. È un
+  // ref (non state) perché viene letto subito dopo un await nella stessa funzione
+  // che lo aggiorna: uno state aggiornato lì dentro resterebbe "stale" nella
+  // closure corrente finché non arriva il prossimo render.
+  const pdfExportedRef = useRef(true);
 
   useEffect(() => {
     fetch(`${BACKEND}/api/qualita/components`, { credentials: 'include' })
@@ -158,7 +161,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
     e.preventDefault();
     reenterFullscreen();
     if (!component || !commessa.trim()) return;
-    setPdfExported(true); // si riparte da zero: niente di nuovo ancora da esportare
+    pdfExportedRef.current = true; // si riparte da zero: niente di nuovo ancora da esportare
     fetchExisting(component.id, commessa.trim());
     setStep('draw');
   }
@@ -173,7 +176,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
   // così il PDF non resta indietro rispetto a quanto già salvato con "Salva
   // segnalazione" qualunque bottone si usi per lasciare il disegno.
   async function exportPdfIfNeeded() {
-    if (!component || pdfExported || existingReports.length === 0) return;
+    if (!component || pdfExportedRef.current) return;
     setExporting(true);
     try {
       const res = await fetch(`${BACKEND}/api/qualita/export`, {
@@ -187,7 +190,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
         setError(data.message ?? 'Errore durante l\'esportazione del PDF. Le segnalazioni restano comunque salvate.');
         return;
       }
-      setPdfExported(true);
+      pdfExportedRef.current = true;
     } catch {
       setError('Errore di connessione durante l\'esportazione del PDF. Le segnalazioni restano comunque salvate.');
     } finally {
@@ -258,7 +261,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
       resetDefectFields();
       await fetchExisting(component.id, commessa.trim());
       setJustSaved(true);
-      setPdfExported(false); // c'è una nuova segnalazione salvata non ancora esportata
+      pdfExportedRef.current = false; // c'è una nuova segnalazione salvata non ancora esportata
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Errore durante il salvataggio');
