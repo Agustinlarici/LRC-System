@@ -518,6 +518,15 @@ export interface QualitaReport {
   created_at:         string;
 }
 
+export interface QualitaReportGroup {
+  commessa:         string;
+  component_id:     number;
+  component_name:   string;
+  component_code:   string | null;
+  latest_at:        string;
+  count:            number;
+}
+
 // ─── Programma Produzione ─────────────────────────────────────────────────────
 
 export interface ProdArea {
@@ -561,6 +570,7 @@ export interface ProdKeywordRule {
   parola_ancora:           string | null;
   parola_obiettivo:        string | null;
   distanza_max_caratteri:  number | null;
+  obiettivo_da_colori:     boolean;
   note:                    string | null;
   active:                  boolean;
 }
@@ -617,7 +627,11 @@ export interface ProdComponentConflictCandidate {
   fonte_ordine:    'confermato' | 'forecast';
   fonte_recency:   string | null;
   descrizione:     string | null;
+  descrizione_estesa: string | null;
+  edi_source_file: string | null;
+  edi_file_mtime:  string | null;
   is_winner:       boolean;
+  stesso_giorno_altro_codice: boolean;
 }
 
 export interface ProdComponentConflict {

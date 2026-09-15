@@ -246,21 +246,49 @@ qualitaRoutes.post('/reports', requireModule('qualita'), async (c) => {
 });
 
 qualitaRoutes.get('/reports', requireModule('qualita'), async (c) => {
-  const { commessa, component_id } = c.req.query();
+  const { commessa, component_id, exact } = c.req.query();
   if (!commessa) throw new HTTPException(400, { message: 'Parametro commessa richiesto' });
 
   const componentFilter = component_id
     ? db`AND r.component_id = ${parseInt(component_id, 10)}`
     : db``;
 
+  const commessaFilter = exact === 'true'
+    ? db`r.commessa = ${commessa.trim()}`
+    : db`r.commessa ILIKE ${'%' + commessa.trim() + '%'}`;
+
   const rows = await db`
     SELECT r.*, cc.name AS component_name, cc.code AS component_code
     FROM qualita_report r
     JOIN qualita_component cc ON cc.id = r.component_id
-    WHERE r.commessa ILIKE ${'%' + commessa.trim() + '%'} ${componentFilter}
+    WHERE ${commessaFilter} ${componentFilter}
     ORDER BY r.created_at ASC
   `;
   return c.json(rows);
+});
+
+// Elenco raggruppato per commessa + componente, ordinato per segnalazione più recente
+// nel gruppo — usato per la vista "sfoglia tutto" in Cerca (senza filtro esplicito).
+qualitaRoutes.get('/reports/groups', requireModule('qualita'), async (c) => {
+  const { limit, offset } = c.req.query();
+  const limitNum  = Math.min(Math.max(parseInt(limit  ?? '10', 10) || 10, 1), 50);
+  const offsetNum = Math.max(parseInt(offset ?? '0', 10) || 0, 0);
+
+  const rows = await db`
+    SELECT g.commessa, g.component_id, g.latest_at, g.count,
+           cc.name AS component_name, cc.code AS component_code
+    FROM (
+      SELECT commessa, component_id, MAX(created_at) AS latest_at, COUNT(*) AS count
+      FROM qualita_report
+      GROUP BY commessa, component_id
+    ) g
+    JOIN qualita_component cc ON cc.id = g.component_id
+    ORDER BY g.latest_at DESC
+    LIMIT ${limitNum + 1} OFFSET ${offsetNum}
+  `;
+
+  const hasMore = rows.length > limitNum;
+  return c.json({ groups: rows.slice(0, limitNum), hasMore });
 });
 
 qualitaRoutes.get('/reports/:id/drawing', requireModule('qualita'), async (c) => {
