@@ -278,7 +278,7 @@ qualitaRoutes.get('/reports/groups', requireModule('qualita'), async (c) => {
     SELECT g.commessa, g.component_id, g.latest_at, g.count,
            cc.name AS component_name, cc.code AS component_code
     FROM (
-      SELECT commessa, component_id, MAX(created_at) AS latest_at, COUNT(*) AS count
+      SELECT commessa, component_id, MAX(created_at) AS latest_at, COUNT(*)::int AS count
       FROM qualita_report
       GROUP BY commessa, component_id
     ) g

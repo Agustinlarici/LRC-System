@@ -199,6 +199,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
     if (hasUnsaved && !confirm('Hai un disegno non salvato. Se torni indietro ora, andrà perso. Continuare?')) {
       return;
     }
+    setHasUnsaved(false);
     setStep('commessa');
   }
 
@@ -206,6 +207,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
     reenterFullscreen();
     if (!component) return false;
     setError('');
+    if (!hasUnsaved) { setError('Disegna il difetto prima di salvare'); return false; }
     const drawingBlob = await canvasRef.current?.exportBlob();
     if (!drawingBlob) { setError('Nessun disegno da salvare'); return false; }
 
@@ -415,7 +417,7 @@ export function NuovaSegnalazioneFlow({ tablet = false }: Props) {
               </div>
 
               <div className="space-y-2">
-                <button className={`btn btn-primary w-full ${tablet ? 'text-lg py-3' : ''}`} disabled={submitting} onClick={handleSubmit}>
+                <button className={`btn btn-primary w-full ${tablet ? 'text-lg py-3' : ''}`} disabled={submitting || !hasUnsaved} onClick={handleSubmit}>
                   {submitting ? 'Salvataggio...' : 'Salva segnalazione'}
                 </button>
                 <button className={`btn btn-secondary w-full ${tablet ? 'text-lg py-3' : ''}`} disabled={submitting || exporting} onClick={finishSegnalazione}>
