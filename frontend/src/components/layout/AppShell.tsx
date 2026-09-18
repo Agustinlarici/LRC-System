@@ -72,7 +72,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading, canView, canManage } = useAuth();
 
   // Fullscreen routes (no sidebar, no auth check)
-  const isFullscreen = pathname === '/login' || pathname === '/device-pair';
+  const isFullscreen = pathname === '/login' || pathname === '/device-pair' || pathname === '/cambio-password';
   const isTablet     = pathname.endsWith('/tablet') || pathname.startsWith('/qualita/tablet/');
   const isMonitor    = /^\/monitor\/\d+/.test(pathname);
 
@@ -83,6 +83,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       router.replace('/login');
     }
   }, [loading, user, isFullscreen, isTablet, isMonitor, router, pathname]);
+
+  // Password generica assegnata dall'admin: obbliga il cambio prima di qualunque altra pagina
+  useEffect(() => {
+    if (!loading && user?.must_change_password && pathname !== '/cambio-password') {
+      router.replace('/cambio-password');
+    }
+  }, [loading, user, pathname, router]);
 
   // ── Fullscreen layouts (no sidebar) ────────────────────────────────────────
 
@@ -107,6 +114,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // ── Not authenticated → blank while redirecting ────────────────────────────
 
   if (!user) {
+    return null;
+  }
+
+  // ── Cambio password obbligatorio → blank mentre reindirizza ────────────────
+
+  if (user.must_change_password) {
     return null;
   }
 

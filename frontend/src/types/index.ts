@@ -22,6 +22,7 @@ export interface AuthUser {
   phone:           string | null;
   department_id:   number | null;
   department_name: string | null;
+  must_change_password: boolean;
 }
 
 // ─── Ingresso Merci ───────────────────────────────────────────────────────────
