@@ -124,7 +124,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className={`relative min-h-full bg-zinc-900 text-white flex flex-col shrink-0 transition-all duration-300 ${
+    <aside className={`d-print-none relative min-h-full bg-zinc-900 text-white flex flex-col shrink-0 transition-all duration-300 ${
       expanded ? 'w-56' : 'w-[68px]'
     }`}>
 

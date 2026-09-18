@@ -173,9 +173,13 @@ export default function TicketStatoPage() {
               <li key={i} className="ml-4">
                 <div className="absolute w-2.5 h-2.5 bg-gray-300 rounded-full -left-1.5 border-2 border-white" />
                 <p className="text-xs text-gray-400">{fmt(h.created_at)}</p>
-                <p className="text-sm font-medium text-gray-700">{ACTION_LABELS[h.action] ?? h.action}</p>
+                <p className="text-sm font-medium text-gray-700">
+                  {h.action === 'assegnato' && h.new_value
+                    ? `Assegnato a ${h.new_value}`
+                    : ACTION_LABELS[h.action] ?? h.action}
+                </p>
                 {h.note && <p className="text-sm text-gray-600 mt-0.5">{h.note}</p>}
-                {h.old_value && h.new_value && (
+                {h.action !== 'assegnato' && h.old_value && h.new_value && (
                   <p className="text-xs text-gray-500 mt-0.5">
                     <span className="line-through">{h.old_value}</span> → <span>{h.new_value}</span>
                   </p>

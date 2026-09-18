@@ -227,8 +227,9 @@ export default function TicketDashboard() {
   const [unassigned, setUnassigned] = useState<Ticket[]>([]);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [trendRefreshKey, setTrendRefreshKey] = useState(0);
-  const [unassignedOpen,      setUnassignedOpen]      = useState(false);
-  const [pendingApprovalOpen, setPendingApprovalOpen] = useState(false);
+  const [unassignedOpen,      setUnassignedOpen]      = useState(true);
+  const [pendingApprovalOpen, setPendingApprovalOpen] = useState(true);
+  const [overviewOpen,        setOverviewOpen]        = useState(false);
 
   // Filters
   const [filterStatus,   setFilterStatus]   = useState('');
@@ -427,36 +428,51 @@ export default function TicketDashboard() {
 
       {/* Top bar */}
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Dashboard Ticket IT</h1>
-        {user && <p className="text-base text-gray-500 mt-1">Benvenuto, {user.display_name}</p>}
+        <h1 className="text-3xl font-bold text-gray-900">Gestione ticket</h1>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-        {['aperto','in_lavorazione','in_attesa','in_attesa_approvazione','risolto'].map(s => {
-          const count = tickets.filter(t => t.status === s).length;
-          return (
-            <button
-              key={s}
-              onClick={() => setFilterStatus(filterStatus === s ? '' : s)}
-              className={`card text-left cursor-pointer hover:shadow-md transition-shadow ${filterStatus === s ? 'ring-2 ring-blue-500' : ''}`}
-            >
-              <p className="text-3xl font-bold text-gray-900">{count}</p>
-              <p className="text-sm text-gray-500 mt-1.5">{STATUS_LABELS[s]}</p>
-            </button>
-          );
-        })}
+      {/* Overview: stats row + trend chart */}
+      <div className="mb-8">
         <button
-          onClick={() => setFilterAssigned(prev => prev === 'null' ? '' : 'null')}
-          className={`card text-left cursor-pointer hover:shadow-md transition-shadow ${filterAssigned === 'null' ? 'ring-2 ring-blue-500' : ''}`}
+          type="button"
+          onClick={() => setOverviewOpen(v => !v)}
+          className="w-full flex items-center gap-2 text-base font-semibold text-gray-700 mb-3 hover:text-gray-900 transition-colors"
         >
-          <p className="text-3xl font-bold text-gray-900">{unassigned.length}</p>
-          <p className="text-sm text-gray-500 mt-1.5">In attesa di assegnazione</p>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+            className={`w-4 h-4 shrink-0 transition-transform duration-200 text-gray-400 ${overviewOpen ? 'rotate-90' : ''}`}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+          Riepilogo
         </button>
-      </div>
+        {overviewOpen && (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+              {['aperto','in_lavorazione','in_attesa','in_attesa_approvazione','risolto'].map(s => {
+                const count = tickets.filter(t => t.status === s).length;
+                return (
+                  <button
+                    key={s}
+                    onClick={() => setFilterStatus(filterStatus === s ? '' : s)}
+                    className={`card text-left cursor-pointer hover:shadow-md transition-shadow ${filterStatus === s ? 'ring-2 ring-blue-500' : ''}`}
+                  >
+                    <p className="text-3xl font-bold text-gray-900">{count}</p>
+                    <p className="text-sm text-gray-500 mt-1.5">{STATUS_LABELS[s]}</p>
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setFilterAssigned(prev => prev === 'null' ? '' : 'null')}
+                className={`card text-left cursor-pointer hover:shadow-md transition-shadow ${filterAssigned === 'null' ? 'ring-2 ring-blue-500' : ''}`}
+              >
+                <p className="text-3xl font-bold text-gray-900">{unassigned.length}</p>
+                <p className="text-sm text-gray-500 mt-1.5">In attesa di assegnazione</p>
+              </button>
+            </div>
 
-      {/* Trend chart */}
-      <TrendChart refreshKey={trendRefreshKey} />
+            <TrendChart refreshKey={trendRefreshKey} />
+          </>
+        )}
+      </div>
 
       {/* Da prendere in carico */}
       {unassigned.length > 0 && (
@@ -668,11 +684,11 @@ export default function TicketDashboard() {
         </div>
       )}
 
-      {/* Detail panel (slide-over) */}
+      {/* Detail panel (floating modal) */}
       {selected && (
-        <div className="fixed inset-0 z-50 flex" onClick={e => { if (e.target === e.currentTarget) setSelected(null); }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) setSelected(null); }}>
           <div className="absolute inset-0 bg-black/30" onClick={() => setSelected(null)} />
-          <div className="relative ml-auto w-full max-w-xl bg-white h-full overflow-y-auto shadow-2xl flex flex-col">
+          <div className="relative w-full max-w-5xl bg-white max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl flex flex-col">
 
             {/* Panel header */}
             <div className="flex items-start justify-between p-5 border-b border-gray-200">
@@ -823,9 +839,13 @@ export default function TicketDashboard() {
                     <li key={i} className="ml-4">
                       <div className="absolute w-2.5 h-2.5 bg-gray-300 rounded-full -left-1.5 border-2 border-white" />
                       <p className="text-sm text-gray-400">{fmt(h.created_at)}</p>
-                      <p className="text-base font-medium text-gray-700">{ACTION_LABELS[h.action] ?? h.action}</p>
+                      <p className="text-base font-medium text-gray-700">
+                        {h.action === 'assegnato' && h.new_value
+                          ? `Assegnato a ${h.new_value}`
+                          : ACTION_LABELS[h.action] ?? h.action}
+                      </p>
                       {h.note && <p className="text-base text-gray-600 mt-0.5 whitespace-pre-wrap">{h.note}</p>}
-                      {h.old_value && h.new_value && (
+                      {h.action !== 'assegnato' && h.old_value && h.new_value && (
                         <p className="text-sm text-gray-500 mt-0.5">
                           <span className="line-through">{h.old_value}</span> → {h.new_value}
                         </p>

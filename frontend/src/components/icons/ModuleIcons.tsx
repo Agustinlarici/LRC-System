@@ -129,6 +129,14 @@ export function IconWebDdt({ className = base }: IconProps) {
     </svg>
   );
 }
+export function IconSearch({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
+      <circle cx="11" cy="11" r="7" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35" />
+    </svg>
+  );
+}
 export function IconSparkles({ className = base }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
@@ -142,7 +150,7 @@ export type ModuleIcon = (props: IconProps) => React.ReactElement;
 export const ICON_MAP: Record<string, ModuleIcon> = {
   IconBox, IconTruck, IconMonitor, IconArchive, IconMap,
   IconClipboard, IconFactory, IconSettings, IconTicket, IconChart,
-  IconHeatmap, IconList, IconScan, IconEdi, IconWebDdt, IconSparkles,
+  IconHeatmap, IconList, IconScan, IconEdi, IconWebDdt, IconSparkles, IconSearch,
 };
 
 // ─── Group representative icons ─────────────────────────────────────────────
