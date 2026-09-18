@@ -252,8 +252,11 @@ ticketRoutes.get('/mine', requireAuth, async (c) => {
       FROM tickets t
       LEFT JOIN ticket_departments d ON d.id = t.department_id
       LEFT JOIN users u ON u.id = t.assigned_to
-      WHERE t.created_by_user_id = ${user.id} ${notDeletedFilter()}
-      ORDER BY t.created_at DESC
+      WHERE (
+        t.created_by_user_id = ${user.id}
+        ${user.email ? db`OR t.caller_email ILIKE ${user.email}` : db``}
+      ) ${notDeletedFilter()}
+      ORDER BY (t.status IN ('risolto','chiuso')), t.created_at DESC
     `;
     return c.json(tickets.map(withSLAStatus));
   } catch {
@@ -463,9 +466,12 @@ ticketRoutes.patch('/:id', requireIT, async (c) => {
     historyEntries.push({ action: 'priorita_cambiata', old_value: ticket.priority, new_value: body.priority });
   }
 
-  if (body.assigned_to !== undefined) {
+  if (body.assigned_to !== undefined && body.assigned_to !== ticket.assigned_to) {
     updates.assigned_to = body.assigned_to;
-    historyEntries.push({ action: 'assegnato', new_value: body.assigned_to?.toString() ?? 'nessuno' });
+    const newAssigneeName = body.assigned_to
+      ? (await db`SELECT display_name FROM users WHERE id = ${body.assigned_to}`)[0]?.display_name ?? 'sconosciuto'
+      : 'nessuno';
+    historyEntries.push({ action: 'assegnato', new_value: newAssigneeName });
   }
 
   if (
