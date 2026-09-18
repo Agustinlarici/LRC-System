@@ -31,22 +31,24 @@ export type ModulePermission = {
 };
 
 export type AuthUser = {
-  id:              number;
-  username:        string;
-  display_name:    string;
-  role:            'guest' | 'operator' | 'it' | 'admin';
-  permissions:     ModulePermission[];
-  email:           string | null;
-  phone:           string | null;
-  department_id:   number | null;
-  department_name: string | null;
+  id:                    number;
+  username:              string;
+  display_name:          string;
+  role:                  'guest' | 'operator' | 'it' | 'admin';
+  permissions:           ModulePermission[];
+  email:                 string | null;
+  phone:                 string | null;
+  department_id:         number | null;
+  department_name:       string | null;
+  must_change_password:  boolean;
 };
 
 export type UserProfile = {
-  email:           string | null;
-  phone:           string | null;
-  department_id:   number | null;
-  department_name: string | null;
+  email:                 string | null;
+  phone:                 string | null;
+  department_id:         number | null;
+  department_name:       string | null;
+  must_change_password:  boolean;
 };
 
 export type Env = { Variables: { user: AuthUser } };
@@ -83,12 +85,12 @@ async function loadPermissions(userId: number): Promise<ModulePermission[]> {
   return rows;
 }
 
-const EMPTY_PROFILE: UserProfile = { email: null, phone: null, department_id: null, department_name: null };
+const EMPTY_PROFILE: UserProfile = { email: null, phone: null, department_id: null, department_name: null, must_change_password: false };
 
 export async function loadProfile(userId: number): Promise<UserProfile> {
   try {
     const [row] = await db<UserProfile[]>`
-      SELECT u.email, u.phone, u.department_id, d.name AS department_name
+      SELECT u.email, u.phone, u.department_id, d.name AS department_name, u.must_change_password
       FROM users u
       LEFT JOIN ticket_departments d ON d.id = u.department_id
       WHERE u.id = ${userId}
@@ -102,6 +104,14 @@ export async function loadProfile(userId: number): Promise<UserProfile> {
 }
 
 // ─── Core middleware ───────────────────────────────────────────────────────────
+
+// Percorsi consentiti anche quando l'utente deve ancora cambiare la password
+// (altrimenti non potrebbe mai completare il cambio o disconnettersi)
+const PATHS_ALLOWED_WHEN_PASSWORD_CHANGE_REQUIRED = new Set([
+  '/api/auth/me',
+  '/api/auth/logout',
+  '/api/auth/change-password',
+]);
 
 export async function requireAuth(c: Context<Env>, next: Next) {
   const token = getCookie(c, COOKIE_NAME);
@@ -119,6 +129,11 @@ export async function requireAuth(c: Context<Env>, next: Next) {
     loadProfile(payload.id),
   ]);
   const user: AuthUser = { ...payload, ...profile, permissions };
+
+  if (user.must_change_password && !PATHS_ALLOWED_WHEN_PASSWORD_CHANGE_REQUIRED.has(c.req.path)) {
+    throw new HTTPException(403, { message: 'PASSWORD_CHANGE_REQUIRED' });
+  }
+
   c.set('user', user);
   await next();
 }

@@ -77,6 +77,39 @@ authRoutes.get('/me', requireAuth, (c) => {
   return c.json({ user: c.get('user') });
 });
 
+// ─── Change own password ────────────────────────────────────────────────────────
+// Usato sia dal cambio volontario, sia dal cambio obbligatorio al primo accesso
+// (quando l'admin assegna una password generica, must_change_password = TRUE).
+
+authRoutes.post('/change-password', requireAuth, async (c) => {
+  const user = c.get('user');
+  const ip   = requestIp(c);
+
+  const body = await parseBody(c, z.object({
+    current_password: z.string().min(1),
+    new_password:      z.string().min(6),
+  }));
+
+  const [row] = await db<{ password_hash: string }[]>`
+    SELECT password_hash FROM users WHERE id = ${user.id}
+  `;
+  if (!row) throw new HTTPException(404, { message: 'Utente non trovato' });
+
+  const valid = await compare(body.current_password, row.password_hash);
+  if (!valid) {
+    await auditLog({ userId: user.id, username: user.username, action: 'change_password_failed', ip, details: { reason: 'wrong_current_password' } });
+    throw new HTTPException(401, { message: 'Password attuale non corretta' });
+  }
+
+  const password_hash = await hash(body.new_password, 10);
+  await db`
+    UPDATE users SET password_hash = ${password_hash}, must_change_password = FALSE WHERE id = ${user.id}
+  `;
+  await auditLog({ userId: user.id, username: user.username, action: 'password_changed', ip });
+
+  return c.json({ status: 'ok' });
+});
+
 // ─── Users list ───────────────────────────────────────────────────────────────
 
 authRoutes.get('/users', requireManage('tickets_admin'), async (c) => {
@@ -105,8 +138,8 @@ authRoutes.post('/users', requireManage('tickets_admin'), async (c) => {
 
   const password_hash = await hash(body.password, 10);
   const [created] = await db`
-    INSERT INTO users (username, password_hash, display_name, email, phone, department_id, role)
-    VALUES (${body.username}, ${password_hash}, ${body.display_name}, ${body.email ?? null}, ${body.phone ?? null}, ${body.department_id ?? null}, ${body.role ?? 'operator'})
+    INSERT INTO users (username, password_hash, display_name, email, phone, department_id, role, must_change_password)
+    VALUES (${body.username}, ${password_hash}, ${body.display_name}, ${body.email ?? null}, ${body.phone ?? null}, ${body.department_id ?? null}, ${body.role ?? 'operator'}, TRUE)
     RETURNING id, username, display_name, email, phone, department_id, role, is_active, created_at
   `;
   const actor = c.get('user');
@@ -137,7 +170,10 @@ authRoutes.patch('/users/:id', requireManage('tickets_admin'), async (c) => {
   if (body.department_id !== undefined) updates.department_id = body.department_id;
   if (body.role          !== undefined) updates.role          = body.role;
   if (body.is_active     !== undefined) updates.is_active     = body.is_active;
-  if (body.password      !== undefined) updates.password_hash = await hash(body.password, 10);
+  if (body.password      !== undefined) {
+    updates.password_hash = await hash(body.password, 10);
+    updates.must_change_password = true;
+  }
 
   if (!Object.keys(updates).length) {
     throw new HTTPException(400, { message: 'Nessun campo da aggiornare' });
