@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
+import { MultiSelectFilter } from '@/components/ui/MultiSelectFilter';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
@@ -64,6 +65,7 @@ type TicketDetail = Ticket & {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_OPTIONS = ['aperto','in_lavorazione','in_attesa','in_attesa_approvazione','risolto','chiuso','riaperto'];
+const OPEN_STATUSES   = STATUS_OPTIONS.filter(s => s !== 'risolto' && s !== 'chiuso');
 const STATUS_LABELS: Record<string, string> = {
   aperto: 'Aperto', in_lavorazione: 'In lavorazione', in_attesa: 'In attesa',
   in_attesa_approvazione: 'In attesa di approvazione',
@@ -232,10 +234,19 @@ export default function TicketDashboard() {
   const [overviewOpen,        setOverviewOpen]        = useState(false);
 
   // Filters
-  const [filterStatus,   setFilterStatus]   = useState('');
-  const [filterPriority, setFilterPriority] = useState('');
-  const [filterAssigned, setFilterAssigned] = useState('');
+  const [filterStatus,   setFilterStatus]   = useState<Set<string>>(new Set(OPEN_STATUSES));
+  const [filterPriority, setFilterPriority] = useState<Set<string>>(new Set());
+  const [filterAssigned, setFilterAssigned] = useState<Set<string>>(new Set());
   const [filterQ,        setFilterQ]        = useState('');
+
+  // Default to "I miei ticket" the first time the logged-in user loads
+  const seededAssignedDefault = useRef(false);
+  useEffect(() => {
+    if (user && !seededAssignedDefault.current) {
+      seededAssignedDefault.current = true;
+      setFilterAssigned(new Set([user.id.toString()]));
+    }
+  }, [user]);
 
   // Update form
   const [updStatus,       setUpdStatus]       = useState('');
@@ -297,10 +308,10 @@ export default function TicketDashboard() {
   const loadTickets = useCallback(async (p = 1) => {
     setLoading(true);
     const params = new URLSearchParams({ page: String(p), per_page: String(PER_PAGE) });
-    if (filterStatus)   params.set('status',      filterStatus);
-    if (filterPriority) params.set('priority',    filterPriority);
-    if (filterAssigned) params.set('assigned_to', filterAssigned);
-    if (filterQ)        params.set('q',           filterQ);
+    if (filterStatus.size)   params.set('status',      [...filterStatus].join(','));
+    if (filterPriority.size) params.set('priority',    [...filterPriority].join(','));
+    if (filterAssigned.size) params.set('assigned_to', [...filterAssigned].join(','));
+    if (filterQ)              params.set('q',           filterQ);
 
     const r = await apiFetch(`/api/tickets?${params}`);
     const d = await r.json();
@@ -452,8 +463,8 @@ export default function TicketDashboard() {
                 return (
                   <button
                     key={s}
-                    onClick={() => setFilterStatus(filterStatus === s ? '' : s)}
-                    className={`card text-left cursor-pointer hover:shadow-md transition-shadow ${filterStatus === s ? 'ring-2 ring-blue-500' : ''}`}
+                    onClick={() => setFilterStatus(prev => prev.size === 1 && prev.has(s) ? new Set() : new Set([s]))}
+                    className={`card text-left cursor-pointer hover:shadow-md transition-shadow ${filterStatus.has(s) ? 'ring-2 ring-blue-500' : ''}`}
                   >
                     <p className="text-3xl font-bold text-gray-900">{count}</p>
                     <p className="text-sm text-gray-500 mt-1.5">{STATUS_LABELS[s]}</p>
@@ -461,8 +472,8 @@ export default function TicketDashboard() {
                 );
               })}
               <button
-                onClick={() => setFilterAssigned(prev => prev === 'null' ? '' : 'null')}
-                className={`card text-left cursor-pointer hover:shadow-md transition-shadow ${filterAssigned === 'null' ? 'ring-2 ring-blue-500' : ''}`}
+                onClick={() => setFilterAssigned(prev => prev.size === 1 && prev.has('null') ? new Set() : new Set(['null']))}
+                className={`card text-left cursor-pointer hover:shadow-md transition-shadow ${filterAssigned.has('null') ? 'ring-2 ring-blue-500' : ''}`}
               >
                 <p className="text-3xl font-bold text-gray-900">{unassigned.length}</p>
                 <p className="text-sm text-gray-500 mt-1.5">In attesa di assegnazione</p>
@@ -585,9 +596,11 @@ export default function TicketDashboard() {
         {user && (
           <button
             type="button"
-            onClick={() => setFilterAssigned(prev => prev === user.id.toString() ? '' : user.id.toString())}
+            onClick={() => setFilterAssigned(prev =>
+              prev.size === 1 && prev.has(user.id.toString()) ? new Set() : new Set([user.id.toString()])
+            )}
             className={`flex items-center gap-2 text-base font-semibold rounded-lg px-4 py-2.5 border-2 transition-colors ${
-              filterAssigned === user.id.toString()
+              filterAssigned.size === 1 && filterAssigned.has(user.id.toString())
                 ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
                 : 'border-gray-300 text-gray-700 hover:bg-gray-50'
             }`}
@@ -603,18 +616,27 @@ export default function TicketDashboard() {
           placeholder="Cerca per numero, titolo, richiedente…"
           className="flex-1 min-w-48 border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <option value="">Tutti gli stati</option>
-          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
-        </select>
-        <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <option value="">Tutte le priorità</option>
-          {['bassa','media','alta','critica'].map(p => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}
-        </select>
-        <select value={filterAssigned} onChange={e => setFilterAssigned(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <option value="">Tutti gli operatori</option>
-          {itUsers.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
-        </select>
+        <MultiSelectFilter
+          label="Stato"
+          options={STATUS_OPTIONS}
+          selected={filterStatus}
+          onChange={setFilterStatus}
+          optionLabel={s => STATUS_LABELS[s] ?? s}
+        />
+        <MultiSelectFilter
+          label="Priorità"
+          options={['bassa', 'media', 'alta', 'critica']}
+          selected={filterPriority}
+          onChange={setFilterPriority}
+          optionLabel={p => PRIORITY_LABELS[p] ?? p}
+        />
+        <MultiSelectFilter
+          label="Operatore"
+          options={['null', ...itUsers.map(u => u.id.toString())]}
+          selected={filterAssigned}
+          onChange={setFilterAssigned}
+          optionLabel={id => id === 'null' ? 'Non assegnato' : (itUsers.find(u => u.id.toString() === id)?.display_name ?? id)}
+        />
       </div>
 
       {/* Table */}

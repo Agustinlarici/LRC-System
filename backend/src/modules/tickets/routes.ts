@@ -330,11 +330,22 @@ ticketRoutes.get('/', requireIT, async (c) => {
     statuses.length  >  1 ? db`AND t.status = ANY(${statuses})` :
     db``;
 
-  const priorityFilter = priority ? db`AND t.priority = ${priority}` : db``;
+  const priorities = priority ? priority.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+  const priorityFilter =
+    priorities.length === 1 ? db`AND t.priority = ${priorities[0]}` :
+    priorities.length  >  1 ? db`AND t.priority = ANY(${priorities})` :
+    db``;
+
+  const assignedTokens = assigned_to ? assigned_to.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const wantsUnassigned = assignedTokens.includes('null');
+  const assignedIds     = assignedTokens.filter(t => t !== 'null').map(t => parseInt(t, 10));
 
   const assignedFilter =
-    assigned_to === 'null' ? db`AND t.assigned_to IS NULL` :
-    assigned_to            ? db`AND t.assigned_to = ${parseInt(assigned_to, 10)}` :
+    wantsUnassigned && assignedIds.length > 0 ? db`AND (t.assigned_to IS NULL OR t.assigned_to = ANY(${assignedIds}))` :
+    wantsUnassigned                           ? db`AND t.assigned_to IS NULL` :
+    assignedIds.length === 1                  ? db`AND t.assigned_to = ${assignedIds[0]}` :
+    assignedIds.length  >  1                  ? db`AND t.assigned_to = ANY(${assignedIds})` :
     db``;
 
   const searchFilter = q
