@@ -15,26 +15,37 @@ type User = {
 type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'programma_produzione';
 type Permission = { module_key: ModuleKey; can_view: boolean; can_manage: boolean };
 
-const ALL_MODULES: { key: ModuleKey; label: string }[] = [
-  { key: 'ingresso_merci',  label: 'Ingresso Merci' },
-  { key: 'packing',         label: 'Packing' },
-  { key: 'spma',            label: 'Avanzamento Prod' },
-  { key: 'programma_produzione', label: 'Programma Produzione' },
-  { key: 'recepciones',    label: 'Ricezione DDT' },
-  { key: 'edi',             label: 'EDI' },
-  { key: 'webddt',          label: 'WebDDT' },
-  { key: 'monitor',         label: 'Andon' },
-  { key: 'monitor_resumen', label: 'Riepilogo Andon' },
-  { key: 'monitor_parate',  label: 'Storico Fermate' },
-  { key: 'monitor_motivi',  label: 'Motivi Fermate' },
-  { key: 'buffer',          label: 'Buffer' },
-  { key: 'mappa',           label: 'Mappa' },
-  { key: 'dashboards',      label: 'Dashboard' },
-  { key: 'tickets',         label: 'Ticket IT' },
-  { key: 'tickets_it',      label: 'Ticket IT — Dashboard' },
-  { key: 'tickets_admin',   label: 'Ticket IT — Admin' },
-  { key: 'impostazioni',    label: 'Impostazioni' },
-  { key: 'qualita',         label: 'Qualità' },
+const MODULE_CATEGORIES = ['Logistica', 'Produzione', 'Dashboard', 'IT', 'Qualità'] as const;
+
+const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATEGORIES[number] }[] = [
+  // ── Logistica ──────────────────────────────────────────────────────────────
+  { key: 'ingresso_merci',       label: 'Ingresso Merci',       category: 'Logistica' },
+  { key: 'packing',              label: 'Packing',              category: 'Logistica' },
+  { key: 'spma',                 label: 'Avanzamento Prod',     category: 'Logistica' },
+  { key: 'programma_produzione', label: 'Programma Produzione', category: 'Logistica' },
+  { key: 'recepciones',          label: 'Ricezione DDT',        category: 'Logistica' },
+  { key: 'edi',                  label: 'EDI',                  category: 'Logistica' },
+  { key: 'webddt',               label: 'WebDDT',                category: 'Logistica' },
+
+  // ── Produzione ─────────────────────────────────────────────────────────────
+  { key: 'monitor',         label: 'Andon',           category: 'Produzione' },
+  { key: 'monitor_resumen', label: 'Riepilogo Andon', category: 'Produzione' },
+  { key: 'monitor_parate',  label: 'Storico Fermate', category: 'Produzione' },
+  { key: 'monitor_motivi',  label: 'Motivi Fermate',  category: 'Produzione' },
+  { key: 'buffer',          label: 'Buffer',          category: 'Produzione' },
+  { key: 'mappa',           label: 'Mappa',           category: 'Produzione' },
+
+  // ── Dashboard ──────────────────────────────────────────────────────────────
+  { key: 'dashboards', label: 'Dashboard', category: 'Dashboard' },
+
+  // ── IT ─────────────────────────────────────────────────────────────────────
+  { key: 'tickets',       label: 'Ticket IT',              category: 'IT' },
+  { key: 'tickets_it',    label: 'Ticket IT — Dashboard',  category: 'IT' },
+  { key: 'tickets_admin', label: 'Ticket IT — Admin',      category: 'IT' },
+  { key: 'impostazioni',  label: 'Impostazioni',           category: 'IT' },
+
+  // ── Qualità ────────────────────────────────────────────────────────────────
+  { key: 'qualita', label: 'Difetti', category: 'Qualità' },
 ];
 
 async function apiFetch(path: string, opts?: RequestInit) {
@@ -300,27 +311,40 @@ function PermissionsTable({
         </tr>
       </thead>
       <tbody>
-        {ALL_MODULES.map(m => (
-          <tr key={m.key} className="border-b border-gray-50">
-            <td className="py-2.5 pr-3 text-gray-700">{m.label}</td>
-            <td className="py-2.5 text-center">
-              <input
-                type="checkbox"
-                checked={edits[m.key]?.can_view ?? false}
-                onChange={e => onChange(m.key, 'can_view', e.target.checked)}
-                className="w-4 h-4 rounded accent-blue-600"
-              />
-            </td>
-            <td className="py-2.5 text-center">
-              <input
-                type="checkbox"
-                checked={edits[m.key]?.can_manage ?? false}
-                onChange={e => onChange(m.key, 'can_manage', e.target.checked)}
-                className="w-4 h-4 rounded accent-blue-600"
-              />
-            </td>
-          </tr>
-        ))}
+        {MODULE_CATEGORIES.map(category => {
+          const mods = ALL_MODULES.filter(m => m.category === category);
+          if (mods.length === 0) return null;
+          return (
+            <React.Fragment key={category}>
+              <tr>
+                <td colSpan={3} className="pt-4 pb-1.5 border-b-2 border-gray-300 text-xs font-semibold text-gray-900 uppercase tracking-widest">
+                  {category}
+                </td>
+              </tr>
+              {mods.map(m => (
+                <tr key={m.key} className="border-b border-gray-50">
+                  <td className="py-2.5 pr-3 text-gray-700">{m.label}</td>
+                  <td className="py-2.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={edits[m.key]?.can_view ?? false}
+                      onChange={e => onChange(m.key, 'can_view', e.target.checked)}
+                      className="w-4 h-4 rounded accent-blue-600"
+                    />
+                  </td>
+                  <td className="py-2.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={edits[m.key]?.can_manage ?? false}
+                      onChange={e => onChange(m.key, 'can_manage', e.target.checked)}
+                      className="w-4 h-4 rounded accent-blue-600"
+                    />
+                  </td>
+                </tr>
+              ))}
+            </React.Fragment>
+          );
+        })}
       </tbody>
     </table>
   );
@@ -843,7 +867,7 @@ function HealthDep({ label, status }: { label: string; status: string }) {
       <span className="text-sm text-gray-700">{label}</span>
       <span className={statusBadge(status === 'unavailable' ? 'degraded' : status)}>
         <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
-        {status}
+        {status.toUpperCase()}
       </span>
     </div>
   );
@@ -1051,7 +1075,7 @@ function AggiornamentiTab() {
                         {JOB_LABELS[job] ?? job}
                       </td>
                       <td className="py-2.5 pr-4">
-                        <span className={statusBadge(s.status)}>{s.status}</span>
+                        <span className={statusBadge(s.status)}>{s.status.toUpperCase()}</span>
                       </td>
                       <td className="py-2.5 pr-4 text-gray-500">{ago(s.lastFinishedAt)}</td>
                       <td className="py-2.5 pr-4 text-gray-500">

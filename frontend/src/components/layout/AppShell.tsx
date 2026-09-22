@@ -11,7 +11,7 @@ import type { ModuleKey } from '@/types';
 
 function getModuleForPath(pathname: string): { key: ModuleKey | ModuleKey[]; needsManage?: boolean } | null {
   if (pathname.startsWith('/tickets/dashboard'))      return { key: 'tickets_it' };
-  if (pathname.startsWith('/admin/system'))           return { key: 'impostazioni' };
+  if (pathname.startsWith('/admin/system'))           return { key: 'impostazioni', needsManage: true };
   if (pathname.startsWith('/tickets'))               return { key: 'tickets' };
   if (pathname.startsWith('/ingresso-merci'))        return { key: 'ingresso_merci' };
   if (pathname.startsWith('/packing/impostazioni'))  return { key: 'packing', needsManage: true };

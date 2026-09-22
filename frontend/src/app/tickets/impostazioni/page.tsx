@@ -26,7 +26,7 @@ async function apiFetch(path: string, opts?: RequestInit) {
   return res;
 }
 
-type Tab = 'priorita' | 'sla' | 'categorie' | 'reparti' | 'approvazioni';
+type Tab = 'priorita' | 'sla' | 'categorie' | 'reparti';
 
 export default function TicketImpostazioniPage() {
   const [tab, setTab] = useState<Tab>('priorita');
@@ -346,7 +346,6 @@ export default function TicketImpostazioniPage() {
         <button className={tabClass('sla')}          onClick={() => setTab('sla')}>Regole SLA</button>
         <button className={tabClass('categorie')}    onClick={() => setTab('categorie')}>Categorie</button>
         <button className={tabClass('reparti')}      onClick={() => setTab('reparti')}>Reparti</button>
-        <button className={tabClass('approvazioni')} onClick={() => setTab('approvazioni')}>Approvazioni</button>
       </div>
 
       {/* ── PRIORITY RULES ── */}
@@ -528,6 +527,7 @@ export default function TicketImpostazioniPage() {
           <div className="card">
             <h2 className="font-semibold text-gray-800 mb-4">Categorie e sottocategorie</h2>
             <p className="text-xs text-gray-500 mb-4">Clicca su un nome per rinominarlo. Il badge verde/grigio attiva o disattiva la voce.</p>
+            {approvalError && <p className="text-sm text-red-600 mb-3">{approvalError}</p>}
             {categoryGroups.size === 0 ? (
               <p className="text-sm text-gray-400">Nessuna categoria</p>
             ) : (
@@ -737,57 +737,6 @@ export default function TicketImpostazioniPage() {
               </ul>
             )}
           </div>
-        </div>
-      )}
-
-      {/* ── APPROVALS ── */}
-      {tab === 'approvazioni' && (
-        <div className="card">
-          <h2 className="font-semibold text-gray-800 mb-1">Approvazioni</h2>
-          <p className="text-xs text-gray-500 mb-4">
-            Se una categoria/sottocategoria richiede approvazione, i nuovi ticket restano in attesa
-            (senza poter essere lavorati) finché un operatore IT non li approva esplicitamente.
-          </p>
-          {approvalError && <p className="text-sm text-red-600 mb-3">{approvalError}</p>}
-          {categoryGroups.size === 0 ? (
-            <p className="text-sm text-gray-400">Nessuna categoria</p>
-          ) : (
-            <div className="space-y-4">
-              {[...categoryGroups.entries()].map(([catName, rows]) => (
-                <div key={catName} className="border border-gray-200 rounded-lg overflow-hidden">
-                  <div className="px-3 py-2 bg-gray-50 border-b border-gray-200">
-                    <span className="text-sm font-semibold text-gray-800">{catName}</span>
-                  </div>
-                  <ul>
-                    {rows.map(row => {
-                      const rule = approvalRules.find(r => r.category === row.category && r.subcategory === row.subcategory);
-                      const requiresApproval = rule?.requires_approval ?? false;
-                      const key = `${row.category}-${row.subcategory ?? ''}`;
-                      return (
-                        <li key={row.id} className="flex items-center justify-between px-3 py-2 border-b border-gray-50 last:border-b-0 text-sm gap-2">
-                          <span className="text-gray-700 flex-1 min-w-0 truncate">
-                            {row.subcategory ?? <span className="text-gray-400 italic text-xs">nessuna sottocategoria</span>}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setApprovalRequired(row.category, row.subcategory, !requiresApproval)}
-                            disabled={approvalSaving === key}
-                            className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium transition-colors disabled:opacity-50 ${
-                              requiresApproval
-                                ? 'bg-purple-100 text-purple-700 hover:bg-gray-100 hover:text-gray-500'
-                                : 'bg-gray-100 text-gray-500 hover:bg-purple-100 hover:text-purple-700'
-                            }`}
-                          >
-                            {approvalSaving === key ? '…' : requiresApproval ? 'Sì' : 'No'}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
     </div>
