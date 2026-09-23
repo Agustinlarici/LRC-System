@@ -137,6 +137,30 @@ export function IconSearch({ className = base }: IconProps) {
     </svg>
   );
 }
+export function IconUsers({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M17 20v-1a4 4 0 00-4-4H7a4 4 0 00-4 4v1m18 0v-1a4 4 0 00-3-3.87M13 7a4 4 0 11-8 0 4 4 0 018 0zm6 4a4 4 0 00-3-3.87" />
+    </svg>
+  );
+}
+export function IconOrgChart({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
+      <rect x="9" y="3" width="6" height="4" rx="1" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="3" y="17" width="6" height="4" rx="1" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="15" y="17" width="6" height="4" rx="1" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 7v5m0 0H6v5m6-5h6v5" />
+    </svg>
+  );
+}
+export function IconTrendUp({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 17l6-6 4 4 8-8m0 0h-5m5 0v5" />
+    </svg>
+  );
+}
 export function IconSparkles({ className = base }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
@@ -151,6 +175,7 @@ export const ICON_MAP: Record<string, ModuleIcon> = {
   IconBox, IconTruck, IconMonitor, IconArchive, IconMap,
   IconClipboard, IconFactory, IconSettings, IconTicket, IconChart,
   IconHeatmap, IconList, IconScan, IconEdi, IconWebDdt, IconSparkles, IconSearch,
+  IconUsers, IconOrgChart, IconTrendUp,
 };
 
 // ─── Group representative icons ─────────────────────────────────────────────
@@ -161,4 +186,5 @@ export const GROUP_ICON_MAP: Record<string, ModuleIcon> = {
   Qualità:    IconClipboard,
   Dashboard:  IconChart,
   IT:         IconSettings,
+  HR:         IconUsers,
 };
