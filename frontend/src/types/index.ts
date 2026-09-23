@@ -4,7 +4,7 @@ export type ModuleKey =
   | 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer'
   | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
   | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita'
-  | 'programma_produzione';
+  | 'programma_produzione' | 'hr' | 'hr_salary';
 
 export interface ModulePermission {
   module_key: ModuleKey;
@@ -639,4 +639,114 @@ export interface ProdComponentConflict {
   categoria:  string;
   commessa:   string;
   candidates: ProdComponentConflictCandidate[];
+}
+
+// ─── HR ─────────────────────────────────────────────────────────────────────
+
+export type HrEmployeeStatus = 'attivo' | 'aspettativa' | 'malattia' | 'maternita_paternita' | 'cessato';
+
+export type HrEventType =
+  | 'assunzione' | 'cambio_reparto' | 'cambio_ruolo' | 'cambio_livello' | 'cambio_capo'
+  | 'trasferimento' | 'promozione' | 'cessazione' | 'malattia' | 'maternita_paternita'
+  | 'infortunio' | 'congedo' | 'rientro' | 'altro';
+
+export interface HrDepartment {
+  id:        number;
+  name:      string;
+  is_active: boolean;
+}
+
+export interface HrEmployee {
+  id:               number;
+  matricola:        string | null;
+  nome:             string;
+  cognome:          string;
+  data_nascita:     string | null;
+  codice_fiscale:   string | null;
+  email:            string | null;
+  telefono:         string | null;
+  indirizzo:        string | null;
+  ruolo:            string | null;
+  mansione:         string | null;
+  livello:          string | null;
+  tipo_contratto:   string | null;
+  reparto_id:       number | null;
+  reparto_name:     string | null;
+  capo_id:          number | null;
+  capo_nome:        string | null;
+  user_id:          number | null;
+  data_assunzione:  string;
+  data_cessazione:  string | null;
+  stato:            HrEmployeeStatus;
+  note:             string | null;
+  anzianita_anni:   number;
+  eta:              number | null;
+  n_riporti:        number;
+  created_at:       string;
+  updated_at:       string;
+}
+
+export interface HrEmployeeEvent {
+  id:                 number;
+  employee_id:        number;
+  event_type:         HrEventType;
+  event_date:         string;
+  end_date:           string | null;
+  from_value:         string | null;
+  to_value:           string | null;
+  note:               string | null;
+  created_by_name:    string | null;
+  created_at:         string;
+}
+
+export interface HrEmployeeSalary {
+  id:                        number;
+  employee_id:               number;
+  data_decorrenza:           string;
+  livello_retributivo:       string | null;
+  retribuzione_annua_lorda:  number | null;
+  note:                      string | null;
+  created_at:                string;
+}
+
+export interface HrOrgNode {
+  id:           number;
+  nome:         string;
+  cognome:      string;
+  ruolo:        string | null;
+  reparto_name: string | null;
+  stato:        HrEmployeeStatus;
+  capo_id:      number | null;
+  n_riporti:    number;
+}
+
+export interface HrAnalyticsSummary {
+  total_attivi:          number;
+  eta_media:             number | null;
+  anzianita_media:       number | null;
+  assunzioni_ultimo_anno: number;
+  cessazioni_ultimo_anno: number;
+  eventi_ultimo_anno:    Record<HrEventType, number>;
+}
+
+export interface HrAgeBucket {
+  reparto_id:   number | null;
+  reparto_name: string;
+  eta:          number;
+  count:        number;
+}
+
+export interface HrDeptDistribution {
+  reparto_id:   number | null;
+  reparto_name: string;
+  count:        number;
+}
+
+export interface HrEvolutionPoint {
+  month:               string; // YYYY-MM-01
+  total_employees:     number;
+  hires:               number;
+  terminations:        number;
+  avg_age:             number | null;
+  avg_seniority_years: number | null;
 }

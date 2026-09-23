@@ -58,6 +58,11 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/admin/monitor/motivi':    'monitor_motivi',
   '/qualita':                 'qualita',
   '/produzione':              'programma_produzione',
+  '/hr':                      'hr',
+  '/hr/dipendenti':           'hr',
+  '/hr/organigramma':         'hr',
+  '/hr/analisi':              'hr',
+  '/hr/evoluzione':           'hr',
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────

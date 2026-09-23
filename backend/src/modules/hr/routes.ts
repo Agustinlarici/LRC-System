@@ -1,0 +1,361 @@
+import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import { z } from 'zod';
+import { db } from '../../db/client.js';
+import { requireModule, requireManage, type Env, type AuthUser } from '../../lib/auth.js';
+import { parseBody } from '../../lib/validate.js';
+import { auditLog } from '../../lib/audit.js';
+import { hrAnalyticsRoutes } from './analytics.js';
+
+export const hrRoutes = new Hono<Env>();
+hrRoutes.route('/analytics', hrAnalyticsRoutes);
+
+// Eventi che un capo può registrare per il proprio team diretto, senza permesso
+// di gestione HR completo — tutto ciò che è strutturale/sensibile (promozioni,
+// cambio livello, cambio capo, cessazione, assunzione) resta esclusivo di HR.
+const CAPO_ALLOWED_EVENT_TYPES = new Set([
+  'malattia', 'maternita_paternita', 'infortunio', 'congedo', 'rientro', 'trasferimento', 'altro',
+]);
+
+async function isDirectCapoOf(user: AuthUser, employeeId: number): Promise<boolean> {
+  const [row] = await db<{ ok: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1 FROM hr_employee target
+      JOIN hr_employee capo ON capo.id = target.capo_id
+      WHERE target.id = ${employeeId} AND capo.user_id = ${user.id}
+    ) AS ok
+  `;
+  return row?.ok ?? false;
+}
+
+function hasHrManage(user: AuthUser): boolean {
+  if (user.role === 'admin') return true;
+  return user.permissions.some(p => p.module_key === 'hr' && p.can_manage);
+}
+
+function hasSalaryView(user: AuthUser, manage = false): boolean {
+  if (user.role === 'admin') return true;
+  const perm = user.permissions.find(p => p.module_key === 'hr_salary');
+  return manage ? !!perm?.can_manage : !!(perm?.can_view || perm?.can_manage);
+}
+
+// ─── Reparti ──────────────────────────────────────────────────────────────────
+
+hrRoutes.get('/departments', requireModule('hr'), async (c) => {
+  const rows = await db`SELECT id, name, is_active FROM hr_department ORDER BY name`;
+  return c.json(rows);
+});
+
+hrRoutes.post('/departments', requireManage('hr'), async (c) => {
+  const body = await parseBody(c, z.object({ name: z.string().min(1).max(150) }));
+  const [dept] = await db`
+    INSERT INTO hr_department (name) VALUES (${body.name.trim()})
+    RETURNING id, name, is_active
+  `;
+  return c.json(dept, 201);
+});
+
+hrRoutes.patch('/departments/:id', requireManage('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const body = await parseBody(c, z.object({
+    name: z.string().min(1).max(150).optional(),
+    is_active: z.boolean().optional(),
+  }));
+  if (!Object.keys(body).length) throw new HTTPException(400, { message: 'Nessun campo da aggiornare' });
+  const [dept] = await db`
+    UPDATE hr_department SET ${db(body)} WHERE id = ${id}
+    RETURNING id, name, is_active
+  `;
+  if (!dept) throw new HTTPException(404, { message: 'Reparto non trovato' });
+  return c.json(dept);
+});
+
+// ─── Dipendenti — lista + ficha ───────────────────────────────────────────────
+
+const employeeSelect = db`
+  SELECT
+    e.id, e.matricola, e.nome, e.cognome, e.data_nascita, e.codice_fiscale, e.email,
+    e.telefono, e.indirizzo, e.ruolo, e.mansione, e.livello, e.tipo_contratto,
+    e.reparto_id, d.name AS reparto_name,
+    e.capo_id, (capo.nome || ' ' || capo.cognome) AS capo_nome,
+    e.user_id, e.data_assunzione, e.data_cessazione, e.stato, e.note,
+    e.created_at, e.updated_at,
+    ROUND(EXTRACT(EPOCH FROM AGE(COALESCE(e.data_cessazione, now()), e.data_assunzione)) / (365.25*86400))::int AS anzianita_anni,
+    CASE WHEN e.data_nascita IS NOT NULL
+      THEN EXTRACT(YEAR FROM AGE(COALESCE(e.data_cessazione, now()), e.data_nascita))::int
+      ELSE NULL END AS eta,
+    (SELECT COUNT(*)::int FROM hr_employee r WHERE r.capo_id = e.id AND r.stato != 'cessato') AS n_riporti
+  FROM hr_employee e
+  LEFT JOIN hr_department d ON d.id = e.reparto_id
+  LEFT JOIN hr_employee capo ON capo.id = e.capo_id
+`;
+
+hrRoutes.get('/employees', requireModule('hr'), async (c) => {
+  const { search, reparto_id, stato, capo_id } = c.req.query();
+
+  const searchFilter = search
+    ? db`AND (e.nome ILIKE ${'%' + search + '%'} OR e.cognome ILIKE ${'%' + search + '%'} OR e.matricola ILIKE ${'%' + search + '%'})`
+    : db``;
+  const repartoFilter = reparto_id ? db`AND e.reparto_id = ${parseInt(reparto_id, 10)}` : db``;
+  const statoFilter   = stato      ? db`AND e.stato = ${stato}` : db``;
+  const capoFilter    = capo_id    ? db`AND e.capo_id = ${parseInt(capo_id, 10)}` : db``;
+
+  const rows = await db`
+    ${employeeSelect}
+    WHERE 1=1 ${searchFilter} ${repartoFilter} ${statoFilter} ${capoFilter}
+    ORDER BY e.cognome, e.nome
+  `;
+  return c.json(rows);
+});
+
+hrRoutes.get('/employees/:id', requireModule('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+
+  const [employee] = await db`${employeeSelect} WHERE e.id = ${id}`;
+  if (!employee) throw new HTTPException(404, { message: 'Dipendente non trovato' });
+  return c.json(employee);
+});
+
+const employeeFieldsSchema = z.object({
+  matricola:       z.string().max(30).optional().nullable(),
+  nome:            z.string().min(1).max(100),
+  cognome:         z.string().min(1).max(100),
+  data_nascita:    z.string().optional().nullable(),
+  codice_fiscale:  z.string().max(20).optional().nullable(),
+  email:           z.string().email().max(150).optional().nullable().or(z.literal('')),
+  telefono:        z.string().max(30).optional().nullable(),
+  indirizzo:       z.string().max(255).optional().nullable(),
+  ruolo:           z.string().max(150).optional().nullable(),
+  mansione:        z.string().max(150).optional().nullable(),
+  livello:         z.string().max(30).optional().nullable(),
+  tipo_contratto:  z.string().max(50).optional().nullable(),
+  reparto_id:      z.number().int().positive().optional().nullable(),
+  capo_id:         z.number().int().positive().optional().nullable(),
+  user_id:         z.number().int().positive().optional().nullable(),
+  data_assunzione: z.string(),
+  stato:           z.enum(['attivo', 'aspettativa', 'malattia', 'maternita_paternita', 'cessato']).optional(),
+  note:            z.string().optional().nullable(),
+});
+
+hrRoutes.post('/employees', requireManage('hr'), async (c) => {
+  const body = await parseBody(c, employeeFieldsSchema);
+  const user = c.get('user');
+
+  const [employee] = await db`
+    INSERT INTO hr_employee ${db({ ...body, email: body.email || null })}
+    RETURNING id
+  `;
+
+  await db`
+    INSERT INTO hr_employee_event ${db({
+      employee_id: employee.id,
+      event_type: 'assunzione',
+      event_date: body.data_assunzione,
+      to_value: body.ruolo ?? null,
+      created_by_user_id: user.id,
+      created_by_name: user.display_name,
+    })}
+  `;
+
+  await auditLog({ userId: user.id, username: user.username, action: 'hr.employee.create', entity: 'hr_employee', entityId: employee.id });
+
+  const [full] = await db`${employeeSelect} WHERE e.id = ${employee.id}`;
+  return c.json(full, 201);
+});
+
+const employeePatchSchema = employeeFieldsSchema.partial();
+
+hrRoutes.patch('/employees/:id', requireModule('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+
+  const user = c.get('user');
+  const manage = hasHrManage(user);
+  if (!manage && !(await isDirectCapoOf(user, id))) {
+    throw new HTTPException(403, { message: 'Permessi insufficienti per modificare questo dipendente' });
+  }
+
+  const [existing] = await db`SELECT * FROM hr_employee WHERE id = ${id}`;
+  if (!existing) throw new HTTPException(404, { message: 'Dipendente non trovato' });
+
+  const body = await parseBody(c, employeePatchSchema);
+
+  // Un capo (senza gestione HR completa) può solo aggiornare note di contatto,
+  // non dati strutturali/sensibili — quelli restano esclusivi di HR.
+  const CAPO_EDITABLE_FIELDS = new Set(['telefono', 'email', 'indirizzo', 'note']);
+  const updates: Record<string, any> = {};
+  for (const [k, v] of Object.entries(body)) {
+    if (!manage && !CAPO_EDITABLE_FIELDS.has(k)) continue;
+    updates[k] = k === 'email' && v === '' ? null : v;
+  }
+  if (!Object.keys(updates).length) throw new HTTPException(400, { message: 'Nessun campo modificabile fornito' });
+
+  // Traccia nella timeline i cambi strutturali rilevanti prima di applicarli
+  const events: { event_type: string; from_value: string | null; to_value: string | null }[] = [];
+  if (manage) {
+    if (updates.reparto_id !== undefined && updates.reparto_id !== existing.reparto_id) {
+      events.push({ event_type: 'cambio_reparto', from_value: String(existing.reparto_id ?? ''), to_value: String(updates.reparto_id ?? '') });
+    }
+    if (updates.ruolo !== undefined && updates.ruolo !== existing.ruolo) {
+      events.push({ event_type: 'cambio_ruolo', from_value: existing.ruolo, to_value: updates.ruolo });
+    }
+    if (updates.livello !== undefined && updates.livello !== existing.livello) {
+      events.push({ event_type: 'cambio_livello', from_value: existing.livello, to_value: updates.livello });
+    }
+    if (updates.capo_id !== undefined && updates.capo_id !== existing.capo_id) {
+      events.push({ event_type: 'cambio_capo', from_value: String(existing.capo_id ?? ''), to_value: String(updates.capo_id ?? '') });
+    }
+    if (updates.stato === 'cessato' && existing.stato !== 'cessato') {
+      events.push({ event_type: 'cessazione', from_value: existing.stato, to_value: 'cessato' });
+    }
+  }
+
+  updates.updated_at = new Date();
+  await db`UPDATE hr_employee SET ${db(updates)} WHERE id = ${id}`;
+
+  for (const ev of events) {
+    await db`
+      INSERT INTO hr_employee_event ${db({
+        employee_id: id,
+        event_type: ev.event_type,
+        event_date: new Date().toISOString().slice(0, 10),
+        from_value: ev.from_value,
+        to_value: ev.to_value,
+        created_by_user_id: user.id,
+        created_by_name: user.display_name,
+      })}
+    `;
+  }
+
+  await auditLog({ userId: user.id, username: user.username, action: 'hr.employee.update', entity: 'hr_employee', entityId: id, details: updates });
+
+  const [full] = await db`${employeeSelect} WHERE e.id = ${id}`;
+  return c.json(full);
+});
+
+// ─── Timeline eventi ──────────────────────────────────────────────────────────
+
+hrRoutes.get('/employees/:id/events', requireModule('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+
+  const rows = await db`
+    SELECT id, employee_id, event_type, event_date, end_date, from_value, to_value, note, created_by_name, created_at
+    FROM hr_employee_event
+    WHERE employee_id = ${id}
+    ORDER BY event_date DESC, created_at DESC
+  `;
+  return c.json(rows);
+});
+
+const eventFieldsSchema = z.object({
+  event_type: z.enum([
+    'assunzione', 'cambio_reparto', 'cambio_ruolo', 'cambio_livello', 'cambio_capo',
+    'trasferimento', 'promozione', 'cessazione', 'malattia', 'maternita_paternita',
+    'infortunio', 'congedo', 'rientro', 'altro',
+  ]),
+  event_date: z.string(),
+  end_date:   z.string().optional().nullable(),
+  from_value: z.string().max(255).optional().nullable(),
+  to_value:   z.string().max(255).optional().nullable(),
+  note:       z.string().optional().nullable(),
+});
+
+hrRoutes.post('/employees/:id/events', requireModule('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+
+  const user = c.get('user');
+  const manage = hasHrManage(user);
+  const body = await parseBody(c, eventFieldsSchema);
+
+  if (!manage) {
+    if (!CAPO_ALLOWED_EVENT_TYPES.has(body.event_type)) {
+      throw new HTTPException(403, { message: 'Questo tipo di evento richiede i permessi di gestione HR' });
+    }
+    if (!(await isDirectCapoOf(user, id))) {
+      throw new HTTPException(403, { message: 'Puoi registrare eventi solo per il tuo team diretto' });
+    }
+  }
+
+  const [existing] = await db`SELECT id FROM hr_employee WHERE id = ${id}`;
+  if (!existing) throw new HTTPException(404, { message: 'Dipendente non trovato' });
+
+  const [event] = await db`
+    INSERT INTO hr_employee_event ${db({
+      employee_id: id,
+      ...body,
+      created_by_user_id: user.id,
+      created_by_name: user.display_name,
+    })}
+    RETURNING id, employee_id, event_type, event_date, end_date, from_value, to_value, note, created_by_name, created_at
+  `;
+
+  await auditLog({ userId: user.id, username: user.username, action: 'hr.event.create', entity: 'hr_employee_event', entityId: event.id, details: { employee_id: id, event_type: body.event_type } });
+
+  return c.json(event, 201);
+});
+
+// ─── Storico retributivo (permesso separato 'hr_salary') ─────────────────────
+
+hrRoutes.get('/employees/:id/salary', requireModule('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const user = c.get('user');
+  if (!hasSalaryView(user)) throw new HTTPException(403, { message: "Accesso ai dati retributivi negato" });
+
+  const rows = await db`
+    SELECT id, employee_id, data_decorrenza, livello_retributivo, retribuzione_annua_lorda, note, created_at
+    FROM hr_employee_salary
+    WHERE employee_id = ${id}
+    ORDER BY data_decorrenza DESC
+  `;
+  return c.json(rows);
+});
+
+const salaryFieldsSchema = z.object({
+  data_decorrenza:           z.string(),
+  livello_retributivo:       z.string().max(50).optional().nullable(),
+  retribuzione_annua_lorda:  z.number().nonnegative().optional().nullable(),
+  note:                      z.string().optional().nullable(),
+});
+
+hrRoutes.post('/employees/:id/salary', requireModule('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const user = c.get('user');
+  if (!hasSalaryView(user, true)) throw new HTTPException(403, { message: "Permessi di gestione dati retributivi negati" });
+
+  const [existing] = await db`SELECT id FROM hr_employee WHERE id = ${id}`;
+  if (!existing) throw new HTTPException(404, { message: 'Dipendente non trovato' });
+
+  const body = await parseBody(c, salaryFieldsSchema);
+  const [entry] = await db`
+    INSERT INTO hr_employee_salary ${db({ employee_id: id, ...body, created_by_user_id: user.id })}
+    RETURNING id, employee_id, data_decorrenza, livello_retributivo, retribuzione_annua_lorda, note, created_at
+  `;
+
+  await auditLog({ userId: user.id, username: user.username, action: 'hr.salary.create', entity: 'hr_employee_salary', entityId: entry.id, details: { employee_id: id } });
+
+  return c.json(entry, 201);
+});
+
+// ─── Organigramma ─────────────────────────────────────────────────────────────
+
+hrRoutes.get('/org-chart', requireModule('hr'), async (c) => {
+  const { reparto_id } = c.req.query();
+  const repartoFilter = reparto_id ? db`AND e.reparto_id = ${parseInt(reparto_id, 10)}` : db``;
+
+  const rows = await db`
+    SELECT
+      e.id, e.nome, e.cognome, e.ruolo, d.name AS reparto_name, e.stato, e.capo_id,
+      (SELECT COUNT(*)::int FROM hr_employee r WHERE r.capo_id = e.id AND r.stato != 'cessato') AS n_riporti
+    FROM hr_employee e
+    LEFT JOIN hr_department d ON d.id = e.reparto_id
+    WHERE e.stato != 'cessato' ${repartoFilter}
+    ORDER BY e.cognome, e.nome
+  `;
+  return c.json(rows);
+});
