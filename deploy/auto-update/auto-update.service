@@ -1,0 +1,11 @@
+[Unit]
+Description=LRC-System - Aggiornamento automatico OS (Ubuntu) con backup e rollback
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/auto-update/update-system.sh
+# Se lo script fallisce (es. rollback eseguito), non bloccare il boot:
+# il timer riproverà al prossimo ciclo programmato.
+TimeoutStartSec=1800
