@@ -27,6 +27,7 @@ export function EditEmployeeModal({ employee, departments, allEmployees, fullMan
     livello: employee.livello ?? '',
     tipo_contratto: employee.tipo_contratto ?? '',
     stato: employee.stato,
+    data_cessazione: employee.data_cessazione ?? '',
     telefono: employee.telefono ?? '',
     email: employee.email ?? '',
     indirizzo: employee.indirizzo ?? '',
@@ -49,6 +50,8 @@ export function EditEmployeeModal({ employee, departments, allEmployees, fullMan
           ...form,
           reparto_id: form.reparto_id ? Number(form.reparto_id) : null,
           capo_id: form.capo_id ? Number(form.capo_id) : null,
+          // Se si riattiva un dipendente cessato, non deve restare appesa una vecchia data di cessazione
+          data_cessazione: form.stato === 'cessato' ? (form.data_cessazione || null) : null,
         }
       : { telefono: form.telefono, email: form.email, indirizzo: form.indirizzo, note: form.note };
 
@@ -99,6 +102,12 @@ export function EditEmployeeModal({ employee, departments, allEmployees, fullMan
                   <option value="cessato">Cessato</option>
                 </select>
               </div>
+              {form.stato === 'cessato' && (
+                <div><label className="label">Data cessazione</label>
+                  <input type="date" className="input" value={form.data_cessazione} onChange={e => set('data_cessazione', e.target.value)} />
+                  <p className="text-[11px] text-gray-400 mt-1">Se lasciata vuota, verrà usata la data di oggi.</p>
+                </div>
+              )}
             </div>
           )}
           <div className="grid grid-cols-2 gap-4">

@@ -10,8 +10,8 @@ hrAnalyticsRoutes.get('/summary', requireModule('hr'), async (c) => {
   const [totals] = await db`
     SELECT
       COUNT(*) FILTER (WHERE stato != 'cessato')::int AS total_attivi,
-      ROUND(AVG(EXTRACT(YEAR FROM AGE(now(), data_nascita))) FILTER (WHERE stato != 'cessato' AND data_nascita IS NOT NULL), 1) AS eta_media,
-      ROUND(AVG(EXTRACT(EPOCH FROM AGE(now(), data_assunzione)) / (365.25*86400)) FILTER (WHERE stato != 'cessato'), 1) AS anzianita_media,
+      ROUND(AVG(EXTRACT(YEAR FROM AGE(now(), data_nascita))) FILTER (WHERE stato != 'cessato' AND data_nascita IS NOT NULL), 1)::float8 AS eta_media,
+      ROUND(AVG(EXTRACT(EPOCH FROM AGE(now(), data_assunzione)) / (365.25*86400)) FILTER (WHERE stato != 'cessato'), 1)::float8 AS anzianita_media,
       COUNT(*) FILTER (WHERE data_assunzione >= now() - interval '1 year')::int AS assunzioni_ultimo_anno,
       COUNT(*) FILTER (WHERE data_cessazione >= now() - interval '1 year')::int AS cessazioni_ultimo_anno
     FROM hr_employee
@@ -102,11 +102,11 @@ hrAnalyticsRoutes.get('/evolution', requireModule('hr'), async (c) => {
         WHERE e.data_assunzione <= (m.month_start + interval '1 month' - interval '1 day')
           AND (e.data_cessazione IS NULL OR e.data_cessazione > (m.month_start + interval '1 month' - interval '1 day'))
           AND e.data_nascita IS NOT NULL
-      ), 1) AS avg_age,
+      ), 1)::float8 AS avg_age,
       ROUND(AVG(EXTRACT(EPOCH FROM AGE(m.month_start, e.data_assunzione)) / (365.25*86400)) FILTER (
         WHERE e.data_assunzione <= (m.month_start + interval '1 month' - interval '1 day')
           AND (e.data_cessazione IS NULL OR e.data_cessazione > (m.month_start + interval '1 month' - interval '1 day'))
-      ), 1) AS avg_seniority_years
+      ), 1)::float8 AS avg_seniority_years
     FROM months m
     CROSS JOIN hr_employee e
     GROUP BY m.month_start

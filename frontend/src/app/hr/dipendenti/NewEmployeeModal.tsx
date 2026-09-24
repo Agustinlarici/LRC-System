@@ -38,6 +38,9 @@ export function NewEmployeeModal({ departments: initialDepartments, onClose, onC
       const dept = await res.json();
       setDepartments(d => [...d, dept]);
       set('reparto_id', String(dept.id));
+    } else {
+      const body = await res.json().catch(() => ({}));
+      window.alert(body.message ?? 'Errore durante la creazione del reparto');
     }
   }
 

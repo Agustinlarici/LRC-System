@@ -48,11 +48,16 @@ hrRoutes.get('/departments', requireModule('hr'), async (c) => {
 
 hrRoutes.post('/departments', requireManage('hr'), async (c) => {
   const body = await parseBody(c, z.object({ name: z.string().min(1).max(150) }));
-  const [dept] = await db`
-    INSERT INTO hr_department (name) VALUES (${body.name.trim()})
-    RETURNING id, name, is_active
-  `;
-  return c.json(dept, 201);
+  try {
+    const [dept] = await db`
+      INSERT INTO hr_department (name) VALUES (${body.name.trim()})
+      RETURNING id, name, is_active
+    `;
+    return c.json(dept, 201);
+  } catch (err: any) {
+    if (err?.code === '23505') throw new HTTPException(409, { message: `Esiste già un reparto chiamato "${body.name.trim()}"` });
+    throw err;
+  }
 });
 
 hrRoutes.patch('/departments/:id', requireManage('hr'), async (c) => {
@@ -135,6 +140,7 @@ const employeeFieldsSchema = z.object({
   capo_id:         z.number().int().positive().optional().nullable(),
   user_id:         z.number().int().positive().optional().nullable(),
   data_assunzione: z.string(),
+  data_cessazione: z.string().optional().nullable(),
   stato:           z.enum(['attivo', 'aspettativa', 'malattia', 'maternita_paternita', 'cessato']).optional(),
   note:            z.string().optional().nullable(),
 });
@@ -185,18 +191,31 @@ hrRoutes.patch('/employees/:id', requireModule('hr'), async (c) => {
   // Un capo (senza gestione HR completa) può solo aggiornare note di contatto,
   // non dati strutturali/sensibili — quelli restano esclusivi di HR.
   const CAPO_EDITABLE_FIELDS = new Set(['telefono', 'email', 'indirizzo', 'note']);
+  const REQUIRED_FIELDS = new Set(['nome', 'cognome', 'data_assunzione']);
   const updates: Record<string, any> = {};
   for (const [k, v] of Object.entries(body)) {
     if (!manage && !CAPO_EDITABLE_FIELDS.has(k)) continue;
-    updates[k] = k === 'email' && v === '' ? null : v;
+    // Campo di testo opzionale svuotato dall'utente → NULL, non stringa vuota
+    // (altrimenti la ficha mostrerebbe un vuoto invece di "—").
+    updates[k] = v === '' && !REQUIRED_FIELDS.has(k) ? null : v;
   }
   if (!Object.keys(updates).length) throw new HTTPException(400, { message: 'Nessun campo modificabile fornito' });
+  if (updates.capo_id === id) throw new HTTPException(400, { message: 'Una persona non può essere capo di se stessa' });
 
-  // Traccia nella timeline i cambi strutturali rilevanti prima di applicarli
+  // Traccia nella timeline i cambi strutturali rilevanti prima di applicarli — con
+  // nomi leggibili (non gli id grezzi) così la timeline ha senso per chi la legge.
   const events: { event_type: string; from_value: string | null; to_value: string | null }[] = [];
   if (manage) {
     if (updates.reparto_id !== undefined && updates.reparto_id !== existing.reparto_id) {
-      events.push({ event_type: 'cambio_reparto', from_value: String(existing.reparto_id ?? ''), to_value: String(updates.reparto_id ?? '') });
+      const ids = [existing.reparto_id, updates.reparto_id].filter((v): v is number => v != null);
+      const names = ids.length
+        ? new Map((await db`SELECT id, name FROM hr_department WHERE id = ANY(${ids})`).map((d: any) => [d.id, d.name]))
+        : new Map();
+      events.push({
+        event_type: 'cambio_reparto',
+        from_value: existing.reparto_id != null ? names.get(existing.reparto_id) ?? null : null,
+        to_value: updates.reparto_id != null ? names.get(updates.reparto_id) ?? null : null,
+      });
     }
     if (updates.ruolo !== undefined && updates.ruolo !== existing.ruolo) {
       events.push({ event_type: 'cambio_ruolo', from_value: existing.ruolo, to_value: updates.ruolo });
@@ -205,10 +224,24 @@ hrRoutes.patch('/employees/:id', requireModule('hr'), async (c) => {
       events.push({ event_type: 'cambio_livello', from_value: existing.livello, to_value: updates.livello });
     }
     if (updates.capo_id !== undefined && updates.capo_id !== existing.capo_id) {
-      events.push({ event_type: 'cambio_capo', from_value: String(existing.capo_id ?? ''), to_value: String(updates.capo_id ?? '') });
+      const ids = [existing.capo_id, updates.capo_id].filter((v): v is number => v != null);
+      const names = ids.length
+        ? new Map((await db`SELECT id, (nome || ' ' || cognome) AS nome FROM hr_employee WHERE id = ANY(${ids})`).map((e: any) => [e.id, e.nome]))
+        : new Map();
+      events.push({
+        event_type: 'cambio_capo',
+        from_value: existing.capo_id != null ? names.get(existing.capo_id) ?? null : null,
+        to_value: updates.capo_id != null ? names.get(updates.capo_id) ?? null : null,
+      });
     }
     if (updates.stato === 'cessato' && existing.stato !== 'cessato') {
+      updates.data_cessazione = updates.data_cessazione || new Date().toISOString().slice(0, 10);
       events.push({ event_type: 'cessazione', from_value: existing.stato, to_value: 'cessato' });
+    }
+    // Riattivazione: un dipendente che torna da 'cessato' non può restare con una
+    // data di cessazione appesa, altrimenti resterebbe uno stato inconsistente.
+    if (updates.stato !== undefined && updates.stato !== 'cessato' && existing.stato === 'cessato') {
+      updates.data_cessazione = null;
     }
   }
 
@@ -216,11 +249,14 @@ hrRoutes.patch('/employees/:id', requireModule('hr'), async (c) => {
   await db`UPDATE hr_employee SET ${db(updates)} WHERE id = ${id}`;
 
   for (const ev of events) {
+    const eventDate = ev.event_type === 'cessazione' && updates.data_cessazione
+      ? updates.data_cessazione
+      : new Date().toISOString().slice(0, 10);
     await db`
       INSERT INTO hr_employee_event ${db({
         employee_id: id,
         event_type: ev.event_type,
-        event_date: new Date().toISOString().slice(0, 10),
+        event_date: eventDate,
         from_value: ev.from_value,
         to_value: ev.to_value,
         created_by_user_id: user.id,
@@ -307,7 +343,8 @@ hrRoutes.get('/employees/:id/salary', requireModule('hr'), async (c) => {
   if (!hasSalaryView(user)) throw new HTTPException(403, { message: "Accesso ai dati retributivi negato" });
 
   const rows = await db`
-    SELECT id, employee_id, data_decorrenza, livello_retributivo, retribuzione_annua_lorda, note, created_at
+    SELECT id, employee_id, data_decorrenza, livello_retributivo,
+           retribuzione_annua_lorda::float8 AS retribuzione_annua_lorda, note, created_at
     FROM hr_employee_salary
     WHERE employee_id = ${id}
     ORDER BY data_decorrenza DESC
@@ -334,7 +371,8 @@ hrRoutes.post('/employees/:id/salary', requireModule('hr'), async (c) => {
   const body = await parseBody(c, salaryFieldsSchema);
   const [entry] = await db`
     INSERT INTO hr_employee_salary ${db({ employee_id: id, ...body, created_by_user_id: user.id })}
-    RETURNING id, employee_id, data_decorrenza, livello_retributivo, retribuzione_annua_lorda, note, created_at
+    RETURNING id, employee_id, data_decorrenza, livello_retributivo,
+              retribuzione_annua_lorda::float8 AS retribuzione_annua_lorda, note, created_at
   `;
 
   await auditLog({ userId: user.id, username: user.username, action: 'hr.salary.create', entity: 'hr_employee_salary', entityId: entry.id, details: { employee_id: id } });
