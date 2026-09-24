@@ -8,6 +8,10 @@ const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
+// Stessa palette usata in Analisi HR/Evoluzione — un colore stabile per reparto,
+// così una persona ha lo stesso colore ovunque nel modulo HR.
+const PALETTE = ['#2563eb', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
+
 interface TreeNode extends HrOrgNode { children: TreeNode[]; }
 
 function buildTree(nodes: HrOrgNode[]): TreeNode[] {
@@ -34,37 +38,60 @@ function ancestorsOf(nodes: HrOrgNode[], matchIds: Set<number>): Set<number> {
   return result;
 }
 
-function TreeRow({ node, depth, expanded, toggle, search, selectedId, onSelect }: {
-  node: TreeNode; depth: number; expanded: Set<number>; toggle: (id: number) => void;
-  search: string; selectedId: number | null; onSelect: (id: number) => void;
+function initials(nome: string, cognome: string): string {
+  return `${nome[0] ?? ''}${cognome[0] ?? ''}`.toUpperCase();
+}
+
+// ─── Nodo dell'albero visivo ────────────────────────────────────────────────
+
+function OrgCard({ node, deptColor, expanded, toggle, matches, selectedId, onSelect }: {
+  node: TreeNode; deptColor: string; expanded: Set<number>; toggle: (id: number) => void;
+  matches: Set<number>; selectedId: number | null; onSelect: (id: number) => void;
 }) {
   const isOpen = expanded.has(node.id);
   const hasChildren = node.children.length > 0;
-  const matches = search && `${node.nome} ${node.cognome}`.toLowerCase().includes(search.toLowerCase());
+  const isMatch = matches.has(node.id);
+  const isSelected = selectedId === node.id;
 
   return (
-    <div>
-      <div
-        onClick={() => onSelect(node.id)}
-        style={{ paddingLeft: `${depth * 20}px` }}
-        className={`flex items-center gap-2 py-1.5 px-2 rounded-lg cursor-pointer transition-colors ${
-          selectedId === node.id ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50'
-        }`}
-      >
-        {hasChildren ? (
-          <button onClick={e => { e.stopPropagation(); toggle(node.id); }} className="w-4 h-4 flex items-center justify-center text-gray-400 shrink-0">
-            {isOpen ? '▾' : '▸'}
+    <li>
+      <div className="relative">
+        <div
+          onClick={() => onSelect(node.id)}
+          className={`org-node inline-flex flex-col items-center gap-1 bg-white border-2 rounded-xl px-3.5 py-3 min-w-[140px] cursor-pointer shadow-sm transition-all hover:shadow-md
+            ${isSelected ? 'border-blue-500 ring-2 ring-blue-100' : isMatch ? 'border-amber-400' : 'border-gray-200'}`}
+        >
+          <div
+            className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
+            style={{ background: deptColor }}
+          >
+            {initials(node.nome, node.cognome)}
+          </div>
+          <p className={`text-sm font-medium whitespace-nowrap ${isMatch ? 'text-amber-700' : 'text-gray-800'}`}>{node.cognome} {node.nome}</p>
+          {node.ruolo && <p className="text-[11px] text-gray-400 whitespace-nowrap -mt-0.5">{node.ruolo}</p>}
+          {node.stato !== 'attivo' && <span className="text-[10px] text-amber-600 font-medium">{node.stato}</span>}
+        </div>
+
+        {hasChildren && (
+          <button
+            onClick={(e) => { e.stopPropagation(); toggle(node.id); }}
+            title={isOpen ? 'Comprimi' : `Espandi (${node.children.length})`}
+            className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full bg-white border border-gray-300 text-[10px] font-medium
+              flex items-center justify-center text-gray-500 hover:border-blue-400 hover:text-blue-600 shadow-sm transition-colors"
+          >
+            {isOpen ? '−' : node.children.length}
           </button>
-        ) : <span className="w-4 shrink-0" />}
-        <span className={`text-sm ${matches ? 'font-semibold text-blue-700' : 'text-gray-800'}`}>{node.cognome} {node.nome}</span>
-        {node.ruolo && <span className="text-xs text-gray-400">— {node.ruolo}</span>}
-        {node.stato !== 'attivo' && <span className="text-[10px] text-amber-600">({node.stato})</span>}
-        {node.n_riporti > 0 && <span className="text-[10px] text-gray-300 ml-auto shrink-0">{node.n_riporti} riporti</span>}
+        )}
       </div>
-      {isOpen && node.children.map(c => (
-        <TreeRow key={c.id} node={c} depth={depth + 1} expanded={expanded} toggle={toggle} search={search} selectedId={selectedId} onSelect={onSelect} />
-      ))}
-    </div>
+
+      {isOpen && hasChildren && (
+        <ul>
+          {node.children.map(c => (
+            <OrgCard key={c.id} node={c} deptColor={deptColor} expanded={expanded} toggle={toggle} matches={matches} selectedId={selectedId} onSelect={onSelect} />
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }
 
@@ -95,6 +122,27 @@ export default function OrganigrammaPage() {
   const tree = useMemo(() => buildTree(nodes), [nodes]);
   const byId = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes]);
 
+  // Colore stabile per reparto, basato sull'elenco reparti (non sull'ordine dei nodi)
+  const deptColorMap = useMemo(() => {
+    const sorted = [...departments].sort((a, b) => a.name.localeCompare(b.name));
+    const map = new Map<string, string>();
+    sorted.forEach((d, i) => map.set(d.name, PALETTE[i % PALETTE.length]));
+    return map;
+  }, [departments]);
+  const colorFor = useCallback((n: HrOrgNode) =>
+    (n.reparto_name && deptColorMap.get(n.reparto_name)) || '#94a3b8', [deptColorMap]);
+
+  // Default: radici + primo livello espansi, il resto comprimibile a scoperta
+  useEffect(() => {
+    if (nodes.length === 0) return;
+    const initial = new Set<number>();
+    for (const root of buildTree(nodes)) {
+      initial.add(root.id);
+      for (const child of root.children) initial.add(child.id);
+    }
+    setExpanded(initial);
+  }, [nodes]);
+
   const matchIds = useMemo(() => {
     if (!search) return new Set<number>();
     return new Set(nodes.filter(n => `${n.nome} ${n.cognome}`.toLowerCase().includes(search.toLowerCase())).map(n => n.id));
@@ -109,7 +157,9 @@ export default function OrganigrammaPage() {
   }
 
   function expandAll() { setExpanded(new Set(nodes.map(n => n.id))); }
-  function collapseAll() { setExpanded(new Set()); }
+  function collapseAll() {
+    setExpanded(new Set(tree.map(r => r.id))); // resta visibile almeno il primo livello (i capi)
+  }
 
   const selected = selectedId != null ? byId.get(selectedId) : null;
   const superiors = useMemo(() => {
@@ -136,29 +186,49 @@ export default function OrganigrammaPage() {
         </select>
         <button onClick={expandAll} className="text-xs text-gray-400 hover:text-gray-600 underline">Espandi tutto</button>
         <button onClick={collapseAll} className="text-xs text-gray-400 hover:text-gray-600 underline">Comprimi tutto</button>
+
+        {departments.length > 0 && (
+          <div className="flex items-center gap-3 flex-wrap ml-auto text-[11px] text-gray-500">
+            {[...departments].sort((a, b) => a.name.localeCompare(b.name)).map(d => (
+              <span key={d.id} className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: deptColorMap.get(d.name) }} />
+                {d.name}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="card lg:col-span-2 max-h-[70vh] overflow-y-auto">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
+        <div className="card lg:col-span-3 overflow-x-auto overflow-y-hidden py-8">
           {loading ? (
             <p className="text-sm text-gray-400 text-center py-12">Caricamento…</p>
           ) : tree.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-12">Nessun dipendente trovato</p>
-          ) : tree.map(n => (
-            <TreeRow key={n.id} node={n} depth={0} expanded={expanded} toggle={toggle} search={search} selectedId={selectedId} onSelect={setSelectedId} />
-          ))}
+          ) : (
+            <ul className="org-tree mx-auto w-max">
+              {tree.map(n => (
+                <OrgCard key={n.id} node={n} deptColor={colorFor(n)} expanded={expanded} toggle={toggle} matches={matchIds} selectedId={selectedId} onSelect={setSelectedId} />
+              ))}
+            </ul>
+          )}
         </div>
 
-        <div className="card">
+        <div className="card lg:sticky lg:top-4">
           {!selected ? (
             <p className="text-sm text-gray-400 text-center py-12">Seleziona una persona dall&apos;organigramma per vedere dove si trova nella struttura</p>
           ) : (
             <div className="space-y-4">
-              <div>
-                <p className="text-base font-medium text-gray-900">{selected.cognome} {selected.nome}</p>
-                <p className="text-xs text-gray-400">{selected.ruolo ?? 'Ruolo non specificato'} {selected.reparto_name ? `· ${selected.reparto_name}` : ''}</p>
-                <Link href={`/hr/dipendenti/${selected.id}`} className="text-xs text-blue-600 hover:underline">Vedi ficha completa →</Link>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0" style={{ background: colorFor(selected) }}>
+                  {initials(selected.nome, selected.cognome)}
+                </div>
+                <div>
+                  <p className="text-base font-medium text-gray-900">{selected.cognome} {selected.nome}</p>
+                  <p className="text-xs text-gray-400">{selected.ruolo ?? 'Ruolo non specificato'} {selected.reparto_name ? `· ${selected.reparto_name}` : ''}</p>
+                </div>
               </div>
+              <Link href={`/hr/dipendenti/${selected.id}`} className="text-xs text-blue-600 hover:underline">Vedi ficha completa →</Link>
 
               {superiors.length > 0 && (
                 <div>
