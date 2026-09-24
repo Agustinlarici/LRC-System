@@ -26,7 +26,7 @@ const CAPO_ALLOWED: HrEventType[] = ['malattia', 'maternita_paternita', 'infortu
 const ALL_EVENTS = Object.keys(EVENT_LABEL) as HrEventType[];
 
 function fmtDate(d: string): string {
-  return new Date(`${d}T12:00:00Z`).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' });
+  return new Date(`${d.slice(0, 10)}T12:00:00Z`).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 interface Props { employeeId: number; canManage: boolean; canManageLimited: boolean; }

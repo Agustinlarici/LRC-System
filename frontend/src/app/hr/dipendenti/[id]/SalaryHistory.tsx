@@ -8,7 +8,7 @@ const BACKEND = typeof window !== 'undefined'
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
 function fmtDate(d: string): string {
-  return new Date(`${d}T12:00:00Z`).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return new Date(`${d.slice(0, 10)}T12:00:00Z`).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 function fmtCurrency(n: number | null): string {
   if (n == null) return '—';

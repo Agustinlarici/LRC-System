@@ -17,7 +17,7 @@ const PERIOD_OPTIONS = [12, 24, 36, 60];
 interface DeptEvolutionRow { month: string; reparto_name: string; count: number; }
 
 function fmtMonth(m: string): string {
-  return new Date(`${m}T12:00:00Z`).toLocaleDateString('it-IT', { month: 'short', year: '2-digit' });
+  return new Date(`${m.slice(0, 10)}T12:00:00Z`).toLocaleDateString('it-IT', { month: 'short', year: '2-digit' });
 }
 
 export default function EvoluzioneAziendalePage() {
@@ -130,7 +130,7 @@ export default function EvoluzioneAziendalePage() {
                 <BarChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#374151' }} />
-                  <YAxis tick={{ fontSize: 12, fill: '#374151' }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#374151' }} />
                   <Tooltip />
                   <Bar dataKey="Assunzioni" fill="#10b981" radius={[3, 3, 0, 0]} />
                   <Bar dataKey="Cessazioni" fill="#ef4444" radius={[0, 0, 3, 3]} />

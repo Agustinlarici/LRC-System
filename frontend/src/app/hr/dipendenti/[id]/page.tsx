@@ -27,7 +27,10 @@ const STATO_COLOR: Record<string, string> = {
 
 function fmtDate(d: string | null): string {
   if (!d) return '—';
-  return new Date(`${d}T12:00:00Z`).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  // Il backend serializza le colonne DATE come timestamp ISO completo
+  // (es. "2005-03-01T00:00:00.000Z"): prendo solo i primi 10 caratteri
+  // (funziona anche se in futuro arrivasse già come "YYYY-MM-DD" semplice).
+  return new Date(`${d.slice(0, 10)}T12:00:00Z`).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {

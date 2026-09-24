@@ -27,7 +27,9 @@ export function EditEmployeeModal({ employee, departments, allEmployees, fullMan
     livello: employee.livello ?? '',
     tipo_contratto: employee.tipo_contratto ?? '',
     stato: employee.stato,
-    data_cessazione: employee.data_cessazione ?? '',
+    // <input type="date"> richiede esattamente "YYYY-MM-DD": il backend restituisce
+    // le colonne DATE come timestamp ISO completo, va troncato.
+    data_cessazione: employee.data_cessazione?.slice(0, 10) ?? '',
     telefono: employee.telefono ?? '',
     email: employee.email ?? '',
     indirizzo: employee.indirizzo ?? '',
