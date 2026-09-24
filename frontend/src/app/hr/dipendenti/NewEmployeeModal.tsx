@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { HrDepartment } from '@/types';
+import type { HrDepartment, HrPlant, HrContractCompany } from '@/types';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -9,16 +9,20 @@ const BACKEND = typeof window !== 'undefined'
 
 interface Props {
   departments: HrDepartment[];
+  plants: HrPlant[];
+  companies: HrContractCompany[];
   onClose: () => void;
   onCreated: () => void;
 }
 
-export function NewEmployeeModal({ departments: initialDepartments, onClose, onCreated }: Props) {
+export function NewEmployeeModal({ departments: initialDepartments, plants: initialPlants, companies: initialCompanies, onClose, onCreated }: Props) {
   const [departments, setDepartments] = useState(initialDepartments);
+  const [plants, setPlants] = useState(initialPlants);
+  const [companies, setCompanies] = useState(initialCompanies);
   const [form, setForm] = useState({
-    matricola: '', nome: '', cognome: '', data_nascita: '', codice_fiscale: '',
-    email: '', telefono: '', ruolo: '', mansione: '', livello: '', tipo_contratto: '',
-    reparto_id: '', data_assunzione: '',
+    matricola: '', nome: '', cognome: '', sesso: '', data_nascita: '', codice_fiscale: '', nazionalita: '',
+    email: '', telefono: '', mansione: '', livello: '', categoria: '', tipo_contratto: '', funzione_aziendale: '',
+    reparto_id: '', plant_id: '', contract_company_id: '', data_assunzione: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
@@ -27,20 +31,20 @@ export function NewEmployeeModal({ departments: initialDepartments, onClose, onC
     setForm(f => ({ ...f, [key]: value }));
   }
 
-  async function addDepartment() {
-    const name = window.prompt('Nome del nuovo reparto:');
+  async function addCatalogEntry(endpoint: string, label: string, setList: (fn: (l: { id: number; name: string; is_active: boolean }[]) => { id: number; name: string; is_active: boolean }[]) => void, field: 'reparto_id' | 'plant_id' | 'contract_company_id') {
+    const name = window.prompt(`Nome ${label}:`);
     if (!name?.trim()) return;
-    const res = await fetch(`${BACKEND}/api/hr/departments`, {
+    const res = await fetch(`${BACKEND}/api/hr/${endpoint}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ name: name.trim() }),
     });
     if (res.ok) {
-      const dept = await res.json();
-      setDepartments(d => [...d, dept]);
-      set('reparto_id', String(dept.id));
+      const row = await res.json();
+      setList(l => [...l, row]);
+      set(field, String(row.id));
     } else {
       const body = await res.json().catch(() => ({}));
-      window.alert(body.message ?? 'Errore durante la creazione del reparto');
+      window.alert(body.message ?? `Errore durante la creazione (${label})`);
     }
   }
 
@@ -59,15 +63,20 @@ export function NewEmployeeModal({ departments: initialDepartments, onClose, onC
       body: JSON.stringify({
         ...form,
         matricola: form.matricola || null,
+        sesso: form.sesso || null,
         data_nascita: form.data_nascita || null,
         codice_fiscale: form.codice_fiscale || null,
+        nazionalita: form.nazionalita || null,
         email: form.email || null,
         telefono: form.telefono || null,
-        ruolo: form.ruolo || null,
         mansione: form.mansione || null,
         livello: form.livello || null,
+        categoria: form.categoria || null,
         tipo_contratto: form.tipo_contratto || null,
+        funzione_aziendale: form.funzione_aziendale || null,
         reparto_id: form.reparto_id ? Number(form.reparto_id) : null,
+        plant_id: form.plant_id ? Number(form.plant_id) : null,
+        contract_company_id: form.contract_company_id ? Number(form.contract_company_id) : null,
       }),
     });
     setSaving(false);
@@ -86,23 +95,51 @@ export function NewEmployeeModal({ departments: initialDepartments, onClose, onC
           <div className="grid grid-cols-2 gap-4">
             <div><label className="label">Nome *</label><input className="input" value={form.nome} onChange={e => set('nome', e.target.value)} /></div>
             <div><label className="label">Cognome *</label><input className="input" value={form.cognome} onChange={e => set('cognome', e.target.value)} /></div>
-            <div><label className="label">Matricola</label><input className="input" value={form.matricola} onChange={e => set('matricola', e.target.value)} /></div>
+            <div><label className="label">Matricola</label><input className="input" value={form.matricola} onChange={e => set('matricola', e.target.value)} placeholder="Vuota per contrattisti/agenzia" /></div>
+            <div><label className="label">Sesso</label>
+              <select className="input" value={form.sesso} onChange={e => set('sesso', e.target.value)}>
+                <option value="">—</option>
+                <option value="M">M</option>
+                <option value="F">F</option>
+              </select>
+            </div>
             <div><label className="label">Data di nascita</label><input type="date" className="input" value={form.data_nascita} onChange={e => set('data_nascita', e.target.value)} /></div>
             <div><label className="label">Codice fiscale</label><input className="input" value={form.codice_fiscale} onChange={e => set('codice_fiscale', e.target.value)} /></div>
+            <div><label className="label">Nazionalità</label><input className="input" value={form.nazionalita} onChange={e => set('nazionalita', e.target.value)} placeholder="es. UE, EXTRA UE, Italia…" /></div>
             <div><label className="label">Email</label><input type="email" className="input" value={form.email} onChange={e => set('email', e.target.value)} /></div>
             <div><label className="label">Telefono</label><input className="input" value={form.telefono} onChange={e => set('telefono', e.target.value)} /></div>
+
             <div><label className="label">Reparto</label>
               <div className="flex gap-1.5">
                 <select className="input" value={form.reparto_id} onChange={e => set('reparto_id', e.target.value)}>
                   <option value="">—</option>
                   {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
-                <button type="button" onClick={addDepartment} title="Nuovo reparto" className="btn-secondary text-sm px-3 shrink-0">+</button>
+                <button type="button" onClick={() => addCatalogEntry('departments', 'reparto', setDepartments, 'reparto_id')} title="Nuovo reparto" className="btn-secondary text-sm px-3 shrink-0">+</button>
               </div>
             </div>
-            <div><label className="label">Ruolo</label><input className="input" value={form.ruolo} onChange={e => set('ruolo', e.target.value)} /></div>
+            <div><label className="label">Plant / Sede</label>
+              <div className="flex gap-1.5">
+                <select className="input" value={form.plant_id} onChange={e => set('plant_id', e.target.value)}>
+                  <option value="">—</option>
+                  {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <button type="button" onClick={() => addCatalogEntry('plants', 'plant', setPlants, 'plant_id')} title="Nuovo plant" className="btn-secondary text-sm px-3 shrink-0">+</button>
+              </div>
+            </div>
             <div><label className="label">Mansione</label><input className="input" value={form.mansione} onChange={e => set('mansione', e.target.value)} /></div>
             <div><label className="label">Livello</label><input className="input" value={form.livello} onChange={e => set('livello', e.target.value)} /></div>
+            <div><label className="label">Funzione aziendale</label><input className="input" value={form.funzione_aziendale} onChange={e => set('funzione_aziendale', e.target.value)} /></div>
+            <div><label className="label">Categoria</label><input className="input" value={form.categoria} onChange={e => set('categoria', e.target.value)} placeholder="es. DIRETTO, APL…" /></div>
+            <div><label className="label">Società contratto</label>
+              <div className="flex gap-1.5">
+                <select className="input" value={form.contract_company_id} onChange={e => set('contract_company_id', e.target.value)}>
+                  <option value="">—</option>
+                  {companies.map(co => <option key={co.id} value={co.id}>{co.name}</option>)}
+                </select>
+                <button type="button" onClick={() => addCatalogEntry('contract-companies', 'società contratto', setCompanies, 'contract_company_id')} title="Nuova società" className="btn-secondary text-sm px-3 shrink-0">+</button>
+              </div>
+            </div>
             <div><label className="label">Tipo contratto</label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
             <div><label className="label">Data assunzione *</label><input type="date" className="input" value={form.data_assunzione} onChange={e => set('data_assunzione', e.target.value)} /></div>
           </div>

@@ -8,7 +8,7 @@ const BACKEND = typeof window !== 'undefined'
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
 const EVENT_LABEL: Record<HrEventType, string> = {
-  assunzione: 'Assunzione', cambio_reparto: 'Cambio reparto', cambio_ruolo: 'Cambio ruolo',
+  assunzione: 'Assunzione', cambio_reparto: 'Cambio reparto', cambio_mansione: 'Cambio mansione',
   cambio_livello: 'Cambio livello', cambio_capo: 'Cambio capo/responsabile',
   trasferimento: 'Trasferimento', promozione: 'Promozione', cessazione: 'Cessazione/Dimissioni',
   malattia: 'Malattia', maternita_paternita: 'Maternità/Paternità', infortunio: 'Infortunio',
@@ -16,7 +16,7 @@ const EVENT_LABEL: Record<HrEventType, string> = {
 };
 
 const EVENT_ICON: Record<HrEventType, string> = {
-  assunzione: '🎉', cambio_reparto: '🔀', cambio_ruolo: '🔀', cambio_livello: '📈',
+  assunzione: '🎉', cambio_reparto: '🔀', cambio_mansione: '🔀', cambio_livello: '📈',
   cambio_capo: '👤', trasferimento: '📍', promozione: '⭐', cessazione: '🚪',
   malattia: '🤒', maternita_paternita: '👶', infortunio: '🩹', congedo: '🌴', rientro: '↩️', altro: '📌',
 };

@@ -13,7 +13,7 @@ const BACKEND = typeof window !== 'undefined'
 const PALETTE = ['#2563eb', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
 
 const EVENT_LABEL: Record<HrEventType, string> = {
-  assunzione: 'Assunzioni', cambio_reparto: 'Cambi reparto', cambio_ruolo: 'Cambi ruolo',
+  assunzione: 'Assunzioni', cambio_reparto: 'Cambi reparto', cambio_mansione: 'Cambi mansione',
   cambio_livello: 'Cambi livello', cambio_capo: 'Cambi capo', trasferimento: 'Trasferimenti',
   promozione: 'Promozioni', cessazione: 'Cessazioni', malattia: 'Malattie',
   maternita_paternita: 'Maternità/Paternità', infortunio: 'Infortuni', congedo: 'Congedi',
@@ -137,7 +137,7 @@ export default function AnalisiHRPage() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {drillEmployees.map(e => (
-              <Link key={e.id} href={`/hr/dipendenti/${e.id}`} className="text-sm text-blue-600 hover:underline">{e.cognome} {e.nome} {e.ruolo ? `— ${e.ruolo}` : ''}</Link>
+              <Link key={e.id} href={`/hr/dipendenti/${e.id}`} className="text-sm text-blue-600 hover:underline">{e.cognome} {e.nome} {e.mansione ? `— ${e.mansione}` : ''}</Link>
             ))}
           </div>
         </div>

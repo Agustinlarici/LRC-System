@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { HrEmployee, HrDepartment } from '@/types';
+import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany } from '@/types';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -10,6 +10,8 @@ const BACKEND = typeof window !== 'undefined'
 interface Props {
   employee: HrEmployee;
   departments: HrDepartment[];
+  plants: HrPlant[];
+  companies: HrContractCompany[];
   allEmployees: HrEmployee[];
   fullManage: boolean;
   onClose: () => void;
@@ -17,14 +19,19 @@ interface Props {
 }
 
 // Un capo senza gestione HR completa può aggiornare solo dati di contatto —
-// tutto il resto (reparto, ruolo, livello, capo, stato) resta esclusivo di HR.
-export function EditEmployeeModal({ employee, departments, allEmployees, fullManage, onClose, onSaved }: Props) {
+// tutto il resto (reparto, mansione, livello, capo, stato) resta esclusivo di HR.
+export function EditEmployeeModal({ employee, departments, plants, companies, allEmployees, fullManage, onClose, onSaved }: Props) {
   const [form, setForm] = useState({
     reparto_id: employee.reparto_id ? String(employee.reparto_id) : '',
+    plant_id: employee.plant_id ? String(employee.plant_id) : '',
+    contract_company_id: employee.contract_company_id ? String(employee.contract_company_id) : '',
     capo_id: employee.capo_id ? String(employee.capo_id) : '',
-    ruolo: employee.ruolo ?? '',
+    sesso: employee.sesso ?? '',
+    nazionalita: employee.nazionalita ?? '',
     mansione: employee.mansione ?? '',
     livello: employee.livello ?? '',
+    categoria: employee.categoria ?? '',
+    funzione_aziendale: employee.funzione_aziendale ?? '',
     tipo_contratto: employee.tipo_contratto ?? '',
     stato: employee.stato,
     // <input type="date"> richiede esattamente "YYYY-MM-DD": il backend restituisce
@@ -51,6 +58,8 @@ export function EditEmployeeModal({ employee, departments, allEmployees, fullMan
       ? {
           ...form,
           reparto_id: form.reparto_id ? Number(form.reparto_id) : null,
+          plant_id: form.plant_id ? Number(form.plant_id) : null,
+          contract_company_id: form.contract_company_id ? Number(form.contract_company_id) : null,
           capo_id: form.capo_id ? Number(form.capo_id) : null,
           // Se si riattiva un dipendente cessato, non deve restare appesa una vecchia data di cessazione
           data_cessazione: form.stato === 'cessato' ? (form.data_cessazione || null) : null,
@@ -79,10 +88,24 @@ export function EditEmployeeModal({ employee, departments, allEmployees, fullMan
         <form onSubmit={submit} className="space-y-4">
           {fullManage && (
             <div className="grid grid-cols-2 gap-4">
+              <div><label className="label">Sesso</label>
+                <select className="input" value={form.sesso} onChange={e => set('sesso', e.target.value)}>
+                  <option value="">—</option>
+                  <option value="M">M</option>
+                  <option value="F">F</option>
+                </select>
+              </div>
+              <div><label className="label">Nazionalità</label><input className="input" value={form.nazionalita} onChange={e => set('nazionalita', e.target.value)} /></div>
               <div><label className="label">Reparto</label>
                 <select className="input" value={form.reparto_id} onChange={e => set('reparto_id', e.target.value)}>
                   <option value="">—</option>
                   {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+              </div>
+              <div><label className="label">Plant / Sede</label>
+                <select className="input" value={form.plant_id} onChange={e => set('plant_id', e.target.value)}>
+                  <option value="">—</option>
+                  {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
               <div><label className="label">Capo / Responsabile</label>
@@ -91,9 +114,16 @@ export function EditEmployeeModal({ employee, departments, allEmployees, fullMan
                   {allEmployees.map(e => <option key={e.id} value={e.id}>{e.cognome} {e.nome}</option>)}
                 </select>
               </div>
-              <div><label className="label">Ruolo</label><input className="input" value={form.ruolo} onChange={e => set('ruolo', e.target.value)} /></div>
               <div><label className="label">Mansione</label><input className="input" value={form.mansione} onChange={e => set('mansione', e.target.value)} /></div>
               <div><label className="label">Livello</label><input className="input" value={form.livello} onChange={e => set('livello', e.target.value)} /></div>
+              <div><label className="label">Funzione aziendale</label><input className="input" value={form.funzione_aziendale} onChange={e => set('funzione_aziendale', e.target.value)} /></div>
+              <div><label className="label">Categoria</label><input className="input" value={form.categoria} onChange={e => set('categoria', e.target.value)} /></div>
+              <div><label className="label">Società contratto</label>
+                <select className="input" value={form.contract_company_id} onChange={e => set('contract_company_id', e.target.value)}>
+                  <option value="">—</option>
+                  {companies.map(co => <option key={co.id} value={co.id}>{co.name}</option>)}
+                </select>
+              </div>
               <div><label className="label">Tipo contratto</label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
               <div><label className="label">Stato</label>
                 <select className="input" value={form.stato} onChange={e => set('stato', e.target.value)}>

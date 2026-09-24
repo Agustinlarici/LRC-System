@@ -39,50 +39,59 @@ function hasSalaryView(user: AuthUser, manage = false): boolean {
   return manage ? !!perm?.can_manage : !!(perm?.can_view || perm?.can_manage);
 }
 
-// ─── Reparti ──────────────────────────────────────────────────────────────────
+// ─── Cataloghi (reparto, plant, società contratto) — stessa forma per tutti ───
 
-hrRoutes.get('/departments', requireModule('hr'), async (c) => {
-  const rows = await db`SELECT id, name, is_active FROM hr_department ORDER BY name`;
-  return c.json(rows);
-});
+function mountCatalog(table: 'hr_department' | 'hr_plant' | 'hr_contract_company', label: string) {
+  hrRoutes.get(`/${label}`, requireModule('hr'), async (c) => {
+    const rows = await db`SELECT id, name, is_active FROM ${db(table)} ORDER BY name`;
+    return c.json(rows);
+  });
 
-hrRoutes.post('/departments', requireManage('hr'), async (c) => {
-  const body = await parseBody(c, z.object({ name: z.string().min(1).max(150) }));
-  try {
-    const [dept] = await db`
-      INSERT INTO hr_department (name) VALUES (${body.name.trim()})
+  hrRoutes.post(`/${label}`, requireManage('hr'), async (c) => {
+    const body = await parseBody(c, z.object({ name: z.string().min(1).max(150) }));
+    try {
+      const [row] = await db`
+        INSERT INTO ${db(table)} (name) VALUES (${body.name.trim()})
+        RETURNING id, name, is_active
+      `;
+      return c.json(row, 201);
+    } catch (err: any) {
+      if (err?.code === '23505') throw new HTTPException(409, { message: `Esiste già una voce chiamata "${body.name.trim()}"` });
+      throw err;
+    }
+  });
+
+  hrRoutes.patch(`/${label}/:id`, requireManage('hr'), async (c) => {
+    const id = parseInt(c.req.param('id') ?? '', 10);
+    if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+    const body = await parseBody(c, z.object({
+      name: z.string().min(1).max(150).optional(),
+      is_active: z.boolean().optional(),
+    }));
+    if (!Object.keys(body).length) throw new HTTPException(400, { message: 'Nessun campo da aggiornare' });
+    const [row] = await db`
+      UPDATE ${db(table)} SET ${db(body)} WHERE id = ${id}
       RETURNING id, name, is_active
     `;
-    return c.json(dept, 201);
-  } catch (err: any) {
-    if (err?.code === '23505') throw new HTTPException(409, { message: `Esiste già un reparto chiamato "${body.name.trim()}"` });
-    throw err;
-  }
-});
+    if (!row) throw new HTTPException(404, { message: 'Voce non trovata' });
+    return c.json(row);
+  });
+}
 
-hrRoutes.patch('/departments/:id', requireManage('hr'), async (c) => {
-  const id = parseInt(c.req.param('id') ?? '', 10);
-  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
-  const body = await parseBody(c, z.object({
-    name: z.string().min(1).max(150).optional(),
-    is_active: z.boolean().optional(),
-  }));
-  if (!Object.keys(body).length) throw new HTTPException(400, { message: 'Nessun campo da aggiornare' });
-  const [dept] = await db`
-    UPDATE hr_department SET ${db(body)} WHERE id = ${id}
-    RETURNING id, name, is_active
-  `;
-  if (!dept) throw new HTTPException(404, { message: 'Reparto non trovato' });
-  return c.json(dept);
-});
+mountCatalog('hr_department', 'departments');
+mountCatalog('hr_plant', 'plants');
+mountCatalog('hr_contract_company', 'contract-companies');
 
 // ─── Dipendenti — lista + ficha ───────────────────────────────────────────────
 
 const employeeSelect = db`
   SELECT
-    e.id, e.matricola, e.nome, e.cognome, e.data_nascita, e.codice_fiscale, e.email,
-    e.telefono, e.indirizzo, e.ruolo, e.mansione, e.livello, e.tipo_contratto,
+    e.id, e.matricola, e.nome, e.cognome, e.sesso, e.data_nascita, e.codice_fiscale,
+    e.nazionalita, e.email, e.telefono, e.indirizzo,
+    e.mansione, e.livello, e.categoria, e.tipo_contratto, e.funzione_aziendale,
     e.reparto_id, d.name AS reparto_name,
+    e.plant_id, p.name AS plant_name,
+    e.contract_company_id, cc.name AS contract_company_name,
     e.capo_id, (capo.nome || ' ' || capo.cognome) AS capo_nome,
     e.user_id, e.data_assunzione, e.data_cessazione, e.stato, e.note,
     e.created_at, e.updated_at,
@@ -93,6 +102,8 @@ const employeeSelect = db`
     (SELECT COUNT(*)::int FROM hr_employee r WHERE r.capo_id = e.id AND r.stato != 'cessato') AS n_riporti
   FROM hr_employee e
   LEFT JOIN hr_department d ON d.id = e.reparto_id
+  LEFT JOIN hr_plant p ON p.id = e.plant_id
+  LEFT JOIN hr_contract_company cc ON cc.id = e.contract_company_id
   LEFT JOIN hr_employee capo ON capo.id = e.capo_id
 `;
 
@@ -124,25 +135,30 @@ hrRoutes.get('/employees/:id', requireModule('hr'), async (c) => {
 });
 
 const employeeFieldsSchema = z.object({
-  matricola:       z.string().max(30).optional().nullable(),
-  nome:            z.string().min(1).max(100),
-  cognome:         z.string().min(1).max(100),
-  data_nascita:    z.string().optional().nullable(),
-  codice_fiscale:  z.string().max(20).optional().nullable(),
-  email:           z.string().email().max(150).optional().nullable().or(z.literal('')),
-  telefono:        z.string().max(30).optional().nullable(),
-  indirizzo:       z.string().max(255).optional().nullable(),
-  ruolo:           z.string().max(150).optional().nullable(),
-  mansione:        z.string().max(150).optional().nullable(),
-  livello:         z.string().max(30).optional().nullable(),
-  tipo_contratto:  z.string().max(50).optional().nullable(),
-  reparto_id:      z.number().int().positive().optional().nullable(),
-  capo_id:         z.number().int().positive().optional().nullable(),
-  user_id:         z.number().int().positive().optional().nullable(),
-  data_assunzione: z.string(),
-  data_cessazione: z.string().optional().nullable(),
-  stato:           z.enum(['attivo', 'aspettativa', 'malattia', 'maternita_paternita', 'cessato']).optional(),
-  note:            z.string().optional().nullable(),
+  matricola:            z.string().max(30).optional().nullable(),
+  nome:                 z.string().min(1).max(100),
+  cognome:              z.string().min(1).max(100),
+  sesso:                z.string().max(10).optional().nullable(),
+  data_nascita:         z.string().optional().nullable(),
+  codice_fiscale:       z.string().max(20).optional().nullable(),
+  nazionalita:          z.string().max(100).optional().nullable(),
+  email:                z.string().email().max(150).optional().nullable().or(z.literal('')),
+  telefono:             z.string().max(30).optional().nullable(),
+  indirizzo:            z.string().max(255).optional().nullable(),
+  mansione:             z.string().max(150).optional().nullable(),
+  livello:              z.string().max(30).optional().nullable(),
+  categoria:            z.string().max(50).optional().nullable(),
+  tipo_contratto:       z.string().max(50).optional().nullable(),
+  funzione_aziendale:   z.string().max(150).optional().nullable(),
+  reparto_id:           z.number().int().positive().optional().nullable(),
+  plant_id:             z.number().int().positive().optional().nullable(),
+  contract_company_id:  z.number().int().positive().optional().nullable(),
+  capo_id:              z.number().int().positive().optional().nullable(),
+  user_id:              z.number().int().positive().optional().nullable(),
+  data_assunzione:      z.string(),
+  data_cessazione:      z.string().optional().nullable(),
+  stato:                z.enum(['attivo', 'aspettativa', 'malattia', 'maternita_paternita', 'cessato']).optional(),
+  note:                 z.string().optional().nullable(),
 });
 
 hrRoutes.post('/employees', requireManage('hr'), async (c) => {
@@ -159,7 +175,7 @@ hrRoutes.post('/employees', requireManage('hr'), async (c) => {
       employee_id: employee.id,
       event_type: 'assunzione',
       event_date: body.data_assunzione,
-      to_value: body.ruolo ?? null,
+      to_value: body.mansione ?? null,
       created_by_user_id: user.id,
       created_by_name: user.display_name,
     })}
@@ -217,8 +233,8 @@ hrRoutes.patch('/employees/:id', requireModule('hr'), async (c) => {
         to_value: updates.reparto_id != null ? names.get(updates.reparto_id) ?? null : null,
       });
     }
-    if (updates.ruolo !== undefined && updates.ruolo !== existing.ruolo) {
-      events.push({ event_type: 'cambio_ruolo', from_value: existing.ruolo, to_value: updates.ruolo });
+    if (updates.mansione !== undefined && updates.mansione !== existing.mansione) {
+      events.push({ event_type: 'cambio_mansione', from_value: existing.mansione, to_value: updates.mansione });
     }
     if (updates.livello !== undefined && updates.livello !== existing.livello) {
       events.push({ event_type: 'cambio_livello', from_value: existing.livello, to_value: updates.livello });
@@ -288,7 +304,7 @@ hrRoutes.get('/employees/:id/events', requireModule('hr'), async (c) => {
 
 const eventFieldsSchema = z.object({
   event_type: z.enum([
-    'assunzione', 'cambio_reparto', 'cambio_ruolo', 'cambio_livello', 'cambio_capo',
+    'assunzione', 'cambio_reparto', 'cambio_mansione', 'cambio_livello', 'cambio_capo',
     'trasferimento', 'promozione', 'cessazione', 'malattia', 'maternita_paternita',
     'infortunio', 'congedo', 'rientro', 'altro',
   ]),
@@ -388,7 +404,7 @@ hrRoutes.get('/org-chart', requireModule('hr'), async (c) => {
 
   const rows = await db`
     SELECT
-      e.id, e.nome, e.cognome, e.ruolo, d.name AS reparto_name, e.stato, e.capo_id,
+      e.id, e.nome, e.cognome, e.mansione, d.name AS reparto_name, e.stato, e.capo_id,
       (SELECT COUNT(*)::int FROM hr_employee r WHERE r.capo_id = e.id AND r.stato != 'cessato') AS n_riporti
     FROM hr_employee e
     LEFT JOIN hr_department d ON d.id = e.reparto_id

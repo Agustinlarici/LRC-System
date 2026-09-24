@@ -68,7 +68,7 @@ function OrgCard({ node, deptColor, expanded, toggle, matches, selectedId, onSel
             {initials(node.nome, node.cognome)}
           </div>
           <p className={`text-sm font-medium whitespace-nowrap ${isMatch ? 'text-amber-700' : 'text-gray-800'}`}>{node.cognome} {node.nome}</p>
-          {node.ruolo && <p className="text-[11px] text-gray-400 whitespace-nowrap -mt-0.5">{node.ruolo}</p>}
+          {node.mansione && <p className="text-[11px] text-gray-400 whitespace-nowrap -mt-0.5">{node.mansione}</p>}
           {node.stato !== 'attivo' && <span className="text-[10px] text-amber-600 font-medium">{node.stato}</span>}
         </div>
 
@@ -225,7 +225,7 @@ export default function OrganigrammaPage() {
                 </div>
                 <div>
                   <p className="text-base font-medium text-gray-900">{selected.cognome} {selected.nome}</p>
-                  <p className="text-xs text-gray-400">{selected.ruolo ?? 'Ruolo non specificato'} {selected.reparto_name ? `· ${selected.reparto_name}` : ''}</p>
+                  <p className="text-xs text-gray-400">{selected.mansione ?? 'Mansione non specificata'} {selected.reparto_name ? `· ${selected.reparto_name}` : ''}</p>
                 </div>
               </div>
               <Link href={`/hr/dipendenti/${selected.id}`} className="text-xs text-blue-600 hover:underline">Vedi ficha completa →</Link>
@@ -238,7 +238,7 @@ export default function OrganigrammaPage() {
                       <div key={s.id} className="flex items-center gap-1.5 text-sm">
                         <span className="text-gray-300">{'  '.repeat(i)}↑</span>
                         <button onClick={() => setSelectedId(s.id)} className="text-gray-700 hover:text-blue-600">{s.cognome} {s.nome}</button>
-                        {s.ruolo && <span className="text-xs text-gray-400">— {s.ruolo}</span>}
+                        {s.mansione && <span className="text-xs text-gray-400">— {s.mansione}</span>}
                       </div>
                     ))}
                   </div>
@@ -255,7 +255,7 @@ export default function OrganigrammaPage() {
                   <div className="space-y-1">
                     {directReports.map(r => (
                       <button key={r.id} onClick={() => setSelectedId(r.id)} className="flex items-center gap-1.5 text-sm text-gray-700 hover:text-blue-600 w-full text-left">
-                        <span>↳</span> {r.cognome} {r.nome} {r.ruolo && <span className="text-xs text-gray-400">— {r.ruolo}</span>}
+                        <span>↳</span> {r.cognome} {r.nome} {r.mansione && <span className="text-xs text-gray-400">— {r.mansione}</span>}
                       </button>
                     ))}
                   </div>

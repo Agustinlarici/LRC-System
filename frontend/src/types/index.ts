@@ -646,7 +646,7 @@ export interface ProdComponentConflict {
 export type HrEmployeeStatus = 'attivo' | 'aspettativa' | 'malattia' | 'maternita_paternita' | 'cessato';
 
 export type HrEventType =
-  | 'assunzione' | 'cambio_reparto' | 'cambio_ruolo' | 'cambio_livello' | 'cambio_capo'
+  | 'assunzione' | 'cambio_reparto' | 'cambio_mansione' | 'cambio_livello' | 'cambio_capo'
   | 'trasferimento' | 'promozione' | 'cessazione' | 'malattia' | 'maternita_paternita'
   | 'infortunio' | 'congedo' | 'rientro' | 'altro';
 
@@ -656,34 +656,44 @@ export interface HrDepartment {
   is_active: boolean;
 }
 
+export type HrPlant = HrDepartment;
+export type HrContractCompany = HrDepartment;
+
 export interface HrEmployee {
-  id:               number;
-  matricola:        string | null;
-  nome:             string;
-  cognome:          string;
-  data_nascita:     string | null;
-  codice_fiscale:   string | null;
-  email:            string | null;
-  telefono:         string | null;
-  indirizzo:        string | null;
-  ruolo:            string | null;
-  mansione:         string | null;
-  livello:          string | null;
-  tipo_contratto:   string | null;
-  reparto_id:       number | null;
-  reparto_name:     string | null;
-  capo_id:          number | null;
-  capo_nome:        string | null;
-  user_id:          number | null;
-  data_assunzione:  string;
-  data_cessazione:  string | null;
-  stato:            HrEmployeeStatus;
-  note:             string | null;
-  anzianita_anni:   number;
-  eta:              number | null;
-  n_riporti:        number;
-  created_at:       string;
-  updated_at:       string;
+  id:                       number;
+  matricola:                string | null;
+  nome:                     string;
+  cognome:                  string;
+  sesso:                    string | null;
+  data_nascita:             string | null;
+  codice_fiscale:           string | null;
+  nazionalita:              string | null;
+  email:                    string | null;
+  telefono:                 string | null;
+  indirizzo:                string | null;
+  mansione:                 string | null;
+  livello:                  string | null;
+  categoria:                string | null;
+  tipo_contratto:           string | null;
+  funzione_aziendale:       string | null;
+  reparto_id:               number | null;
+  reparto_name:             string | null;
+  plant_id:                 number | null;
+  plant_name:               string | null;
+  contract_company_id:      number | null;
+  contract_company_name:    string | null;
+  capo_id:                  number | null;
+  capo_nome:                string | null;
+  user_id:                  number | null;
+  data_assunzione:          string;
+  data_cessazione:          string | null;
+  stato:                    HrEmployeeStatus;
+  note:                     string | null;
+  anzianita_anni:           number;
+  eta:                      number | null;
+  n_riporti:                number;
+  created_at:               string;
+  updated_at:               string;
 }
 
 export interface HrEmployeeEvent {
@@ -713,7 +723,7 @@ export interface HrOrgNode {
   id:           number;
   nome:         string;
   cognome:      string;
-  ruolo:        string | null;
+  mansione:     string | null;
   reparto_name: string | null;
   stato:        HrEmployeeStatus;
   capo_id:      number | null;
