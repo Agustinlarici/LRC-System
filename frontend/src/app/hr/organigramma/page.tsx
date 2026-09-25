@@ -80,7 +80,7 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
           <button
             onClick={(e) => { e.stopPropagation(); toggle(node.id); }}
             title={isOpen ? 'Comprimi' : `Espandi (${node.children.length})`}
-            className="absolute -bottom-3 left-1/2 -translate-x-1/2 z-20 w-6 h-6 rounded-full bg-white border border-gray-300 text-[11px] font-medium cursor-pointer
+            className="absolute top-full mt-0.5 left-1/2 -translate-x-1/2 z-20 w-6 h-6 rounded-full bg-white border border-gray-300 text-[11px] font-medium cursor-pointer
               flex items-center justify-center text-gray-500 hover:border-blue-400 hover:text-blue-600 shadow-sm transition-colors"
           >
             {isOpen ? '−' : node.children.length}

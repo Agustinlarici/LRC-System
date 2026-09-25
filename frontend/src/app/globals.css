@@ -89,7 +89,7 @@ body {
 .org-tree, .org-tree ul {
   display: flex;
   justify-content: center;
-  padding-top: 28px;
+  padding-top: 16px;
   position: relative;
 }
 .org-tree {
@@ -101,7 +101,7 @@ body {
   align-items: center;
   list-style-type: none;
   position: relative;
-  padding: 24px 3px 0 3px;
+  padding: 16px 3px 0 3px;
 }
 .org-tree li::before,
 .org-tree li::after {
@@ -111,19 +111,17 @@ body {
   right: 50%;
   border-top: 2px solid #d1d5db;
   width: 50%;
-  height: 28px;
+  height: 16px;
 }
 .org-tree li::after {
   right: auto;
   left: 50%;
   border-left: 2px solid #d1d5db;
 }
-.org-tree li:only-child::after,
+/* Figlio unico: solo il tratto verticale, e la stessa altezza degli altri (così le schede
+   dello stesso livello restano allineate anche se un fratello ha più figli). */
 .org-tree li:only-child::before {
   display: none;
-}
-.org-tree li:only-child {
-  padding-top: 0;
 }
 .org-tree li:first-child::before,
 .org-tree li:last-child::after {
@@ -136,6 +134,13 @@ body {
 .org-tree li:first-child::after {
   border-radius: 6px 0 0 0;
 }
+/* Va dopo le regole first/last-child: un figlio unico è entrambe e non deve perdere il tratto verticale */
+.org-tree li:only-child::after {
+  border-left: 2px solid #d1d5db;
+  left: 50%;
+  width: 0;
+  border-radius: 0;
+}
 .org-tree ul::before {
   content: '';
   position: absolute;
@@ -143,7 +148,7 @@ body {
   left: 50%;
   border-left: 2px solid #d1d5db;
   width: 0;
-  height: 28px;
+  height: 16px;
 }
 /* La riga radice (i "capi" senza superiore) non ha un genitore a cui collegarsi */
 .org-tree > li {
