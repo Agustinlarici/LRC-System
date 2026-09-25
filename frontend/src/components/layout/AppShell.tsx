@@ -38,7 +38,7 @@ function getModuleForPath(pathname: string): { key: ModuleKey | ModuleKey[]; nee
 
 function AccessDenied() {
   return (
-    <div className="flex-1 flex items-center justify-center bg-slate-50">
+    <div className="flex-1 h-full flex items-center justify-center">
       <div className="text-center max-w-sm">
         <div className="text-5xl mb-4">🔒</div>
         <h1 className="text-xl font-bold text-gray-800 mb-2">Accesso negato</h1>
@@ -134,12 +134,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <ToastProvider>
       <Sidebar />
-      <main className="flex-1 min-w-0 overflow-auto bg-slate-50 print:overflow-visible print:w-full">
-        {hasAccess
-          ? <div className="p-6">{children}</div>
-          : <AccessDenied />
-        }
-      </main>
+      <div className="flex-1 min-w-0 h-full bg-zinc-900 p-1.5 print:p-0 print:bg-white print:h-auto">
+        <main className="h-full overflow-auto bg-white rounded-2xl shadow-sm print:overflow-visible print:w-full print:rounded-none print:shadow-none">
+          {hasAccess
+            ? <div className="p-6">{children}</div>
+            : <AccessDenied />
+          }
+        </main>
+      </div>
     </ToastProvider>
   );
 }

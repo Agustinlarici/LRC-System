@@ -139,7 +139,7 @@ export function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-2 py-3 overflow-y-auto space-y-0.5">
+      <nav className="flex-1 px-2 py-3 overflow-y-auto overflow-x-hidden sidebar-scroll space-y-0.5">
 
         {/* Toggle button */}
         <button onClick={toggleSidebar}

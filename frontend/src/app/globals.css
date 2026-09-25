@@ -39,6 +39,24 @@ body {
   @apply bg-gray-200 rounded animate-pulse;
 }
 
+/* Scrollbar moderna e sottile per il menu laterale: track trasparente, thumb
+   scuro che si illumina solo in hover, così sembra parte del menu. */
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.sidebar-scroll:hover {
+  scrollbar-color: #52525b transparent;
+}
+.sidebar-scroll::-webkit-scrollbar { width: 6px; }
+.sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 9999px;
+}
+.sidebar-scroll:hover::-webkit-scrollbar-thumb { background: #52525b; }
+.sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #71717a; }
+
 /* Stampa: la sidebar dell'app non deve mai comparire nella stampa di nessuna
    pagina — vedi .d-print-none su <aside> in Sidebar.tsx. Regola globale
    (non nello <style> locale della pagina) perché la sidebar è renderizzata
