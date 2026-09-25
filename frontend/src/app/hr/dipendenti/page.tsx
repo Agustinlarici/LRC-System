@@ -27,7 +27,7 @@ const STATO_COLOR: Record<string, string> = {
 // minuscolo con underscore al posto degli spazi (mantiene apostrofi).
 const IMPORT_COLUMNS = [
   'COGNOME E NOME', 'MATRICOLA', 'SESSO', 'CATEGORIA', "SOCIETA' CONTRATTO", "NAZIONALITA'",
-  'MANSIONE (MICRO)', 'REPARTO', 'PLANT', 'RESPONSABILE', 'FUNZIONE AZIENDALE',
+  'MANSIONE (MICRO)', 'LIVELLO', 'REPARTO', 'PLANT', 'RESPONSABILE', 'MANAGER', 'FUNZIONE AZIENDALE',
   'DATA ASSUNZIONE', 'DATA CESSAZIONE', 'TIPOLOGIA CONTRATTO', "MATERNITA'",
 ];
 
@@ -110,7 +110,7 @@ export default function DipendentiPage() {
       const reparto_id           = await ensureCatalog(deptByName, 'departments', row['reparto']);
       const plant_id             = await ensureCatalog(plantByName, 'plants', row['plant']);
       const contract_company_id  = await ensureCatalog(coByName, 'contract-companies', row["societa'_contratto"]);
-      const capoName = row['responsabile']?.trim().toLowerCase();
+      const capoName = (row['responsabile']?.trim() || row['manager']?.trim())?.toLowerCase();
       const capo_id = capoName ? empByCognome.get(capoName) ?? null : null;
 
       // La matricola è solo del personale diretto STR — vuota o "-" per i contrattisti.
@@ -127,6 +127,7 @@ export default function DipendentiPage() {
           categoria: row['categoria'] || null,
           nazionalita: row["nazionalita'"] || null,
           mansione: row['mansione_(micro)'] || null,
+          livello: row['livello'] || null,
           funzione_aziendale: row['funzione_aziendale'] || null,
           tipo_contratto: row['tipologia_contratto'] || null,
           reparto_id, plant_id, contract_company_id, capo_id,
