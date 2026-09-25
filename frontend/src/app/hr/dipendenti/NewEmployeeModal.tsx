@@ -89,10 +89,10 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
         <h2 className="text-base font-medium text-gray-900 mb-4">Nuovo dipendente</h2>
         <form onSubmit={submit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div><label className="label">Nome *</label><input className="input" value={form.nome} onChange={e => set('nome', e.target.value)} /></div>
             <div><label className="label">Cognome *</label><input className="input" value={form.cognome} onChange={e => set('cognome', e.target.value)} /></div>
             <div><label className="label">Matricola</label><input className="input" value={form.matricola} onChange={e => set('matricola', e.target.value)} placeholder="Vuota per contrattisti/agenzia" /></div>

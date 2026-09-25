@@ -22,6 +22,9 @@ interface Props {
 // tutto il resto (reparto, mansione, livello, capo, stato) resta esclusivo di HR.
 export function EditEmployeeModal({ employee, departments, plants, companies, allEmployees, fullManage, onClose, onSaved }: Props) {
   const [form, setForm] = useState({
+    matricola: employee.matricola ?? '',
+    nome: employee.nome,
+    cognome: employee.cognome,
     reparto_id: employee.reparto_id ? String(employee.reparto_id) : '',
     plant_id: employee.plant_id ? String(employee.plant_id) : '',
     contract_company_id: employee.contract_company_id ? String(employee.contract_company_id) : '',
@@ -61,8 +64,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, al
           plant_id: form.plant_id ? Number(form.plant_id) : null,
           contract_company_id: form.contract_company_id ? Number(form.contract_company_id) : null,
           capo_id: form.capo_id ? Number(form.capo_id) : null,
-          // Se si riattiva un dipendente cessato, non deve restare appesa una vecchia data di cessazione
-          data_cessazione: form.stato === 'cessato' ? (form.data_cessazione || null) : null,
+          data_cessazione: form.data_cessazione || null,
         }
       : { telefono: form.telefono, email: form.email, indirizzo: form.indirizzo, note: form.note };
 
@@ -82,12 +84,15 @@ export function EditEmployeeModal({ employee, departments, plants, companies, al
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
         <h2 className="text-base font-medium text-gray-900 mb-1">Modifica dipendente</h2>
         {!fullManage && <p className="text-xs text-amber-600 mb-4">Puoi modificare solo i dati di contatto del tuo team diretto.</p>}
         <form onSubmit={submit} className="space-y-4">
           {fullManage && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div><label className="label">Matricola</label><input className="input" value={form.matricola} onChange={e => set('matricola', e.target.value)} placeholder="Vuota per contrattisti/agenzia" /></div>
+              <div><label className="label">Cognome</label><input className="input" required value={form.cognome} onChange={e => set('cognome', e.target.value)} /></div>
+              <div><label className="label">Nome</label><input className="input" required value={form.nome} onChange={e => set('nome', e.target.value)} /></div>
               <div><label className="label">Sesso</label>
                 <select className="input" value={form.sesso} onChange={e => set('sesso', e.target.value)}>
                   <option value="">—</option>
@@ -134,12 +139,10 @@ export function EditEmployeeModal({ employee, departments, plants, companies, al
                   <option value="cessato">Cessato</option>
                 </select>
               </div>
-              {form.stato === 'cessato' && (
-                <div><label className="label">Data cessazione</label>
-                  <input type="date" className="input" value={form.data_cessazione} onChange={e => set('data_cessazione', e.target.value)} />
-                  <p className="text-[11px] text-gray-400 mt-1">Se lasciata vuota, verrà usata la data di oggi.</p>
-                </div>
-              )}
+              <div><label className="label">Data cessazione / fine contratto</label>
+                <input type="date" className="input" value={form.data_cessazione} onChange={e => set('data_cessazione', e.target.value)} />
+                <p className="text-[11px] text-gray-400 mt-1">Con stato Cessato, se vuota verrà usata la data di oggi. Una data futura con stato Attivo indica la scadenza del contratto.</p>
+              </div>
             </div>
           )}
           <div className="grid grid-cols-2 gap-4">

@@ -88,7 +88,7 @@ export default function EmployeeDetailPage() {
 
   return (
     <div className="space-y-4">
-      <Link href="/hr/dipendenti" className="text-xs text-gray-400 hover:text-gray-600">← Torna alla lista</Link>
+      <Link href="/hr/dipendenti" className="btn-secondary text-sm inline-block">← Torna alla lista</Link>
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>

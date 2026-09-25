@@ -256,7 +256,8 @@ hrRoutes.patch('/employees/:id', requireModule('hr'), async (c) => {
     }
     // Riattivazione: un dipendente che torna da 'cessato' non può restare con una
     // data di cessazione appesa, altrimenti resterebbe uno stato inconsistente.
-    if (updates.stato !== undefined && updates.stato !== 'cessato' && existing.stato === 'cessato') {
+    if (updates.stato !== undefined && updates.stato !== 'cessato' && existing.stato === 'cessato'
+        && !(updates.data_cessazione && updates.data_cessazione > new Date().toISOString().slice(0, 10))) {
       updates.data_cessazione = null;
     }
   }

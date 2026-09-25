@@ -133,7 +133,8 @@ export default function DipendentiPage() {
           reparto_id, plant_id, contract_company_id, capo_id,
           data_assunzione: dataAssunzione,
           data_cessazione: dataCessazione,
-          stato: dataCessazione ? 'cessato' : undefined,
+          // Data cessazione futura = fine contratto a termine: il dipendente è ancora attivo
+          stato: dataCessazione && dataCessazione <= new Date().toISOString().slice(0, 10) ? 'cessato' : undefined,
         }),
       });
 
