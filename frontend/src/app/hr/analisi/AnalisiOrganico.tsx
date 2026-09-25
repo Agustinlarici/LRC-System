@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell, PieChart, Pie,
 } from 'recharts';
@@ -137,25 +137,10 @@ function Card({ title, hint, chart, table, className = '', canPct = false }: {
   title: string; hint?: string; chart: (pct: boolean) => React.ReactNode; table: React.ReactNode; className?: string; canPct?: boolean;
 }) {
   const mode = useContext(ModeCtx);
-  const ref = useRef<HTMLDivElement>(null);
   const [asPct, setAsPct] = useState(false);
 
-  function printOne() {
-    const el = ref.current;
-    if (!el) return;
-    el.setAttribute('data-print-target', '1');
-    document.body.setAttribute('data-print-only', '1');
-    const cleanup = () => {
-      el.removeAttribute('data-print-target');
-      document.body.removeAttribute('data-print-only');
-      window.removeEventListener('afterprint', cleanup);
-    };
-    window.addEventListener('afterprint', cleanup);
-    window.print();
-  }
-
   return (
-    <div ref={ref} className={`card print-card ${className}`}>
+    <div className={`card print-card ${className}`}>
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="text-base font-medium text-gray-700">{title}</p>
@@ -165,25 +150,11 @@ function Card({ title, hint, chart, table, className = '', canPct = false }: {
           {canPct && mode === 'chart' && (
             <button type="button" onClick={() => setAsPct(v => !v)} className="btn-secondary text-xs px-2.5 py-1">{asPct ? 'Valori' : '% sul totale'}</button>
           )}
-          <button type="button" onClick={printOne} title="Stampa solo questo riquadro" className="btn-secondary text-xs px-2.5 py-1">Stampa</button>
         </div>
       </div>
       <div className={hint ? '' : 'mt-2'}>{mode === 'chart' ? chart(asPct) : table}</div>
     </div>
   );
-}
-
-function printElement(el: HTMLElement | null) {
-  if (!el) return;
-  el.setAttribute('data-print-target', '1');
-  document.body.setAttribute('data-print-only', '1');
-  const cleanup = () => {
-    el.removeAttribute('data-print-target');
-    document.body.removeAttribute('data-print-only');
-    window.removeEventListener('afterprint', cleanup);
-  };
-  window.addEventListener('afterprint', cleanup);
-  window.print();
 }
 
 // ─── Grafici ───────────────────────────────────────────────────────────────────
@@ -315,10 +286,10 @@ function Kpi({ label, value, sub, tone }: { label: string; value: React.ReactNod
 
 // ─── Componente principale ─────────────────────────────────────────────────────
 
-type Tab = 'riepilogo' | 'distribuzioni' | 'scadenze' | 'eta';
+type Tab = 'riepilogo' | 'distribuzioni' | 'scadenze';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'riepilogo', label: 'Riepilogo' }, { key: 'distribuzioni', label: 'Distribuzioni' },
-  { key: 'scadenze', label: 'Scadenze e cessazioni' }, { key: 'eta', label: 'Età e reparti' },
+  { key: 'scadenze', label: 'Scadenze e cessazioni' },
 ];
 
 // Viste rapide per la scheda Distribuzioni: raggruppa per / suddividi per
@@ -337,17 +308,17 @@ const PRESETS: { label: string; group: Dim; split: Dim | '' }[] = [
   { label: 'Responsabile per plant', group: 'responsabile', split: 'plant' },
 ];
 
-export function AnalisiOrganico({ extra }: { extra: React.ReactNode }) {
+export function AnalisiOrganico() {
   const [all, setAll] = useState<HrEmployee[]>([]);
   const [plants, setPlants] = useState<HrPlant[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<Filters>({});
   const [tab, setTab] = useState<Tab>('riepilogo');
   const [mode, setMode] = useState<Mode>('chart');
+  const [showFilters, setShowFilters] = useState(false);
   const [exGroup, setExGroup] = useState<Dim>('plant');
   const [exSplit, setExSplit] = useState<Dim | ''>('');
   const [exPct, setExPct] = useState(false);
-  const exRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -425,6 +396,9 @@ export function AnalisiOrganico({ extra }: { extra: React.ReactNode }) {
   const totActive = active.length;
   const determinati = active.filter(e => isDeterminato(e.tipo_contratto)).length;
   const senzaResp = active.filter(e => !e.capo_id).length;
+  const anzianita = active.length
+    ? active.reduce((s, e) => s + (Date.now() - new Date(`${iso(e.data_assunzione)}T12:00:00Z`).getTime()) / (365.25 * 86400000), 0) / active.length
+    : null;
   const cessCurYear = yearly.find(y => y.anno === String(cur))?.cessazioni ?? 0;
   const activeFilters = FILTER_ORDER.filter(d => filters[d]?.length);
 
@@ -503,7 +477,7 @@ export function AnalisiOrganico({ extra }: { extra: React.ReactNode }) {
   const exTotal = exCount.reduce((s, d) => s + d.value, 0);
   const selectCls = 'input text-sm w-auto';
   const exploreCard = (
-    <div ref={exRef} className="card print-card space-y-4">
+    <div className="card print-card space-y-4">
       <div className="flex flex-wrap items-end gap-3 d-print-none">
         <div>
           <label className="label text-xs">Vista rapida</label>
@@ -530,7 +504,6 @@ export function AnalisiOrganico({ extra }: { extra: React.ReactNode }) {
         </div>
         <div className="ml-auto flex gap-2">
           {exSplit && <button type="button" onClick={() => setExPct(v => !v)} className="btn-secondary text-sm py-1.5">{exPct ? 'Valori' : '% sul totale'}</button>}
-          <button type="button" onClick={() => printElement(exRef.current)} className="btn-secondary text-sm py-1.5">Stampa</button>
         </div>
       </div>
       <p className="text-base font-medium text-gray-700">{exTitle}</p>
@@ -573,12 +546,19 @@ export function AnalisiOrganico({ extra }: { extra: React.ReactNode }) {
           </p>
         </div>
 
-        {/* Barra unica: filtri a sinistra, vista e stampa a destra */}
+        {/* Barra unica: filtri (a scomparsa) a sinistra, vista e stampa a destra */}
         <div className="flex items-center gap-2 flex-wrap d-print-none">
-          {FILTER_ORDER.map(dim => (
-            <MultiFilter key={dim} label={DIM_LABEL[dim]} value={filters[dim] ?? []}
-              options={countBy(allActive, dim, plantName, 'name')}
-              onChange={v => setFilters(f => ({ ...f, [dim]: v }))} />
+          <button type="button" onClick={() => setShowFilters(s => !s)}
+            className={`text-sm px-3 py-1.5 rounded-lg border flex items-center gap-1.5 transition-colors ${showFilters || activeFilters.length ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-300 text-gray-600 hover:border-blue-400'}`}>
+            Filtri
+            {activeFilters.length > 0 && <span className="bg-blue-600 text-white text-[10px] rounded-full px-1.5">{activeFilters.length}</span>}
+            <span className="text-[10px]">{showFilters ? '▴' : '▾'}</span>
+          </button>
+          {activeFilters.map(dim => (
+            <button key={dim} type="button" onClick={() => setFilters(f => ({ ...f, [dim]: [] }))} title="Rimuovi filtro"
+              className="text-xs px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100">
+              {DIM_LABEL[dim]}: <b>{filters[dim]!.join(', ')}</b> ×
+            </button>
           ))}
           {activeFilters.length > 0 && <button type="button" onClick={() => setFilters({})} className="text-sm px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100">Azzera</button>}
           <div className="ml-auto flex items-center gap-2">
@@ -594,6 +574,16 @@ export function AnalisiOrganico({ extra }: { extra: React.ReactNode }) {
           </div>
         </div>
 
+        {showFilters && (
+          <div className="card p-3 flex items-center gap-2 flex-wrap d-print-none">
+            {FILTER_ORDER.map(dim => (
+              <MultiFilter key={dim} label={DIM_LABEL[dim]} value={filters[dim] ?? []}
+                options={countBy(allActive, dim, plantName, 'name')}
+                onChange={v => setFilters(f => ({ ...f, [dim]: v }))} />
+            ))}
+          </div>
+        )}
+
         {/* Schede */}
         <div className="flex gap-6 border-b border-gray-200 overflow-x-auto d-print-none">
           {TABS.map(t => (
@@ -606,11 +596,12 @@ export function AnalisiOrganico({ extra }: { extra: React.ReactNode }) {
 
         {show('riepilogo') && (
           <Section title="Riepilogo">
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
               <Kpi label="Organico attivo" value={totActive} />
               <Kpi label="Tempo determinato" value={pct(determinati, totActive)} sub={`${determinati} persone`} />
               <Kpi label="Scadenze entro 90 gg" value={expiring90.length} tone={expiring90.length ? 'warn' : undefined} sub="contratti da rinnovare" />
               <Kpi label={`Cessazioni ${cur}`} value={cessCurYear} sub="da inizio anno" />
+              <Kpi label="Anzianità media" value={anzianita != null ? anzianita.toFixed(1) : '—'} sub="anni" />
               <Kpi label="Senza responsabile" value={senzaResp} tone={senzaResp ? 'warn' : undefined} sub="da assegnare" />
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -633,11 +624,6 @@ export function AnalisiOrganico({ extra }: { extra: React.ReactNode }) {
           </Section>
         )}
 
-        {show('eta') && (
-          <Section title="Età e reparti">
-            <div className="space-y-4">{extra}</div>
-          </Section>
-        )}
       </div>
     </ModeCtx.Provider>
   );
