@@ -15,12 +15,6 @@ const EVENT_LABEL: Record<HrEventType, string> = {
   congedo: 'Congedo', rientro: 'Rientro', altro: 'Altro',
 };
 
-const EVENT_ICON: Record<HrEventType, string> = {
-  assunzione: '🎉', cambio_reparto: '🔀', cambio_mansione: '🔀', cambio_livello: '📈',
-  cambio_capo: '👤', trasferimento: '📍', promozione: '⭐', cessazione: '🚪',
-  malattia: '🤒', maternita_paternita: '👶', infortunio: '🩹', congedo: '🌴', rientro: '↩️', altro: '📌',
-};
-
 // Eventi che un capo (senza gestione HR completa) può registrare per il proprio team
 const CAPO_ALLOWED: HrEventType[] = ['malattia', 'maternita_paternita', 'infortunio', 'congedo', 'rientro', 'trasferimento', 'altro'];
 const ALL_EVENTS = Object.keys(EVENT_LABEL) as HrEventType[];
@@ -78,7 +72,6 @@ export function EventTimeline({ employeeId, canManage, canManageLimited }: Props
             <div key={ev.id} className="relative">
               <div className="absolute -left-6 top-0.5 w-3.5 h-3.5 rounded-full bg-blue-500 border-2 border-white shadow" />
               <div className="flex items-baseline gap-2 flex-wrap">
-                <span>{EVENT_ICON[ev.event_type]}</span>
                 <span className="text-sm font-medium text-gray-800">{EVENT_LABEL[ev.event_type]}</span>
                 <span className="text-xs text-gray-400">{fmtDate(ev.event_date)}{ev.end_date ? ` → ${fmtDate(ev.end_date)}` : ''}</span>
               </div>

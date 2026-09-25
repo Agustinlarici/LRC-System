@@ -84,25 +84,25 @@ export default function EvoluzioneAziendalePage() {
       ) : (
         <>
           {netChange != null && (
-            <div className="card p-0 overflow-hidden">
-              <div className="grid grid-cols-2 lg:grid-cols-4 divide-y divide-gray-100 lg:divide-y-0 lg:divide-x">
-                <div className="p-5">
-                  <p className="text-sm font-medium text-gray-400 uppercase tracking-wide">Organico oggi</p>
-                  <p className="text-4xl font-semibold leading-none mt-2 text-gray-900">{last?.total_employees ?? '—'}</p>
+            <div>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="card p-4">
+                  <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Organico oggi</p>
+                  <p className="text-3xl font-semibold leading-none mt-2 text-gray-900">{last?.total_employees ?? '—'}</p>
                 </div>
-                <div className="p-5">
-                  <p className="text-sm font-medium text-gray-400 uppercase tracking-wide">Variazione nel periodo</p>
-                  <p className={`text-4xl font-semibold leading-none mt-2 ${netChange > 0 ? 'text-green-600' : netChange < 0 ? 'text-red-500' : 'text-gray-900'}`}>
+                <div className="card p-4">
+                  <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Variazione nel periodo</p>
+                  <p className={`text-3xl font-semibold leading-none mt-2 ${netChange > 0 ? 'text-green-600' : netChange < 0 ? 'text-red-500' : 'text-gray-900'}`}>
                     {netChange > 0 ? '+' : ''}{netChange}
                   </p>
                 </div>
-                <div className="p-5">
-                  <p className="text-sm font-medium text-gray-400 uppercase tracking-wide">Età media oggi</p>
-                  <p className="text-4xl font-semibold leading-none mt-2 text-gray-900">{last?.avg_age ?? '—'}</p>
+                <div className="card p-4">
+                  <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Età media oggi</p>
+                  <p className="text-3xl font-semibold leading-none mt-2 text-gray-900">{last?.avg_age ?? '—'}</p>
                 </div>
-                <div className="p-5">
-                  <p className="text-sm font-medium text-gray-400 uppercase tracking-wide">Anzianità media oggi</p>
-                  <p className="text-4xl font-semibold leading-none mt-2 text-gray-900">{last?.avg_seniority_years ?? '—'}</p>
+                <div className="card p-4">
+                  <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Anzianità media oggi</p>
+                  <p className="text-3xl font-semibold leading-none mt-2 text-gray-900">{last?.avg_seniority_years ?? '—'}</p>
                 </div>
               </div>
             </div>

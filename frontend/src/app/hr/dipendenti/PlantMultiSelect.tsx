@@ -19,7 +19,7 @@ export function PlantMultiSelect({ plants, value, onChange, onAdd }: {
             key={p.id} type="button" onClick={() => toggle(p.id)}
             className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${on ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-gray-600 hover:border-blue-400'}`}
           >
-            {on ? '✓ ' : ''}{p.name}
+            {p.name}
           </button>
         );
       })}

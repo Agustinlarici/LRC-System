@@ -121,7 +121,7 @@ export default function DipendentiPage() {
 
     // Prima passata: crea (o aggiorna) tutti i dipendenti. I collegamenti gerarchici
     // vengono fatti nella seconda passata, quando tutti i responsabili esistono già.
-    const links: { id: number; responsabile: string; manager: string }[] = [];
+    const links: { id: number; responsabile: string; manager: string; reparto_id: number | null }[] = [];
 
     for (const row of rows) {
       // "COGNOME E NOME" è un unico campo nell'Excel — l'ultima parola è il nome,
@@ -193,7 +193,7 @@ export default function DipendentiPage() {
           }
         } else errors++;
       }
-      if (id) links.push({ id, responsabile: row['responsabile']?.trim() ?? '', manager: row['manager']?.trim() ?? '' });
+      if (id) links.push({ id, responsabile: row['responsabile']?.trim() ?? '', manager: row['manager']?.trim() ?? '', reparto_id });
     }
 
     // Seconda passata: dipendente → responsabile, responsabile → manager (se non ne ha già uno).
@@ -205,20 +205,26 @@ export default function DipendentiPage() {
       if (n && !empByCognome.has(n.toLowerCase())) needed.add(n);
     }
     const notCreated: string[] = [];
+    // Un responsabile creato al volo eredita il reparto dei suoi riporti diretti solo se è lo stesso
+    // per tutti; se guida più reparti (es. direzione) resta senza reparto.
+    const inferReparto = (cognome: string): number | null => {
+      const reparti = new Set(links.filter(l => l.responsabile.toLowerCase() === cognome.toLowerCase()).map(l => l.reparto_id));
+      return reparti.size === 1 ? [...reparti][0] : null;
+    };
     let createdChiefs = 0;
     let skipAll = false;
     for (const cognomeRaw of needed) {
       if (skipAll) { notCreated.push(cognomeRaw); continue; }
       const nomeRaw = await ask({
         title: `Responsabile mancante: ${cognomeRaw}`,
-        message: `«${cognomeRaw}» è indicato come responsabile/manager nell'Excel ma non esiste tra i dipendenti. Inserisci il nome per crearlo, oppure salta.`,
+        message: 'Non esiste tra i dipendenti. Inserisci il nome per crearlo.',
         label: 'Nome', confirmLabel: 'Crea', cancelLabel: 'Salta', skipAllLabel: 'Salta tutti',
       });
       if (nomeRaw === SKIP_ALL) { skipAll = true; notCreated.push(cognomeRaw); continue; }
       if (typeof nomeRaw !== 'string') { notCreated.push(cognomeRaw); continue; }
       const res = await fetch(`${BACKEND}/api/hr/employees`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ nome: nomeRaw, cognome: cognomeRaw, data_assunzione: today }),
+        body: JSON.stringify({ nome: nomeRaw, cognome: cognomeRaw, data_assunzione: today, reparto_id: inferReparto(cognomeRaw) }),
       });
       if (res.ok) { const emp = await res.json(); empByCognome.set(cognomeRaw.toLowerCase(), emp.id); createdChiefs++; }
       else notCreated.push(cognomeRaw);
@@ -247,7 +253,6 @@ export default function DipendentiPage() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-lg font-medium text-gray-900">Dipendenti</h1>
-          <p className="text-xs text-gray-400 mt-0.5">{employees.length} {employees.length === 1 ? 'persona' : 'persone'} {statoFilter ? `— ${STATO_LABEL[statoFilter]?.toLowerCase()}` : ''}</p>
         </div>
         {manage && (
           <div className="flex items-center gap-2">
@@ -263,11 +268,11 @@ export default function DipendentiPage() {
           value={search} onChange={e => setSearch(e.target.value)}
           className="input text-sm w-64"
         />
-        <select value={repartoFilter} onChange={e => setRepartoFilter(e.target.value ? Number(e.target.value) : '')} className="input text-sm">
+        <select value={repartoFilter} onChange={e => setRepartoFilter(e.target.value ? Number(e.target.value) : '')} className="input text-sm w-auto">
           <option value="">Tutti i reparti</option>
           {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
-        <select value={statoFilter} onChange={e => setStatoFilter(e.target.value)} className="input text-sm">
+        <select value={statoFilter} onChange={e => setStatoFilter(e.target.value)} className="input text-sm w-auto">
           <option value="">Tutti gli stati</option>
           {Object.entries(STATO_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>

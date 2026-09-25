@@ -23,9 +23,9 @@ const EVENT_LABEL: Record<HrEventType, string> = {
 
 function KpiCard({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
-    <div className="p-5">
-      <p className="text-sm font-medium text-gray-400 uppercase tracking-wide">{label}</p>
-      <p className="text-4xl font-semibold leading-none mt-2 text-gray-900">{value}</p>
+    <div className="card p-4">
+      <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
+      <p className="text-3xl font-semibold leading-none mt-2 text-gray-900">{value}</p>
       {sub && <p className="text-xs text-gray-400 mt-2">{sub}</p>}
     </div>
   );
@@ -88,18 +88,14 @@ export default function AnalisiHRPage() {
         <p className="text-xs text-gray-400 mt-0.5">Struttura dell&apos;organico, età, anzianità e movimenti del personale</p>
       </div>
 
-      {/* ── KPI strip ──────────────────────────────────────────────────── */}
-      <div className="card p-0 overflow-hidden">
-        <div className="grid grid-cols-2 lg:grid-cols-5 divide-y divide-gray-100 lg:divide-y-0 lg:divide-x">
-          <KpiCard label="Dipendenti attivi" value={summary?.total_attivi ?? '—'} />
-          <KpiCard label="Età media" value={summary?.eta_media != null ? `${summary.eta_media}` : '—'} sub="anni" />
-          <KpiCard label="Anzianità media" value={summary?.anzianita_media != null ? `${summary.anzianita_media}` : '—'} sub="anni" />
-          <KpiCard label="Assunzioni (12 mesi)" value={summary?.assunzioni_ultimo_anno ?? '—'} />
-          <KpiCard label="Cessazioni (12 mesi)" value={summary?.cessazioni_ultimo_anno ?? '—'} />
-        </div>
-      </div>
-
       <AnalisiOrganico extra={<>
+      {/* ── Indicatori sintetici ───────────────────────────────────────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard label="Età media" value={summary?.eta_media != null ? `${summary.eta_media}` : '—'} sub="anni" />
+        <KpiCard label="Anzianità media" value={summary?.anzianita_media != null ? `${summary.anzianita_media}` : '—'} sub="anni" />
+        <KpiCard label="Assunzioni (12 mesi)" value={summary?.assunzioni_ultimo_anno ?? '—'} />
+        <KpiCard label="Cessazioni (12 mesi)" value={summary?.cessazioni_ultimo_anno ?? '—'} />
+      </div>
       {/* ── Distribuzione età per reparto ──────────────────────────────── */}
       <div className="card">
         <p className="text-base font-medium text-gray-700 mb-1">Struttura per età e reparto</p>
@@ -126,7 +122,7 @@ export default function AnalisiHRPage() {
         )}
         {nearRetirement.length > 0 && (
           <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
-            ⚠ {nearRetirement.length} {nearRetirement.length === 1 ? 'persona ha' : 'persone hanno'} 60 anni o più — struttura dell&apos;età da monitorare per il turnover in vista della pensione.
+            {nearRetirement.length} {nearRetirement.length === 1 ? 'persona ha' : 'persone hanno'} 60 anni o più — struttura dell&apos;età da monitorare per il turnover in vista della pensione.
           </p>
         )}
       </div>

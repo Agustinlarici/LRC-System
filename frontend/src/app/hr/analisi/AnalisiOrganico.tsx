@@ -166,7 +166,7 @@ function Card({ title, hint, chart, table, className = '', canPct = false }: {
           {canPct && mode === 'chart' && (
             <button type="button" onClick={() => setAsPct(v => !v)} className="btn-secondary text-xs px-2.5 py-1">{asPct ? 'Valori' : '% sul totale'}</button>
           )}
-          <button type="button" onClick={printOne} title="Stampa solo questo riquadro" className="btn-secondary text-xs px-2.5 py-1">🖨 Stampa</button>
+          <button type="button" onClick={printOne} title="Stampa solo questo riquadro" className="btn-secondary text-xs px-2.5 py-1">Stampa</button>
         </div>
       </div>
       <div className={hint ? '' : 'mt-2'}>{mode === 'chart' ? chart(asPct) : table}</div>
@@ -485,38 +485,32 @@ export function AnalisiOrganico({ extra }: { extra: React.ReactNode }) {
           </p>
         </div>
 
-        {/* Barra filtri */}
-        <div className="card d-print-none space-y-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium text-gray-400 uppercase tracking-wide mr-1">Filtri</span>
-            {FILTER_ORDER.map(dim => (
-              <MultiFilter key={dim} label={DIM_LABEL[dim]} value={filters[dim] ?? []}
-                options={countBy(allActive, dim, plantName, 'name')}
-                onChange={v => setFilters(f => ({ ...f, [dim]: v }))} />
-            ))}
-            {activeFilters.length > 0 && <button type="button" onClick={() => setFilters({})} className="btn-secondary text-xs">Azzera filtri</button>}
-          </div>
-          <div className="flex items-center gap-2 flex-wrap justify-between">
-            <p className="text-sm text-gray-700"><span className="font-semibold text-lg text-gray-900">{totActive}</span> persone attive su {allActive.length}</p>
-            <div className="flex items-center gap-2">
-              <div className="flex rounded-lg overflow-hidden border border-gray-300">
-                {(['chart', 'table'] as Mode[]).map(m => (
-                  <button key={m} type="button" onClick={() => setMode(m)}
-                    className={`text-sm px-3 py-1.5 ${mode === m ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
-                    {m === 'chart' ? 'Grafici' : 'Tabelle'}
-                  </button>
-                ))}
-              </div>
-              <button type="button" onClick={() => window.print()} className="btn-primary text-sm">🖨 Stampa pagina</button>
+        {/* Barra unica: filtri a sinistra, vista e stampa a destra */}
+        <div className="flex items-center gap-2 flex-wrap d-print-none">
+          {FILTER_ORDER.map(dim => (
+            <MultiFilter key={dim} label={DIM_LABEL[dim]} value={filters[dim] ?? []}
+              options={countBy(allActive, dim, plantName, 'name')}
+              onChange={v => setFilters(f => ({ ...f, [dim]: v }))} />
+          ))}
+          {activeFilters.length > 0 && <button type="button" onClick={() => setFilters({})} className="text-sm px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100">Azzera</button>}
+          <div className="ml-auto flex items-center gap-2">
+            <div className="flex rounded-lg overflow-hidden border border-gray-300">
+              {(['chart', 'table'] as Mode[]).map(m => (
+                <button key={m} type="button" onClick={() => setMode(m)}
+                  className={`text-sm px-3 py-1.5 ${mode === m ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                  {m === 'chart' ? 'Grafici' : 'Tabelle'}
+                </button>
+              ))}
             </div>
+            <button type="button" onClick={() => window.print()} className="btn-primary text-sm py-1.5">Stampa</button>
           </div>
         </div>
 
         {/* Schede */}
-        <div className="flex gap-1.5 flex-wrap d-print-none">
+        <div className="flex gap-6 border-b border-gray-200 overflow-x-auto d-print-none">
           {TABS.map(t => (
             <button key={t.key} type="button" onClick={() => setTab(t.key)}
-              className={`text-sm px-3.5 py-1.5 rounded-lg border transition-colors ${tab === t.key ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'}`}>
+              className={`text-sm pb-2.5 -mb-px whitespace-nowrap border-b-2 transition-colors ${tab === t.key ? 'border-blue-600 text-blue-600 font-medium' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
               {t.label}
             </button>
           ))}

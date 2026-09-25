@@ -129,8 +129,25 @@ export default function OrganigrammaPage() {
     sorted.forEach((d, i) => map.set(d.name, PALETTE[i % PALETTE.length]));
     return map;
   }, [departments]);
-  const colorFor = useCallback((n: HrOrgNode) =>
-    (n.reparto_name && deptColorMap.get(n.reparto_name)) || '#94a3b8', [deptColorMap]);
+  // Ogni persona ha il proprio colore: quello del suo reparto; se non ne ha uno (responsabili,
+  // direzione) prende i colori dei reparti che guida — più reparti = cerchio a spicchi.
+  const colorFor = useCallback((n: HrOrgNode) => {
+    if (n.reparto_name && deptColorMap.get(n.reparto_name)) return deptColorMap.get(n.reparto_name)!;
+    const childrenOf = new Map<number, HrOrgNode[]>();
+    for (const x of nodes) if (x.capo_id != null) childrenOf.set(x.capo_id, [...(childrenOf.get(x.capo_id) ?? []), x]);
+    const found = new Set<string>();
+    const stack = [...(childrenOf.get(n.id) ?? [])];
+    while (stack.length) {
+      const x = stack.pop()!;
+      if (x.reparto_name && deptColorMap.has(x.reparto_name)) found.add(x.reparto_name);
+      stack.push(...(childrenOf.get(x.id) ?? []));
+    }
+    const colors = [...found].sort().map(name => deptColorMap.get(name)!);
+    if (colors.length === 0) return '#94a3b8';
+    if (colors.length === 1) return colors[0];
+    const step = 100 / colors.length;
+    return `conic-gradient(${colors.map((c, i) => `${c} ${i * step}% ${(i + 1) * step}%`).join(', ')})`;
+  }, [deptColorMap, nodes]);
 
   // Default: radici + primo livello espansi, il resto comprimibile a scoperta
   useEffect(() => {
@@ -180,7 +197,7 @@ export default function OrganigrammaPage() {
 
       <div className="flex items-center gap-2 flex-wrap">
         <input type="text" placeholder="Cerca una persona…" value={search} onChange={e => setSearch(e.target.value)} className="input text-sm w-64" />
-        <select value={repartoFilter} onChange={e => setRepartoFilter(e.target.value ? Number(e.target.value) : '')} className="input text-sm">
+        <select value={repartoFilter} onChange={e => setRepartoFilter(e.target.value ? Number(e.target.value) : '')} className="input text-sm w-auto">
           <option value="">Tutti i reparti</option>
           {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
