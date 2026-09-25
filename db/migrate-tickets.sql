@@ -79,7 +79,11 @@ CREATE TABLE IF NOT EXISTS ticket_categories (
   UNIQUE (category, subcategory)
 );
 
-INSERT INTO ticket_categories (category, subcategory) VALUES
+-- Seed solo al primo deploy su un DB vuoto: da qui in poi le categorie sono
+-- gestite dall'admin (Impostazioni ticket), e un deploy non deve resuscitare
+-- una categoria che è stata cancellata o rinominata a mano.
+INSERT INTO ticket_categories (category, subcategory)
+SELECT * FROM (VALUES
   ('Hardware', 'PC / Workstation'),
   ('Hardware', 'Stampante'),
   ('Hardware', 'Scanner / Lettore barcode'),
@@ -97,7 +101,8 @@ INSERT INTO ticket_categories (category, subcategory) VALUES
   ('Account / Accessi', 'Nuovo utente'),
   ('Account / Accessi', 'Permessi'),
   ('Altro', NULL)
-ON CONFLICT (category, subcategory) DO NOTHING;
+) AS seed(category, subcategory)
+WHERE NOT EXISTS (SELECT 1 FROM ticket_categories);
 
 -- ============================================================
 -- TICKET SLA RULES (response / resolution hours in business time)
@@ -130,7 +135,9 @@ CREATE TABLE IF NOT EXISTS ticket_priority_rules (
   UNIQUE (category, blocca_lavoro)
 );
 
-INSERT INTO ticket_priority_rules (category, blocca_lavoro, priority) VALUES
+-- Seed solo al primo deploy su un DB vuoto — stessa ragione di ticket_categories qui sopra.
+INSERT INTO ticket_priority_rules (category, blocca_lavoro, priority)
+SELECT category, blocca_lavoro, priority::ticket_priority_enum FROM (VALUES
   ('Hardware',          TRUE,  'alta'),
   ('Hardware',          FALSE, 'media'),
   ('Software',          TRUE,  'alta'),
@@ -141,7 +148,8 @@ INSERT INTO ticket_priority_rules (category, blocca_lavoro, priority) VALUES
   ('Account / Accessi', FALSE, 'bassa'),
   ('Altro',             TRUE,  'media'),
   ('Altro',             FALSE, 'bassa')
-ON CONFLICT (category, blocca_lavoro) DO NOTHING;
+) AS seed(category, blocca_lavoro, priority)
+WHERE NOT EXISTS (SELECT 1 FROM ticket_priority_rules);
 
 -- ============================================================
 -- TICKETS (sequence for #TK-YYYY-NNNN)
