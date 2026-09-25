@@ -9,6 +9,8 @@ import { executiveRefresh } from '../monitor/executive-cache.js';
 import { syncPackArticles } from '../packing/bc-client.js';
 import { snapshotDayFromHistory } from '../dashboards/heatmap.js';
 import { pollOneDriveFolder } from '../spma/onedrive-watcher.js';
+import { bufferFullRefresh } from '../buffer/cache.js';
+import { autoGenerateEdi } from '../edi/auto-generate.js';
 import { getActiveAlerts } from '../../lib/alert-manager.js';
 import { sendAlert } from '../../lib/notifier.js';
 import { requireAuth } from '../../lib/auth.js';
@@ -86,6 +88,25 @@ systemRoutes.post('/force-onedrive-poll', requireAuth, (c) => {
     .then(result => endRun('spma_onedrive_poll', result.count))
     .catch(e => failRun('spma_onedrive_poll', e));
   return c.json({ message: 'Poll OneDrive SPMA avviato' }, 202);
+});
+
+// POST /api/system/force-buffer — refresh completo cache buffer subito
+// (startRun/endRun/failRun già gestiti internamente da bufferFullRefresh)
+systemRoutes.post('/force-buffer', requireAuth, (c) => {
+  bufferFullRefresh()
+    .then(() => {})
+    .catch(() => {});
+  return c.json({ message: 'Refresh Buffer avviato' }, 202);
+});
+
+// POST /api/system/force-edi-autogenerate — genera subito gli EDI per i
+// clienti con auto_generate attivo (di norma gira solo alle 23:45)
+systemRoutes.post('/force-edi-autogenerate', requireAuth, (c) => {
+  startRun('edi_auto_generate');
+  autoGenerateEdi()
+    .then(({ generated }) => endRun('edi_auto_generate', generated))
+    .catch(e => failRun('edi_auto_generate', e));
+  return c.json({ message: 'Generazione EDI auto avviata' }, 202);
 });
 
 // POST /api/system/force-snapshot — snapshot OEE di ieri
