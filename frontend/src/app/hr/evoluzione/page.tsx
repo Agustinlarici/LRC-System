@@ -12,7 +12,11 @@ const BACKEND = typeof window !== 'undefined'
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
 const PALETTE = ['#2563eb', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
-const PERIOD_OPTIONS = [12, 24, 36, 60];
+type Period = '6' | '12' | '60' | '120' | 'all' | 'custom';
+const PERIOD_OPTIONS: { key: Period; label: string }[] = [
+  { key: '6', label: '6 mesi' }, { key: '12', label: '12 mesi' }, { key: '60', label: '5 anni' },
+  { key: '120', label: '10 anni' }, { key: 'all', label: 'Tutto' }, { key: 'custom', label: 'Personalizzato' },
+];
 
 interface DeptEvolutionRow { month: string; funzione_name: string; count: number; }
 
@@ -45,9 +49,9 @@ function StackTooltip({ active, payload, label }: any) {
 }
 
 export default function EvoluzioneAziendalePage() {
-  const [months, setMonths] = useState(24);
+  const [period, setPeriod] = useState<Period>('12');
   // Periodo personalizzato: date scelte dall'utente (il calcolo lato server è mensile)
-  const [custom, setCustom] = useState(false);
+  const custom = period === 'custom';
   const todayIso = new Date().toISOString().slice(0, 10);
   const yearAgoIso = new Date(new Date().getFullYear() - 1, new Date().getMonth(), 1).toISOString().slice(0, 10);
   const [from, setFrom] = useState(yearAgoIso);
@@ -72,9 +76,10 @@ export default function EvoluzioneAziendalePage() {
   }, []);
 
   useEffect(() => {
-    if (custom) { if (from && to) load(`from=${from}&to=${to}`); }
-    else load(`months=${months}`);
-  }, [load, months, custom, from, to]);
+    if (period === 'custom') { if (from && to) load(`from=${from}&to=${to}`); }
+    else if (period === 'all') load('all=1');
+    else load(`months=${period}`);
+  }, [load, period, from, to]);
 
   const chartData = useMemo(() => data.map(d => ({
     month: fmtMonth(d.month),
@@ -108,14 +113,11 @@ export default function EvoluzioneAziendalePage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-gray-500">Periodo:</span>
-          {PERIOD_OPTIONS.map(n => (
-            <button key={n} onClick={() => { setCustom(false); setMonths(n); }}
-              className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-colors ${!custom && months === n ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-            >{n} mesi</button>
+          {PERIOD_OPTIONS.map(o => (
+            <button key={o.key} onClick={() => setPeriod(o.key)}
+              className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-colors ${period === o.key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >{o.label}</button>
           ))}
-          <button onClick={() => setCustom(true)}
-            className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-colors ${custom ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-          >Personalizzato</button>
           {custom && (
             <>
               <label className="text-xs text-gray-500">Dal</label>
@@ -158,7 +160,7 @@ export default function EvoluzioneAziendalePage() {
             <ResponsiveContainer width="100%" height={240}>
               <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="month" tick={{ fontSize: 12, fill: '#374151' }} />
+                <XAxis dataKey="month" minTickGap={24} tick={{ fontSize: 12, fill: '#374151' }} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#374151' }} />
                 <Tooltip />
                 <Line type="monotone" dataKey="Totale dipendenti" stroke="#2563eb" strokeWidth={2.5} dot={false} isAnimationActive={false} />
@@ -173,7 +175,7 @@ export default function EvoluzioneAziendalePage() {
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#374151' }} />
+                  <XAxis dataKey="month" minTickGap={24} tick={{ fontSize: 11, fill: '#374151' }} />
                   <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#374151' }} />
                   <Tooltip />
                   <Bar dataKey="Assunzioni" fill="#10b981" radius={[3, 3, 0, 0]} />
@@ -188,7 +190,7 @@ export default function EvoluzioneAziendalePage() {
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#374151' }} />
+                  <XAxis dataKey="month" minTickGap={24} tick={{ fontSize: 11, fill: '#374151' }} />
                   <YAxis tick={{ fontSize: 12, fill: '#374151' }} />
                   <Tooltip />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -208,7 +210,7 @@ export default function EvoluzioneAziendalePage() {
               <ResponsiveContainer width="100%" height={280}>
                 <AreaChart data={deptChartData} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#374151' }} />
+                  <XAxis dataKey="month" minTickGap={24} tick={{ fontSize: 11, fill: '#374151' }} />
                   <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#374151' }} />
                   <Tooltip content={<StackTooltip />} wrapperStyle={{ pointerEvents: 'none', zIndex: 20 }} isAnimationActive={false} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />

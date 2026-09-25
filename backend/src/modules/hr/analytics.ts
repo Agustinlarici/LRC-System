@@ -5,8 +5,10 @@ import { requireModule, type Env } from '../../lib/auth.js';
 export const hrAnalyticsRoutes = new Hono<Env>();
 
 // Serie mensile richiesta: ultimi N mesi (?months=) oppure un intervallo personalizzato
-// (?from=YYYY-MM-DD&to=YYYY-MM-DD, presi al mese). Ritorna il primo mese e quanti mesi.
-function monthRange(q: (k: string) => string | undefined): { start: string; count: number } {
+// (?from=YYYY-MM-DD&to=YYYY-MM-DD, presi al mese) oppure tutto lo storico (?all=1, dalla prima
+// assunzione a oggi). Ritorna il primo mese e quanti mesi.
+const MAX_MONTHS = 600;
+async function monthRange(q: (k: string) => string | undefined): Promise<{ start: string; count: number }> {
   const re = /^(\d{4})-(\d{2})/;
   const mf = q('from')?.match(re);
   const mt = q('to')?.match(re);
@@ -15,7 +17,15 @@ function monthRange(q: (k: string) => string | undefined): { start: string; coun
     const a = Number(mf[1]) * 12 + Number(mf[2]) - 1;
     const b = Number(mt[1]) * 12 + Number(mt[2]) - 1;
     lo = Math.min(a, b);
-    count = Math.min(Math.abs(b - a) + 1, 240);
+    count = Math.min(Math.abs(b - a) + 1, MAX_MONTHS);
+  } else if (q('all')) {
+    const [first] = await db`SELECT to_char(date_trunc('month', MIN(data_assunzione)), 'YYYY-MM') AS ym FROM hr_employee`;
+    const m = String(first?.ym ?? '').match(re);
+    const now = new Date();
+    const nowIdx = now.getFullYear() * 12 + now.getMonth();
+    lo = m ? Number(m[1]) * 12 + Number(m[2]) - 1 : nowIdx - 11;
+    count = Math.min(nowIdx - lo + 1, MAX_MONTHS);
+    lo = nowIdx - count + 1;
   } else {
     count = Math.min(Math.max(parseInt(q('months') ?? '24', 10) || 24, 1), 120);
     const now = new Date();
@@ -96,7 +106,7 @@ hrAnalyticsRoutes.get('/manager-distribution', requireModule('hr'), async (c) =>
 // una tabella di snapshot cache da tenere sincronizzata.
 
 hrAnalyticsRoutes.get('/evolution', requireModule('hr'), async (c) => {
-  const { start, count } = monthRange(k => c.req.query(k));
+  const { start, count } = await monthRange(k => c.req.query(k));
 
   const rows = await db`
     WITH months AS (
@@ -135,7 +145,7 @@ hrAnalyticsRoutes.get('/evolution', requireModule('hr'), async (c) => {
 // ─── Evoluzione struttura organizzativa: numero reparti/capi nel tempo ────────
 
 hrAnalyticsRoutes.get('/evolution/departments', requireModule('hr'), async (c) => {
-  const { start, count } = monthRange(k => c.req.query(k));
+  const { start, count } = await monthRange(k => c.req.query(k));
 
   const rows = await db`
     WITH months AS (
