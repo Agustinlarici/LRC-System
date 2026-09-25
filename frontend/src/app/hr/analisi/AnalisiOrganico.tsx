@@ -18,13 +18,13 @@ const TICK = { fontSize: 12, fill: '#374151' };
 
 // ─── Dimensioni di analisi ─────────────────────────────────────────────────────
 
-type Dim = 'plant' | 'societa' | 'categoria' | 'tipologia' | 'livello' | 'responsabile' | 'reparto' | 'nazionalita' | 'sesso';
+type Dim = 'l68' | 'funzione' | 'plant' | 'societa' | 'categoria' | 'tipologia' | 'livello' | 'responsabile' | 'reparto' | 'nazionalita' | 'sesso';
 
 const DIM_LABEL: Record<Dim, string> = {
-  plant: 'Plant', societa: 'Società', categoria: 'Categoria', tipologia: 'Tipologia', livello: 'Livello',
+  l68: 'Legge 68', funzione: 'Funzione aziendale', plant: 'Plant', societa: 'Società', categoria: 'Categoria', tipologia: 'Tipologia', livello: 'Livello',
   responsabile: 'Responsabile', reparto: 'Reparto', nazionalita: 'Nazionalità', sesso: 'Sesso',
 };
-const FILTER_ORDER: Dim[] = ['plant', 'societa', 'categoria', 'tipologia', 'livello', 'responsabile', 'reparto', 'nazionalita', 'sesso'];
+const FILTER_ORDER: Dim[] = ['funzione', 'l68', 'plant', 'societa', 'categoria', 'tipologia', 'livello', 'responsabile', 'reparto', 'nazionalita', 'sesso'];
 
 type Filters = Partial<Record<Dim, string[]>>;
 
@@ -39,6 +39,8 @@ function valuesOf(e: HrEmployee, dim: Dim, plantName: Map<number, string>): stri
     case 'livello':      return [clean(e.livello)];
     case 'responsabile': return [clean(e.capo_nome)];
     case 'reparto':      return [clean(e.reparto_name)];
+    case 'funzione':     return [clean(e.funzione_aziendale)];
+    case 'l68':          return [e.l68 ? 'Sì' : 'No'];
     // Una persona può lavorare su più sedi: conta in ognuna
     case 'plant':        return e.plant_ids?.length ? e.plant_ids.map(id => plantName.get(id) ?? NA) : [NA];
   }
@@ -95,10 +97,7 @@ const ModeCtx = createContext<Mode>('chart');
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-3">
-      <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest pt-2">{title}</h2>
-      {children}
-    </div>
+    <div className="space-y-4" aria-label={title}>{children}</div>
   );
 }
 
@@ -174,18 +173,31 @@ function Card({ title, hint, chart, table, className = '', canPct = false }: {
   );
 }
 
+function printElement(el: HTMLElement | null) {
+  if (!el) return;
+  el.setAttribute('data-print-target', '1');
+  document.body.setAttribute('data-print-only', '1');
+  const cleanup = () => {
+    el.removeAttribute('data-print-target');
+    document.body.removeAttribute('data-print-only');
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  window.print();
+}
+
 // ─── Grafici ───────────────────────────────────────────────────────────────────
 
 function Bars({ data, color = PALETTE[0] }: { data: Count[]; color?: string }) {
   if (data.length === 0) return <Empty />;
   const total = data.reduce((s, d) => s + d.value, 0);
   return (
-    <ResponsiveContainer width="100%" height={Math.max(120, data.length * 30 + 20)}>
+    <ResponsiveContainer width="100%" height={Math.max(100, data.length * 26 + 12)}>
       <BarChart data={data} layout="vertical" margin={{ top: 0, right: 48, bottom: 0, left: 0 }}>
         <XAxis type="number" hide allowDecimals={false} />
-        <YAxis type="category" dataKey="name" width={140} tick={TICK} axisLine={false} tickLine={false} />
+        <YAxis type="category" dataKey="name" width={120} tick={TICK} axisLine={false} tickLine={false} />
         <Tooltip cursor={{ fill: '#f3f4f6' }} formatter={(v: any) => [`${v} (${pct(Number(v), total)})`, 'Persone']} />
-        <Bar dataKey="value" name="Persone" radius={[0, 4, 4, 0]} barSize={16}
+        <Bar dataKey="value" name="Persone" radius={[0, 4, 4, 0]} barSize={14}
           label={{ position: 'right', fontSize: 12, fill: '#374151' }}>
           {data.map(d => <Cell key={d.name} fill={d.name === NA || d.name === 'Altre' ? OTHER_COLOR : color} />)}
         </Bar>
@@ -199,10 +211,10 @@ function Donut({ data, colorFor }: { data: Count[]; colorFor: (name: string) => 
   const total = data.reduce((s, d) => s + d.value, 0);
   return (
     <div className="flex items-center gap-4 flex-wrap">
-      <div className="relative w-40 h-40 shrink-0">
+      <div className="relative w-32 h-32 shrink-0">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-            <Pie data={data} dataKey="value" nameKey="name" innerRadius={48} outerRadius={72} paddingAngle={2} stroke="none">
+            <Pie data={data} dataKey="value" nameKey="name" innerRadius={38} outerRadius={58} paddingAngle={2} stroke="none">
               {data.map(d => <Cell key={d.name} fill={colorFor(d.name)} />)}
             </Pie>
             <Tooltip />
@@ -231,7 +243,7 @@ function Stacked({ data, series, colorFor, asPct, labelWidth = 140 }: {
 }) {
   if (data.length === 0) return <Empty />;
   return (
-    <ResponsiveContainer width="100%" height={Math.max(160, data.length * 34 + 70)}>
+    <ResponsiveContainer width="100%" height={Math.max(140, data.length * 28 + 60)}>
       <BarChart data={data} layout="vertical" stackOffset={asPct ? 'expand' : 'none'} margin={{ top: 0, right: 24, bottom: 0, left: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
         <XAxis type="number" allowDecimals={false} tick={TICK} tickFormatter={asPct ? (v: number) => `${Math.round(v * 100)}%` : undefined} />
@@ -293,9 +305,9 @@ function MultiFilter({ label, options, value, onChange }: {
 
 function Kpi({ label, value, sub, tone }: { label: string; value: React.ReactNode; sub?: string; tone?: 'warn' }) {
   return (
-    <div className="card print-card p-4">
-      <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
-      <p className={`text-3xl font-semibold leading-none mt-2 ${tone === 'warn' ? 'text-amber-600' : 'text-gray-900'}`}>{value}</p>
+    <div className="card print-card p-3">
+      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
+      <p className={`text-2xl font-semibold leading-none mt-1.5 ${tone === 'warn' ? 'text-amber-600' : 'text-gray-900'}`}>{value}</p>
       {sub && <p className="text-xs text-gray-400 mt-2">{sub}</p>}
     </div>
   );
@@ -303,11 +315,26 @@ function Kpi({ label, value, sub, tone }: { label: string; value: React.ReactNod
 
 // ─── Componente principale ─────────────────────────────────────────────────────
 
-type Tab = 'riepilogo' | 'persone' | 'contratti' | 'stabilimenti' | 'scadenze' | 'eta' | 'tutto';
+type Tab = 'riepilogo' | 'distribuzioni' | 'scadenze' | 'eta';
 const TABS: { key: Tab; label: string }[] = [
-  { key: 'riepilogo', label: 'Riepilogo' }, { key: 'persone', label: 'Persone' }, { key: 'contratti', label: 'Contratti' },
-  { key: 'stabilimenti', label: 'Stabilimenti e responsabili' }, { key: 'scadenze', label: 'Scadenze e cessazioni' },
-  { key: 'eta', label: 'Età e reparti' }, { key: 'tutto', label: 'Tutto' },
+  { key: 'riepilogo', label: 'Riepilogo' }, { key: 'distribuzioni', label: 'Distribuzioni' },
+  { key: 'scadenze', label: 'Scadenze e cessazioni' }, { key: 'eta', label: 'Età e reparti' },
+];
+
+// Viste rapide per la scheda Distribuzioni: raggruppa per / suddividi per
+const PRESETS: { label: string; group: Dim; split: Dim | '' }[] = [
+  { label: 'Società a contratto', group: 'societa', split: '' },
+  { label: 'Nazionalità', group: 'nazionalita', split: '' },
+  { label: 'Plant', group: 'plant', split: '' },
+  { label: 'Sesso', group: 'sesso', split: '' },
+  { label: 'Categoria', group: 'categoria', split: '' },
+  { label: 'Tipologia', group: 'tipologia', split: '' },
+  { label: 'Livello', group: 'livello', split: '' },
+  { label: 'Funzione aziendale', group: 'funzione', split: '' },
+  { label: 'Reparto per funzione aziendale', group: 'reparto', split: 'funzione' },
+  { label: 'Categoria per tipologia', group: 'categoria', split: 'tipologia' },
+  { label: 'Tipologia per sede', group: 'plant', split: 'tipologia' },
+  { label: 'Responsabile per plant', group: 'responsabile', split: 'plant' },
 ];
 
 export function AnalisiOrganico({ extra }: { extra: React.ReactNode }) {
@@ -317,6 +344,10 @@ export function AnalisiOrganico({ extra }: { extra: React.ReactNode }) {
   const [filters, setFilters] = useState<Filters>({});
   const [tab, setTab] = useState<Tab>('riepilogo');
   const [mode, setMode] = useState<Mode>('chart');
+  const [exGroup, setExGroup] = useState<Dim>('plant');
+  const [exSplit, setExSplit] = useState<Dim | ''>('');
+  const [exPct, setExPct] = useState(false);
+  const exRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -389,7 +420,7 @@ export function AnalisiOrganico({ extra }: { extra: React.ReactNode }) {
 
   if (loading) return <p className="text-sm text-gray-400 text-center py-10">Caricamento…</p>;
 
-  const show = (t: Tab) => tab === t || tab === 'tutto';
+  const show = (t: Tab) => tab === t;
   const cur = new Date().getFullYear();
   const totActive = active.length;
   const determinati = active.filter(e => isDeterminato(e.tipo_contratto)).length;
@@ -434,7 +465,7 @@ export function AnalisiOrganico({ extra }: { extra: React.ReactNode }) {
     <Card title="Cessazioni e contratti scaduti per anno"
       hint="Scaduti = cessazioni di contratti a tempo determinato. In scadenza = attivi con fine contratto in quell'anno."
       chart={() => yearly.length === 0 ? <Empty /> : (
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={260}>
           <BarChart data={yearly} margin={{ top: 16, right: 16, bottom: 0, left: -16 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
             <XAxis dataKey="anno" tick={TICK} />
@@ -453,7 +484,7 @@ export function AnalisiOrganico({ extra }: { extra: React.ReactNode }) {
   const monthlyCard = (
     <Card title="Scadenze dei prossimi 12 mesi" hint="Contratti attivi che terminano, per mese: serve a pianificare rinnovi e sostituzioni"
       chart={() => (
-        <ResponsiveContainer width="100%" height={240}>
+        <ResponsiveContainer width="100%" height={260}>
           <BarChart data={monthly} margin={{ top: 16, right: 16, bottom: 0, left: -16 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
             <XAxis dataKey="mese" tick={TICK} />
@@ -466,8 +497,65 @@ export function AnalisiOrganico({ extra }: { extra: React.ReactNode }) {
       table={<DataTable head={['Mese', 'Contratti in scadenza']} rows={monthly.map(m => [m.mese, m.count])} foot={['Totale', monthly.reduce((s, m) => s + m.count, 0)]} />} />
   );
 
+  const exCount = countBy(active, exGroup, plantName, exGroup === 'livello' ? 'name' : 'value');
+  const exCross = exSplit ? crossBy(active, exGroup, exSplit, plantName) : null;
+  const exTitle = `Persone per ${DIM_LABEL[exGroup].toLowerCase()}${exSplit ? ` e ${DIM_LABEL[exSplit].toLowerCase()}` : ''}`;
+  const exTotal = exCount.reduce((s, d) => s + d.value, 0);
+  const selectCls = 'input text-sm w-auto';
+  const exploreCard = (
+    <div ref={exRef} className="card print-card space-y-4">
+      <div className="flex flex-wrap items-end gap-3 d-print-none">
+        <div>
+          <label className="label text-xs">Vista rapida</label>
+          <select className={selectCls} value="" onChange={e => {
+            const p = PRESETS[Number(e.target.value)];
+            if (p) { setExGroup(p.group); setExSplit(p.split); }
+          }}>
+            <option value="" disabled>Scegli…</option>
+            {PRESETS.map((p, i) => <option key={p.label} value={i}>{p.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label text-xs">Raggruppa per</label>
+          <select className={selectCls} value={exGroup} onChange={e => { const d = e.target.value as Dim; setExGroup(d); if (d === exSplit) setExSplit(''); }}>
+            {FILTER_ORDER.map(d => <option key={d} value={d}>{DIM_LABEL[d]}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label text-xs">Suddividi per</label>
+          <select className={selectCls} value={exSplit} onChange={e => setExSplit(e.target.value as Dim | '')}>
+            <option value="">Nessuno</option>
+            {FILTER_ORDER.filter(d => d !== exGroup).map(d => <option key={d} value={d}>{DIM_LABEL[d]}</option>)}
+          </select>
+        </div>
+        <div className="ml-auto flex gap-2">
+          {exSplit && <button type="button" onClick={() => setExPct(v => !v)} className="btn-secondary text-sm py-1.5">{exPct ? 'Valori' : '% sul totale'}</button>}
+          <button type="button" onClick={() => printElement(exRef.current)} className="btn-secondary text-sm py-1.5">Stampa</button>
+        </div>
+      </div>
+      <p className="text-base font-medium text-gray-700">{exTitle}</p>
+      {mode === 'table' ? (
+        exCross ? crossTable(exCross, DIM_LABEL[exGroup])
+          : <DataTable head={[DIM_LABEL[exGroup], 'Persone', '%']} rows={exCount.map(d => [d.name, d.value, pct(d.value, exTotal)])} foot={['Totale', exTotal, '100%']} />
+      ) : (
+        <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
+          <div className="xl:col-span-3">
+            {exCross
+              ? <Stacked data={exCross.data.slice(0, 20)} series={exCross.series} colorFor={colorFor(exSplit as Dim)} asPct={exPct} />
+              : <Bars data={topN(exCount, 20)} />}
+            {exCross && exCross.data.length > 20 && <p className="text-xs text-gray-400 mt-2">Grafico: primi 20 gruppi. La tabella mostra tutti.</p>}
+          </div>
+          <div className="xl:col-span-2">
+            {exCross ? crossTable(exCross, DIM_LABEL[exGroup])
+              : <DataTable head={[DIM_LABEL[exGroup], 'Persone', '%']} rows={exCount.map(d => [d.name, d.value, pct(d.value, exTotal)])} foot={['Totale', exTotal, '100%']} />}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   const expiringCard = (
-    <Card title="Contratti in scadenza nei prossimi 90 giorni" className="lg:col-span-2"
+    <Card title="Contratti in scadenza nei prossimi 90 giorni"
       hint={`${expiring90.length} ${expiring90.length === 1 ? 'persona' : 'persone'} — ordinate per data di scadenza`}
       chart={() => expiring90.length === 0 ? <Empty /> : expiringTable(expiring90)}
       table={expiringTable(expiring90)} />
@@ -525,54 +613,23 @@ export function AnalisiOrganico({ extra }: { extra: React.ReactNode }) {
               <Kpi label={`Cessazioni ${cur}`} value={cessCurYear} sub="da inizio anno" />
               <Kpi label="Senza responsabile" value={senzaResp} tone={senzaResp ? 'warn' : undefined} sub="da assegnare" />
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {countCard('Persone per plant', 'plant', { hint: 'Chi lavora su più sedi è contato in ognuna' })}
-              {countCard('Persone per società a contratto', 'societa')}
-              {countCard('Tipologia di contratto', 'tipologia', { donut: true })}
-              {expiringCard}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {countCard('Per plant', 'plant')}
+              {countCard('Per società', 'societa')}
+              {countCard('Per tipologia', 'tipologia', { donut: true })}
             </div>
           </Section>
         )}
 
-        {show('persone') && (
-          <Section title="Persone">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {countCard('Totale risorse per società a contratto', 'societa')}
-              {countCard('Totale per sesso', 'sesso', { donut: true })}
-              {countCard('Totale per nazionalità', 'nazionalita', { top: 12, hint: 'Prime 12, le altre sono raggruppate in «Altre»' })}
-              {countCard('Totale per plant', 'plant', { hint: 'Chi lavora su più sedi è contato in ognuna' })}
-            </div>
-          </Section>
-        )}
-
-        {show('contratti') && (
-          <Section title="Contratti">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {countCard('Totale contratti per categoria', 'categoria', { hint: 'es. APL Maranello, diretto…' })}
-              {countCard('Totale per tipologia', 'tipologia', { donut: true })}
-              {countCard('Totale per livello', 'livello', { sort: 'name', hint: 'In ordine di livello' })}
-              {crossCard('Categoria per tipologia', 'categoria', 'tipologia', { hint: 'Usa «% sul totale» per vedere la quota di determinato in ogni categoria' })}
-              {crossCard('Tipologia per sede', 'plant', 'tipologia', { className: 'lg:col-span-2' })}
-            </div>
-          </Section>
-        )}
-
-        {show('stabilimenti') && (
-          <Section title="Stabilimenti e responsabili">
-            {crossCard('Quantità persone per stabilimento e responsabile', 'responsabile', 'plant', {
-              maxRows: 15,
-              hint: 'Grafico: primi 15 responsabili per numero di persone, con la ripartizione per stabilimento. La tabella mostra tutti.',
-            })}
-          </Section>
-        )}
+        {show('distribuzioni') && <Section title="Distribuzioni">{exploreCard}</Section>}
 
         {show('scadenze') && (
           <Section title="Scadenze e cessazioni">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {cessazioniCard}
               {monthlyCard}
-              {expiringCard}
             </div>
+            {expiringCard}
           </Section>
         )}
 

@@ -113,11 +113,11 @@ export default function EmployeeDetailPage() {
         {/* Colonna sinistra: dati della persona */}
         <div className="lg:col-span-2 space-y-5">
           <InfoCard title="Lavoro">
+            <Field label="Funzione aziendale" value={employee.funzione_aziendale} />
             <Field label="Reparto" value={employee.reparto_name} />
             <Field label="Plant / Sedi" value={employee.plant_name} />
             <Field label="Mansione" value={employee.mansione} />
             <Field label="Livello" value={employee.livello} />
-            <Field label="Funzione aziendale" value={employee.funzione_aziendale} />
             <Field label="Responsabile" value={employee.capo_nome
               ? <Link href={`/hr/dipendenti/${employee.capo_id}`} className="btn-secondary text-xs">{employee.capo_nome}</Link>
               : null} />
@@ -129,6 +129,7 @@ export default function EmployeeDetailPage() {
             <Field label="Società" value={employee.contract_company_name} />
             <Field label="Categoria" value={employee.categoria} />
             <Field label="Tipologia" value={employee.tipo_contratto} />
+            <Field label="Legge 68" value={employee.l68 ? 'Sì' : 'No'} />
             <Field label="Data assunzione" value={fmtDate(employee.data_assunzione)} />
             <Field label="Anzianità" value={`${employee.anzianita_anni} ${employee.anzianita_anni === 1 ? 'anno' : 'anni'}`} />
             {employee.data_cessazione && <Field label="Fine contratto / cessazione" value={fmtDate(employee.data_cessazione)} />}

@@ -101,7 +101,7 @@ body {
   align-items: center;
   list-style-type: none;
   position: relative;
-  padding: 28px 14px 0 14px;
+  padding: 24px 3px 0 3px;
 }
 .org-tree li::before,
 .org-tree li::after {

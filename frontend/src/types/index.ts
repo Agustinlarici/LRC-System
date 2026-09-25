@@ -680,6 +680,7 @@ export interface HrEmployee {
   reparto_name:             string | null;
   plant_id:                 number | null;
   plant_ids:                number[];
+  l68:                      boolean;
   plant_name:               string | null;
   contract_company_id:      number | null;
   contract_company_name:    string | null;
@@ -725,7 +726,7 @@ export interface HrOrgNode {
   nome:         string;
   cognome:      string;
   mansione:     string | null;
-  reparto_name: string | null;
+  funzione_aziendale: string | null;
   stato:        HrEmployeeStatus;
   capo_id:      number | null;
   n_riporti:    number;
@@ -741,15 +742,13 @@ export interface HrAnalyticsSummary {
 }
 
 export interface HrAgeBucket {
-  reparto_id:   number | null;
-  reparto_name: string;
+  funzione_name: string;
   eta:          number;
   count:        number;
 }
 
 export interface HrDeptDistribution {
-  reparto_id:   number | null;
-  reparto_name: string;
+  funzione_name: string;
   count:        number;
 }
 

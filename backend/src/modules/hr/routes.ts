@@ -88,7 +88,7 @@ const employeeSelect = db`
   SELECT
     e.id, e.matricola, e.nome, e.cognome, e.sesso, e.data_nascita, e.codice_fiscale,
     e.nazionalita, e.email, e.telefono, e.indirizzo,
-    e.mansione, e.livello, e.categoria, e.tipo_contratto, e.funzione_aziendale,
+    e.l68, e.mansione, e.livello, e.categoria, e.tipo_contratto, e.funzione_aziendale,
     e.reparto_id, d.name AS reparto_name,
     e.plant_id, e.plant_ids,
     (SELECT string_agg(pl.name, ', ' ORDER BY pl.name) FROM hr_plant pl WHERE pl.id = ANY(e.plant_ids)) AS plant_name,
@@ -150,6 +150,7 @@ const employeeFieldsSchema = z.object({
   indirizzo:            z.string().max(255).optional().nullable(),
   mansione:             z.string().max(150).optional().nullable(),
   livello:              z.string().max(30).optional().nullable(),
+  l68:                  z.boolean().optional(),
   categoria:            z.string().max(50).optional().nullable(),
   tipo_contratto:       z.string().max(50).optional().nullable(),
   funzione_aziendale:   z.string().max(150).optional().nullable(),
@@ -222,6 +223,18 @@ hrRoutes.patch('/employees/:id', requireModule('hr'), async (c) => {
   if (updates.plant_ids) updates.plant_id = updates.plant_ids[0] ?? null;
   if (!Object.keys(updates).length) throw new HTTPException(400, { message: 'Nessun campo modificabile fornito' });
   if (updates.capo_id === id) throw new HTTPException(400, { message: 'Una persona non può essere capo di se stessa' });
+  if (updates.capo_id) {
+    // Il nuovo responsabile non può essere un subordinato (diretto o indiretto) di questa persona
+    const [cycle] = await db`
+      WITH RECURSIVE chain AS (
+        SELECT id, capo_id FROM hr_employee WHERE id = ${updates.capo_id}
+        UNION
+        SELECT e.id, e.capo_id FROM hr_employee e JOIN chain c ON e.id = c.capo_id
+      )
+      SELECT 1 AS found FROM chain WHERE id = ${id} LIMIT 1
+    `;
+    if (cycle) throw new HTTPException(400, { message: "Il responsabile scelto dipende già da questa persona: creerebbe un ciclo nell'organigramma" });
+  }
 
   // Traccia nella timeline i cambi strutturali rilevanti prima di applicarli — con
   // nomi leggibili (non gli id grezzi) così la timeline ha senso per chi la legge.
@@ -405,16 +418,13 @@ hrRoutes.post('/employees/:id/salary', requireModule('hr'), async (c) => {
 // ─── Organigramma ─────────────────────────────────────────────────────────────
 
 hrRoutes.get('/org-chart', requireModule('hr'), async (c) => {
-  const { reparto_id } = c.req.query();
-  const repartoFilter = reparto_id ? db`AND e.reparto_id = ${parseInt(reparto_id, 10)}` : db``;
 
   const rows = await db`
     SELECT
-      e.id, e.nome, e.cognome, e.mansione, d.name AS reparto_name, e.stato, e.capo_id,
+      e.id, e.nome, e.cognome, e.mansione, NULLIF(TRIM(e.funzione_aziendale), '') AS funzione_aziendale, e.stato, e.capo_id,
       (SELECT COUNT(*)::int FROM hr_employee r WHERE r.capo_id = e.id AND r.stato != 'cessato') AS n_riporti
     FROM hr_employee e
-    LEFT JOIN hr_department d ON d.id = e.reparto_id
-    WHERE e.stato != 'cessato' ${repartoFilter}
+    WHERE e.stato != 'cessato'
     ORDER BY e.cognome, e.nome
   `;
   return c.json(rows);

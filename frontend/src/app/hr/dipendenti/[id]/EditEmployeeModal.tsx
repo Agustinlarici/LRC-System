@@ -46,6 +46,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, al
     note: employee.note ?? '',
   });
   const [plantIds, setPlantIds] = useState<number[]>(employee.plant_ids ?? []);
+  const [l68, setL68] = useState(!!employee.l68);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
@@ -63,6 +64,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, al
           ...form,
           reparto_id: form.reparto_id ? Number(form.reparto_id) : null,
           plant_ids: plantIds,
+          l68,
           contract_company_id: form.contract_company_id ? Number(form.contract_company_id) : null,
           capo_id: form.capo_id ? Number(form.capo_id) : null,
           data_cessazione: form.data_cessazione || null,
@@ -102,6 +104,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, al
                 </select>
               </div>
               <div><label className="label">Nazionalità</label><input className="input" value={form.nazionalita} onChange={e => set('nazionalita', e.target.value)} /></div>
+              <div><label className="label">Funzione aziendale</label><input className="input" value={form.funzione_aziendale} onChange={e => set('funzione_aziendale', e.target.value)} /></div>
               <div><label className="label">Reparto</label>
                 <select className="input" value={form.reparto_id} onChange={e => set('reparto_id', e.target.value)}>
                   <option value="">—</option>
@@ -118,8 +121,11 @@ export function EditEmployeeModal({ employee, departments, plants, companies, al
                 </select>
               </div>
               <div><label className="label">Mansione</label><input className="input" value={form.mansione} onChange={e => set('mansione', e.target.value)} /></div>
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer self-end pb-2">
+                <input type="checkbox" checked={l68} onChange={e => setL68(e.target.checked)} />
+                Legge 68 (L.68)
+              </label>
               <div><label className="label">Livello</label><input className="input" value={form.livello} onChange={e => set('livello', e.target.value)} /></div>
-              <div><label className="label">Funzione aziendale</label><input className="input" value={form.funzione_aziendale} onChange={e => set('funzione_aziendale', e.target.value)} /></div>
               <div><label className="label">Categoria</label><input className="input" value={form.categoria} onChange={e => set('categoria', e.target.value)} /></div>
               <div><label className="label">Società contratto</label>
                 <select className="input" value={form.contract_company_id} onChange={e => set('contract_company_id', e.target.value)}>

@@ -28,6 +28,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
     reparto_id: '', contract_company_id: '', data_assunzione: '',
   });
   const [plantIds, setPlantIds] = useState<number[]>([]);
+  const [l68, setL68] = useState(false);
   const { ask, dialog } = usePromptDialog();
   const toast = useToast();
   const [saving, setSaving] = useState(false);
@@ -83,6 +84,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
         funzione_aziendale: form.funzione_aziendale || null,
         reparto_id: form.reparto_id ? Number(form.reparto_id) : null,
         plant_ids: plantIds,
+        l68,
         contract_company_id: form.contract_company_id ? Number(form.contract_company_id) : null,
       }),
     });
@@ -117,6 +119,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
             <div><label className="label">Email</label><input type="email" className="input" value={form.email} onChange={e => set('email', e.target.value)} /></div>
             <div><label className="label">Telefono</label><input className="input" value={form.telefono} onChange={e => set('telefono', e.target.value)} /></div>
 
+            <div><label className="label">Funzione aziendale</label><input className="input" value={form.funzione_aziendale} onChange={e => set('funzione_aziendale', e.target.value)} /></div>
             <div><label className="label">Reparto</label>
               <div className="flex gap-1.5">
                 <select className="input" value={form.reparto_id} onChange={e => set('reparto_id', e.target.value)}>
@@ -130,8 +133,11 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
               <PlantMultiSelect plants={plants} value={plantIds} onChange={setPlantIds} onAdd={() => addCatalogEntry('plants', 'plant', setPlants, 'plant_id')} />
             </div>
             <div><label className="label">Mansione</label><input className="input" value={form.mansione} onChange={e => set('mansione', e.target.value)} /></div>
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer self-end pb-2">
+              <input type="checkbox" checked={l68} onChange={e => setL68(e.target.checked)} />
+              Legge 68 (L.68)
+            </label>
             <div><label className="label">Livello</label><input className="input" value={form.livello} onChange={e => set('livello', e.target.value)} /></div>
-            <div><label className="label">Funzione aziendale</label><input className="input" value={form.funzione_aziendale} onChange={e => set('funzione_aziendale', e.target.value)} /></div>
             <div><label className="label">Categoria</label><input className="input" value={form.categoria} onChange={e => set('categoria', e.target.value)} placeholder="es. DIRETTO, APL…" /></div>
             <div><label className="label">Società contratto</label>
               <div className="flex gap-1.5">

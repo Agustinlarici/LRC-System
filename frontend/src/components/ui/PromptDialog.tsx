@@ -63,3 +63,51 @@ export function usePromptDialog() {
 
   return { ask, dialog };
 }
+
+interface ChoiceOptions {
+  title: string;
+  message?: string;
+  options: { value: string; label: string }[];
+  cancelLabel?: string;
+  /** Se presente mostra un bottone che risponde SKIP_ALL */
+  skipAllLabel?: string;
+}
+
+// Sostituisce una scelta tra più alternative con una finestra del programma. Uso:
+//   const { choose, dialog } = useChoiceDialog();
+//   const v = await choose({ title: '…', options: [{ value: '1', label: 'Mario Rossi' }] });
+export function useChoiceDialog() {
+  const [opts, setOpts] = useState<ChoiceOptions | null>(null);
+  const resolver = useRef<((r: PromptResult) => void) | null>(null);
+
+  const choose = useCallback((o: ChoiceOptions) => new Promise<PromptResult>(resolve => {
+    resolver.current = resolve;
+    setOpts(o);
+  }), []);
+
+  function close(result: PromptResult) {
+    setOpts(null);
+    resolver.current?.(result);
+    resolver.current = null;
+  }
+
+  const dialog = opts && (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] p-4" onClick={() => close(null)}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+        <h2 className="text-base font-medium text-gray-900">{opts.title}</h2>
+        {opts.message && <p className="text-sm text-gray-500">{opts.message}</p>}
+        <div className="flex flex-col gap-2 max-h-72 overflow-auto">
+          {opts.options.map(o => (
+            <button key={o.value} type="button" onClick={() => close(o.value)} className="btn-secondary text-sm text-left">{o.label}</button>
+          ))}
+        </div>
+        <div className="flex items-center justify-end gap-2 flex-wrap">
+          {opts.skipAllLabel && <button type="button" onClick={() => close(SKIP_ALL)} className="btn-secondary text-sm mr-auto">{opts.skipAllLabel}</button>}
+          <button type="button" onClick={() => close(null)} className="btn-secondary text-sm">{opts.cancelLabel ?? 'Salta'}</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return { choose, dialog };
+}

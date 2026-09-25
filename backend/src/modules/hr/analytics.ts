@@ -4,6 +4,26 @@ import { requireModule, type Env } from '../../lib/auth.js';
 
 export const hrAnalyticsRoutes = new Hono<Env>();
 
+// Serie mensile richiesta: ultimi N mesi (?months=) oppure un intervallo personalizzato
+// (?from=YYYY-MM-DD&to=YYYY-MM-DD, presi al mese). Ritorna il primo mese e quanti mesi.
+function monthRange(q: (k: string) => string | undefined): { start: string; count: number } {
+  const re = /^(\d{4})-(\d{2})/;
+  const mf = q('from')?.match(re);
+  const mt = q('to')?.match(re);
+  let lo: number, count: number;
+  if (mf && mt) {
+    const a = Number(mf[1]) * 12 + Number(mf[2]) - 1;
+    const b = Number(mt[1]) * 12 + Number(mt[2]) - 1;
+    lo = Math.min(a, b);
+    count = Math.min(Math.abs(b - a) + 1, 240);
+  } else {
+    count = Math.min(Math.max(parseInt(q('months') ?? '24', 10) || 24, 1), 120);
+    const now = new Date();
+    lo = now.getFullYear() * 12 + now.getMonth() - (count - 1);
+  }
+  return { start: `${Math.floor(lo / 12)}-${String((lo % 12) + 1).padStart(2, '0')}-01`, count };
+}
+
 // ─── Riepilogo generale ────────────────────────────────────────────────────────
 
 hrAnalyticsRoutes.get('/summary', requireModule('hr'), async (c) => {
@@ -29,19 +49,17 @@ hrAnalyticsRoutes.get('/summary', requireModule('hr'), async (c) => {
   return c.json({ ...totals, eventi_ultimo_anno });
 });
 
-// ─── Distribuzione età per reparto (per lo scatter/histogram età × reparto) ───
+// ─── Distribuzione età per funzione aziendale ───
 
 hrAnalyticsRoutes.get('/age-distribution', requireModule('hr'), async (c) => {
   const rows = await db`
     SELECT
-      e.reparto_id,
-      COALESCE(d.name, 'Senza reparto') AS reparto_name,
+      COALESCE(NULLIF(TRIM(e.funzione_aziendale), ''), 'Senza funzione') AS funzione_name,
       EXTRACT(YEAR FROM AGE(now(), e.data_nascita))::int AS eta,
       COUNT(*)::int AS count
     FROM hr_employee e
-    LEFT JOIN hr_department d ON d.id = e.reparto_id
     WHERE e.stato != 'cessato' AND e.data_nascita IS NOT NULL
-    GROUP BY e.reparto_id, d.name, eta
+    GROUP BY funzione_name, eta
     ORDER BY eta
   `;
   return c.json(rows);
@@ -51,11 +69,10 @@ hrAnalyticsRoutes.get('/age-distribution', requireModule('hr'), async (c) => {
 
 hrAnalyticsRoutes.get('/department-distribution', requireModule('hr'), async (c) => {
   const rows = await db`
-    SELECT e.reparto_id, COALESCE(d.name, 'Senza reparto') AS reparto_name, COUNT(*)::int AS count
+    SELECT COALESCE(NULLIF(TRIM(e.funzione_aziendale), ''), 'Senza funzione') AS funzione_name, COUNT(*)::int AS count
     FROM hr_employee e
-    LEFT JOIN hr_department d ON d.id = e.reparto_id
     WHERE e.stato != 'cessato'
-    GROUP BY e.reparto_id, d.name
+    GROUP BY funzione_name
     ORDER BY count DESC
   `;
   return c.json(rows);
@@ -79,12 +96,12 @@ hrAnalyticsRoutes.get('/manager-distribution', requireModule('hr'), async (c) =>
 // una tabella di snapshot cache da tenere sincronizzata.
 
 hrAnalyticsRoutes.get('/evolution', requireModule('hr'), async (c) => {
-  const months = Math.min(Math.max(parseInt(c.req.query('months') ?? '24', 10) || 24, 1), 120);
+  const { start, count } = monthRange(k => c.req.query(k));
 
   const rows = await db`
     WITH months AS (
-      SELECT date_trunc('month', now()) - (n || ' months')::interval AS month_start
-      FROM generate_series(0, ${months - 1}) n
+      SELECT date_trunc('month', ${start}::date::timestamptz) + (n || ' months')::interval AS month_start
+      FROM generate_series(0, ${count - 1}) n
     )
     SELECT
       m.month_start::date AS month,
@@ -118,23 +135,22 @@ hrAnalyticsRoutes.get('/evolution', requireModule('hr'), async (c) => {
 // ─── Evoluzione struttura organizzativa: numero reparti/capi nel tempo ────────
 
 hrAnalyticsRoutes.get('/evolution/departments', requireModule('hr'), async (c) => {
-  const months = Math.min(Math.max(parseInt(c.req.query('months') ?? '24', 10) || 24, 1), 120);
+  const { start, count } = monthRange(k => c.req.query(k));
 
   const rows = await db`
     WITH months AS (
-      SELECT date_trunc('month', now()) - (n || ' months')::interval AS month_start
-      FROM generate_series(0, ${months - 1}) n
+      SELECT date_trunc('month', ${start}::date::timestamptz) + (n || ' months')::interval AS month_start
+      FROM generate_series(0, ${count - 1}) n
     )
     SELECT
       m.month_start::date AS month,
-      COALESCE(d.name, 'Senza reparto') AS reparto_name,
+      COALESCE(NULLIF(TRIM(e.funzione_aziendale), ''), 'Senza funzione') AS funzione_name,
       COUNT(*)::int AS count
     FROM months m
     CROSS JOIN hr_employee e
-    LEFT JOIN hr_department d ON d.id = e.reparto_id
     WHERE e.data_assunzione <= (m.month_start + interval '1 month' - interval '1 day')
       AND (e.data_cessazione IS NULL OR e.data_cessazione > (m.month_start + interval '1 month' - interval '1 day'))
-    GROUP BY m.month_start, d.name
+    GROUP BY m.month_start, funzione_name
     ORDER BY m.month_start
   `;
   return c.json(rows);
