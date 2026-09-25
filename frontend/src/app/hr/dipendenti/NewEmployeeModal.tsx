@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import type { HrDepartment, HrPlant, HrContractCompany } from '@/types';
 import { PlantMultiSelect } from './PlantMultiSelect';
+import { usePromptDialog } from '@/components/ui/PromptDialog';
+import { useToast } from '@/components/ui/Toast';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -26,6 +28,8 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
     reparto_id: '', contract_company_id: '', data_assunzione: '',
   });
   const [plantIds, setPlantIds] = useState<number[]>([]);
+  const { ask, dialog } = usePromptDialog();
+  const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
@@ -34,8 +38,8 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
   }
 
   async function addCatalogEntry(endpoint: string, label: string, setList: (fn: (l: { id: number; name: string; is_active: boolean }[]) => { id: number; name: string; is_active: boolean }[]) => void, field: 'reparto_id' | 'plant_id' | 'contract_company_id') {
-    const name = window.prompt(`Nome ${label}:`);
-    if (!name?.trim()) return;
+    const name = await ask({ title: `Nuovo ${label}`, label: `Nome ${label}`, confirmLabel: 'Crea' });
+    if (typeof name !== 'string') return;
     const res = await fetch(`${BACKEND}/api/hr/${endpoint}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ name: name.trim() }),
@@ -47,7 +51,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
       else set(field, String(row.id));
     } else {
       const body = await res.json().catch(() => ({}));
-      window.alert(body.message ?? `Errore durante la creazione (${label})`);
+      toast.error(body.message ?? `Errore durante la creazione (${label})`);
     }
   }
 
@@ -91,6 +95,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
   }
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
         <h2 className="text-base font-medium text-gray-900 mb-4">Nuovo dipendente</h2>
@@ -150,5 +155,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
         </form>
       </div>
     </div>
+    {dialog}
+    </>
   );
 }

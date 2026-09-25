@@ -44,8 +44,8 @@ function initials(nome: string, cognome: string): string {
 
 // ─── Nodo dell'albero visivo ────────────────────────────────────────────────
 
-function OrgCard({ node, deptColor, expanded, toggle, matches, selectedId, onSelect }: {
-  node: TreeNode; deptColor: string; expanded: Set<number>; toggle: (id: number) => void;
+function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSelect }: {
+  node: TreeNode; colorFor: (n: HrOrgNode) => string; expanded: Set<number>; toggle: (id: number) => void;
   matches: Set<number>; selectedId: number | null; onSelect: (id: number) => void;
 }) {
   const isOpen = expanded.has(node.id);
@@ -63,7 +63,7 @@ function OrgCard({ node, deptColor, expanded, toggle, matches, selectedId, onSel
         >
           <div
             className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
-            style={{ background: deptColor }}
+            style={{ background: colorFor(node) }}
           >
             {initials(node.nome, node.cognome)}
           </div>
@@ -87,7 +87,7 @@ function OrgCard({ node, deptColor, expanded, toggle, matches, selectedId, onSel
       {isOpen && hasChildren && (
         <ul>
           {node.children.map(c => (
-            <OrgCard key={c.id} node={c} deptColor={deptColor} expanded={expanded} toggle={toggle} matches={matches} selectedId={selectedId} onSelect={onSelect} />
+            <OrgCard key={c.id} node={c} colorFor={colorFor} expanded={expanded} toggle={toggle} matches={matches} selectedId={selectedId} onSelect={onSelect} />
           ))}
         </ul>
       )}
@@ -208,7 +208,7 @@ export default function OrganigrammaPage() {
           ) : (
             <ul className="org-tree mx-auto w-max">
               {tree.map(n => (
-                <OrgCard key={n.id} node={n} deptColor={colorFor(n)} expanded={expanded} toggle={toggle} matches={matchIds} selectedId={selectedId} onSelect={setSelectedId} />
+                <OrgCard key={n.id} node={n} colorFor={colorFor} expanded={expanded} toggle={toggle} matches={matchIds} selectedId={selectedId} onSelect={setSelectedId} />
               ))}
             </ul>
           )}
@@ -228,7 +228,7 @@ export default function OrganigrammaPage() {
                   <p className="text-xs text-gray-400">{selected.mansione ?? 'Mansione non specificata'} {selected.reparto_name ? `· ${selected.reparto_name}` : ''}</p>
                 </div>
               </div>
-              <Link href={`/hr/dipendenti/${selected.id}`} className="btn-secondary text-sm inline-block">Vedi ficha completa →</Link>
+              <Link href={`/hr/dipendenti/${selected.id}`} className="btn-secondary text-sm inline-block">Vedi scheda completa →</Link>
 
               {superiors.length > 0 && (
                 <div>

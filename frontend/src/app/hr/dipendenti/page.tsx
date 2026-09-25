@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany } from '@/types';
 import { ImportExcelButton, type ImportResult } from '@/components/ui/ImportExcelButton';
 import { NewEmployeeModal } from './NewEmployeeModal';
+import { usePromptDialog, SKIP_ALL } from '@/components/ui/PromptDialog';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -54,6 +55,7 @@ export default function DipendentiPage() {
   const [repartoFilter, setRepartoFilter] = useState<number | ''>('');
   const [statoFilter,   setStatoFilter]   = useState<string>('attivo');
   const [showNew,       setShowNew]       = useState(false);
+  const { ask, dialog: promptDialog } = usePromptDialog();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -204,16 +206,19 @@ export default function DipendentiPage() {
     }
     const notCreated: string[] = [];
     let createdChiefs = 0;
+    let skipAll = false;
     for (const cognomeRaw of needed) {
-      const nomeRaw = window.prompt(
-        `Il responsabile/manager "${cognomeRaw}" non esiste tra i dipendenti.
-
-Inserisci il NOME per crearlo (lascia vuoto o annulla per saltarlo):`,
-      );
-      if (!nomeRaw?.trim()) { notCreated.push(cognomeRaw); continue; }
+      if (skipAll) { notCreated.push(cognomeRaw); continue; }
+      const nomeRaw = await ask({
+        title: `Responsabile mancante: ${cognomeRaw}`,
+        message: `«${cognomeRaw}» è indicato come responsabile/manager nell'Excel ma non esiste tra i dipendenti. Inserisci il nome per crearlo, oppure salta.`,
+        label: 'Nome', confirmLabel: 'Crea', cancelLabel: 'Salta', skipAllLabel: 'Salta tutti',
+      });
+      if (nomeRaw === SKIP_ALL) { skipAll = true; notCreated.push(cognomeRaw); continue; }
+      if (typeof nomeRaw !== 'string') { notCreated.push(cognomeRaw); continue; }
       const res = await fetch(`${BACKEND}/api/hr/employees`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ nome: nomeRaw.trim(), cognome: cognomeRaw, data_assunzione: today }),
+        body: JSON.stringify({ nome: nomeRaw, cognome: cognomeRaw, data_assunzione: today }),
       });
       if (res.ok) { const emp = await res.json(); empByCognome.set(cognomeRaw.toLowerCase(), emp.id); createdChiefs++; }
       else notCreated.push(cognomeRaw);
@@ -292,6 +297,8 @@ Inserisci il NOME per crearlo (lascia vuoto o annulla per saltarlo):`,
           </Link>
         ))}
       </div>
+
+      {promptDialog}
 
       {showNew && (
         <NewEmployeeModal
