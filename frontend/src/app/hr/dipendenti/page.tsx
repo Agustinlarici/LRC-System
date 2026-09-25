@@ -56,6 +56,7 @@ export default function DipendentiPage() {
   const [fMatricola, setFMatricola] = useState('');
   const [fMansione, setFMansione] = useState('');
   const [fResp, setFResp] = useState('');
+  const [funzioneFilter, setFunzioneFilter] = useState('');
   const [repartoFilter, setRepartoFilter] = useState<number | ''>('');
   const [statoFilter,   setStatoFilter]   = useState<string>('attivo');
   const [showNew,       setShowNew]       = useState(false);
@@ -82,15 +83,17 @@ export default function DipendentiPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const hasFilters = !!(fCognome || fNome || fMatricola || fMansione || fResp || repartoFilter || statoFilter !== 'attivo');
+  const hasFilters = !!(fCognome || fNome || fMatricola || fMansione || fResp || funzioneFilter || repartoFilter || statoFilter !== 'attivo');
   function resetFilters() {
     setFCognome(''); setFNome(''); setFMatricola(''); setFMansione(''); setFResp('');
-    setRepartoFilter(''); setStatoFilter('attivo');
+    setFunzioneFilter(''); setRepartoFilter(''); setStatoFilter('attivo');
   }
+  const funzioni = Array.from(new Set(employees.map(e => e.funzione_aziendale).filter((f): f is string => !!f))).sort((a, b) => a.localeCompare(b));
   const visible = employees.filter(e => {
     const has = (v: string | null | undefined, q: string) => !q.trim() || (v ?? '').toLowerCase().includes(q.trim().toLowerCase());
     return has(e.cognome, fCognome) && has(e.nome, fNome) && has(e.matricola, fMatricola)
-      && has(e.mansione, fMansione) && has(e.capo_nome, fResp);
+      && has(e.mansione, fMansione) && has(e.capo_nome, fResp)
+      && (!funzioneFilter || (e.funzione_aziendale ?? '') === funzioneFilter);
   });
 
   async function importRows(rows: Record<string, string>[]): Promise<ImportResult> {
@@ -401,10 +404,14 @@ export default function DipendentiPage() {
             <button onClick={resetFilters} className="text-xs text-gray-400 hover:text-gray-600">Pulisci filtri</button>
           )}
         </div>
-        <div className="grid grid-cols-[minmax(130px,1fr)_minmax(130px,1fr)_100px_minmax(110px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_100px] gap-x-3 px-4 py-3 items-center">
+        <div className="grid grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_90px_minmax(120px,1fr)_minmax(110px,1fr)_minmax(110px,1fr)_minmax(110px,1fr)_100px] gap-x-3 px-4 py-3 items-center">
           <input value={fCognome} onChange={e => setFCognome(e.target.value)} placeholder="Cognome" className="input text-sm min-w-0" />
           <input value={fNome} onChange={e => setFNome(e.target.value)} placeholder="Nome" className="input text-sm min-w-0" />
           <input value={fMatricola} onChange={e => setFMatricola(e.target.value)} placeholder="Matricola" className="input text-sm min-w-0" />
+          <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className="input text-sm min-w-0">
+            <option value="">Funzione</option>
+            {funzioni.map(f => <option key={f} value={f}>{f}</option>)}
+          </select>
           <select value={repartoFilter} onChange={e => setRepartoFilter(e.target.value ? Number(e.target.value) : '')} className="input text-sm min-w-0">
             <option value="">Reparto</option>
             {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
@@ -419,8 +426,8 @@ export default function DipendentiPage() {
       </div>
 
       <div className="card overflow-hidden p-0">
-        <div className="grid grid-cols-[minmax(130px,1fr)_minmax(130px,1fr)_100px_minmax(110px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_100px] gap-x-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide">
-          <div>Cognome</div><div>Nome</div><div>Matricola</div><div>Reparto</div><div>Mansione</div><div>Responsabile</div><div className="text-center">Stato</div>
+        <div className="grid grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_90px_minmax(120px,1fr)_minmax(110px,1fr)_minmax(110px,1fr)_minmax(110px,1fr)_100px] gap-x-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide">
+          <div>Cognome</div><div>Nome</div><div>Matricola</div><div>Funzione</div><div>Reparto</div><div>Mansione</div><div>Responsabile</div><div className="text-center">Stato</div>
         </div>
         {loading ? (
           <p className="text-sm text-gray-400 text-center py-12">Caricamento…</p>
@@ -428,11 +435,12 @@ export default function DipendentiPage() {
           <p className="text-sm text-gray-400 text-center py-12">Nessun dipendente trovato</p>
         ) : visible.map(e => (
           <Link key={e.id} href={`/hr/dipendenti/${e.id}`}
-            className="grid grid-cols-[minmax(130px,1fr)_minmax(130px,1fr)_100px_minmax(110px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_100px] gap-x-3 px-4 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50 transition-colors items-center"
+            className="grid grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_90px_minmax(120px,1fr)_minmax(110px,1fr)_minmax(110px,1fr)_minmax(110px,1fr)_100px] gap-x-3 px-4 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50 transition-colors items-center"
           >
             <div className="text-sm font-medium text-gray-800 truncate">{e.cognome}</div>
             <div className="text-sm text-gray-800 truncate">{e.nome}</div>
             <div className="text-sm text-gray-600 truncate">{e.matricola ?? '—'}</div>
+            <div className="text-sm text-gray-600 truncate">{e.funzione_aziendale ?? '—'}</div>
             <div className="text-sm text-gray-600 truncate">{e.reparto_name ?? '—'}</div>
             <div className="text-sm text-gray-600 truncate">{e.mansione ?? '—'}</div>
             <div className="text-sm text-gray-600 truncate">{e.capo_nome ?? '—'}</div>
