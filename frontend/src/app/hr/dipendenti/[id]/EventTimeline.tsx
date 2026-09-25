@@ -9,7 +9,7 @@ const BACKEND = typeof window !== 'undefined'
 
 const EVENT_LABEL: Record<HrEventType, string> = {
   assunzione: 'Assunzione', cambio_reparto: 'Cambio reparto', cambio_mansione: 'Cambio mansione',
-  cambio_livello: 'Cambio livello', cambio_capo: 'Cambio capo/responsabile',
+  cambio_livello: 'Cambio livello', cambio_capo: 'Cambio responsabile',
   trasferimento: 'Trasferimento', promozione: 'Promozione', cessazione: 'Cessazione/Dimissioni',
   malattia: 'Malattia', maternita_paternita: 'Maternità/Paternità', infortunio: 'Infortunio',
   congedo: 'Congedo', rientro: 'Rientro', altro: 'Altro',

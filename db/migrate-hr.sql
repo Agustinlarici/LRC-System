@@ -141,3 +141,8 @@ SELECT u.id, 'hr_salary'::module_key_enum, TRUE, TRUE
 FROM users u
 WHERE u.username = 'Alarici'
 ON CONFLICT (user_id, module_key) DO UPDATE SET can_view = TRUE, can_manage = TRUE;
+
+-- ─── Più sedi per dipendente ──────────────────────────────────────────────────
+-- plant_ids è la fonte di verità; plant_id resta come "sede principale" (prima della lista).
+ALTER TABLE hr_employee ADD COLUMN IF NOT EXISTS plant_ids INTEGER[] NOT NULL DEFAULT '{}';
+UPDATE hr_employee SET plant_ids = ARRAY[plant_id] WHERE plant_id IS NOT NULL AND plant_ids = '{}';

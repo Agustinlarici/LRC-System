@@ -109,15 +109,15 @@ export default function EmployeeDetailPage() {
         <p className="text-sm font-medium text-gray-600 mb-4">Situazione attuale</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-4">
           <Field label="Reparto / Area" value={employee.reparto_name} />
-          <Field label="Plant / Sede" value={employee.plant_name} />
+          <Field label="Plant / Sedi" value={employee.plant_name} />
           <Field label="Mansione" value={employee.mansione} />
           <Field label="Livello" value={employee.livello} />
           <Field label="Funzione aziendale" value={employee.funzione_aziendale} />
           <Field label="Categoria" value={employee.categoria} />
           <Field label="Società contratto" value={employee.contract_company_name} />
           <Field label="Tipo contratto" value={employee.tipo_contratto} />
-          <Field label="Capo / Responsabile" value={employee.capo_nome
-            ? <Link href={`/hr/dipendenti/${employee.capo_id}`} className="text-blue-600 hover:underline">{employee.capo_nome}</Link>
+          <Field label="Responsabile" value={employee.capo_nome
+            ? <Link href={`/hr/dipendenti/${employee.capo_id}`} className="btn-secondary text-xs">{employee.capo_nome}</Link>
             : null} />
           <Field label="Riporti diretti" value={employee.n_riporti > 0 ? `${employee.n_riporti} ${employee.n_riporti === 1 ? 'persona' : 'persone'}` : '—'} />
           <Field label="Data assunzione" value={fmtDate(employee.data_assunzione)} />

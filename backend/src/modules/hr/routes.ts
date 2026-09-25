@@ -90,7 +90,8 @@ const employeeSelect = db`
     e.nazionalita, e.email, e.telefono, e.indirizzo,
     e.mansione, e.livello, e.categoria, e.tipo_contratto, e.funzione_aziendale,
     e.reparto_id, d.name AS reparto_name,
-    e.plant_id, p.name AS plant_name,
+    e.plant_id, e.plant_ids,
+    (SELECT string_agg(pl.name, ', ' ORDER BY pl.name) FROM hr_plant pl WHERE pl.id = ANY(e.plant_ids)) AS plant_name,
     e.contract_company_id, cc.name AS contract_company_name,
     e.capo_id, (capo.nome || ' ' || capo.cognome) AS capo_nome,
     e.user_id, e.data_assunzione, e.data_cessazione, e.stato, e.note,
@@ -102,7 +103,6 @@ const employeeSelect = db`
     (SELECT COUNT(*)::int FROM hr_employee r WHERE r.capo_id = e.id AND r.stato != 'cessato') AS n_riporti
   FROM hr_employee e
   LEFT JOIN hr_department d ON d.id = e.reparto_id
-  LEFT JOIN hr_plant p ON p.id = e.plant_id
   LEFT JOIN hr_contract_company cc ON cc.id = e.contract_company_id
   LEFT JOIN hr_employee capo ON capo.id = e.capo_id
 `;
@@ -134,10 +134,13 @@ hrRoutes.get('/employees/:id', requireModule('hr'), async (c) => {
   return c.json(employee);
 });
 
+// Nomi e cognomi sempre con l'iniziale maiuscola e il resto minuscolo ("DE LUCA" → "De Luca", "D'ANGELO" → "D'Angelo")
+const titleCase = (s: string) => s.trim().toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+
 const employeeFieldsSchema = z.object({
   matricola:            z.string().max(30).optional().nullable(),
-  nome:                 z.string().min(1).max(100),
-  cognome:              z.string().min(1).max(100),
+  nome:                 z.string().min(1).max(100).transform(titleCase),
+  cognome:              z.string().min(1).max(100).transform(titleCase),
   sesso:                z.string().max(10).optional().nullable(),
   data_nascita:         z.string().optional().nullable(),
   codice_fiscale:       z.string().max(20).optional().nullable(),
@@ -151,7 +154,7 @@ const employeeFieldsSchema = z.object({
   tipo_contratto:       z.string().max(50).optional().nullable(),
   funzione_aziendale:   z.string().max(150).optional().nullable(),
   reparto_id:           z.number().int().positive().optional().nullable(),
-  plant_id:             z.number().int().positive().optional().nullable(),
+  plant_ids:            z.array(z.number().int().positive()).max(20).optional(),
   contract_company_id:  z.number().int().positive().optional().nullable(),
   capo_id:              z.number().int().positive().optional().nullable(),
   user_id:              z.number().int().positive().optional().nullable(),
@@ -164,9 +167,10 @@ const employeeFieldsSchema = z.object({
 hrRoutes.post('/employees', requireManage('hr'), async (c) => {
   const body = await parseBody(c, employeeFieldsSchema);
   const user = c.get('user');
+  const plantFields = body.plant_ids ? { plant_id: body.plant_ids[0] ?? null } : {};
 
   const [employee] = await db`
-    INSERT INTO hr_employee ${db({ ...body, email: body.email || null })}
+    INSERT INTO hr_employee ${db({ ...body, ...plantFields, email: body.email || null })}
     RETURNING id
   `;
 
@@ -215,6 +219,7 @@ hrRoutes.patch('/employees/:id', requireModule('hr'), async (c) => {
     // (altrimenti la ficha mostrerebbe un vuoto invece di "—").
     updates[k] = v === '' && !REQUIRED_FIELDS.has(k) ? null : v;
   }
+  if (updates.plant_ids) updates.plant_id = updates.plant_ids[0] ?? null;
   if (!Object.keys(updates).length) throw new HTTPException(400, { message: 'Nessun campo modificabile fornito' });
   if (updates.capo_id === id) throw new HTTPException(400, { message: 'Una persona non può essere capo di se stessa' });
 

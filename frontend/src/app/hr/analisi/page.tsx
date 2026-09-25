@@ -14,7 +14,7 @@ const PALETTE = ['#2563eb', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899', '#06b6d4
 
 const EVENT_LABEL: Record<HrEventType, string> = {
   assunzione: 'Assunzioni', cambio_reparto: 'Cambi reparto', cambio_mansione: 'Cambi mansione',
-  cambio_livello: 'Cambi livello', cambio_capo: 'Cambi capo', trasferimento: 'Trasferimenti',
+  cambio_livello: 'Cambi livello', cambio_capo: 'Cambi responsabile', trasferimento: 'Trasferimenti',
   promozione: 'Promozioni', cessazione: 'Cessazioni', malattia: 'Malattie',
   maternita_paternita: 'Maternità/Paternità', infortunio: 'Infortuni', congedo: 'Congedi',
   rientro: 'Rientri', altro: 'Altro',
@@ -133,11 +133,11 @@ export default function AnalisiHRPage() {
         <div className="card">
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm font-medium text-gray-700">{drillDown.reparto_name} — {drillDown.eta} anni ({drillEmployees.length})</p>
-            <button onClick={() => setDrillDown(null)} className="text-xs text-gray-400 hover:text-gray-600">Chiudi ×</button>
+            <button onClick={() => setDrillDown(null)} className="btn-secondary text-xs">Chiudi ×</button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {drillEmployees.map(e => (
-              <Link key={e.id} href={`/hr/dipendenti/${e.id}`} className="text-sm text-blue-600 hover:underline">{e.cognome} {e.nome} {e.mansione ? `— ${e.mansione}` : ''}</Link>
+              <Link key={e.id} href={`/hr/dipendenti/${e.id}`} className="btn-secondary text-xs">{e.cognome} {e.nome} {e.mansione ? `— ${e.mansione}` : ''}</Link>
             ))}
           </div>
         </div>
@@ -158,7 +158,7 @@ export default function AnalisiHRPage() {
         </div>
       )}
 
-      {/* ── Distribuzione per reparto / capo ────────────────────────────── */}
+      {/* ── Distribuzione per reparto / responsabile ────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card">
           <p className="text-base font-medium text-gray-700 mb-3">Distribuzione per reparto</p>
@@ -175,7 +175,7 @@ export default function AnalisiHRPage() {
           </div>
         </div>
         <div className="card">
-          <p className="text-base font-medium text-gray-700 mb-3">Distribuzione per capo / responsabile</p>
+          <p className="text-base font-medium text-gray-700 mb-3">Distribuzione per responsabile</p>
           <div className="space-y-2.5">
             {mgrDist.slice(0, 10).map(d => (
               <div key={d.capo_id ?? 'none'} className="flex items-center gap-2">

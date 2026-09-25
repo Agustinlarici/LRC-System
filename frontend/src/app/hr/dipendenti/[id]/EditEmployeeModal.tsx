@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany } from '@/types';
+import { PlantMultiSelect } from '../PlantMultiSelect';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -26,7 +27,6 @@ export function EditEmployeeModal({ employee, departments, plants, companies, al
     nome: employee.nome,
     cognome: employee.cognome,
     reparto_id: employee.reparto_id ? String(employee.reparto_id) : '',
-    plant_id: employee.plant_id ? String(employee.plant_id) : '',
     contract_company_id: employee.contract_company_id ? String(employee.contract_company_id) : '',
     capo_id: employee.capo_id ? String(employee.capo_id) : '',
     sesso: employee.sesso ?? '',
@@ -45,6 +45,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, al
     indirizzo: employee.indirizzo ?? '',
     note: employee.note ?? '',
   });
+  const [plantIds, setPlantIds] = useState<number[]>(employee.plant_ids ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
@@ -61,7 +62,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, al
       ? {
           ...form,
           reparto_id: form.reparto_id ? Number(form.reparto_id) : null,
-          plant_id: form.plant_id ? Number(form.plant_id) : null,
+          plant_ids: plantIds,
           contract_company_id: form.contract_company_id ? Number(form.contract_company_id) : null,
           capo_id: form.capo_id ? Number(form.capo_id) : null,
           data_cessazione: form.data_cessazione || null,
@@ -107,13 +108,10 @@ export function EditEmployeeModal({ employee, departments, plants, companies, al
                   {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
               </div>
-              <div><label className="label">Plant / Sede</label>
-                <select className="input" value={form.plant_id} onChange={e => set('plant_id', e.target.value)}>
-                  <option value="">—</option>
-                  {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+              <div className="col-span-full"><label className="label">Plant / Sede (anche più di una)</label>
+                <PlantMultiSelect plants={plants} value={plantIds} onChange={setPlantIds} />
               </div>
-              <div><label className="label">Capo / Responsabile</label>
+              <div><label className="label">Responsabile</label>
                 <select className="input" value={form.capo_id} onChange={e => set('capo_id', e.target.value)}>
                   <option value="">—</option>
                   {allEmployees.map(e => <option key={e.id} value={e.id}>{e.cognome} {e.nome}</option>)}

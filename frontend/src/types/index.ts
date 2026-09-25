@@ -679,6 +679,7 @@ export interface HrEmployee {
   reparto_id:               number | null;
   reparto_name:             string | null;
   plant_id:                 number | null;
+  plant_ids:                number[];
   plant_name:               string | null;
   contract_company_id:      number | null;
   contract_company_name:    string | null;

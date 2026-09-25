@@ -158,7 +158,7 @@ export default function OrganigrammaPage() {
 
   function expandAll() { setExpanded(new Set(nodes.map(n => n.id))); }
   function collapseAll() {
-    setExpanded(new Set(tree.map(r => r.id))); // resta visibile almeno il primo livello (i capi)
+    setExpanded(new Set(tree.map(r => r.id))); // resta visibile almeno il primo livello (i responsabili)
   }
 
   const selected = selectedId != null ? byId.get(selectedId) : null;
@@ -175,7 +175,7 @@ export default function OrganigrammaPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-lg font-medium text-gray-900">Organigramma</h1>
-        <p className="text-xs text-gray-400 mt-0.5">Struttura organizzativa: dipendente → capo → responsabile → manager → direzione</p>
+        <p className="text-xs text-gray-400 mt-0.5">Struttura organizzativa: dipendente → responsabile → manager → direzione</p>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
@@ -184,8 +184,8 @@ export default function OrganigrammaPage() {
           <option value="">Tutti i reparti</option>
           {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
-        <button onClick={expandAll} className="text-xs text-gray-400 hover:text-gray-600 underline">Espandi tutto</button>
-        <button onClick={collapseAll} className="text-xs text-gray-400 hover:text-gray-600 underline">Comprimi tutto</button>
+        <button onClick={expandAll} className="btn-secondary text-xs">Espandi tutto</button>
+        <button onClick={collapseAll} className="btn-secondary text-xs">Comprimi tutto</button>
 
         {departments.length > 0 && (
           <div className="flex items-center gap-3 flex-wrap ml-auto text-[11px] text-gray-500">
@@ -228,7 +228,7 @@ export default function OrganigrammaPage() {
                   <p className="text-xs text-gray-400">{selected.mansione ?? 'Mansione non specificata'} {selected.reparto_name ? `· ${selected.reparto_name}` : ''}</p>
                 </div>
               </div>
-              <Link href={`/hr/dipendenti/${selected.id}`} className="text-xs text-blue-600 hover:underline">Vedi ficha completa →</Link>
+              <Link href={`/hr/dipendenti/${selected.id}`} className="btn-secondary text-sm inline-block">Vedi ficha completa →</Link>
 
               {superiors.length > 0 && (
                 <div>
@@ -237,7 +237,7 @@ export default function OrganigrammaPage() {
                     {superiors.map((s, i) => (
                       <div key={s.id} className="flex items-center gap-1.5 text-sm">
                         <span className="text-gray-300">{'  '.repeat(i)}↑</span>
-                        <button onClick={() => setSelectedId(s.id)} className="text-gray-700 hover:text-blue-600">{s.cognome} {s.nome}</button>
+                        <button onClick={() => setSelectedId(s.id)} className="btn-secondary text-xs">{s.cognome} {s.nome}</button>
                         {s.mansione && <span className="text-xs text-gray-400">— {s.mansione}</span>}
                       </div>
                     ))}
@@ -254,7 +254,7 @@ export default function OrganigrammaPage() {
                 ) : (
                   <div className="space-y-1">
                     {directReports.map(r => (
-                      <button key={r.id} onClick={() => setSelectedId(r.id)} className="flex items-center gap-1.5 text-sm text-gray-700 hover:text-blue-600 w-full text-left">
+                      <button key={r.id} onClick={() => setSelectedId(r.id)} className="btn-secondary text-xs flex items-center gap-1.5 w-full text-left">
                         <span>↳</span> {r.cognome} {r.nome} {r.mansione && <span className="text-xs text-gray-400">— {r.mansione}</span>}
                       </button>
                     ))}

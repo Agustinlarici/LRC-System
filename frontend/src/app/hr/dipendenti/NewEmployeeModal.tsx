@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { HrDepartment, HrPlant, HrContractCompany } from '@/types';
+import { PlantMultiSelect } from './PlantMultiSelect';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -22,8 +23,9 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
   const [form, setForm] = useState({
     matricola: '', nome: '', cognome: '', sesso: '', data_nascita: '', codice_fiscale: '', nazionalita: '',
     email: '', telefono: '', mansione: '', livello: '', categoria: '', tipo_contratto: '', funzione_aziendale: '',
-    reparto_id: '', plant_id: '', contract_company_id: '', data_assunzione: '',
+    reparto_id: '', contract_company_id: '', data_assunzione: '',
   });
+  const [plantIds, setPlantIds] = useState<number[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
@@ -41,7 +43,8 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
     if (res.ok) {
       const row = await res.json();
       setList(l => [...l, row]);
-      set(field, String(row.id));
+      if (field === 'plant_id') setPlantIds(ids => [...ids, row.id]);
+      else set(field, String(row.id));
     } else {
       const body = await res.json().catch(() => ({}));
       window.alert(body.message ?? `Errore durante la creazione (${label})`);
@@ -75,7 +78,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
         tipo_contratto: form.tipo_contratto || null,
         funzione_aziendale: form.funzione_aziendale || null,
         reparto_id: form.reparto_id ? Number(form.reparto_id) : null,
-        plant_id: form.plant_id ? Number(form.plant_id) : null,
+        plant_ids: plantIds,
         contract_company_id: form.contract_company_id ? Number(form.contract_company_id) : null,
       }),
     });
@@ -118,14 +121,8 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
                 <button type="button" onClick={() => addCatalogEntry('departments', 'reparto', setDepartments, 'reparto_id')} title="Nuovo reparto" className="btn-secondary text-sm px-3 shrink-0">+</button>
               </div>
             </div>
-            <div><label className="label">Plant / Sede</label>
-              <div className="flex gap-1.5">
-                <select className="input" value={form.plant_id} onChange={e => set('plant_id', e.target.value)}>
-                  <option value="">—</option>
-                  {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-                <button type="button" onClick={() => addCatalogEntry('plants', 'plant', setPlants, 'plant_id')} title="Nuovo plant" className="btn-secondary text-sm px-3 shrink-0">+</button>
-              </div>
+            <div className="col-span-full"><label className="label">Plant / Sede (anche più di una)</label>
+              <PlantMultiSelect plants={plants} value={plantIds} onChange={setPlantIds} onAdd={() => addCatalogEntry('plants', 'plant', setPlants, 'plant_id')} />
             </div>
             <div><label className="label">Mansione</label><input className="input" value={form.mansione} onChange={e => set('mansione', e.target.value)} /></div>
             <div><label className="label">Livello</label><input className="input" value={form.livello} onChange={e => set('livello', e.target.value)} /></div>

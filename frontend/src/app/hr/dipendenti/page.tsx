@@ -77,12 +77,25 @@ export default function DipendentiPage() {
   useEffect(() => { load(); }, [load]);
 
   async function importRows(rows: Record<string, string>[]): Promise<ImportResult> {
-    let inserted = 0, skipped = 0, errors = 0;
+    let inserted = 0, updated = 0, skipped = 0, errors = 0;
+    const today = new Date().toISOString().slice(0, 10);
 
     const deptByName    = new Map(departments.map(d => [d.name.toLowerCase(), d.id]));
     const plantByName   = new Map(plants.map(p => [p.name.toLowerCase(), p.id]));
     const coByName       = new Map(companies.map(c => [c.name.toLowerCase(), c.id]));
-    const empByCognome  = new Map(employees.map(e => [e.cognome.toLowerCase(), e.id]));
+
+    // Tutti i dipendenti (anche cessati): serve per ritrovare chi è già stato importato
+    // (aggiornandolo invece di duplicarlo) e per collegare responsabile e manager.
+    const allRes = await fetch(`${BACKEND}/api/hr/employees`, { credentials: 'include' });
+    const all: HrEmployee[] = allRes.ok ? await allRes.json() : [];
+    const empByCognome  = new Map<string, number>();
+    const empByMatricola = new Map<string, number>();
+    const empByFullName  = new Map<string, number>();
+    for (const e of all) {
+      empByCognome.set(e.cognome.toLowerCase(), e.id);
+      if (e.matricola) empByMatricola.set(e.matricola.toLowerCase(), e.id);
+      empByFullName.set(`${e.cognome} ${e.nome}`.toLowerCase(), e.id);
+    }
 
     async function ensureCatalog(map: Map<string, number>, endpoint: string, name: string | undefined): Promise<number | null> {
       const trimmed = name?.trim();
@@ -97,6 +110,17 @@ export default function DipendentiPage() {
       return null;
     }
 
+    async function patch(id: number, body: Record<string, unknown>) {
+      return fetch(`${BACKEND}/api/hr/employees/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify(body),
+      });
+    }
+
+    // Prima passata: crea (o aggiorna) tutti i dipendenti. I collegamenti gerarchici
+    // vengono fatti nella seconda passata, quando tutti i responsabili esistono già.
+    const links: { id: number; responsabile: string; manager: string }[] = [];
+
     for (const row of rows) {
       // "COGNOME E NOME" è un unico campo nell'Excel — l'ultima parola è il nome,
       // tutto il resto è il cognome (funziona per cognomi composti tipo "DE LUCA").
@@ -108,53 +132,91 @@ export default function DipendentiPage() {
       const cognome = parts.slice(0, -1).join(' ');
 
       const reparto_id           = await ensureCatalog(deptByName, 'departments', row['reparto']);
-      const plant_id             = await ensureCatalog(plantByName, 'plants', row['plant']);
+      // PLANT può contenere più sedi separate da / + & o virgola (es. "STR3/STR5")
+      const plant_ids: number[] = [];
+      for (const name of (row['plant'] ?? '').split(/[\/+&,]/)) {
+        const pid = await ensureCatalog(plantByName, 'plants', name);
+        if (pid && !plant_ids.includes(pid)) plant_ids.push(pid);
+      }
       const contract_company_id  = await ensureCatalog(coByName, 'contract-companies', row["societa'_contratto"]);
-      const capoName = (row['responsabile']?.trim() || row['manager']?.trim())?.toLowerCase();
-      const capo_id = capoName ? empByCognome.get(capoName) ?? null : null;
 
-      // La matricola è solo del personale diretto STR — vuota o "-" per i contrattisti.
+      // La matricola è solo del personale diretto STR — vuota, "-" o "(INTERINALE)" per i contrattisti.
       const matricolaRaw = row['matricola']?.trim();
-      const matricola = matricolaRaw && matricolaRaw !== '-' ? matricolaRaw : null;
+      const matricola = matricolaRaw && matricolaRaw !== '-' && !matricolaRaw.startsWith('(') ? matricolaRaw : null;
 
+      // Data cessazione futura = fine contratto a termine: il dipendente è ancora attivo
       const dataCessazione = parseItalianDate(row['data_cessazione']);
+      const cessato = !!dataCessazione && dataCessazione <= today;
 
-      const res = await fetch(`${BACKEND}/api/hr/employees`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({
-          matricola, nome, cognome,
-          sesso: row['sesso'] || null,
-          categoria: row['categoria'] || null,
-          nazionalita: row["nazionalita'"] || null,
-          mansione: row['mansione_(micro)'] || null,
-          livello: row['livello'] || null,
-          funzione_aziendale: row['funzione_aziendale'] || null,
-          tipo_contratto: row['tipologia_contratto'] || null,
-          reparto_id, plant_id, contract_company_id, capo_id,
-          data_assunzione: dataAssunzione,
-          data_cessazione: dataCessazione,
-          // Data cessazione futura = fine contratto a termine: il dipendente è ancora attivo
-          stato: dataCessazione && dataCessazione <= new Date().toISOString().slice(0, 10) ? 'cessato' : undefined,
-        }),
-      });
+      const fields = {
+        matricola, nome, cognome,
+        sesso: row['sesso'] || null,
+        categoria: row['categoria'] || null,
+        nazionalita: row["nazionalita'"] || null,
+        mansione: row['mansione_(micro)'] || null,
+        livello: row['livello'] || null,
+        funzione_aziendale: row['funzione_aziendale'] || null,
+        tipo_contratto: row['tipologia_contratto'] || null,
+        reparto_id, plant_ids, contract_company_id,
+        data_assunzione: dataAssunzione,
+        data_cessazione: dataCessazione,
+      };
 
-      if (res.ok) {
-        inserted++;
-        const emp = await res.json();
-        empByCognome.set(cognome.toLowerCase(), emp.id);
+      const existingId = (matricola && empByMatricola.get(matricola.toLowerCase()))
+        || empByFullName.get(`${cognome} ${nome}`.toLowerCase());
 
-        const maternita = row["maternita'"]?.trim();
-        if (maternita) {
-          await fetch(`${BACKEND}/api/hr/employees/${emp.id}/events`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-            body: JSON.stringify({ event_type: 'maternita_paternita', event_date: parseItalianDate(maternita) ?? dataAssunzione, note: maternita }),
-          });
-        }
-      } else errors++;
+      let id: number | null = null;
+      if (existingId) {
+        const res = await patch(existingId, { ...fields, stato: cessato ? 'cessato' : 'attivo' });
+        if (res.ok) { updated++; id = existingId; } else errors++;
+      } else {
+        const res = await fetch(`${BACKEND}/api/hr/employees`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+          body: JSON.stringify({ ...fields, stato: cessato ? 'cessato' : undefined }),
+        });
+        if (res.ok) {
+          inserted++;
+          const emp = await res.json();
+          id = emp.id;
+          empByCognome.set(cognome.toLowerCase(), emp.id);
+          empByFullName.set(`${cognome} ${nome}`.toLowerCase(), emp.id);
+          if (matricola) empByMatricola.set(matricola.toLowerCase(), emp.id);
+
+          const maternita = row["maternita'"]?.trim();
+          if (maternita) {
+            await fetch(`${BACKEND}/api/hr/employees/${emp.id}/events`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+              body: JSON.stringify({ event_type: 'maternita_paternita', event_date: parseItalianDate(maternita) ?? dataAssunzione, note: maternita }),
+            });
+          }
+        } else errors++;
+      }
+      if (id) links.push({ id, responsabile: row['responsabile']?.trim() ?? '', manager: row['manager']?.trim() ?? '' });
     }
+
+    // Seconda passata: dipendente → responsabile, responsabile → manager (se non ne ha già uno).
+    // Responsabili e manager sono indicati solo per cognome nell'Excel.
+    const missing = new Set<string>();
+    const resolve = (name: string) => {
+      if (!name) return null;
+      const id = empByCognome.get(name.toLowerCase());
+      if (!id) missing.add(name);
+      return id ?? null;
+    };
+    const chiefOf = new Map<number, number>();
+    for (const l of links) {
+      const resp = resolve(l.responsabile);
+      const mgr = resolve(l.manager);
+      if (resp && resp !== l.id) chiefOf.set(l.id, resp);
+      else if (!resp && mgr && mgr !== l.id) chiefOf.set(l.id, mgr);
+      if (resp && mgr && resp !== mgr && !chiefOf.has(resp)) chiefOf.set(resp, mgr);
+    }
+    for (const [id, capo_id] of chiefOf) await patch(id, { capo_id });
+
     return {
       inserted, skipped, errors,
-      detail: 'Il campo RESPONSABILE si collega solo se il cognome corrisponde esattamente a un dipendente già presente (in questo import o già esistente) — controlla i capi assegnati dopo l\'import.',
+      detail: `Nuovi: ${inserted} · già presenti e aggiornati: ${updated}. Responsabile e manager si collegano per cognome esatto`
+        + (missing.size ? `; non trovati tra i dipendenti (aggiungili all'Excel o creali a mano): ${[...missing].join(', ')}.` : '.'),
     };
   }
 
@@ -190,8 +252,8 @@ export default function DipendentiPage() {
       </div>
 
       <div className="card overflow-hidden p-0">
-        <div className="grid grid-cols-[minmax(160px,1.5fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_100px_100px] gap-x-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide">
-          <div>Nome</div><div>Reparto</div><div>Mansione</div><div>Capo</div><div className="text-right">Anzianità</div><div className="text-center">Stato</div>
+        <div className="grid grid-cols-[minmax(130px,1fr)_minmax(130px,1fr)_100px_minmax(110px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_100px] gap-x-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide">
+          <div>Cognome</div><div>Nome</div><div>Matricola</div><div>Reparto</div><div>Mansione</div><div>Responsabile</div><div className="text-center">Stato</div>
         </div>
         {loading ? (
           <p className="text-sm text-gray-400 text-center py-12">Caricamento…</p>
@@ -199,16 +261,14 @@ export default function DipendentiPage() {
           <p className="text-sm text-gray-400 text-center py-12">Nessun dipendente trovato</p>
         ) : employees.map(e => (
           <Link key={e.id} href={`/hr/dipendenti/${e.id}`}
-            className="grid grid-cols-[minmax(160px,1.5fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_100px_100px] gap-x-3 px-4 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50 transition-colors items-center"
+            className="grid grid-cols-[minmax(130px,1fr)_minmax(130px,1fr)_100px_minmax(110px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_100px] gap-x-3 px-4 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50 transition-colors items-center"
           >
-            <div>
-              <p className="text-sm font-medium text-gray-800">{e.cognome} {e.nome}</p>
-              {e.matricola && <p className="text-[10px] text-gray-400">Matricola {e.matricola}</p>}
-            </div>
+            <div className="text-sm font-medium text-gray-800 truncate">{e.cognome}</div>
+            <div className="text-sm text-gray-800 truncate">{e.nome}</div>
+            <div className="text-sm text-gray-600 truncate">{e.matricola ?? '—'}</div>
             <div className="text-sm text-gray-600 truncate">{e.reparto_name ?? '—'}</div>
             <div className="text-sm text-gray-600 truncate">{e.mansione ?? '—'}</div>
             <div className="text-sm text-gray-600 truncate">{e.capo_nome ?? '—'}</div>
-            <div className="text-sm text-gray-600 text-right">{e.anzianita_anni} {e.anzianita_anni === 1 ? 'anno' : 'anni'}</div>
             <div className="text-center">
               <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${STATO_COLOR[e.stato]}`}>{STATO_LABEL[e.stato]}</span>
             </div>

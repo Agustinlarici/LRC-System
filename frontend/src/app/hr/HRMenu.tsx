@@ -4,7 +4,7 @@ import Link from 'next/link';
 
 const options = [
   { href: '/hr/dipendenti',   title: 'Dipendenti',           desc: 'Anagrafica, dati lavorativi e storico eventi di ogni persona', icon: '🧑‍💼' },
-  { href: '/hr/organigramma', title: 'Organigramma',          desc: 'Struttura organizzativa, capi e team',                        icon: '🗂️' },
+  { href: '/hr/organigramma', title: 'Organigramma',          desc: 'Struttura organizzativa, responsabili e team',                        icon: '🗂️' },
   { href: '/hr/analisi',      title: 'Analisi HR',            desc: 'Organico, età, anzianità e distribuzioni',                    icon: '📊' },
   { href: '/hr/evoluzione',   title: 'Evoluzione Aziendale',  desc: 'Come è cambiata l\'azienda nel tempo',                        icon: '📈' },
 ];
