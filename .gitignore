@@ -43,3 +43,6 @@ backend/uploads/
 # Certificati HTTPS generati (CA + chiavi private, specifici del server — mai committare)
 certs/*.pem
 certs/*.srl
+
+# TypeScript build cache
+*.tsbuildinfo
