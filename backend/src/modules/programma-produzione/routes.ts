@@ -7,6 +7,7 @@ import { requireModule, requireManage } from '../../lib/auth.js';
 import { logger } from '../../lib/logger.js';
 import { syncProductionOrders, syncItemAttributes } from './order-sync.js';
 import { runKeywordEngine, runColorEngine } from './keyword-engine.js';
+import { closeShippedForecasts } from './forecast-closer.js';
 import { buildFoglio, findComponentConflicts } from './sheet.js';
 import { validateSpmaFile } from '../../lib/mime-check.js';
 import {
@@ -103,21 +104,24 @@ function parsePageParams(c: Context): { limit: number; offset: number } {
 // Vista globale: TUTTI gli ordini con data di ingresso in linea registrata,
 // senza bisogno di nessuna area di montaggio configurata. Paginata — senza
 // filtro articolo si arriva facilmente a 20k+ righe, troppe per il browser.
+// ?storico=1 mostra invece solo gli ordini chiusi/spediti (vedi buildFoglio).
 programmaProduzioneRoutes.get('/foglio', requireModule(MODULE), async (c) => {
   const { limit, offset } = parsePageParams(c);
-  const { rows, total } = await buildFoglio(null, { limit, offset });
+  const storico = c.req.query('storico') === '1';
+  const { rows, total } = await buildFoglio(null, { limit, offset }, { storico });
   return c.json({ area: null, rows, total, limit, offset });
 });
 
 programmaProduzioneRoutes.get('/aree/:id/foglio', requireModule(MODULE), async (c) => {
   const id = parseId(c.req.param('id'));
   const { limit, offset } = parsePageParams(c);
+  const storico = c.req.query('storico') === '1';
 
   const area = await db`SELECT id, code, description FROM prod_area_montaggio WHERE id = ${id}`;
   if (area.length === 0) throw new HTTPException(404, { message: 'Area non trovata' });
 
   const codes = await articleCodesForArea(id);
-  const { rows, total } = await buildFoglio(codes, { limit, offset });
+  const { rows, total } = await buildFoglio(codes, { limit, offset }, { storico });
   return c.json({ area: area[0], rows, total, limit, offset });
 });
 
@@ -140,17 +144,37 @@ const KeywordRuleSchema = z.discriminatedUnion('modo', [
     categoria:               z.string().min(1).max(100),
     caratteristicaDerivata:  z.string().min(1).max(150),
     parolaAncora:            z.string().min(1).max(150),
-    parolaObiettivo:         z.string().min(1).max(150),
+    // obiettivoDaColori: invece di una parolaObiettivo fissa, cerca nella
+    // finestra dopo l'ancora una qualsiasi delle parole chiave attive della
+    // tab "Colori" (prod_color_keywords) — evita una regola per ogni colore.
+    obiettivoDaColori:       z.boolean().default(false),
+    parolaObiettivo:         z.string().max(150).optional(),
     distanzaMaxCaratteri:    z.number().int().positive(),
     note:                    z.string().optional(),
   }),
 ]);
 
+// zod discriminatedUnion non supporta .refine() sui singoli branch (smette
+// di essere riconosciuto come ZodObject) — si valida a mano dopo il parse.
+// Tipo strutturale (non z.infer<typeof KeywordRuleSchema>): l'inferenza di
+// parseBody<T>(schema: z.ZodType<T>) produce un T strutturalmente equivalente
+// ma non nominalmente identico, per via del default() su obiettivoDaColori.
+function assertKeywordRuleBody(body: { modo: string; obiettivoDaColori?: boolean; parolaObiettivo?: string }) {
+  if (body.modo !== 'proximity') return;
+  if (body.obiettivoDaColori) {
+    if (body.parolaObiettivo?.trim()) {
+      throw new HTTPException(400, { message: 'Parola Obiettivo non va indicata se si cerca tra i colori' });
+    }
+  } else if (!body.parolaObiettivo?.trim()) {
+    throw new HTTPException(400, { message: 'Parola Obiettivo richiesta (oppure attiva "Cerca colore")' });
+  }
+}
+
 programmaProduzioneRoutes.get('/keyword-rules', requireModule(MODULE), async (c) => {
   const rows = await db`
     SELECT id, prefisso_commessa, categoria, caratteristica_derivata, modo,
            parola_chiave, parola_ancora, parola_obiettivo, distanza_max_caratteri,
-           note, active
+           obiettivo_da_colori, note, active
     FROM prod_keyword_rules
     ORDER BY prefisso_commessa, categoria
   `;
@@ -159,6 +183,7 @@ programmaProduzioneRoutes.get('/keyword-rules', requireModule(MODULE), async (c)
 
 programmaProduzioneRoutes.post('/keyword-rules', requireManage(MODULE), async (c) => {
   const body = await parseBody(c, KeywordRuleSchema);
+  assertKeywordRuleBody(body);
 
   const [row] = body.modo === 'simple'
     ? await db`
@@ -168,13 +193,23 @@ programmaProduzioneRoutes.post('/keyword-rules', requireManage(MODULE), async (c
           (${body.prefissoCommessa}, ${body.categoria}, ${body.caratteristicaDerivata}, 'simple', ${body.parolaChiave}, ${body.note ?? null})
         RETURNING *
       `
+    : body.obiettivoDaColori
+    ? await db`
+        INSERT INTO prod_keyword_rules
+          (prefisso_commessa, categoria, caratteristica_derivata, modo,
+           parola_ancora, obiettivo_da_colori, distanza_max_caratteri, note)
+        VALUES
+          (${body.prefissoCommessa}, ${body.categoria}, ${body.caratteristicaDerivata}, 'proximity',
+           ${body.parolaAncora}, TRUE, ${body.distanzaMaxCaratteri}, ${body.note ?? null})
+        RETURNING *
+      `
     : await db`
         INSERT INTO prod_keyword_rules
           (prefisso_commessa, categoria, caratteristica_derivata, modo,
            parola_ancora, parola_obiettivo, distanza_max_caratteri, note)
         VALUES
           (${body.prefissoCommessa}, ${body.categoria}, ${body.caratteristicaDerivata}, 'proximity',
-           ${body.parolaAncora}, ${body.parolaObiettivo}, ${body.distanzaMaxCaratteri}, ${body.note ?? null})
+           ${body.parolaAncora}, ${body.parolaObiettivo!}, ${body.distanzaMaxCaratteri}, ${body.note ?? null})
         RETURNING *
       `;
 
@@ -184,6 +219,7 @@ programmaProduzioneRoutes.post('/keyword-rules', requireManage(MODULE), async (c
 programmaProduzioneRoutes.put('/keyword-rules/:id', requireManage(MODULE), async (c) => {
   const id = parseId(c.req.param('id'));
   const body = await parseBody(c, KeywordRuleSchema);
+  assertKeywordRuleBody(body);
 
   const [row] = body.modo === 'simple'
     ? await db`
@@ -196,6 +232,23 @@ programmaProduzioneRoutes.put('/keyword-rules/:id', requireManage(MODULE), async
           parola_ancora            = NULL,
           parola_obiettivo         = NULL,
           distanza_max_caratteri   = NULL,
+          obiettivo_da_colori      = FALSE,
+          note                     = ${body.note ?? null}
+        WHERE id = ${id}
+        RETURNING *
+      `
+    : body.obiettivoDaColori
+    ? await db`
+        UPDATE prod_keyword_rules SET
+          prefisso_commessa       = ${body.prefissoCommessa},
+          categoria                = ${body.categoria},
+          caratteristica_derivata  = ${body.caratteristicaDerivata},
+          modo                     = 'proximity',
+          parola_chiave            = NULL,
+          parola_ancora            = ${body.parolaAncora},
+          parola_obiettivo         = NULL,
+          obiettivo_da_colori      = TRUE,
+          distanza_max_caratteri   = ${body.distanzaMaxCaratteri},
           note                     = ${body.note ?? null}
         WHERE id = ${id}
         RETURNING *
@@ -208,7 +261,8 @@ programmaProduzioneRoutes.put('/keyword-rules/:id', requireManage(MODULE), async
           modo                     = 'proximity',
           parola_chiave            = NULL,
           parola_ancora            = ${body.parolaAncora},
-          parola_obiettivo         = ${body.parolaObiettivo},
+          parola_obiettivo         = ${body.parolaObiettivo!},
+          obiettivo_da_colori      = FALSE,
           distanza_max_caratteri   = ${body.distanzaMaxCaratteri},
           note                     = ${body.note ?? null}
         WHERE id = ${id}
@@ -428,6 +482,18 @@ programmaProduzioneRoutes.post('/sync/colors', requireManage(MODULE), async (c) 
   return c.json(stats);
 });
 
+// Chiude i Forecast EDI mai diventati un ordine BC ma già spediti (query
+// "EOS CWS Shipment Line", stessa usata da WebDDT) — vedi forecast-closer.ts.
+programmaProduzioneRoutes.post('/sync/forecast-chiusi', requireManage(MODULE), async (c) => {
+  try {
+    const stats = await closeShippedForecasts();
+    return c.json(stats);
+  } catch (err) {
+    logger.error({ err }, 'programma-produzione: chiusura forecast spediti fallita');
+    throw new HTTPException(503, { message: `Business Central non disponibile: ${(err as Error).message}` });
+  }
+});
+
 // Scorciatoia: esegue tutta la catena in sequenza (come i 3 pulsanti del
 // vecchio syncorders.jsx, ma in un solo giro).
 programmaProduzioneRoutes.post('/sync/all', requireManage(MODULE), async (c) => {
@@ -462,28 +528,57 @@ programmaProduzioneRoutes.get('/sync/log', requireModule(MODULE), async (c) => {
 // finiscono in /component-conflicts) e area (dove compare nel foglio),
 // completamente indipendenti tra loro.
 
+// Valore riservato per l'opzione "(vuoto)" nei menu a tendina — permette di
+// filtrare/cancellare le righe senza categoria o senza area (altrimenti
+// invisibili e non selezionabili, dato che il menu elenca solo i valori
+// distinti esistenti).
+export const EMPTY_FILTER_VALUE = '__EMPTY__';
+
+// Filtri per colonna (codice/categoria/area), combinati in AND — non un unico
+// campo di ricerca OR su tutto. Codice resta substring (testo libero, i codici
+// sono troppi per un menu a tendina); categoria e area sono selezionate da un
+// menu a tendina nel frontend, quindi qui il match è esatto (o IS NULL se è
+// stata scelta l'opzione "(vuoto)").
+function articleAssignmentFilters(c: Context) {
+  const codice    = (c.req.query('codice') ?? '').trim();
+  const categoria = (c.req.query('categoria') ?? '').trim();
+  const area      = (c.req.query('area') ?? '').trim();
+  return {
+    codice, categoria, area,
+    codiceFilter: codice ? db`AND pacc.codice_articolo ILIKE ${'%' + codice + '%'}` : db``,
+    categoriaFilter:
+      categoria === EMPTY_FILTER_VALUE ? db`AND (pacc.categoria IS NULL OR pacc.categoria = '')` :
+      categoria                        ? db`AND pacc.categoria = ${categoria}` : db``,
+    areaFilter:
+      area === EMPTY_FILTER_VALUE ? db`AND pacc.area_id IS NULL` :
+      area                        ? db`AND (a.description = ${area} OR a.code = ${area})` : db``,
+  };
+}
+
 programmaProduzioneRoutes.get('/article-assignments', requireModule(MODULE), async (c) => {
-  const search = (c.req.query('search') ?? '').trim();
-  const rows = search
-    ? await db`
-        SELECT pacc.codice_articolo, pacc.categoria, pacc.area_id,
-               a.code AS area_code, a.description AS area_description
-        FROM prod_article_component_category pacc
-        LEFT JOIN prod_area_montaggio a ON a.id = pacc.area_id
-        WHERE pacc.codice_articolo ILIKE ${'%' + search + '%'}
-           OR pacc.categoria ILIKE ${'%' + search + '%'}
-        ORDER BY pacc.codice_articolo
-        LIMIT 500
-      `
-    : await db`
-        SELECT pacc.codice_articolo, pacc.categoria, pacc.area_id,
-               a.code AS area_code, a.description AS area_description
-        FROM prod_article_component_category pacc
-        LEFT JOIN prod_area_montaggio a ON a.id = pacc.area_id
-        ORDER BY pacc.codice_articolo
-        LIMIT 500
-      `;
+  const { codiceFilter, categoriaFilter, areaFilter } = articleAssignmentFilters(c);
+  const rows = await db`
+    SELECT pacc.codice_articolo, pacc.categoria, pacc.area_id,
+           a.code AS area_code, a.description AS area_description
+    FROM prod_article_component_category pacc
+    LEFT JOIN prod_area_montaggio a ON a.id = pacc.area_id
+    WHERE 1=1 ${codiceFilter} ${categoriaFilter} ${areaFilter}
+    ORDER BY pacc.codice_articolo
+    LIMIT 500
+  `;
   return c.json(rows);
+});
+
+// Valori distinti di categoria — per popolare il menu a tendina del filtro
+// (l'elenco deve riflettere TUTTA la tabella, non solo i primi 500 risultati
+// mostrati dalla GET sopra).
+programmaProduzioneRoutes.get('/article-assignments/categories', requireModule(MODULE), async (c) => {
+  const rows = await db<{ categoria: string }[]>`
+    SELECT DISTINCT categoria FROM prod_article_component_category
+    WHERE categoria IS NOT NULL AND categoria <> ''
+    ORDER BY categoria
+  `;
+  return c.json(rows.map(r => r.categoria));
 });
 
 const ArticleAssignmentSchema = z.object({
@@ -508,6 +603,33 @@ programmaProduzioneRoutes.delete('/article-assignments/:codice', requireManage(M
   const codice = requireParam(c.req.param('codice'), 'Codice');
   await db`DELETE FROM prod_article_component_category WHERE codice_articolo = ${codice}`;
   return c.json({ status: 'deleted' });
+});
+
+// Cancellazione massiva di TUTTE le righe che rispettano il filtro (stesso
+// WHERE della GET, ma senza il LIMIT 500 — la tabella può avere migliaia di
+// righe, la GET ne mostra solo le prime 500). Richiede un filtro non vuoto:
+// niente "cancella tutto" per errore senza aver prima ristretto la ricerca.
+programmaProduzioneRoutes.delete('/article-assignments', requireManage(MODULE), async (c) => {
+  const { codice, categoria, area, codiceFilter, categoriaFilter } = articleAssignmentFilters(c);
+  if (!codice && !categoria && !area) {
+    throw new HTTPException(400, { message: 'Specifica almeno un filtro prima di cancellare in blocco' });
+  }
+  // Il filtro Area va risolto via EXISTS (non un JOIN diretto nella DELETE) —
+  // stessa condizione della GET (a.description/a.code), ma senza toccare le
+  // righe con area_id NULL quando il filtro è impostato (a meno che non sia
+  // proprio l'opzione "(vuoto)" a essere stata scelta).
+  const areaExists =
+    area === EMPTY_FILTER_VALUE ? db`AND pacc.area_id IS NULL` :
+    area                        ? db`AND EXISTS (
+        SELECT 1 FROM prod_area_montaggio a
+        WHERE a.id = pacc.area_id AND (a.description = ${area} OR a.code = ${area})
+      )` : db``;
+  const rows = await db`
+    DELETE FROM prod_article_component_category pacc
+    WHERE 1=1 ${codiceFilter} ${categoriaFilter} ${areaExists}
+    RETURNING pacc.codice_articolo
+  `;
+  return c.json({ status: 'deleted', count: rows.length });
 });
 
 // Carica veloce: un solo file con Codice Articolo + Categoria + Area (entrambe

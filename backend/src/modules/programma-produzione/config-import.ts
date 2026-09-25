@@ -62,8 +62,16 @@ export async function importAree(buffer: Buffer): Promise<ImportResult> {
 // Colonne: Prefisso Commessa (vuoto = regola globale, vale per tutte le
 // commesse), Categoria, Parola Chiave, Significato (= Caratteristica
 // Derivata), Note. Per il modo prossimità (opzionale): Parola Ancora,
-// Parola Obiettivo, Distanza Max Caratteri.
-// Riga con "Parola Chiave" → modo simple. Riga senza, ma con Ancora+Obiettivo → proximity.
+// Parola Obiettivo, Distanza Max Caratteri — oppure, invece di Parola
+// Obiettivo, "Cerca Colore" (Sì/1/X) per cercare dopo l'ancora una qualsiasi
+// parola chiave della tab "Colori" (utile quando l'obiettivo è "un colore
+// qualsiasi" e servirebbe altrimenti una riga per colore).
+// Riga con "Parola Chiave" → modo simple. Riga senza, ma con Ancora+(Obiettivo o Cerca Colore) → proximity.
+
+function parseBoolFlag(v: string): boolean {
+  const s = v.trim().toLowerCase();
+  return s === 'si' || s === 'sì' || s === 'true' || s === '1' || s === 'x' || s === 'yes';
+}
 
 export async function importKeywordRules(buffer: Buffer): Promise<ImportResult> {
   const rows = readRows(buffer);
@@ -78,6 +86,7 @@ export async function importKeywordRules(buffer: Buffer): Promise<ImportResult> 
   const colAncora = pickCol(headers, 'Parola Ancora', 'Ancora');
   const colObiett = pickCol(headers, 'Parola Obiettivo', 'Obiettivo');
   const colDist   = pickCol(headers, 'Distanza Max Caratteri', 'Distanza', 'Distanza Massima');
+  const colColore = pickCol(headers, 'Cerca Colore', 'CercaColore', 'Colore Automatico');
 
   if (!colPref || !colCat || !colSign) {
     return emptyResult(rows.length, 'Colonne minime mancanti: Prefisso Commessa, Categoria, Significato/Caratteristica Derivata');
@@ -96,6 +105,7 @@ export async function importKeywordRules(buffer: Buffer): Promise<ImportResult> 
     const ancora  = colAncora ? str(row[colAncora]) : '';
     const obiettivo = colObiett ? str(row[colObiett]) : '';
     const distanza = colDist ? parseInt(str(row[colDist]), 10) : NaN;
+    const cercaColore = colColore ? parseBoolFlag(str(row[colColore])) : false;
 
     // Prefisso vuoto = regola globale, valida per tutte le commesse.
     if (!categoria || !significato) {
@@ -112,6 +122,15 @@ export async function importKeywordRules(buffer: Buffer): Promise<ImportResult> 
         DO UPDATE SET caratteristica_derivata = EXCLUDED.caratteristica_derivata, note = EXCLUDED.note
       `;
       upserted++;
+    } else if (ancora && cercaColore && Number.isInteger(distanza) && distanza > 0) {
+      await db`
+        INSERT INTO prod_keyword_rules
+          (prefisso_commessa, categoria, caratteristica_derivata, modo, parola_ancora, obiettivo_da_colori, distanza_max_caratteri, note)
+        VALUES (${prefisso}, ${categoria}, ${significato}, 'proximity', ${ancora}, TRUE, ${distanza}, ${note})
+        ON CONFLICT (prefisso_commessa, categoria, parola_ancora) WHERE modo = 'proximity' AND obiettivo_da_colori
+        DO UPDATE SET caratteristica_derivata = EXCLUDED.caratteristica_derivata, distanza_max_caratteri = EXCLUDED.distanza_max_caratteri, note = EXCLUDED.note
+      `;
+      upserted++;
     } else if (ancora && obiettivo && Number.isInteger(distanza) && distanza > 0) {
       await db`
         INSERT INTO prod_keyword_rules
@@ -123,7 +142,7 @@ export async function importKeywordRules(buffer: Buffer): Promise<ImportResult> 
       upserted++;
     } else {
       skipped++;
-      warnings.push(`Riga ${i + 2}: né Parola Chiave né (Ancora+Obiettivo+Distanza) validi`);
+      warnings.push(`Riga ${i + 2}: né Parola Chiave né (Ancora+Obiettivo+Distanza) né (Ancora+Cerca Colore+Distanza) validi`);
     }
   }
 
@@ -259,8 +278,16 @@ export async function importArticleCategoryArea(buffer: Buffer): Promise<ImportR
   const colArea = pickCol(headers, 'Area', 'Codice Area');
   if (!colCode) return emptyResult(rows.length, 'Colonna Codice Articolo mancante');
 
-  const areas = await db<{ id: number; code: string }[]>`SELECT id, code FROM prod_area_montaggio`;
-  const areaIdByCode = new Map(areas.map(a => [a.code.toLowerCase(), a.id]));
+  // L'Excel può indicare l'area sia col codice breve (es. "LINEA1") sia con
+  // la descrizione per esteso (es. "F250 KIT TM") — accettiamo entrambi.
+  const areas = await db<{ id: number; code: string; description: string }[]>`
+    SELECT id, code, description FROM prod_area_montaggio
+  `;
+  const areaIdByCode = new Map<string, number>();
+  for (const a of areas) {
+    areaIdByCode.set(a.code.toLowerCase(), a.id);
+    areaIdByCode.set(a.description.toLowerCase(), a.id);
+  }
 
   let upserted = 0, skipped = 0;
   const warnings: string[] = [];

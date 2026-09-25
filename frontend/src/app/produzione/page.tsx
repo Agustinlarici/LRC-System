@@ -20,24 +20,19 @@ export default function ProduzionePage() {
   return (
     <div>
       <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Programma Produzione</h1>
-          <p className="mt-1 text-gray-500">
-            Ordini Business Central + Forecast EDI, caratteristiche derivate e foglio di lavoro per area di montaggio.
-          </p>
-        </div>
+        <h1 className="text-3xl font-bold text-gray-900">Programma Produzione</h1>
         <div className="flex gap-2 flex-wrap">
-          <Link href="/produzione/tutto"
-            className="flex items-center gap-1.5 text-sm bg-gray-900 text-white px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors">
-            Vedi tutto
-          </Link>
           <Link href="/produzione/sync"
             className="flex items-center gap-1.5 text-sm bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors">
             Sincronizza
           </Link>
           <Link href="/produzione/conflitti"
             className="flex items-center gap-1.5 text-sm bg-yellow-100 text-yellow-800 px-3 py-2 rounded-lg hover:bg-yellow-200 transition-colors">
-            Conflitti
+            Duplicati
+          </Link>
+          <Link href="/spma/import"
+            className="flex items-center gap-1.5 text-sm border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
+            Import Planning
           </Link>
           <Link href="/produzione/impostazioni"
             className="flex items-center gap-1.5 text-sm border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
@@ -50,20 +45,17 @@ export default function ProduzionePage() {
         <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>
       )}
 
-      <h2 className="text-sm font-medium text-gray-500 mb-3">
-        Aree di montaggio (opzionale — usa &quot;Vedi tutto&quot; per il foglio completo senza filtrare per area)
-      </h2>
-
       {loading ? (
         <p className="text-gray-400">Caricamento aree...</p>
-      ) : aree.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400">
-          Nessuna area di montaggio configurata — non è necessaria per usare &quot;Vedi tutto&quot;.{' '}
-          <Link href="/produzione/impostazioni" className="text-blue-600 underline">Puoi crearne una qui</Link>{' '}
-          se vuoi fogli filtrati per zona.
-        </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          <Link
+            href="/produzione/tutto"
+            className="bg-gray-900 rounded-xl p-5 text-center hover:bg-gray-800 transition-colors"
+          >
+            <p className="font-semibold text-white">Vedi tutto</p>
+            <p className="text-xs text-gray-300 mt-1">Foglio completo, senza filtro per area</p>
+          </Link>
           {aree.map(area => (
             <Link
               key={area.id}

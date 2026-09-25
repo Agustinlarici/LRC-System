@@ -39,6 +39,22 @@ body {
   @apply bg-gray-200 rounded animate-pulse;
 }
 
+/* Stampa: la sidebar dell'app non deve mai comparire nella stampa di nessuna
+   pagina — vedi .d-print-none su <aside> in Sidebar.tsx. Regola globale
+   (non nello <style> locale della pagina) perché la sidebar è renderizzata
+   da AppShell, fuori dal contenuto della pagina stessa. */
+@media print {
+  .d-print-none { display: none !important; }
+}
+
+/* Inverso di .d-print-none: elementi nascosti a schermo (per non duplicare un
+   header/titolo già ridisegnato più in alto) ma che devono restare visibili
+   in stampa esattamente come prima — vedi produzione/tutto/page.tsx. */
+.only-print { display: none; }
+@media print {
+  .only-print { display: block; }
+}
+
 /* Toast slide-in */
 @keyframes slideIn {
   from { opacity: 0; transform: translateX(24px); }

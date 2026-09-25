@@ -383,6 +383,24 @@ END$$;
 
 DROP TABLE IF EXISTS prod_area_categoria;
 
+-- ─── Forecast chiusi manualmente (spediti senza mai diventare un ordine BC) ────
+-- edi_ferrari_delins viene TRUNCATE + reinsert ad ogni sync EDI (vedi
+-- ferrari-delins-sync.ts) — non si può appendere un flag "chiuso" lì, sparirebbe
+-- al giro successivo. Tabella separata, con uno snapshot della descrizione al
+-- momento della chiusura (il forecast potrebbe non ricomparire più nel giro
+-- successivo se Ferrari lo toglie dal file). Popolata da closeShippedForecasts()
+-- in forecast-closer.ts: un forecast è chiuso quando risulta già spedito nella
+-- query BC "EOS CWS Shipment Line" (stessa usata da WebDDT) e non esiste un
+-- ordine Confermato ancora aperto per la stessa coppia.
+CREATE TABLE IF NOT EXISTS prod_forecast_chiuso (
+    id               SERIAL PRIMARY KEY,
+    codice_articolo  VARCHAR(100) NOT NULL,
+    commessa         VARCHAR(100) NOT NULL,
+    descrizione      TEXT,
+    chiuso_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (codice_articolo, commessa)
+);
+
 -- ─── Vista unificata: Confermato (BC) sempre vince su Forecast (EDI) ──────────
 -- Per la stessa coppia (commessa, codice_articolo): se esiste un ordine BC
 -- presente (present_now), il Forecast per quella coppia viene scartato.
@@ -402,7 +420,9 @@ SELECT
     po.shipment_date,
     po.fa_posting_date,
     NULL::TEXT                   AS data_consegna_forecast,
-    po.data_registrazione::TIMESTAMPTZ AS fonte_recency
+    po.data_registrazione::TIMESTAMPTZ AS fonte_recency,
+    NULL::TEXT                   AS edi_source_file,
+    NULL::TIMESTAMPTZ             AS edi_file_mtime
 FROM prod_order po
 WHERE po.present_now = TRUE
   AND po.codice_articolo <> ''
@@ -421,7 +441,14 @@ SELECT
     NULL::DATE                   AS shipment_date,
     NULL::DATE                   AS fa_posting_date,
     d.data_consegna,
-    COALESCE(d.file_mtime, d.scanned_at) AS fonte_recency
+    COALESCE(d.file_mtime, d.scanned_at) AS fonte_recency,
+    d.source_file                AS edi_source_file,
+    -- Data del file grezza (senza fallback a scanned_at) — deve coincidere
+    -- con la colonna "Data file" di /edi (stessa MAX(file_mtime) per file,
+    -- vedi ediRoutes GET /ingresso/ordini). fonte_recency sopra resta con
+    -- il fallback: usato per il tie-break "vince l'ultimo" tra duplicati,
+    -- non tocco quella logica qui.
+    d.file_mtime                  AS edi_file_mtime
 FROM edi_ferrari_delins d
 WHERE (d.tipo_documento = 'Forecast' OR d.tipo_schedulazione = 'Forecast')
   AND d.codice_articolo <> ''
@@ -431,7 +458,51 @@ WHERE (d.tipo_documento = 'Forecast' OR d.tipo_schedulazione = 'Forecast')
     WHERE po2.present_now     = TRUE
       AND po2.commessa        = d.commessa
       AND po2.codice_articolo = d.codice_articolo
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM prod_forecast_chiuso fc
+    WHERE fc.codice_articolo = d.codice_articolo
+      AND fc.commessa        = d.commessa
   );
+
+-- ─── Regole prossimità: obiettivo = "un colore qualsiasi" ─────────────────────
+-- Con molte regole prossimità la parola obiettivo finiva quasi sempre per
+-- essere un colore (stessa ancora, distanza uguale, cambia solo il prefisso
+-- commessa) — serviva una regola per ogni colore. Con questo flag la regola
+-- non cerca una parola_obiettivo fissa: dopo l'ancora, cerca una qualsiasi
+-- delle parole chiave attive di prod_color_keywords entro distanza_max_caratteri
+-- e, se trovata, la caratteristica derivata diventa "Significato (Colore)".
+-- Se l'ancora c'è ma nessun colore matcha nella finestra, si comporta come
+-- un match semplice sulla sola ancora (caratteristica senza parentesi) — vedi
+-- runKeywordEngine in keyword-engine.ts.
+ALTER TABLE prod_keyword_rules ADD COLUMN IF NOT EXISTS obiettivo_da_colori BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE prod_keyword_rules DROP CONSTRAINT IF EXISTS prod_keyword_rules_modo_check;
+ALTER TABLE prod_keyword_rules ADD CONSTRAINT prod_keyword_rules_modo_check CHECK (
+  (modo = 'simple'
+    AND parola_chiave          IS NOT NULL
+    AND parola_ancora          IS NULL
+    AND parola_obiettivo       IS NULL
+    AND distanza_max_caratteri IS NULL
+    AND obiettivo_da_colori    = FALSE)
+  OR
+  (modo = 'proximity'
+    AND parola_chiave          IS NULL
+    AND parola_ancora          IS NOT NULL
+    AND distanza_max_caratteri IS NOT NULL
+    AND distanza_max_caratteri > 0
+    AND (
+      (obiettivo_da_colori = FALSE AND parola_obiettivo IS NOT NULL)
+      OR
+      (obiettivo_da_colori = TRUE  AND parola_obiettivo IS NULL)
+    ))
+);
+
+-- parola_obiettivo è NULL per le regole "da colori" — un indice unico separato
+-- (l'indice esistente su parola_obiettivo non intercetta duplicati tra NULL).
+CREATE UNIQUE INDEX IF NOT EXISTS prod_keyword_rules_proximity_color_uq
+  ON prod_keyword_rules (prefisso_commessa, categoria, parola_ancora)
+  WHERE modo = 'proximity' AND obiettivo_da_colori;
 
 -- Helper usato solo sopra per sanare gli eventuali placeholder di schema.sql
 -- — non serve lasciarlo in giro nello schema.

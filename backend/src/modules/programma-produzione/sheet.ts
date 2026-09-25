@@ -6,6 +6,14 @@ interface UnifiedOrderRow {
   codice_articolo:   string;
   commessa:          string;
   descrizione:       string | null;
+  descrizione_estesa: string | null;
+  // Nome del file EDI di origine (solo fonte_ordine = 'forecast' — NULL per
+  // gli ordini Confermato, che vengono da BC e non da un file).
+  edi_source_file:   string | null;
+  // file_mtime grezzo (senza fallback a scanned_at) — solo per il display
+  // "Recency" nei Duplicati, deve coincidere con la colonna "Data file" di
+  // /edi. fonte_recency sotto resta con il fallback per il tie-break.
+  edi_file_mtime:    string | null;
   ubicazione:        string | null;
   insertion_line_ts: string | null;
   insertion_schedulato: boolean;
@@ -130,92 +138,139 @@ function sortByInsertionTs(rows: UnifiedOrderRow[]): UnifiedOrderRow[] {
 
 // ─── Query base condivisa ──────────────────────────────────────────────────────
 
-// Ordini Confermato chiusi in BC (present_now = FALSE) — non spariscono più
-// dal foglio quando l'ordine viene evaso/spedito, restano come storico
-// (vedi groupByCategoriaCommessa/dedupByArticoloCommessa: non competono mai
-// con un ordine ancora attivo). Nessun limite di tempo: cresce nel tempo,
-// ma resta paginato come il resto del foglio.
+// Ordini Confermato chiusi/spediti in BC (present_now = FALSE) — non
+// spariscono nel nulla quando l'ordine viene evaso, restano consultabili
+// come storico (buildFoglio con opts.storico = true), separati dal foglio
+// di lavoro normale (vedi groupByCategoriaCommessa/dedupByArticoloCommessa:
+// non competono mai con un ordine ancora attivo). Nessun limite di tempo:
+// cresce nel tempo, ma resta paginato come il resto del foglio.
 async function queryClosedOrders(articleCodes: string[] | null): Promise<UnifiedOrderRow[]> {
-  return articleCodes != null
-    ? db<UnifiedOrderRow[]>`
-        SELECT
-          'confermato'::VARCHAR(12) AS fonte_ordine,
-          po.codice_articolo,
-          po.commessa,
-          po.description AS descrizione,
-          po.ubicazione,
-          ci.insertion_line_ts::text AS insertion_line_ts,
-          COALESCE(ci.schedulato, FALSE) AS insertion_schedulato,
-          col.colore,
-          po.data_registrazione::text AS fonte_recency,
-          TRUE AS chiuso
-        FROM prod_order po
-        LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = po.commessa
-        LEFT JOIN prod_article_color col
-          ON col.codice_articolo = po.codice_articolo AND col.commessa = po.commessa
-        WHERE po.present_now = FALSE AND po.codice_articolo = ANY(${articleCodes})
-      `
-    : db<UnifiedOrderRow[]>`
-        SELECT
-          'confermato'::VARCHAR(12) AS fonte_ordine,
-          po.codice_articolo,
-          po.commessa,
-          po.description AS descrizione,
-          po.ubicazione,
-          ci.insertion_line_ts::text AS insertion_line_ts,
-          COALESCE(ci.schedulato, FALSE) AS insertion_schedulato,
-          col.colore,
-          po.data_registrazione::text AS fonte_recency,
-          TRUE AS chiuso
-        FROM prod_order po
-        LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = po.commessa
-        LEFT JOIN prod_article_color col
-          ON col.codice_articolo = po.codice_articolo AND col.commessa = po.commessa
-        WHERE po.present_now = FALSE
-      `;
-}
-
-async function queryUnifiedOrders(articleCodes: string[] | null): Promise<UnifiedOrderRow[]> {
-  const [active, closed] = await Promise.all([
+  const [closedConfirmed, closedForecast] = await Promise.all([
     articleCodes != null
       ? db<UnifiedOrderRow[]>`
           SELECT
-            u.fonte_ordine,
-            u.codice_articolo,
-            u.commessa,
-            u.descrizione,
-            u.ubicazione,
+            'confermato'::VARCHAR(12) AS fonte_ordine,
+            po.codice_articolo,
+            po.commessa,
+            po.description AS descrizione,
+            po.ubicazione,
             ci.insertion_line_ts::text AS insertion_line_ts,
             COALESCE(ci.schedulato, FALSE) AS insertion_schedulato,
             col.colore,
-            u.fonte_recency::text AS fonte_recency,
-            FALSE AS chiuso
-          FROM prod_order_unified u
-          LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = u.commessa
+            po.data_registrazione::text AS fonte_recency,
+            TRUE AS chiuso
+          FROM prod_order po
+          LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = po.commessa
           LEFT JOIN prod_article_color col
-            ON col.codice_articolo = u.codice_articolo AND col.commessa = u.commessa
-          WHERE u.codice_articolo = ANY(${articleCodes})
+            ON col.codice_articolo = po.codice_articolo AND col.commessa = po.commessa
+          WHERE po.present_now = FALSE AND po.codice_articolo = ANY(${articleCodes})
         `
       : db<UnifiedOrderRow[]>`
           SELECT
-            u.fonte_ordine,
-            u.codice_articolo,
-            u.commessa,
-            u.descrizione,
-            u.ubicazione,
+            'confermato'::VARCHAR(12) AS fonte_ordine,
+            po.codice_articolo,
+            po.commessa,
+            po.description AS descrizione,
+            po.ubicazione,
             ci.insertion_line_ts::text AS insertion_line_ts,
             COALESCE(ci.schedulato, FALSE) AS insertion_schedulato,
             col.colore,
-            u.fonte_recency::text AS fonte_recency,
-            FALSE AS chiuso
-          FROM prod_order_unified u
-          LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = u.commessa
+            po.data_registrazione::text AS fonte_recency,
+            TRUE AS chiuso
+          FROM prod_order po
+          LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = po.commessa
           LEFT JOIN prod_article_color col
-            ON col.codice_articolo = u.codice_articolo AND col.commessa = u.commessa
+            ON col.codice_articolo = po.codice_articolo AND col.commessa = po.commessa
+          WHERE po.present_now = FALSE
         `,
-    queryClosedOrders(articleCodes),
+    // Forecast mai diventati un ordine BC ma già spediti (vedi forecast-closer.ts)
+    // — prod_forecast_chiuso tiene uno snapshot della descrizione perché
+    // edi_ferrari_delins viene ricreato da zero ad ogni sync EDI.
+    articleCodes != null
+      ? db<UnifiedOrderRow[]>`
+          SELECT
+            'forecast'::VARCHAR(12) AS fonte_ordine,
+            fc.codice_articolo,
+            fc.commessa,
+            fc.descrizione,
+            NULL::text AS ubicazione,
+            ci.insertion_line_ts::text AS insertion_line_ts,
+            COALESCE(ci.schedulato, FALSE) AS insertion_schedulato,
+            col.colore,
+            fc.chiuso_at::text AS fonte_recency,
+            TRUE AS chiuso
+          FROM prod_forecast_chiuso fc
+          LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = fc.commessa
+          LEFT JOIN prod_article_color col
+            ON col.codice_articolo = fc.codice_articolo AND col.commessa = fc.commessa
+          WHERE fc.codice_articolo = ANY(${articleCodes})
+        `
+      : db<UnifiedOrderRow[]>`
+          SELECT
+            'forecast'::VARCHAR(12) AS fonte_ordine,
+            fc.codice_articolo,
+            fc.commessa,
+            fc.descrizione,
+            NULL::text AS ubicazione,
+            ci.insertion_line_ts::text AS insertion_line_ts,
+            COALESCE(ci.schedulato, FALSE) AS insertion_schedulato,
+            col.colore,
+            fc.chiuso_at::text AS fonte_recency,
+            TRUE AS chiuso
+          FROM prod_forecast_chiuso fc
+          LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = fc.commessa
+          LEFT JOIN prod_article_color col
+            ON col.codice_articolo = fc.codice_articolo AND col.commessa = fc.commessa
+        `,
   ]);
-  return [...active, ...closed];
+  return [...closedConfirmed, ...closedForecast];
+}
+
+async function queryActiveOrders(articleCodes: string[] | null): Promise<UnifiedOrderRow[]> {
+  return articleCodes != null
+    ? db<UnifiedOrderRow[]>`
+        SELECT
+          u.fonte_ordine,
+          u.codice_articolo,
+          u.commessa,
+          u.descrizione,
+          u.ubicazione,
+          ci.insertion_line_ts::text AS insertion_line_ts,
+          COALESCE(ci.schedulato, FALSE) AS insertion_schedulato,
+          col.colore,
+          u.fonte_recency::text AS fonte_recency,
+          FALSE AS chiuso
+        FROM prod_order_unified u
+        LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = u.commessa
+        LEFT JOIN prod_article_color col
+          ON col.codice_articolo = u.codice_articolo AND col.commessa = u.commessa
+        WHERE u.codice_articolo = ANY(${articleCodes})
+      `
+    : db<UnifiedOrderRow[]>`
+        SELECT
+          u.fonte_ordine,
+          u.codice_articolo,
+          u.commessa,
+          u.descrizione,
+          u.ubicazione,
+          ci.insertion_line_ts::text AS insertion_line_ts,
+          COALESCE(ci.schedulato, FALSE) AS insertion_schedulato,
+          col.colore,
+          u.fonte_recency::text AS fonte_recency,
+          FALSE AS chiuso
+        FROM prod_order_unified u
+        LEFT JOIN prod_commessa_inserimenti ci ON ci.commessa = u.commessa
+        LEFT JOIN prod_article_color col
+          ON col.codice_articolo = u.codice_articolo AND col.commessa = u.commessa
+      `;
+}
+
+// Il foglio di lavoro normale mostra solo gli ordini attivi — gli spediti
+// (chiuso = TRUE) si vedono solo nello storico (vedi buildFoglio storico).
+// Prima venivano sempre uniti, e comparivano insieme agli attivi nello
+// stesso foglio con uno stato "Chiuso" mescolato a Confermato/Forecast.
+async function queryUnifiedOrders(articleCodes: string[] | null, storico: boolean): Promise<UnifiedOrderRow[]> {
+  return storico ? queryClosedOrders(articleCodes) : queryActiveOrders(articleCodes);
 }
 
 /**
@@ -247,10 +302,11 @@ async function queryUnifiedOrders(articleCodes: string[] | null): Promise<Unifie
 export async function buildFoglio(
   articleCodes: string[] | null,
   page: { limit?: number; offset?: number } = {},
+  opts: { storico?: boolean } = {},
 ): Promise<FoglioPage> {
   if (articleCodes != null && articleCodes.length === 0) return { rows: [], total: 0 };
 
-  const orderRows = await queryUnifiedOrders(articleCodes);
+  const orderRows = await queryUnifiedOrders(articleCodes, opts.storico ?? false);
   const deduped  = dedupByArticoloCommessa(orderRows);
   const replaced = await applyComponentCategoryReplacement(deduped);
   const sorted   = sortByInsertionTs(replaced);
@@ -404,7 +460,15 @@ export interface ComponentConflictCandidate {
   fonte_ordine:    'confermato' | 'forecast';
   fonte_recency:   string | null;
   descrizione:     string | null;
+  descrizione_estesa: string | null;
+  edi_source_file: string | null;
+  edi_file_mtime:  string | null;
   is_winner:       boolean;
+  // TRUE se un ALTRO candidato dello stesso gruppo (codice articolo diverso)
+  // ha lo stesso giorno di fonte_recency — segnala il caso più sospetto:
+  // due articoli diversi registrati/scansionati lo stesso giorno per la
+  // stessa categoria componente e commessa. Il frontend lo evidenzia in rosso.
+  stesso_giorno_altro_codice: boolean;
 }
 
 export interface ComponentConflict {
@@ -413,9 +477,39 @@ export interface ComponentConflict {
   candidates: ComponentConflictCandidate[];
 }
 
+// Data "vera" da usare per il confronto giorno-per-giorno: per un Forecast è
+// il file_mtime grezzo (stesso valore mostrato in /edi come "Data file"),
+// NON fonte_recency — che per un Forecast senza file_mtime ricade su
+// scanned_at, identico per migliaia di righe scansionate nello stesso batch
+// (falso positivo "stesso giorno" tra codici scansionati insieme ma senza
+// nessuna relazione reale).
+function recencyPerConfronto(c: Pick<ComponentConflictCandidate, 'fonte_ordine' | 'fonte_recency' | 'edi_file_mtime'>): string | null {
+  return c.fonte_ordine === 'forecast' ? c.edi_file_mtime : c.fonte_recency;
+}
+
+function markSameDayDuplicates(
+  candidates: Omit<ComponentConflictCandidate, 'stesso_giorno_altro_codice'>[],
+): ComponentConflictCandidate[] {
+  const codesByDay = new Map<string, Set<string>>();
+  for (const c of candidates) {
+    const recency = recencyPerConfronto(c);
+    if (!recency) continue;
+    const day = recency.slice(0, 10);
+    const set = codesByDay.get(day) ?? new Set<string>();
+    set.add(c.codice_articolo);
+    codesByDay.set(day, set);
+  }
+  return candidates.map(c => {
+    const day = recencyPerConfronto(c)?.slice(0, 10);
+    const codesThatDay = day ? codesByDay.get(day) : undefined;
+    return { ...c, stesso_giorno_altro_codice: (codesThatDay?.size ?? 0) > 1 };
+  });
+}
+
 export async function findComponentConflicts(): Promise<ComponentConflict[]> {
   const orderRows = await db<UnifiedOrderRow[]>`
-    SELECT u.fonte_ordine, u.codice_articolo, u.commessa, u.descrizione,
+    SELECT u.fonte_ordine, u.codice_articolo, u.commessa, u.descrizione, u.descrizione_estesa,
+           u.edi_source_file, u.edi_file_mtime::text AS edi_file_mtime,
            NULL::text AS ubicazione, NULL::text AS insertion_line_ts, FALSE AS insertion_schedulato,
            NULL::text AS colore, u.fonte_recency::text AS fonte_recency, FALSE AS chiuso
     FROM prod_order_unified u
@@ -435,13 +529,16 @@ export async function findComponentConflicts(): Promise<ComponentConflict[]> {
     conflicts.push({
       categoria: group.categoria,
       commessa:  group.commessa,
-      candidates: group.rows.map(r => ({
+      candidates: markSameDayDuplicates(group.rows.map(r => ({
         codice_articolo: r.codice_articolo,
         fonte_ordine:    r.fonte_ordine,
         fonte_recency:   r.fonte_recency,
         descrizione:     r.descrizione,
+        descrizione_estesa: r.descrizione_estesa,
+        edi_source_file: r.edi_source_file,
+        edi_file_mtime:  r.edi_file_mtime,
         is_winner:       r === winner,
-      })),
+      }))),
     });
   }
 

@@ -53,6 +53,7 @@ const SYNC_TYPE_LABEL: Record<string, string> = {
   item_attributes:  'Attributi BC',
   keywords:         'Parole chiave',
   colors:           'Colore',
+  forecast_chiusi:  'Forecast spediti',
 };
 
 export default function ProduzioneSyncPage() {
@@ -100,11 +101,19 @@ export default function ProduzioneSyncPage() {
           busyText="Analisi in corso..."
           onRun={async () => { const r = await api.post('/api/prod/sync/colors', undefined, SYNC_TIMEOUT_MS); refreshLog(); return r; }}
         />
+        <SyncButton
+          label="📦 Chiudi Forecast già spediti"
+          busyText="Verifica spedizioni in corso..."
+          onRun={async () => { const r = await api.post('/api/prod/sync/forecast-chiusi', undefined, SYNC_TIMEOUT_MS); refreshLog(); return r; }}
+        />
       </div>
 
       <p className="text-xs text-gray-400 mb-2">
         Il Forecast EDI (edi_ferrari_delins) si sincronizza dal modulo <Link href="/edi" className="underline">EDI</Link> —
         qui viene solo letto e unito agli ordini confermati (un ordine confermato prevale sempre sul suo forecast).
+        &quot;Chiudi Forecast già spediti&quot; controlla in Business Central (spedizioni EOS CWS) se un Forecast
+        che non è mai diventato un ordine è comunque già stato spedito — in quel caso passa a storico invece di
+        restare per sempre nel foglio.
       </p>
 
       <h2 className="font-semibold text-gray-900 mb-3">Storico sincronizzazioni</h2>

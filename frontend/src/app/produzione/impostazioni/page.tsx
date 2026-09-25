@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import type {
@@ -11,6 +11,10 @@ import { ExcelImportButton } from '../_components/ExcelImportButton';
 
 type Tab = 'Aree' | 'Categoria - Area' | 'Regole Parole Chiave' | 'Colori' | 'Attributi BC' | 'Caratteristiche Manuali';
 const TABS: Tab[] = ['Aree', 'Categoria - Area', 'Regole Parole Chiave', 'Colori', 'Attributi BC', 'Caratteristiche Manuali'];
+
+// Deve coincidere con EMPTY_FILTER_VALUE in backend/routes.ts — valore
+// riservato per l'opzione "(vuoto)" nei filtri Categoria/Area.
+const EMPTY_FILTER_VALUE = '__EMPTY__';
 
 // ─── Aree di montaggio ─────────────────────────────────────────────────────────
 
@@ -84,27 +88,51 @@ function TabAree() {
 // ─── Categoria - Area per articolo (rimpiazzo "vince l'ultimo" + assegnazione) ─
 
 function TabCategoriaArea() {
-  const [rows,      setRows]      = useState<ProdArticleAssignment[]>([]);
-  const [areas,     setAreas]     = useState<ProdArea[]>([]);
-  const [search,    setSearch]    = useState('');
-  const [codice,    setCodice]    = useState('');
-  const [categoria, setCategoria] = useState('');
-  const [areaId,    setAreaId]    = useState('');
-  const [loading,   setLoading]   = useState(true);
-  const [busy,      setBusy]      = useState(false);
+  const [rows,       setRows]       = useState<ProdArticleAssignment[]>([]);
+  const [areas,      setAreas]      = useState<ProdArea[]>([]);
+  const [categorie,  setCategorie]  = useState<string[]>([]);
+  const [codice,     setCodice]     = useState('');
+  const [categoria,  setCategoria]  = useState('');
+  const [areaId,     setAreaId]     = useState('');
+  const [loading,    setLoading]    = useState(true);
+  const [busy,       setBusy]       = useState(false);
+  const [bulkBusy,   setBulkBusy]   = useState(false);
 
-  const load = useCallback((q: string) => {
-    const qs = q ? `?search=${encodeURIComponent(q)}` : '';
-    Promise.all([
-      api.get<ProdArticleAssignment[]>(`/api/prod/article-assignments${qs}`),
-      api.get<ProdArea[]>('/api/prod/aree'),
-    ]).then(([r, a]) => { setRows(r); setAreas(a); }).finally(() => setLoading(false));
+  // Filtri per colonna (uno per Codice Articolo, Categoria, Area) — combinati
+  // in AND lato server, non un'unica ricerca su tutti i campi. Categoria e
+  // Area sono un menu a tendina con i valori esistenti (vedi `categorie`
+  // sotto e `areas` sopra) — Codice resta testo libero: i codici articolo
+  // sono troppi (potenzialmente migliaia) per un menu a tendina utilizzabile.
+  const [fCodice,    setFCodice]    = useState('');
+  const [fCategoria, setFCategoria] = useState('');
+  const [fArea,      setFArea]      = useState('');
+
+  const buildQs = useCallback((c: string, cat: string, a: string) => {
+    const params = new URLSearchParams();
+    if (c.trim())   params.set('codice', c.trim());
+    if (cat.trim()) params.set('categoria', cat.trim());
+    if (a.trim())   params.set('area', a.trim());
+    const qs = params.toString();
+    return qs ? `?${qs}` : '';
   }, []);
-  useEffect(() => { load(''); }, [load]);
 
-  function onSearch(v: string) {
-    setSearch(v);
-    load(v);
+  const load = useCallback((c: string, cat: string, a: string) => {
+    Promise.all([
+      api.get<ProdArticleAssignment[]>(`/api/prod/article-assignments${buildQs(c, cat, a)}`),
+      api.get<ProdArea[]>('/api/prod/aree'),
+      api.get<string[]>('/api/prod/article-assignments/categories'),
+    ]).then(([r, a2, cats]) => { setRows(r); setAreas(a2); setCategorie(cats); }).finally(() => setLoading(false));
+  }, [buildQs]);
+  useEffect(() => { load('', '', ''); }, [load]);
+
+  function onFilterChange(next: { codice?: string; categoria?: string; area?: string }) {
+    const c   = next.codice    ?? fCodice;
+    const cat = next.categoria ?? fCategoria;
+    const a   = next.area      ?? fArea;
+    if (next.codice    !== undefined) setFCodice(next.codice);
+    if (next.categoria !== undefined) setFCategoria(next.categoria);
+    if (next.area      !== undefined) setFArea(next.area);
+    load(c, cat, a);
   }
 
   async function addRow() {
@@ -117,13 +145,34 @@ function TabCategoriaArea() {
         areaId:         areaId ? parseInt(areaId, 10) : null,
       });
       setCodice(''); setCategoria(''); setAreaId('');
-      load(search);
+      load(fCodice, fCategoria, fArea);
     } finally { setBusy(false); }
   }
 
   async function delRow(codiceArticolo: string) {
     await api.delete(`/api/prod/article-assignments/${encodeURIComponent(codiceArticolo)}`);
-    load(search);
+    load(fCodice, fCategoria, fArea);
+  }
+
+  const hasFilter = !!(fCodice.trim() || fCategoria.trim() || fArea.trim());
+
+  // Cancella TUTTI i codici che rispettano i filtri (non solo i 500
+  // mostrati) — richiede almeno un filtro, il backend rifiuta altrimenti.
+  async function delAllFiltered() {
+    if (!hasFilter) return;
+    if (!confirm('Eliminare TUTTI i codici che corrispondono ai filtri impostati? L\'azione non è reversibile.')) return;
+    setBulkBusy(true);
+    try {
+      const res = await api.delete<{ status: string; count: number }>(
+        `/api/prod/article-assignments${buildQs(fCodice, fCategoria, fArea)}`
+      );
+      alert(`Eliminati ${res.count} codici.`);
+      load(fCodice, fCategoria, fArea);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBulkBusy(false);
+    }
   }
 
   if (loading) return <p className="text-gray-400">Caricamento...</p>;
@@ -134,8 +183,8 @@ function TabCategoriaArea() {
         Ogni codice articolo ha una <strong>categoria</strong> (per il motore di rimpiazzo &quot;vince
         l&apos;ultimo&quot; — se due articoli della stessa categoria arrivano per la stessa commessa, il
         foglio ne mostra uno solo: un ordine Confermato batte sempre un Forecast, a parità di fonte
-        vince il più recente; i perdenti compaiono nella
-        sezione <Link href="/produzione/conflitti" className="underline">Conflitti</Link>) e
+        vince il più recente; gli scartati compaiono nella
+        sezione <Link href="/produzione/conflitti" className="underline">Duplicati</Link>) e
         un&apos;<strong>area</strong> (dove compare nel foglio) — completamente indipendenti tra loro.
       </p>
 
@@ -146,7 +195,7 @@ function TabCategoriaArea() {
         </p>
         <ExcelImportButton
           endpoint="/api/prod/article-category-area/import-excel"
-          onDone={() => load(search)}
+          onDone={() => load(fCodice, fCategoria, fArea)}
           label="Carica Excel (Codice Articolo, Categoria, Area)"
         />
       </div>
@@ -170,8 +219,13 @@ function TabCategoriaArea() {
         </button>
       </div>
 
-      <input value={search} onChange={e => onSearch(e.target.value)} placeholder="Cerca per codice o categoria..."
-        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      <div className="flex justify-end mb-2">
+        <button onClick={delAllFiltered} disabled={!hasFilter || bulkBusy}
+          title={hasFilter ? '' : 'Imposta almeno un filtro per abilitare la cancellazione in blocco'}
+          className="text-sm text-red-600 border border-red-200 px-3 py-2 rounded-lg hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap">
+          {bulkBusy ? 'Eliminazione...' : 'Elimina tutti i filtrati'}
+        </button>
+      </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
@@ -181,6 +235,29 @@ function TabCategoriaArea() {
               <th className="py-2.5 px-4 text-left font-medium">Categoria</th>
               <th className="py-2.5 px-4 text-left font-medium">Area</th>
               <th className="py-2.5 px-4" />
+            </tr>
+            <tr className="border-b border-gray-200 bg-gray-50">
+              <th className="px-4 pb-2">
+                <input value={fCodice} onChange={e => onFilterChange({ codice: e.target.value })} placeholder="Filtra..."
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </th>
+              <th className="px-4 pb-2">
+                <select value={fCategoria} onChange={e => onFilterChange({ categoria: e.target.value })}
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">— Tutte —</option>
+                  <option value={EMPTY_FILTER_VALUE}>(vuoto)</option>
+                  {categorie.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+              </th>
+              <th className="px-4 pb-2">
+                <select value={fArea} onChange={e => onFilterChange({ area: e.target.value })}
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">— Tutte —</option>
+                  <option value={EMPTY_FILTER_VALUE}>(vuoto)</option>
+                  {areas.map(a => <option key={a.id} value={a.description}>{a.description}</option>)}
+                </select>
+              </th>
+              <th className="px-4 pb-2" />
             </tr>
           </thead>
           <tbody>
@@ -212,9 +289,19 @@ function TabCategoriaArea() {
 // ─── Regole parole chiave ──────────────────────────────────────────────────────
 
 function TabRegole() {
-  const [rules,   setRules]   = useState<ProdKeywordRule[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [busy,    setBusy]    = useState(false);
+  const [rules,    setRules]    = useState<ProdKeywordRule[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [busy,     setBusy]     = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  // Filtri per colonna (Prefisso, Categoria, Caratteristica, Regola, Note) —
+  // combinati in AND, non un'unica ricerca su tutti i campi. Client-side:
+  // questa tabella si carica sempre per intero, senza cap lato server.
+  const [fPrefisso,  setFPrefisso]  = useState('');
+  const [fCategoria, setFCategoria] = useState('');
+  const [fCaratt,    setFCaratt]    = useState('');
+  const [fRegola,    setFRegola]    = useState('');
+  const [fNote,      setFNote]      = useState('');
 
   const [modo,        setModo]        = useState<ProdKeywordMode>('simple');
   const [prefisso,    setPrefisso]    = useState('');
@@ -223,6 +310,7 @@ function TabRegole() {
   const [parolaCh,    setParolaCh]    = useState('');
   const [ancora,      setAncora]      = useState('');
   const [obiettivo,   setObiettivo]   = useState('');
+  const [cercaColore, setCercaColore] = useState(false);
   const [distanza,    setDistanza]    = useState('20');
   const [note,        setNote]        = useState('');
 
@@ -238,9 +326,14 @@ function TabRegole() {
       const noteVal = note.trim() || undefined;
       const body = modo === 'simple'
         ? { modo, prefissoCommessa: prefisso.trim(), categoria: categoria.trim(), caratteristicaDerivata: caratt.trim(), parolaChiave: parolaCh.trim(), note: noteVal }
-        : { modo, prefissoCommessa: prefisso.trim(), categoria: categoria.trim(), caratteristicaDerivata: caratt.trim(), parolaAncora: ancora.trim(), parolaObiettivo: obiettivo.trim(), distanzaMaxCaratteri: parseInt(distanza) || 1, note: noteVal };
+        : {
+            modo, prefissoCommessa: prefisso.trim(), categoria: categoria.trim(), caratteristicaDerivata: caratt.trim(),
+            parolaAncora: ancora.trim(), obiettivoDaColori: cercaColore,
+            ...(cercaColore ? {} : { parolaObiettivo: obiettivo.trim() }),
+            distanzaMaxCaratteri: parseInt(distanza) || 1, note: noteVal,
+          };
       await api.post<ProdKeywordRule>('/api/prod/keyword-rules', body);
-      setPrefisso(''); setCategoria(''); setCaratt(''); setParolaCh(''); setAncora(''); setObiettivo(''); setNote('');
+      setPrefisso(''); setCategoria(''); setCaratt(''); setParolaCh(''); setAncora(''); setObiettivo(''); setCercaColore(false); setNote('');
       load();
     } finally { setBusy(false); }
   }
@@ -253,6 +346,50 @@ function TabRegole() {
   async function del(id: number) {
     await api.delete(`/api/prod/keyword-rules/${id}`);
     load();
+  }
+
+  // Testo esatto mostrato nella colonna "Regola" — riusato sia per il render
+  // sia per popolare/confrontare il menu a tendina del filtro.
+  function regolaLabel(r: ProdKeywordRule): string {
+    if (r.modo === 'simple') return `"${r.parola_chiave}"`;
+    if (r.obiettivo_da_colori) return `"${r.parola_ancora}" → ≤${r.distanza_max_caratteri} car. → colore (da tab "Colori")`;
+    return `"${r.parola_ancora}" → ≤${r.distanza_max_caratteri} car. → "${r.parola_obiettivo}"`;
+  }
+
+  // Opzioni dei menu a tendina: i valori distinti effettivamente presenti
+  // nella tabella (caricata per intero, senza cap lato server).
+  const prefissoOptions  = useMemo(() => [...new Set(rules.map(r => r.prefisso_commessa).filter((v): v is string => !!v))].sort(), [rules]);
+  const categoriaOptions = useMemo(() => [...new Set(rules.map(r => r.categoria))].sort(), [rules]);
+  const carattOptions    = useMemo(() => [...new Set(rules.map(r => r.caratteristica_derivata))].sort(), [rules]);
+  const regolaOptions    = useMemo(() => [...new Set(rules.map(regolaLabel))].sort(), [rules]);
+  const noteOptions      = useMemo(() => [...new Set(rules.map(r => r.note).filter((v): v is string => !!v))].sort(), [rules]);
+
+  const hasFilter = !!(fPrefisso || fCategoria || fCaratt || fRegola || fNote);
+
+  const filteredRules = useMemo(() => rules.filter(r => {
+    if (fPrefisso  && (r.prefisso_commessa ?? '') !== fPrefisso)  return false;
+    if (fCategoria && r.categoria !== fCategoria)                 return false;
+    if (fCaratt    && r.caratteristica_derivata !== fCaratt)      return false;
+    if (fNote      && (r.note ?? '') !== fNote)                   return false;
+    if (fRegola    && regolaLabel(r) !== fRegola)                 return false;
+    return true;
+  }), [rules, fPrefisso, fCategoria, fCaratt, fRegola, fNote]);
+
+  // Elimina in blocco tutte le regole visibili con i filtri correnti — solo
+  // quelle caricate in memoria, ma qui non c'è un cap lato server (a
+  // differenza di Categoria - Area) quindi coincide sempre con "tutte quelle
+  // che matchano". Richiede almeno un filtro per evitare di svuotare
+  // l'intera tabella per errore.
+  async function delAllFiltered() {
+    if (!hasFilter || filteredRules.length === 0) return;
+    if (!confirm(`Eliminare TUTTE le ${filteredRules.length} regole che corrispondono ai filtri impostati? L'azione non è reversibile.`)) return;
+    setBulkBusy(true);
+    try {
+      await Promise.all(filteredRules.map(r => api.delete(`/api/prod/keyword-rules/${r.id}`)));
+      load();
+    } finally {
+      setBulkBusy(false);
+    }
   }
 
   if (loading) return <p className="text-gray-400">Caricamento...</p>;
@@ -282,13 +419,25 @@ function TabRegole() {
           <input value={parolaCh} onChange={e => setParolaCh(e.target.value)} placeholder="Parola chiave (substring nella descrizione)"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         ) : (
-          <div className="grid grid-cols-3 gap-2">
-            <input value={ancora} onChange={e => setAncora(e.target.value)} placeholder="Parola ancora"
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <input value={obiettivo} onChange={e => setObiettivo(e.target.value)} placeholder="Parola obiettivo (dopo l'ancora)"
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <input value={distanza} onChange={e => setDistanza(e.target.value)} type="number" min={1} placeholder="Distanza max (caratteri)"
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <div className="space-y-2">
+            <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+              <input type="checkbox" checked={cercaColore} onChange={e => setCercaColore(e.target.checked)} />
+              Cerca colore (usa le parole chiave della tab &quot;Colori&quot; invece di una parola obiettivo fissa)
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              <input value={ancora} onChange={e => setAncora(e.target.value)} placeholder="Parola ancora"
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              {cercaColore ? (
+                <div className="border border-dashed border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-400 flex items-center">
+                  qualsiasi colore attivo
+                </div>
+              ) : (
+                <input value={obiettivo} onChange={e => setObiettivo(e.target.value)} placeholder="Parola obiettivo (dopo l'ancora)"
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              )}
+              <input value={distanza} onChange={e => setDistanza(e.target.value)} type="number" min={1} placeholder="Distanza max (caratteri)"
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
           </div>
         )}
 
@@ -303,9 +452,17 @@ function TabRegole() {
           <ExcelImportButton
             endpoint="/api/prod/keyword-rules/import-excel"
             onDone={load}
-            label="Carica da Excel (Prefisso , Categoria, Significato, Note, Parola Chiave [simple] Parola Ancora, Parola Obiettivo, Distanza Max Caratteri [prossimità])"
+            label="Carica da Excel (Prefisso, Categoria, Significato, Note, Parola Chiave [simple] · Parola Ancora, Distanza Max Caratteri + Parola Obiettivo oppure Cerca Colore [prossimità])"
           />
         </div>
+      </div>
+
+      <div className="flex justify-end">
+        <button onClick={delAllFiltered} disabled={!hasFilter || bulkBusy || filteredRules.length === 0}
+          title={hasFilter ? '' : 'Imposta almeno un filtro per abilitare la cancellazione in blocco'}
+          className="text-sm text-red-600 border border-red-200 px-3 py-2 rounded-lg hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap">
+          {bulkBusy ? 'Eliminazione...' : 'Elimina tutti i filtrati'}
+        </button>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
@@ -320,12 +477,51 @@ function TabRegole() {
               <th className="py-2.5 px-4 text-center font-medium">Attiva</th>
               <th className="py-2.5 px-4" />
             </tr>
+            <tr className="border-b border-gray-200 bg-gray-50">
+              <th className="px-4 pb-2">
+                <select value={fPrefisso} onChange={e => setFPrefisso(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">— Tutti —</option>
+                  {prefissoOptions.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </th>
+              <th className="px-4 pb-2">
+                <select value={fCategoria} onChange={e => setFCategoria(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">— Tutte —</option>
+                  {categoriaOptions.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </th>
+              <th className="px-4 pb-2">
+                <select value={fCaratt} onChange={e => setFCaratt(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">— Tutte —</option>
+                  {carattOptions.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </th>
+              <th className="px-4 pb-2">
+                <select value={fRegola} onChange={e => setFRegola(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">— Tutte —</option>
+                  {regolaOptions.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </th>
+              <th className="px-4 pb-2">
+                <select value={fNote} onChange={e => setFNote(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">— Tutte —</option>
+                  {noteOptions.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </th>
+              <th className="px-4 pb-2" />
+              <th className="px-4 pb-2" />
+            </tr>
           </thead>
           <tbody>
-            {rules.length === 0 && (
+            {filteredRules.length === 0 && (
               <tr><td colSpan={7} className="text-center text-gray-400 py-6">Nessuna regola</td></tr>
             )}
-            {rules.map(r => (
+            {filteredRules.map(r => (
               <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="py-2 px-4 font-mono">{r.prefisso_commessa || <span className="italic text-gray-400">tutte</span>}</td>
                 <td className="py-2 px-4">{r.categoria}</td>
@@ -333,7 +529,9 @@ function TabRegole() {
                 <td className="py-2 px-4 text-gray-500">
                   {r.modo === 'simple'
                     ? <span>&quot;{r.parola_chiave}&quot;</span>
-                    : <span>&quot;{r.parola_ancora}&quot; → ≤{r.distanza_max_caratteri} car. → &quot;{r.parola_obiettivo}&quot;</span>}
+                    : r.obiettivo_da_colori
+                      ? <span>&quot;{r.parola_ancora}&quot; → ≤{r.distanza_max_caratteri} car. → colore (da tab &quot;Colori&quot;)</span>
+                      : <span>&quot;{r.parola_ancora}&quot; → ≤{r.distanza_max_caratteri} car. → &quot;{r.parola_obiettivo}&quot;</span>}
                 </td>
                 <td className="py-2 px-4 text-gray-500 max-w-[240px] truncate" title={r.note ?? ''}>{r.note ?? '–'}</td>
                 <td className="py-2 px-4 text-center">
