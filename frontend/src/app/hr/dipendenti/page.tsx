@@ -196,13 +196,30 @@ export default function DipendentiPage() {
 
     // Seconda passata: dipendente → responsabile, responsabile → manager (se non ne ha già uno).
     // Responsabili e manager sono indicati solo per cognome nell'Excel.
-    const missing = new Set<string>();
-    const resolve = (name: string) => {
-      if (!name) return null;
-      const id = empByCognome.get(name.toLowerCase());
-      if (!id) missing.add(name);
-      return id ?? null;
-    };
+    // Se qualcuno non esiste ancora, si propone di crearlo (serve il nome; la data di
+    // assunzione non è nota, quindi si usa oggi e si può correggere dopo dalla scheda).
+    const needed = new Set<string>();
+    for (const l of links) for (const n of [l.responsabile, l.manager]) {
+      if (n && !empByCognome.has(n.toLowerCase())) needed.add(n);
+    }
+    const notCreated: string[] = [];
+    let createdChiefs = 0;
+    for (const cognomeRaw of needed) {
+      const nomeRaw = window.prompt(
+        `Il responsabile/manager "${cognomeRaw}" non esiste tra i dipendenti.
+
+Inserisci il NOME per crearlo (lascia vuoto o annulla per saltarlo):`,
+      );
+      if (!nomeRaw?.trim()) { notCreated.push(cognomeRaw); continue; }
+      const res = await fetch(`${BACKEND}/api/hr/employees`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ nome: nomeRaw.trim(), cognome: cognomeRaw, data_assunzione: today }),
+      });
+      if (res.ok) { const emp = await res.json(); empByCognome.set(cognomeRaw.toLowerCase(), emp.id); createdChiefs++; }
+      else notCreated.push(cognomeRaw);
+    }
+    const missing = new Set<string>(notCreated);
+    const resolve = (name: string) => (name ? empByCognome.get(name.toLowerCase()) ?? null : null);
     const chiefOf = new Map<number, number>();
     for (const l of links) {
       const resp = resolve(l.responsabile);
@@ -215,8 +232,8 @@ export default function DipendentiPage() {
 
     return {
       inserted, skipped, errors,
-      detail: `Nuovi: ${inserted} · già presenti e aggiornati: ${updated}. Responsabile e manager si collegano per cognome esatto`
-        + (missing.size ? `; non trovati tra i dipendenti (aggiungili all'Excel o creali a mano): ${[...missing].join(', ')}.` : '.'),
+      detail: `Nuovi: ${inserted} · già presenti e aggiornati: ${updated}${createdChiefs ? ` · responsabili creati: ${createdChiefs} (controlla la data di assunzione)` : ''}. Responsabile e manager si collegano per cognome esatto`
+        + (missing.size ? `; non collegati perché non creati: ${[...missing].join(', ')}.` : '.'),
     };
   }
 
