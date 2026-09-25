@@ -183,9 +183,12 @@ export function startScheduler() {
   // 23:45 — generazione automatica EDI per i clienti con auto_generate = true
   cron.schedule('45 23 * * *', async () => {
     logger.info('[scheduler] EDI auto-generate...');
+    startRun('edi_auto_generate');
     try {
-      await autoGenerateEdi();
+      const { generated } = await autoGenerateEdi();
+      endRun('edi_auto_generate', generated);
     } catch (e) {
+      failRun('edi_auto_generate', e);
       logger.error(`[scheduler] EDI auto-generate fallito: ${e instanceof Error ? e.message : e}`);
     }
     setNextRun('edi_auto_generate', nextOccurrence(23, 45));

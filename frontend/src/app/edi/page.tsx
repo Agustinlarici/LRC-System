@@ -892,7 +892,9 @@ function TabOrdiniFerrari() {
   const [selected,        setSelected]        = useState<Set<string>>(new Set());
   const [bulkLoading,     setBulkLoading]     = useState(false);
   const [bulkCsvLoading,  setBulkCsvLoading]  = useState(false);
-  const [search,          setSearch]          = useState('');
+  const [searchOrdine,    setSearchOrdine]    = useState('');
+  const [searchCommessa,  setSearchCommessa]  = useState('');
+  const [searchData,      setSearchData]      = useState('');
   const pollRef                       = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => { setDownloaded(getDownloadedSet()); }, []);
@@ -1036,11 +1038,15 @@ function TabOrdiniFerrari() {
     }
   }
 
-  const q = search.trim().toLowerCase();
-  const filtered = q
+  const qOrdine   = searchOrdine.trim().toLowerCase();
+  const qCommessa = searchCommessa.trim().toLowerCase();
+  const qData     = searchData.trim();
+  const hasFilter = !!(qOrdine || qCommessa || qData);
+  const filtered = hasFilter
     ? ordini.filter(o =>
-        o.num_contratto.toLowerCase().includes(q) ||
-        (o.commessa ?? '').toLowerCase().includes(q)
+        (!qOrdine   || o.num_contratto.toLowerCase().includes(qOrdine)) &&
+        (!qCommessa || (o.commessa ?? '').toLowerCase().includes(qCommessa)) &&
+        (!qData     || (o.file_mtime ?? '').slice(0, 10) === qData)
       )
     : ordini;
 
@@ -1086,25 +1092,55 @@ function TabOrdiniFerrari() {
         </div>
       )}
 
-      {!loading && !error && ordini.length > 0 && q && filtered.length === 0 && (
+      {!loading && !error && ordini.length > 0 && hasFilter && filtered.length === 0 && (
         <div className="text-center py-12 text-gray-400 text-sm">
-          Nessun ordine trovato per &ldquo;{search.trim()}&rdquo;.
+          Nessun ordine trovato per i filtri impostati.
         </div>
       )}
 
       {!loading && ordini.length > 0 && (
         <>
         {/* Search */}
-        <div className="mb-3">
-          <input
-            type="search"
-            placeholder="Cerca per N° contratto o commessa…"
-            value={search}
-            onChange={e => { setSearch(e.target.value); setVisibili(PAGE_SIZE); }}
-            className="w-full max-w-sm px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-          {q && (
-            <span className="ml-3 text-xs text-gray-500">{filtered.length} risultat{filtered.length === 1 ? 'o' : 'i'}</span>
+        <div className="flex flex-wrap items-end gap-3 mb-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">N° Ordine / Contratto</label>
+            <input
+              type="search"
+              placeholder="Cerca N° ordine…"
+              value={searchOrdine}
+              onChange={e => { setSearchOrdine(e.target.value); setVisibili(PAGE_SIZE); }}
+              className="w-56 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Commessa</label>
+            <input
+              type="search"
+              placeholder="Cerca commessa…"
+              value={searchCommessa}
+              onChange={e => { setSearchCommessa(e.target.value); setVisibili(PAGE_SIZE); }}
+              className="w-56 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Data file</label>
+            <input
+              type="date"
+              value={searchData}
+              onChange={e => { setSearchData(e.target.value); setVisibili(PAGE_SIZE); }}
+              className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          {hasFilter && (
+            <button
+              onClick={() => { setSearchOrdine(''); setSearchCommessa(''); setSearchData(''); setVisibili(PAGE_SIZE); }}
+              className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700"
+            >
+              Pulisci filtri
+            </button>
+          )}
+          {hasFilter && (
+            <span className="text-xs text-gray-500 pb-2.5">{filtered.length} risultat{filtered.length === 1 ? 'o' : 'i'}</span>
           )}
         </div>
         {/* Legend */}

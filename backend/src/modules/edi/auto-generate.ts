@@ -17,13 +17,14 @@ async function nextSequence(year: number): Promise<number> {
   return row.last_sequence as number;
 }
 
-export async function autoGenerateEdi(): Promise<void> {
+export async function autoGenerateEdi(): Promise<{ generated: number }> {
   const clients = await db`SELECT * FROM edi_clients WHERE auto_generate = true`;
-  if (clients.length === 0) return;
+  if (clients.length === 0) return { generated: 0 };
 
   logger.info(`[EDI Auto] ${clients.length} client/i con auto_generate attivo`);
 
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
+  let generated = 0;
 
   for (const client of clients) {
     const account = client.customer_account as string;
@@ -95,6 +96,7 @@ export async function autoGenerateEdi(): Promise<void> {
                ${filename}, 'sent', ${fileContent}, false)
           `;
 
+          generated++;
           logger.info(`[EDI Auto] Generato: ${filename}`);
         } catch (e) {
           logger.error(`[EDI Auto] Errore ${shipment.shipment_id}: ${e instanceof Error ? e.message : e}`);
@@ -104,4 +106,6 @@ export async function autoGenerateEdi(): Promise<void> {
       logger.error(`[EDI Auto] Errore cliente ${account}: ${e instanceof Error ? e.message : e}`);
     }
   }
+
+  return { generated };
 }
