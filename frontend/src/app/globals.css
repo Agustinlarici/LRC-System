@@ -135,3 +135,13 @@ body {
 .org-tree > li::after {
   display: none;
 }
+
+/* ─── Stampa Analisi HR ──────────────────────────────────────────────────────
+   .print-card non si spezza tra due pagine; con body[data-print-only] si stampa
+   solo il riquadro marcato data-print-target (bottone "Stampa" di ogni card). */
+@media print {
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-card { break-inside: avoid; box-shadow: none !important; }
+  body[data-print-only] .print-card:not([data-print-target]) { display: none !important; }
+  body[data-print-only] h2 { display: none !important; }
+}

@@ -99,10 +99,7 @@ export default function AnalisiHRPage() {
         </div>
       </div>
 
-      <AnalisiOrganico />
-
-      <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest pt-2">Età, reparti e movimenti</h2>
-
+      <AnalisiOrganico extra={<>
       {/* ── Distribuzione età per reparto ──────────────────────────────── */}
       <div className="card">
         <p className="text-base font-medium text-gray-700 mb-1">Struttura per età e reparto</p>
@@ -194,6 +191,7 @@ export default function AnalisiHRPage() {
           </div>
         </div>
       </div>
+      </>} />
     </div>
   );
 }
