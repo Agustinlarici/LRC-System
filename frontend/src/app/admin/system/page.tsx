@@ -12,10 +12,10 @@ type User = {
   phone: string | null; department_id: number | null; department_name: string | null;
   role: 'guest' | 'operator' | 'it' | 'admin'; is_active: boolean;
 };
-type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'programma_produzione';
+type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'programma_produzione' | 'hr' | 'hr_salary';
 type Permission = { module_key: ModuleKey; can_view: boolean; can_manage: boolean };
 
-const MODULE_CATEGORIES = ['Logistica', 'Produzione', 'Dashboard', 'IT', 'Qualità'] as const;
+const MODULE_CATEGORIES = ['Logistica', 'Produzione', 'Dashboard', 'IT', 'Qualità', 'HR'] as const;
 
 const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATEGORIES[number] }[] = [
   // ── Logistica ──────────────────────────────────────────────────────────────
@@ -46,6 +46,10 @@ const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATE
 
   // ── Qualità ────────────────────────────────────────────────────────────────
   { key: 'qualita', label: 'Difetti', category: 'Qualità' },
+
+  // ── HR ─────────────────────────────────────────────────────────────────────
+  { key: 'hr',        label: 'HR — Dipendenti',        category: 'HR' },
+  { key: 'hr_salary', label: 'HR — Livello retributivo', category: 'HR' },
 ];
 
 async function apiFetch(path: string, opts?: RequestInit) {

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { AnalisiOrganico } from './AnalisiOrganico';
 import type { HrAnalyticsSummary, HrAgeBucket, HrDeptDistribution, HrEmployee, HrEventType } from '@/types';
 
 const BACKEND = typeof window !== 'undefined'
@@ -97,6 +98,10 @@ export default function AnalisiHRPage() {
           <KpiCard label="Cessazioni (12 mesi)" value={summary?.cessazioni_ultimo_anno ?? '—'} />
         </div>
       </div>
+
+      <AnalisiOrganico />
+
+      <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest pt-2">Età, reparti e movimenti</h2>
 
       {/* ── Distribuzione età per reparto ──────────────────────────────── */}
       <div className="card">
