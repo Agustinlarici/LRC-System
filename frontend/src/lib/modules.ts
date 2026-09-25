@@ -137,6 +137,28 @@ export const MODULES: ModuleConfig[] = [
     sidebar: 'IconFactory', hidden: false, moduleKey: 'programma_produzione',
   },
 
+  // ── HR ──────────────────────────────────────────────────────────────────────
+  {
+    href: '/hr/dipendenti', label: 'Dipendenti', group: 'HR',
+    description: 'Ficha completa, dati anagrafici e lavorativi, storico eventi',
+    sidebar: 'IconUsers', hidden: false, moduleKey: 'hr',
+  },
+  {
+    href: '/hr/organigramma', label: 'Organigramma', group: 'HR',
+    description: 'Struttura organizzativa dinamica, capi e team',
+    sidebar: 'IconOrgChart', hidden: false, moduleKey: 'hr',
+  },
+  {
+    href: '/hr/analisi', label: 'Analisi HR', group: 'HR',
+    description: 'Organico, età, anzianità, distribuzioni e movimenti del personale',
+    sidebar: 'IconChart', hidden: false, moduleKey: 'hr',
+  },
+  {
+    href: '/hr/evoluzione', label: 'Evoluzione Aziendale', group: 'HR',
+    description: 'Come è cambiata l\'azienda nel tempo: organico, assunzioni, struttura',
+    sidebar: 'IconTrendUp', hidden: false, moduleKey: 'hr',
+  },
+
   // ── Nascosti / in arrivo ───────────────────────────────────────────────────
   {
     href: '/assistant', label: 'Assistente AI', group: 'Altro',
@@ -147,7 +169,7 @@ export const MODULES: ModuleConfig[] = [
 
 export const visibleModules = MODULES.filter(m => !m.hidden);
 
-export const MODULE_GROUPS = ['Logistica', 'Produzione', 'Qualità', 'Dashboard', 'IT'] as const;
+export const MODULE_GROUPS = ['Logistica', 'Produzione', 'Qualità', 'Dashboard', 'HR', 'IT'] as const;
 export type ModuleGroup = typeof MODULE_GROUPS[number];
 
 export const modulesByGroup = (group: string) =>

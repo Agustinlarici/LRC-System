@@ -18,6 +18,7 @@ import { ediRoutes } from './modules/edi/routes.js';
 import { webddtRoutes } from './modules/webddt/routes.js';
 import { qualitaRoutes } from './modules/qualita/routes.js';
 import { programmaProduzioneRoutes } from './modules/programma-produzione/routes.js';
+import { hrRoutes } from './modules/hr/routes.js';
 import { logger } from './lib/logger.js';
 import { db } from './db/client.js';
 import { getWebthronPool } from './modules/monitor/mysql-client.js';
@@ -99,6 +100,7 @@ app.route('/api/edi', ediRoutes);
 app.route('/api/webddt', webddtRoutes);
 app.route('/api/qualita', qualitaRoutes);
 app.route('/api/prod', programmaProduzioneRoutes);
+app.route('/api/hr', hrRoutes);
 
 // Stub para módulos aún no migrados
 const stub = (module: string) =>

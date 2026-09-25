@@ -63,3 +63,75 @@ body {
 .animate-slideIn {
   animation: slideIn 0.2s ease-out;
 }
+
+/* ─── Organigramma HR — albero visivo con connettori tra le card ────────────
+   Tecnica CSS classica per organigrammi: ogni <li> disegna la propria linea
+   verso il genitore con ::before/::after, così l'albero si costruisce da solo
+   qualunque sia la struttura (nessun calcolo di posizione in JS). */
+.org-tree, .org-tree ul {
+  display: flex;
+  justify-content: center;
+  padding-top: 28px;
+  position: relative;
+}
+.org-tree {
+  display: inline-flex;
+}
+.org-tree li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  list-style-type: none;
+  position: relative;
+  padding: 28px 14px 0 14px;
+}
+.org-tree li::before,
+.org-tree li::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 50%;
+  border-top: 2px solid #d1d5db;
+  width: 50%;
+  height: 28px;
+}
+.org-tree li::after {
+  right: auto;
+  left: 50%;
+  border-left: 2px solid #d1d5db;
+}
+.org-tree li:only-child::after,
+.org-tree li:only-child::before {
+  display: none;
+}
+.org-tree li:only-child {
+  padding-top: 0;
+}
+.org-tree li:first-child::before,
+.org-tree li:last-child::after {
+  border: 0 none;
+}
+.org-tree li:last-child::before {
+  border-right: 2px solid #d1d5db;
+  border-radius: 0 6px 0 0;
+}
+.org-tree li:first-child::after {
+  border-radius: 6px 0 0 0;
+}
+.org-tree ul::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  border-left: 2px solid #d1d5db;
+  width: 0;
+  height: 28px;
+}
+/* La riga radice (i "capi" senza superiore) non ha un genitore a cui collegarsi */
+.org-tree > li {
+  padding-top: 0;
+}
+.org-tree > li::before,
+.org-tree > li::after {
+  display: none;
+}

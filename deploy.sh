@@ -146,6 +146,7 @@ run_migrations() {
     "db/migrate-programma-produzione.sql"
     "db/migrate-device-auth.sql"
     "db/migrate-force-password-change.sql"
+    "db/migrate-hr.sql"
   )
   for f in "${MIGRATIONS[@]}"; do
     if [ -f "$f" ]; then
