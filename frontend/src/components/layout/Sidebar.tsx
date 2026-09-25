@@ -27,7 +27,7 @@ function IconHome() {
 function IconChevron({ open }: { open: boolean }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
-      className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}>
+      className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${open ? '' : 'rotate-180'}`}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
     </svg>
   );
