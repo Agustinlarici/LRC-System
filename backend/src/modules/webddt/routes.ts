@@ -152,7 +152,7 @@ webddtRoutes.post('/download', requireModule('webddt'), async (c) => {
         ? line.contract_number ?? ''
         : poMap.get(line.article_code) ?? '';
       const poNumber = poNumberRaw
-        ? String(poNumberRaw).padStart(9, '0')
+        ? String(poNumberRaw).trim().replace(/-\d{1,2}$/, '').padStart(9, '0')
         : '';
 
       row['Shipper number']           = shipperNo;
