@@ -63,6 +63,25 @@ function topN(data: Count[], n: number): Count[] {
   return [...data.slice(0, n), { name: 'Altre', value: rest }];
 }
 
+// Struttura per età: una riga per età, una colonna per funzione aziendale — usa
+// e.eta (già calcolato lato server) invece di ricalcolare l'età lato client.
+function ageByFunzione(list: HrEmployee[]) {
+  const seriesTotals = new Map<string, number>();
+  const rows = new Map<number, Record<string, number | string>>();
+  for (const e of list) {
+    if (e.eta == null) continue;
+    const funzione = e.funzione_aziendale?.trim() || NA;
+    if (!rows.has(e.eta)) rows.set(e.eta, { name: e.eta, _total: 0 });
+    const row = rows.get(e.eta)!;
+    row[funzione] = ((row[funzione] as number) ?? 0) + 1;
+    row._total = (row._total as number) + 1;
+    seriesTotals.set(funzione, (seriesTotals.get(funzione) ?? 0) + 1);
+  }
+  const series = [...seriesTotals.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
+  const data = [...rows.values()].sort((a, b) => (a.name as number) - (b.name as number));
+  return { data, series };
+}
+
 // Pivot: una riga per rowDim, una colonna per serDim
 function crossBy(list: HrEmployee[], rowDim: Dim, serDim: Dim, plantName: Map<number, string>) {
   const seriesTotals = new Map<string, number>();
@@ -222,6 +241,27 @@ function Stacked({ data, series, colorFor, asPct, labelWidth = 140 }: {
         <Tooltip cursor={{ fill: '#f3f4f6' }} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         {series.map(s => <Bar key={s} dataKey={s} stackId="a" fill={colorFor(s)} stroke="#fff" strokeWidth={1} />)}
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// Barre verticali impilate — età sull'asse X, una serie colorata per funzione aziendale.
+// A differenza di Stacked (orizzontale), qui le categorie sull'asse principale sono
+// troppe (un'età per persona) per stare leggibili in una lista verticale di etichette.
+function AgeStack({ data, series, colorFor }: {
+  data: Record<string, number | string>[]; series: string[]; colorFor: (s: string) => string;
+}) {
+  if (data.length === 0) return <Empty />;
+  return (
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+        <XAxis dataKey="name" tick={TICK} label={{ value: 'Età', position: 'insideBottom', offset: -2, fontSize: 11, fill: '#9ca3af' }} />
+        <YAxis allowDecimals={false} tick={TICK} label={{ value: 'Persone', angle: -90, position: 'insideLeft', fontSize: 11, fill: '#9ca3af' }} />
+        <Tooltip cursor={{ fill: '#f3f4f6' }} />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
+        {series.map(s => <Bar key={s} dataKey={s} stackId="a" fill={colorFor(s)} />)}
       </BarChart>
     </ResponsiveContainer>
   );
@@ -389,6 +429,9 @@ export function AnalisiOrganico() {
     return months;
   }, [expiring]);
 
+  const ageStruct = useMemo(() => ageByFunzione(active), [active]);
+  const overSixty = active.filter(e => (e.eta ?? 0) >= 60).length;
+
   if (loading) return <p className="text-sm text-gray-400 text-center py-10">Caricamento…</p>;
 
   const show = (t: Tab) => tab === t;
@@ -399,6 +442,10 @@ export function AnalisiOrganico() {
   const anzianita = active.length
     ? active.reduce((s, e) => s + (Date.now() - new Date(`${iso(e.data_assunzione)}T12:00:00Z`).getTime()) / (365.25 * 86400000), 0) / active.length
     : null;
+  const conEta = active.filter(e => e.eta != null);
+  const etaMedia = conEta.length ? conEta.reduce((s, e) => s + (e.eta as number), 0) / conEta.length : null;
+  const donne = active.filter(e => e.sesso?.trim().toUpperCase().startsWith('F')).length;
+  const l68 = active.filter(e => e.l68).length;
   const cessCurYear = yearly.find(y => y.anno === String(cur))?.cessazioni ?? 0;
   const activeFilters = FILTER_ORDER.filter(d => filters[d]?.length);
 
@@ -596,17 +643,35 @@ export function AnalisiOrganico() {
 
         {show('riepilogo') && (
           <Section title="Riepilogo">
-            <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <Kpi label="Organico attivo" value={totActive} />
+              <Kpi label="Età media" value={etaMedia != null ? etaMedia.toFixed(1) : '—'} sub="anni" />
+              <Kpi label="Anzianità media" value={anzianita != null ? anzianita.toFixed(1) : '—'} sub="anni" />
+              <Kpi label="Donne" value={pct(donne, totActive)} sub={`${donne} persone`} />
+              <Kpi label="Categorie protette (L.68)" value={pct(l68, totActive)} sub={`${l68} persone`} />
               <Kpi label="Tempo determinato" value={pct(determinati, totActive)} sub={`${determinati} persone`} />
               <Kpi label="Scadenze entro 90 gg" value={expiring90.length} tone={expiring90.length ? 'warn' : undefined} sub="contratti da rinnovare" />
-              <Kpi label={`Cessazioni ${cur}`} value={cessCurYear} sub="da inizio anno" />
-              <Kpi label="Anzianità media" value={anzianita != null ? anzianita.toFixed(1) : '—'} sub="anni" />
               <Kpi label="Senza responsabile" value={senzaResp} tone={senzaResp ? 'warn' : undefined} sub="da assegnare" />
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+            <Card title="Struttura per età"
+              hint="Ogni barra è un'età; i colori mostrano da quale funzione aziendale arrivano i dipendenti."
+              chart={() => (
+                <>
+                  <AgeStack data={ageStruct.data} series={ageStruct.series} colorFor={colorFor('funzione')} />
+                  {overSixty > 0 && (
+                    <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
+                      ⚠ {overSixty} {overSixty === 1 ? 'persona ha' : 'persone hanno'} 60 anni o più — struttura dell&apos;età da monitorare per il turnover in vista della pensione.
+                    </p>
+                  )}
+                </>
+              )}
+              table={crossTable(ageStruct, 'Età')} />
+
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+              {countCard('Per funzione aziendale', 'funzione')}
               {countCard('Per plant', 'plant')}
-              {countCard('Per società', 'societa')}
+              {countCard('Per società', 'societa', { donut: true })}
               {countCard('Per tipologia', 'tipologia', { donut: true })}
             </div>
           </Section>
