@@ -316,10 +316,10 @@ function MultiFilter({ label, options, value, onChange }: {
 
 function Kpi({ label, value, sub, tone }: { label: string; value: React.ReactNode; sub?: string; tone?: 'warn' }) {
   return (
-    <div className="card print-card p-3">
-      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
-      <p className={`text-2xl font-semibold leading-none mt-1.5 ${tone === 'warn' ? 'text-amber-600' : 'text-gray-900'}`}>{value}</p>
-      {sub && <p className="text-xs text-gray-400 mt-2">{sub}</p>}
+    <div className="card print-card p-2.5">
+      <p className="text-[9px] font-medium text-gray-400 uppercase tracking-wide leading-tight">{label}</p>
+      <p className={`text-lg font-semibold leading-none mt-1 ${tone === 'warn' ? 'text-amber-600' : 'text-gray-900'}`}>{value}</p>
+      {sub && <p className="text-[10px] text-gray-400 mt-1 truncate">{sub}</p>}
     </div>
   );
 }
@@ -643,7 +643,7 @@ export function AnalisiOrganico() {
 
         {show('riepilogo') && (
           <Section title="Riepilogo">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
               <Kpi label="Organico attivo" value={totActive} />
               <Kpi label="Età media" value={etaMedia != null ? etaMedia.toFixed(1) : '—'} sub="anni" />
               <Kpi label="Anzianità media" value={anzianita != null ? anzianita.toFixed(1) : '—'} sub="anni" />
@@ -654,8 +654,18 @@ export function AnalisiOrganico() {
               <Kpi label="Senza responsabile" value={senzaResp} tone={senzaResp ? 'warn' : undefined} sub="da assegnare" />
             </div>
 
-            <Card title="Struttura per età"
-              hint="Ogni barra è un'età; i colori mostrano da quale funzione aziendale arrivano i dipendenti."
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+              {countCard('Per funzione aziendale', 'funzione')}
+              {countCard('Per categoria', 'categoria', { donut: true })}
+              {countCard('Per plant', 'plant')}
+              {countCard('Per società', 'societa', { donut: true })}
+            </div>
+
+            {/* In fondo e senza risalto: richiede la data di nascita di ogni dipendente,
+                dato non ancora caricato per il personale reale — si popolerà da solo
+                man mano che verrà inserito, senza bisogno di toccare questa pagina. */}
+            <Card title="Struttura per età" className="opacity-90"
+              hint="Ogni barra è un'età; i colori mostrano da quale funzione aziendale arrivano i dipendenti. Richiede la data di nascita in anagrafica."
               chart={() => (
                 <>
                   <AgeStack data={ageStruct.data} series={ageStruct.series} colorFor={colorFor('funzione')} />
@@ -667,13 +677,6 @@ export function AnalisiOrganico() {
                 </>
               )}
               table={crossTable(ageStruct, 'Età')} />
-
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-              {countCard('Per funzione aziendale', 'funzione')}
-              {countCard('Per plant', 'plant')}
-              {countCard('Per società', 'societa', { donut: true })}
-              {countCard('Per tipologia', 'tipologia', { donut: true })}
-            </div>
           </Section>
         )}
 
