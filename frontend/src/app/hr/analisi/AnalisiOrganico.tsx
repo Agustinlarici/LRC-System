@@ -82,6 +82,34 @@ function ageByFunzione(list: HrEmployee[]) {
   return { data, series };
 }
 
+// Anzianità in fasce per funzione aziendale — a differenza dell'età, data_assunzione
+// è un campo obbligatorio: questo grafico ha sempre dati reali da mostrare oggi.
+const ANZIANITA_BUCKETS = ['<1 anno', '1-5 anni', '5-10 anni', '10-20 anni', '20+ anni'];
+function anzianitaBucket(anni: number): string {
+  if (anni < 1) return ANZIANITA_BUCKETS[0];
+  if (anni < 5) return ANZIANITA_BUCKETS[1];
+  if (anni < 10) return ANZIANITA_BUCKETS[2];
+  if (anni < 20) return ANZIANITA_BUCKETS[3];
+  return ANZIANITA_BUCKETS[4];
+}
+function anzianitaByFunzione(list: HrEmployee[]) {
+  const seriesTotals = new Map<string, number>();
+  const rows = new Map<string, Record<string, number | string>>();
+  for (const b of ANZIANITA_BUCKETS) rows.set(b, { name: b, _total: 0 });
+  for (const e of list) {
+    const bucket = anzianitaBucket(e.anzianita_anni);
+    const funzione = e.funzione_aziendale?.trim() || NA;
+    const row = rows.get(bucket)!;
+    row[funzione] = ((row[funzione] as number) ?? 0) + 1;
+    row._total = (row._total as number) + 1;
+    seriesTotals.set(funzione, (seriesTotals.get(funzione) ?? 0) + 1);
+  }
+  const series = [...seriesTotals.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
+  // Ordine cronologico fisso (non per conteggio): si legge come una progressione
+  const data = ANZIANITA_BUCKETS.map(b => rows.get(b)!);
+  return { data, series };
+}
+
 // Pivot: una riga per rowDim, una colonna per serDim
 function crossBy(list: HrEmployee[], rowDim: Dim, serDim: Dim, plantName: Map<number, string>) {
   const seriesTotals = new Map<string, number>();
@@ -431,6 +459,7 @@ export function AnalisiOrganico() {
 
   const ageStruct = useMemo(() => ageByFunzione(active), [active]);
   const overSixty = active.filter(e => (e.eta ?? 0) >= 60).length;
+  const anzianitaStruct = useMemo(() => anzianitaByFunzione(active), [active]);
 
   if (loading) return <p className="text-sm text-gray-400 text-center py-10">Caricamento…</p>;
 
@@ -654,12 +683,20 @@ export function AnalisiOrganico() {
               <Kpi label="Senza responsabile" value={senzaResp} tone={senzaResp ? 'warn' : undefined} sub="da assegnare" />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {countCard('Per funzione aziendale', 'funzione')}
               {countCard('Per categoria', 'categoria', { donut: true })}
+              {countCard('Per tipologia', 'tipologia', { donut: true })}
               {countCard('Per plant', 'plant')}
               {countCard('Per società', 'societa', { donut: true })}
+              {countCard('Per sesso', 'sesso', { donut: true })}
             </div>
+
+            <Card title="Anzianità in fasce"
+              canPct
+              hint="Da quanto tempo lavora in azienda l'organico attuale, per funzione aziendale — a differenza dell'età, questo dato è già completo oggi."
+              chart={asPct => <Stacked data={anzianitaStruct.data} series={anzianitaStruct.series} colorFor={colorFor('funzione')} asPct={asPct} labelWidth={90} />}
+              table={crossTable(anzianitaStruct, 'Anzianità')} />
 
             {/* In fondo e senza risalto: richiede la data di nascita di ogni dipendente,
                 dato non ancora caricato per il personale reale — si popolerà da solo
