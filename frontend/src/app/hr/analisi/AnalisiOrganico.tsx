@@ -206,7 +206,11 @@ function Card({ title, hint, chart, table, className = '', canPct = false }: {
 
 // ─── Grafici ───────────────────────────────────────────────────────────────────
 
-function Bars({ data, color = PALETTE[0] }: { data: Count[]; color?: string }) {
+// I valori sintetici (aggregato "Altre" da topN) non corrispondono a un valore
+// filtrabile reale: il click va ignorato solo per quelli, non per "N/D".
+const isClickable = (name: string) => name !== 'Altre';
+
+function Bars({ data, color = PALETTE[0], onSelect, active }: { data: Count[]; color?: string; onSelect?: (name: string) => void; active?: string[] }) {
   if (data.length === 0) return <Empty />;
   const total = data.reduce((s, d) => s + d.value, 0);
   return (
@@ -216,15 +220,20 @@ function Bars({ data, color = PALETTE[0] }: { data: Count[]; color?: string }) {
         <YAxis type="category" dataKey="name" width={120} tick={TICK} axisLine={false} tickLine={false} />
         <Tooltip cursor={{ fill: '#f3f4f6' }} formatter={(v: any) => [`${v} (${pct(Number(v), total)})`, 'Persone']} />
         <Bar dataKey="value" name="Persone" radius={[0, 4, 4, 0]} barSize={14}
-          label={{ position: 'right', fontSize: 12, fill: '#374151' }}>
-          {data.map(d => <Cell key={d.name} fill={d.name === NA || d.name === 'Altre' ? OTHER_COLOR : color} />)}
+          label={{ position: 'right', fontSize: 12, fill: '#374151' }}
+          onClick={onSelect ? (d: any) => isClickable(d.name) && onSelect(d.name) : undefined}
+          cursor={onSelect ? 'pointer' : undefined}>
+          {data.map(d => (
+            <Cell key={d.name} fill={d.name === NA || d.name === 'Altre' ? OTHER_COLOR : color}
+              opacity={!active?.length || active.includes(d.name) ? 1 : 0.35} />
+          ))}
         </Bar>
       </BarChart>
     </ResponsiveContainer>
   );
 }
 
-function Donut({ data, colorFor }: { data: Count[]; colorFor: (name: string) => string }) {
+function Donut({ data, colorFor, onSelect, active }: { data: Count[]; colorFor: (name: string) => string; onSelect?: (name: string) => void; active?: string[] }) {
   if (data.length === 0) return <Empty />;
   const total = data.reduce((s, d) => s + d.value, 0);
   return (
@@ -232,8 +241,13 @@ function Donut({ data, colorFor }: { data: Count[]; colorFor: (name: string) => 
       <div className="relative w-32 h-32 shrink-0">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-            <Pie data={data} dataKey="value" nameKey="name" innerRadius={38} outerRadius={58} paddingAngle={2} stroke="none">
-              {data.map(d => <Cell key={d.name} fill={colorFor(d.name)} />)}
+            <Pie data={data} dataKey="value" nameKey="name" innerRadius={38} outerRadius={58} paddingAngle={2} stroke="none"
+              onClick={onSelect ? (d: any) => isClickable(d.name) && onSelect(d.name) : undefined}
+              cursor={onSelect ? 'pointer' : undefined}>
+              {data.map(d => (
+                <Cell key={d.name} fill={colorFor(d.name)}
+                  opacity={!active?.length || active.includes(d.name) ? 1 : 0.35} />
+              ))}
             </Pie>
             <Tooltip />
           </PieChart>
@@ -245,7 +259,8 @@ function Donut({ data, colorFor }: { data: Count[]; colorFor: (name: string) => 
       </div>
       <div className="flex-1 min-w-[140px] flex flex-col gap-1.5">
         {data.map(d => (
-          <div key={d.name} className="flex items-center gap-2 text-sm">
+          <div key={d.name} className={`flex items-center gap-2 text-sm ${onSelect && isClickable(d.name) ? 'cursor-pointer hover:opacity-70' : ''} ${active?.length && !active.includes(d.name) ? 'opacity-40' : ''}`}
+            onClick={onSelect && isClickable(d.name) ? () => onSelect(d.name) : undefined}>
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: colorFor(d.name) }} />
             <span className="truncate flex-1 text-gray-700">{d.name}</span>
             <span className="text-gray-500 tabular-nums">{d.value} · {pct(d.value, total)}</span>
@@ -256,8 +271,9 @@ function Donut({ data, colorFor }: { data: Count[]; colorFor: (name: string) => 
   );
 }
 
-function Stacked({ data, series, colorFor, asPct, labelWidth = 140 }: {
+function Stacked({ data, series, colorFor, asPct, labelWidth = 140, onSelect, active }: {
   data: Record<string, number | string>[]; series: string[]; colorFor: (s: string) => string; asPct: boolean; labelWidth?: number;
+  onSelect?: (name: string) => void; active?: string[];
 }) {
   if (data.length === 0) return <Empty />;
   return (
@@ -267,8 +283,13 @@ function Stacked({ data, series, colorFor, asPct, labelWidth = 140 }: {
         <XAxis type="number" allowDecimals={false} tick={TICK} tickFormatter={asPct ? (v: number) => `${Math.round(v * 100)}%` : undefined} />
         <YAxis type="category" dataKey="name" width={labelWidth} tick={TICK} axisLine={false} tickLine={false} />
         <Tooltip cursor={{ fill: '#f3f4f6' }} />
-        <Legend wrapperStyle={{ fontSize: 12 }} />
-        {series.map(s => <Bar key={s} dataKey={s} stackId="a" fill={colorFor(s)} stroke="#fff" strokeWidth={1} />)}
+        <Legend wrapperStyle={{ fontSize: 12 }} onClick={onSelect ? (d: any) => isClickable(d.value) && onSelect(d.value) : undefined} cursor={onSelect ? 'pointer' : undefined} />
+        {series.map(s => (
+          <Bar key={s} dataKey={s} stackId="a" fill={colorFor(s)} stroke="#fff" strokeWidth={1}
+            fillOpacity={!active?.length || active.includes(s) ? 1 : 0.35}
+            onClick={onSelect ? () => isClickable(s) && onSelect(s) : undefined}
+            cursor={onSelect ? 'pointer' : undefined} />
+        ))}
       </BarChart>
     </ResponsiveContainer>
   );
@@ -277,8 +298,9 @@ function Stacked({ data, series, colorFor, asPct, labelWidth = 140 }: {
 // Barre verticali impilate — età sull'asse X, una serie colorata per funzione aziendale.
 // A differenza di Stacked (orizzontale), qui le categorie sull'asse principale sono
 // troppe (un'età per persona) per stare leggibili in una lista verticale di etichette.
-function AgeStack({ data, series, colorFor }: {
+function AgeStack({ data, series, colorFor, onSelect, active }: {
   data: Record<string, number | string>[]; series: string[]; colorFor: (s: string) => string;
+  onSelect?: (name: string) => void; active?: string[];
 }) {
   if (data.length === 0) return <Empty />;
   return (
@@ -288,8 +310,13 @@ function AgeStack({ data, series, colorFor }: {
         <XAxis dataKey="name" tick={TICK} label={{ value: 'Età', position: 'insideBottom', offset: -2, fontSize: 11, fill: '#9ca3af' }} />
         <YAxis allowDecimals={false} tick={TICK} label={{ value: 'Persone', angle: -90, position: 'insideLeft', fontSize: 11, fill: '#9ca3af' }} />
         <Tooltip cursor={{ fill: '#f3f4f6' }} />
-        <Legend wrapperStyle={{ fontSize: 12 }} />
-        {series.map(s => <Bar key={s} dataKey={s} stackId="a" fill={colorFor(s)} />)}
+        <Legend wrapperStyle={{ fontSize: 12 }} onClick={onSelect ? (d: any) => isClickable(d.value) && onSelect(d.value) : undefined} cursor={onSelect ? 'pointer' : undefined} />
+        {series.map(s => (
+          <Bar key={s} dataKey={s} stackId="a" fill={colorFor(s)}
+            fillOpacity={!active?.length || active.includes(s) ? 1 : 0.35}
+            onClick={onSelect ? () => isClickable(s) && onSelect(s) : undefined}
+            cursor={onSelect ? 'pointer' : undefined} />
+        ))}
       </BarChart>
     </ResponsiveContainer>
   );
@@ -423,6 +450,15 @@ export function AnalisiOrganico() {
   const active = useMemo(() => allActive.filter(matches), [allActive, matches]);
   const filteredAll = useMemo(() => all.filter(matches), [all, matches]);
 
+  // Click su un grafico: applica/rimuove quel valore come filtro (stesso comportamento del menu Filtri)
+  const toggleFilter = (dim: Dim, value: string) => {
+    setFilters(f => {
+      const sel = f[dim] ?? [];
+      return { ...f, [dim]: sel.includes(value) ? sel.filter(v => v !== value) : [...sel, value] };
+    });
+    setShowFilters(true);
+  };
+
   const today = new Date().toISOString().slice(0, 10);
   const plus = (days: number) => { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); };
 
@@ -483,9 +519,13 @@ export function AnalisiOrganico() {
     const raw = countBy(active, dim, plantName, opts.sort);
     const data = opts.top ? topN(raw, opts.top) : raw;
     const total = data.reduce((s, d) => s + d.value, 0);
+    const sel = filters[dim] ?? [];
+    const onSelect = (name: string) => toggleFilter(dim, name);
     return (
       <Card title={title} hint={opts.hint} className={opts.className}
-        chart={() => opts.donut ? <Donut data={data} colorFor={colorFor(dim)} /> : <Bars data={data} />}
+        chart={() => opts.donut
+          ? <Donut data={data} colorFor={colorFor(dim)} onSelect={onSelect} active={sel} />
+          : <Bars data={data} onSelect={onSelect} active={sel} />}
         table={<DataTable head={[DIM_LABEL[dim], 'Persone', '%']} rows={data.map(d => [d.name, d.value, pct(d.value, total)])} foot={['Totale', total, '100%']} />} />
     );
   };
@@ -495,7 +535,8 @@ export function AnalisiOrganico() {
     const shown = opts.maxRows ? cross.data.slice(0, opts.maxRows) : cross.data;
     return (
       <Card title={title} canPct hint={opts.hint} className={opts.className}
-        chart={asPct => <Stacked data={shown} series={cross.series} colorFor={colorFor(serDim)} asPct={asPct} />}
+        chart={asPct => <Stacked data={shown} series={cross.series} colorFor={colorFor(serDim)} asPct={asPct}
+          onSelect={name => toggleFilter(serDim, name)} active={filters[serDim] ?? []} />}
         table={crossTable(cross, DIM_LABEL[rowDim])} />
     );
   };
@@ -695,7 +736,8 @@ export function AnalisiOrganico() {
             <Card title="Anzianità in fasce"
               canPct
               hint="Da quanto tempo lavora in azienda l'organico attuale, per funzione aziendale — a differenza dell'età, questo dato è già completo oggi."
-              chart={asPct => <Stacked data={anzianitaStruct.data} series={anzianitaStruct.series} colorFor={colorFor('funzione')} asPct={asPct} labelWidth={90} />}
+              chart={asPct => <Stacked data={anzianitaStruct.data} series={anzianitaStruct.series} colorFor={colorFor('funzione')} asPct={asPct} labelWidth={90}
+                onSelect={name => toggleFilter('funzione', name)} active={filters.funzione ?? []} />}
               table={crossTable(anzianitaStruct, 'Anzianità')} />
 
             {/* In fondo e senza risalto: richiede la data di nascita di ogni dipendente,
@@ -705,7 +747,8 @@ export function AnalisiOrganico() {
               hint="Ogni barra è un'età; i colori mostrano da quale funzione aziendale arrivano i dipendenti. Richiede la data di nascita in anagrafica."
               chart={() => (
                 <>
-                  <AgeStack data={ageStruct.data} series={ageStruct.series} colorFor={colorFor('funzione')} />
+                  <AgeStack data={ageStruct.data} series={ageStruct.series} colorFor={colorFor('funzione')}
+                    onSelect={name => toggleFilter('funzione', name)} active={filters.funzione ?? []} />
                   {overSixty > 0 && (
                     <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
                       ⚠ {overSixty} {overSixty === 1 ? 'persona ha' : 'persone hanno'} 60 anni o più — struttura dell&apos;età da monitorare per il turnover in vista della pensione.
