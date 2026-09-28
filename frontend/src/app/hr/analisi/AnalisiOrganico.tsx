@@ -63,6 +63,53 @@ function topN(data: Count[], n: number): Count[] {
   return [...data.slice(0, n), { name: 'Altre', value: rest }];
 }
 
+// Struttura per età: una riga per età, una colonna per funzione aziendale — usa
+// e.eta (già calcolato lato server) invece di ricalcolare l'età lato client.
+function ageByFunzione(list: HrEmployee[]) {
+  const seriesTotals = new Map<string, number>();
+  const rows = new Map<number, Record<string, number | string>>();
+  for (const e of list) {
+    if (e.eta == null) continue;
+    const funzione = e.funzione_aziendale?.trim() || NA;
+    if (!rows.has(e.eta)) rows.set(e.eta, { name: e.eta, _total: 0 });
+    const row = rows.get(e.eta)!;
+    row[funzione] = ((row[funzione] as number) ?? 0) + 1;
+    row._total = (row._total as number) + 1;
+    seriesTotals.set(funzione, (seriesTotals.get(funzione) ?? 0) + 1);
+  }
+  const series = [...seriesTotals.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
+  const data = [...rows.values()].sort((a, b) => (a.name as number) - (b.name as number));
+  return { data, series };
+}
+
+// Anzianità in fasce per funzione aziendale — a differenza dell'età, data_assunzione
+// è un campo obbligatorio: questo grafico ha sempre dati reali da mostrare oggi.
+const ANZIANITA_BUCKETS = ['<1 anno', '1-5 anni', '5-10 anni', '10-20 anni', '20+ anni'];
+function anzianitaBucket(anni: number): string {
+  if (anni < 1) return ANZIANITA_BUCKETS[0];
+  if (anni < 5) return ANZIANITA_BUCKETS[1];
+  if (anni < 10) return ANZIANITA_BUCKETS[2];
+  if (anni < 20) return ANZIANITA_BUCKETS[3];
+  return ANZIANITA_BUCKETS[4];
+}
+function anzianitaByFunzione(list: HrEmployee[]) {
+  const seriesTotals = new Map<string, number>();
+  const rows = new Map<string, Record<string, number | string>>();
+  for (const b of ANZIANITA_BUCKETS) rows.set(b, { name: b, _total: 0 });
+  for (const e of list) {
+    const bucket = anzianitaBucket(e.anzianita_anni);
+    const funzione = e.funzione_aziendale?.trim() || NA;
+    const row = rows.get(bucket)!;
+    row[funzione] = ((row[funzione] as number) ?? 0) + 1;
+    row._total = (row._total as number) + 1;
+    seriesTotals.set(funzione, (seriesTotals.get(funzione) ?? 0) + 1);
+  }
+  const series = [...seriesTotals.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
+  // Ordine cronologico fisso (non per conteggio): si legge come una progressione
+  const data = ANZIANITA_BUCKETS.map(b => rows.get(b)!);
+  return { data, series };
+}
+
 // Pivot: una riga per rowDim, una colonna per serDim
 function crossBy(list: HrEmployee[], rowDim: Dim, serDim: Dim, plantName: Map<number, string>) {
   const seriesTotals = new Map<string, number>();
@@ -159,7 +206,11 @@ function Card({ title, hint, chart, table, className = '', canPct = false }: {
 
 // ─── Grafici ───────────────────────────────────────────────────────────────────
 
-function Bars({ data, color = PALETTE[0] }: { data: Count[]; color?: string }) {
+// I valori sintetici (aggregato "Altre" da topN) non corrispondono a un valore
+// filtrabile reale: il click va ignorato solo per quelli, non per "N/D".
+const isClickable = (name: string) => name !== 'Altre';
+
+function Bars({ data, color = PALETTE[0], onSelect, active }: { data: Count[]; color?: string; onSelect?: (name: string) => void; active?: string[] }) {
   if (data.length === 0) return <Empty />;
   const total = data.reduce((s, d) => s + d.value, 0);
   return (
@@ -169,15 +220,20 @@ function Bars({ data, color = PALETTE[0] }: { data: Count[]; color?: string }) {
         <YAxis type="category" dataKey="name" width={120} tick={TICK} axisLine={false} tickLine={false} />
         <Tooltip cursor={{ fill: '#f3f4f6' }} formatter={(v: any) => [`${v} (${pct(Number(v), total)})`, 'Persone']} />
         <Bar dataKey="value" name="Persone" radius={[0, 4, 4, 0]} barSize={14}
-          label={{ position: 'right', fontSize: 12, fill: '#374151' }}>
-          {data.map(d => <Cell key={d.name} fill={d.name === NA || d.name === 'Altre' ? OTHER_COLOR : color} />)}
+          label={{ position: 'right', fontSize: 12, fill: '#374151' }}
+          onClick={onSelect ? (d: any) => isClickable(d.name) && onSelect(d.name) : undefined}
+          cursor={onSelect ? 'pointer' : undefined}>
+          {data.map(d => (
+            <Cell key={d.name} fill={d.name === NA || d.name === 'Altre' ? OTHER_COLOR : color}
+              opacity={!active?.length || active.includes(d.name) ? 1 : 0.35} />
+          ))}
         </Bar>
       </BarChart>
     </ResponsiveContainer>
   );
 }
 
-function Donut({ data, colorFor }: { data: Count[]; colorFor: (name: string) => string }) {
+function Donut({ data, colorFor, onSelect, active }: { data: Count[]; colorFor: (name: string) => string; onSelect?: (name: string) => void; active?: string[] }) {
   if (data.length === 0) return <Empty />;
   const total = data.reduce((s, d) => s + d.value, 0);
   return (
@@ -185,8 +241,13 @@ function Donut({ data, colorFor }: { data: Count[]; colorFor: (name: string) => 
       <div className="relative w-32 h-32 shrink-0">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-            <Pie data={data} dataKey="value" nameKey="name" innerRadius={38} outerRadius={58} paddingAngle={2} stroke="none">
-              {data.map(d => <Cell key={d.name} fill={colorFor(d.name)} />)}
+            <Pie data={data} dataKey="value" nameKey="name" innerRadius={38} outerRadius={58} paddingAngle={2} stroke="none"
+              onClick={onSelect ? (d: any) => isClickable(d.name) && onSelect(d.name) : undefined}
+              cursor={onSelect ? 'pointer' : undefined}>
+              {data.map(d => (
+                <Cell key={d.name} fill={colorFor(d.name)}
+                  opacity={!active?.length || active.includes(d.name) ? 1 : 0.35} />
+              ))}
             </Pie>
             <Tooltip />
           </PieChart>
@@ -198,7 +259,8 @@ function Donut({ data, colorFor }: { data: Count[]; colorFor: (name: string) => 
       </div>
       <div className="flex-1 min-w-[140px] flex flex-col gap-1.5">
         {data.map(d => (
-          <div key={d.name} className="flex items-center gap-2 text-sm">
+          <div key={d.name} className={`flex items-center gap-2 text-sm ${onSelect && isClickable(d.name) ? 'cursor-pointer hover:opacity-70' : ''} ${active?.length && !active.includes(d.name) ? 'opacity-40' : ''}`}
+            onClick={onSelect && isClickable(d.name) ? () => onSelect(d.name) : undefined}>
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: colorFor(d.name) }} />
             <span className="truncate flex-1 text-gray-700">{d.name}</span>
             <span className="text-gray-500 tabular-nums">{d.value} · {pct(d.value, total)}</span>
@@ -209,8 +271,9 @@ function Donut({ data, colorFor }: { data: Count[]; colorFor: (name: string) => 
   );
 }
 
-function Stacked({ data, series, colorFor, asPct, labelWidth = 140 }: {
+function Stacked({ data, series, colorFor, asPct, labelWidth = 140, onSelect, active }: {
   data: Record<string, number | string>[]; series: string[]; colorFor: (s: string) => string; asPct: boolean; labelWidth?: number;
+  onSelect?: (name: string) => void; active?: string[];
 }) {
   if (data.length === 0) return <Empty />;
   return (
@@ -220,8 +283,40 @@ function Stacked({ data, series, colorFor, asPct, labelWidth = 140 }: {
         <XAxis type="number" allowDecimals={false} tick={TICK} tickFormatter={asPct ? (v: number) => `${Math.round(v * 100)}%` : undefined} />
         <YAxis type="category" dataKey="name" width={labelWidth} tick={TICK} axisLine={false} tickLine={false} />
         <Tooltip cursor={{ fill: '#f3f4f6' }} />
-        <Legend wrapperStyle={{ fontSize: 12 }} />
-        {series.map(s => <Bar key={s} dataKey={s} stackId="a" fill={colorFor(s)} stroke="#fff" strokeWidth={1} />)}
+        <Legend wrapperStyle={{ fontSize: 12 }} onClick={onSelect ? (d: any) => isClickable(d.value) && onSelect(d.value) : undefined} cursor={onSelect ? 'pointer' : undefined} />
+        {series.map(s => (
+          <Bar key={s} dataKey={s} stackId="a" fill={colorFor(s)} stroke="#fff" strokeWidth={1}
+            fillOpacity={!active?.length || active.includes(s) ? 1 : 0.35}
+            onClick={onSelect ? () => isClickable(s) && onSelect(s) : undefined}
+            cursor={onSelect ? 'pointer' : undefined} />
+        ))}
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// Barre verticali impilate — età sull'asse X, una serie colorata per funzione aziendale.
+// A differenza di Stacked (orizzontale), qui le categorie sull'asse principale sono
+// troppe (un'età per persona) per stare leggibili in una lista verticale di etichette.
+function AgeStack({ data, series, colorFor, onSelect, active }: {
+  data: Record<string, number | string>[]; series: string[]; colorFor: (s: string) => string;
+  onSelect?: (name: string) => void; active?: string[];
+}) {
+  if (data.length === 0) return <Empty />;
+  return (
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+        <XAxis dataKey="name" tick={TICK} label={{ value: 'Età', position: 'insideBottom', offset: -2, fontSize: 11, fill: '#9ca3af' }} />
+        <YAxis allowDecimals={false} tick={TICK} label={{ value: 'Persone', angle: -90, position: 'insideLeft', fontSize: 11, fill: '#9ca3af' }} />
+        <Tooltip cursor={{ fill: '#f3f4f6' }} />
+        <Legend wrapperStyle={{ fontSize: 12 }} onClick={onSelect ? (d: any) => isClickable(d.value) && onSelect(d.value) : undefined} cursor={onSelect ? 'pointer' : undefined} />
+        {series.map(s => (
+          <Bar key={s} dataKey={s} stackId="a" fill={colorFor(s)}
+            fillOpacity={!active?.length || active.includes(s) ? 1 : 0.35}
+            onClick={onSelect ? () => isClickable(s) && onSelect(s) : undefined}
+            cursor={onSelect ? 'pointer' : undefined} />
+        ))}
       </BarChart>
     </ResponsiveContainer>
   );
@@ -276,10 +371,10 @@ function MultiFilter({ label, options, value, onChange }: {
 
 function Kpi({ label, value, sub, tone }: { label: string; value: React.ReactNode; sub?: string; tone?: 'warn' }) {
   return (
-    <div className="card print-card p-3">
-      <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
-      <p className={`text-2xl font-semibold leading-none mt-1.5 ${tone === 'warn' ? 'text-amber-600' : 'text-gray-900'}`}>{value}</p>
-      {sub && <p className="text-xs text-gray-400 mt-2">{sub}</p>}
+    <div className="card print-card p-2.5">
+      <p className="text-[9px] font-medium text-gray-400 uppercase tracking-wide leading-tight">{label}</p>
+      <p className={`text-lg font-semibold leading-none mt-1 ${tone === 'warn' ? 'text-amber-600' : 'text-gray-900'}`}>{value}</p>
+      {sub && <p className="text-[10px] text-gray-400 mt-1 truncate">{sub}</p>}
     </div>
   );
 }
@@ -355,6 +450,15 @@ export function AnalisiOrganico() {
   const active = useMemo(() => allActive.filter(matches), [allActive, matches]);
   const filteredAll = useMemo(() => all.filter(matches), [all, matches]);
 
+  // Click su un grafico: applica/rimuove quel valore come filtro (stesso comportamento del menu Filtri)
+  const toggleFilter = (dim: Dim, value: string) => {
+    setFilters(f => {
+      const sel = f[dim] ?? [];
+      return { ...f, [dim]: sel.includes(value) ? sel.filter(v => v !== value) : [...sel, value] };
+    });
+    setShowFilters(true);
+  };
+
   const today = new Date().toISOString().slice(0, 10);
   const plus = (days: number) => { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); };
 
@@ -389,6 +493,10 @@ export function AnalisiOrganico() {
     return months;
   }, [expiring]);
 
+  const ageStruct = useMemo(() => ageByFunzione(active), [active]);
+  const overSixty = active.filter(e => (e.eta ?? 0) >= 60).length;
+  const anzianitaStruct = useMemo(() => anzianitaByFunzione(active), [active]);
+
   if (loading) return <p className="text-sm text-gray-400 text-center py-10">Caricamento…</p>;
 
   const show = (t: Tab) => tab === t;
@@ -399,6 +507,10 @@ export function AnalisiOrganico() {
   const anzianita = active.length
     ? active.reduce((s, e) => s + (Date.now() - new Date(`${iso(e.data_assunzione)}T12:00:00Z`).getTime()) / (365.25 * 86400000), 0) / active.length
     : null;
+  const conEta = active.filter(e => e.eta != null);
+  const etaMedia = conEta.length ? conEta.reduce((s, e) => s + (e.eta as number), 0) / conEta.length : null;
+  const donne = active.filter(e => e.sesso?.trim().toUpperCase().startsWith('F')).length;
+  const l68 = active.filter(e => e.l68).length;
   const cessCurYear = yearly.find(y => y.anno === String(cur))?.cessazioni ?? 0;
   const activeFilters = FILTER_ORDER.filter(d => filters[d]?.length);
 
@@ -407,9 +519,13 @@ export function AnalisiOrganico() {
     const raw = countBy(active, dim, plantName, opts.sort);
     const data = opts.top ? topN(raw, opts.top) : raw;
     const total = data.reduce((s, d) => s + d.value, 0);
+    const sel = filters[dim] ?? [];
+    const onSelect = (name: string) => toggleFilter(dim, name);
     return (
       <Card title={title} hint={opts.hint} className={opts.className}
-        chart={() => opts.donut ? <Donut data={data} colorFor={colorFor(dim)} /> : <Bars data={data} />}
+        chart={() => opts.donut
+          ? <Donut data={data} colorFor={colorFor(dim)} onSelect={onSelect} active={sel} />
+          : <Bars data={data} onSelect={onSelect} active={sel} />}
         table={<DataTable head={[DIM_LABEL[dim], 'Persone', '%']} rows={data.map(d => [d.name, d.value, pct(d.value, total)])} foot={['Totale', total, '100%']} />} />
     );
   };
@@ -419,7 +535,8 @@ export function AnalisiOrganico() {
     const shown = opts.maxRows ? cross.data.slice(0, opts.maxRows) : cross.data;
     return (
       <Card title={title} canPct hint={opts.hint} className={opts.className}
-        chart={asPct => <Stacked data={shown} series={cross.series} colorFor={colorFor(serDim)} asPct={asPct} />}
+        chart={asPct => <Stacked data={shown} series={cross.series} colorFor={colorFor(serDim)} asPct={asPct}
+          onSelect={name => toggleFilter(serDim, name)} active={filters[serDim] ?? []} />}
         table={crossTable(cross, DIM_LABEL[rowDim])} />
     );
   };
@@ -596,19 +713,50 @@ export function AnalisiOrganico() {
 
         {show('riepilogo') && (
           <Section title="Riepilogo">
-            <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
               <Kpi label="Organico attivo" value={totActive} />
+              <Kpi label="Età media" value={etaMedia != null ? etaMedia.toFixed(1) : '—'} sub="anni" />
+              <Kpi label="Anzianità media" value={anzianita != null ? anzianita.toFixed(1) : '—'} sub="anni" />
+              <Kpi label="Donne" value={pct(donne, totActive)} sub={`${donne} persone`} />
+              <Kpi label="Categorie protette (L.68)" value={pct(l68, totActive)} sub={`${l68} persone`} />
               <Kpi label="Tempo determinato" value={pct(determinati, totActive)} sub={`${determinati} persone`} />
               <Kpi label="Scadenze entro 90 gg" value={expiring90.length} tone={expiring90.length ? 'warn' : undefined} sub="contratti da rinnovare" />
-              <Kpi label={`Cessazioni ${cur}`} value={cessCurYear} sub="da inizio anno" />
-              <Kpi label="Anzianità media" value={anzianita != null ? anzianita.toFixed(1) : '—'} sub="anni" />
               <Kpi label="Senza responsabile" value={senzaResp} tone={senzaResp ? 'warn' : undefined} sub="da assegnare" />
             </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {countCard('Per plant', 'plant')}
-              {countCard('Per società', 'societa')}
+              {countCard('Per funzione aziendale', 'funzione')}
+              {countCard('Per categoria', 'categoria', { donut: true })}
               {countCard('Per tipologia', 'tipologia', { donut: true })}
+              {countCard('Per plant', 'plant')}
+              {countCard('Per società', 'societa', { donut: true })}
+              {countCard('Per sesso', 'sesso', { donut: true })}
             </div>
+
+            <Card title="Anzianità in fasce"
+              canPct
+              hint="Da quanto tempo lavora in azienda l'organico attuale, per funzione aziendale — a differenza dell'età, questo dato è già completo oggi."
+              chart={asPct => <Stacked data={anzianitaStruct.data} series={anzianitaStruct.series} colorFor={colorFor('funzione')} asPct={asPct} labelWidth={90}
+                onSelect={name => toggleFilter('funzione', name)} active={filters.funzione ?? []} />}
+              table={crossTable(anzianitaStruct, 'Anzianità')} />
+
+            {/* In fondo e senza risalto: richiede la data di nascita di ogni dipendente,
+                dato non ancora caricato per il personale reale — si popolerà da solo
+                man mano che verrà inserito, senza bisogno di toccare questa pagina. */}
+            <Card title="Struttura per età" className="opacity-90"
+              hint="Ogni barra è un'età; i colori mostrano da quale funzione aziendale arrivano i dipendenti. Richiede la data di nascita in anagrafica."
+              chart={() => (
+                <>
+                  <AgeStack data={ageStruct.data} series={ageStruct.series} colorFor={colorFor('funzione')}
+                    onSelect={name => toggleFilter('funzione', name)} active={filters.funzione ?? []} />
+                  {overSixty > 0 && (
+                    <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
+                      ⚠ {overSixty} {overSixty === 1 ? 'persona ha' : 'persone hanno'} 60 anni o più — struttura dell&apos;età da monitorare per il turnover in vista della pensione.
+                    </p>
+                  )}
+                </>
+              )}
+              table={crossTable(ageStruct, 'Età')} />
           </Section>
         )}
 
