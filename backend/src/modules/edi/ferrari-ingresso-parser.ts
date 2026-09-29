@@ -92,7 +92,7 @@ const SEGMENTI: Record<string, SegmentoDef> = {
   FT3: {
     accumulare: true,
     campi: [
-      { nome: 'ft3_testo', pos: 21, lung: 210, tipo: 'testo', raw: true },
+      { nome: 'ft3_testo', pos: 21, lung: 210, tipo: 'testo', raw: true, separatore: '' },
     ],
   },
   DST: {
