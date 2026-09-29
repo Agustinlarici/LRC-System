@@ -104,7 +104,11 @@ export async function importKeywordRules(buffer: Buffer): Promise<ImportResult> 
     const parolaChiave = colParola ? str(row[colParola]) : '';
     const ancora  = colAncora ? str(row[colAncora]) : '';
     const obiettivo = colObiett ? str(row[colObiett]) : '';
-    const distanza = colDist ? parseInt(str(row[colDist]), 10) : NaN;
+    // Distanza vuota/non numerica → 20, stesso default del form manuale
+    // (TabRegole) — senza questo, una riga proximity con Ancora+Cerca Colore
+    // ma senza Distanza veniva scartata in silenzio (solo un warning).
+    const distanzaRaw = colDist ? parseInt(str(row[colDist]), 10) : NaN;
+    const distanza = Number.isInteger(distanzaRaw) && distanzaRaw > 0 ? distanzaRaw : 20;
     const cercaColore = colColore ? parseBoolFlag(str(row[colColore])) : false;
 
     // Prefisso vuoto = regola globale, valida per tutte le commesse.
