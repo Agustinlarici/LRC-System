@@ -308,13 +308,35 @@ function TabRegole() {
   const [cercaColore, setCercaColore] = useState(false);
   const [distanza,    setDistanza]    = useState('20');
   const [note,        setNote]        = useState('');
+  const [editingId,   setEditingId]   = useState<number | null>(null);
 
   const load = useCallback(() => {
     api.get<ProdKeywordRule[]>('/api/prod/keyword-rules').then(setRules).finally(() => setLoading(false));
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  async function add() {
+  function resetForm() {
+    setEditingId(null);
+    setModo('simple'); setPrefisso(''); setCategoria(''); setCaratt('');
+    setParolaCh(''); setAncora(''); setObiettivo(''); setCercaColore(false);
+    setDistanza('20'); setNote('');
+  }
+
+  function startEdit(r: ProdKeywordRule) {
+    setEditingId(r.id);
+    setModo(r.modo);
+    setPrefisso(r.prefisso_commessa ?? '');
+    setCategoria(r.categoria);
+    setCaratt(r.caratteristica_derivata);
+    setParolaCh(r.parola_chiave ?? '');
+    setAncora(r.parola_ancora ?? '');
+    setObiettivo(r.parola_obiettivo ?? '');
+    setCercaColore(r.obiettivo_da_colori);
+    setDistanza(r.distanza_max_caratteri != null ? String(r.distanza_max_caratteri) : '20');
+    setNote(r.note ?? '');
+  }
+
+  async function submit() {
     if (!categoria.trim() || !caratt.trim()) return;
     setBusy(true);
     try {
@@ -327,8 +349,12 @@ function TabRegole() {
             ...(cercaColore ? {} : { parolaObiettivo: obiettivo.trim() }),
             distanzaMaxCaratteri: parseInt(distanza) || 1, note: noteVal,
           };
-      await api.post<ProdKeywordRule>('/api/prod/keyword-rules', body);
-      setPrefisso(''); setCategoria(''); setCaratt(''); setParolaCh(''); setAncora(''); setObiettivo(''); setCercaColore(false); setNote('');
+      if (editingId != null) {
+        await api.put<ProdKeywordRule>(`/api/prod/keyword-rules/${editingId}`, body);
+      } else {
+        await api.post<ProdKeywordRule>('/api/prod/keyword-rules', body);
+      }
+      resetForm();
       load();
     } finally { setBusy(false); }
   }
@@ -384,7 +410,13 @@ function TabRegole() {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+      <div className={`bg-white border rounded-xl p-4 space-y-3 ${editingId != null ? 'border-blue-300' : 'border-gray-200'}`}>
+        {editingId != null && (
+          <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-sm text-blue-800">
+            <span>Stai modificando una regola esistente.</span>
+            <button onClick={resetForm} className="text-blue-700 underline hover:text-blue-900">Annulla</button>
+          </div>
+        )}
         <div>
           <p className="text-xs text-gray-500 mb-1.5">Come vuoi cercare nella descrizione dell&apos;articolo?</p>
           <div className="flex gap-4 text-sm">
@@ -440,10 +472,15 @@ function TabRegole() {
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
 
         <div className="flex items-center gap-2">
-          <button onClick={add} disabled={busy}
+          <button onClick={submit} disabled={busy}
             className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
-            Aggiungi regola
+            {editingId != null ? 'Salva modifiche' : 'Aggiungi regola'}
           </button>
+          {editingId != null && (
+            <button onClick={resetForm} className="text-sm text-gray-500 hover:text-gray-700 px-2">
+              Annulla
+            </button>
+          )}
           <ExcelImportButton
             endpoint="/api/prod/keyword-rules/import-excel"
             onDone={load}
@@ -548,7 +585,8 @@ function TabRegole() {
                 <td className="py-2 px-4 text-center">
                   <input type="checkbox" checked={r.active} onChange={() => toggleActive(r)} />
                 </td>
-                <td className="py-2 px-4 text-right">
+                <td className="py-2 px-4 text-right whitespace-nowrap">
+                  <button onClick={() => startEdit(r)} className="text-xs text-blue-600 hover:text-blue-800 mr-3">Modifica</button>
                   <button onClick={() => del(r.id)} className="text-xs text-red-500 hover:text-red-700">Elimina</button>
                 </td>
               </tr>
