@@ -294,13 +294,13 @@ function TabRegole() {
   const [busy,     setBusy]     = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
 
-  // Filtri per colonna (Prefisso, Categoria, Caratteristica, Regola, Note) —
+  // Filtri per colonna (Prefisso, Categoria, Caratteristica, Modo, Note) —
   // combinati in AND, non un'unica ricerca su tutti i campi. Client-side:
   // questa tabella si carica sempre per intero, senza cap lato server.
   const [fPrefisso,  setFPrefisso]  = useState('');
   const [fCategoria, setFCategoria] = useState('');
   const [fCaratt,    setFCaratt]    = useState('');
-  const [fRegola,    setFRegola]    = useState('');
+  const [fModo,      setFModo]      = useState('');
   const [fNote,      setFNote]      = useState('');
 
   const [modo,        setModo]        = useState<ProdKeywordMode>('simple');
@@ -348,32 +348,25 @@ function TabRegole() {
     load();
   }
 
-  // Testo esatto mostrato nella colonna "Regola" — riusato sia per il render
-  // sia per popolare/confrontare il menu a tendina del filtro.
-  function regolaLabel(r: ProdKeywordRule): string {
-    if (r.modo === 'simple') return `"${r.parola_chiave}"`;
-    if (r.obiettivo_da_colori) return `"${r.parola_ancora}" → ≤${r.distanza_max_caratteri} car. → colore (da tab "Colori")`;
-    return `"${r.parola_ancora}" → ≤${r.distanza_max_caratteri} car. → "${r.parola_obiettivo}"`;
-  }
+  const modoLabel = (m: ProdKeywordMode) => m === 'simple' ? 'Una parola' : 'Due parole vicine';
 
   // Opzioni dei menu a tendina: i valori distinti effettivamente presenti
   // nella tabella (caricata per intero, senza cap lato server).
   const prefissoOptions  = useMemo(() => [...new Set(rules.map(r => r.prefisso_commessa).filter((v): v is string => !!v))].sort(), [rules]);
   const categoriaOptions = useMemo(() => [...new Set(rules.map(r => r.categoria))].sort(), [rules]);
   const carattOptions    = useMemo(() => [...new Set(rules.map(r => r.caratteristica_derivata))].sort(), [rules]);
-  const regolaOptions    = useMemo(() => [...new Set(rules.map(regolaLabel))].sort(), [rules]);
   const noteOptions      = useMemo(() => [...new Set(rules.map(r => r.note).filter((v): v is string => !!v))].sort(), [rules]);
 
-  const hasFilter = !!(fPrefisso || fCategoria || fCaratt || fRegola || fNote);
+  const hasFilter = !!(fPrefisso || fCategoria || fCaratt || fModo || fNote);
 
   const filteredRules = useMemo(() => rules.filter(r => {
     if (fPrefisso  && (r.prefisso_commessa ?? '') !== fPrefisso)  return false;
     if (fCategoria && r.categoria !== fCategoria)                 return false;
     if (fCaratt    && r.caratteristica_derivata !== fCaratt)      return false;
     if (fNote      && (r.note ?? '') !== fNote)                   return false;
-    if (fRegola    && regolaLabel(r) !== fRegola)                 return false;
+    if (fModo      && r.modo !== fModo)                           return false;
     return true;
-  }), [rules, fPrefisso, fCategoria, fCaratt, fRegola, fNote]);
+  }), [rules, fPrefisso, fCategoria, fCaratt, fModo, fNote]);
 
   // Elimina in blocco tutte le regole visibili con i filtri correnti — solo
   // quelle caricate in memoria, ma qui non c'è un cap lato server (a
@@ -397,45 +390,52 @@ function TabRegole() {
   return (
     <div className="space-y-4">
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-        <div className="flex gap-4 text-sm">
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input type="radio" checked={modo === 'simple'} onChange={() => setModo('simple')} /> Semplice
-          </label>
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input type="radio" checked={modo === 'proximity'} onChange={() => setModo('proximity')} /> Prossimità
-          </label>
+        <div>
+          <p className="text-xs text-gray-500 mb-1.5">Come vuoi cercare nella descrizione dell&apos;articolo?</p>
+          <div className="flex gap-4 text-sm">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" checked={modo === 'simple'} onChange={() => setModo('simple')} /> Una sola parola
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" checked={modo === 'proximity'} onChange={() => setModo('proximity')} /> Due parole vicine tra loro
+            </label>
+          </div>
         </div>
 
         <div className="grid grid-cols-3 gap-2">
-          <input value={prefisso} onChange={e => setPrefisso(e.target.value)} placeholder="Prefisso commessa (vuoto = tutte)"
+          <input value={prefisso} onChange={e => setPrefisso(e.target.value)} placeholder="Per quali commesse (vuoto = tutte)"
+            title="Es. FL per applicare la regola solo alle commesse che iniziano con FL. Vuoto = si applica a tutte."
             className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <input value={categoria} onChange={e => setCategoria(e.target.value)} placeholder="Categoria"
+          <input value={categoria} onChange={e => setCategoria(e.target.value)} placeholder="Categoria (es. PARAURTI)"
+            title="Il gruppo/componente a cui appartiene questa regola"
             className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <input value={caratt} onChange={e => setCaratt(e.target.value)} placeholder="Caratteristica derivata"
+          <input value={caratt} onChange={e => setCaratt(e.target.value)} placeholder="Cosa scrivere se trova la parola"
+            title="Il testo che compare nel foglio quando la regola trova un riscontro (es. Pelle nera)"
             className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
 
         {modo === 'simple' ? (
-          <input value={parolaCh} onChange={e => setParolaCh(e.target.value)} placeholder="Parola chiave (substring nella descrizione)"
+          <input value={parolaCh} onChange={e => setParolaCh(e.target.value)} placeholder="Parola da cercare nella descrizione"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         ) : (
           <div className="space-y-2">
             <label className="flex items-center gap-1.5 text-sm cursor-pointer">
               <input type="checkbox" checked={cercaColore} onChange={e => setCercaColore(e.target.checked)} />
-              Cerca colore (usa le parole chiave della tab &quot;Colori&quot; invece di una parola obiettivo fissa)
+              Invece della seconda parola, cerca un colore qualsiasi (quelli della tab &quot;Colori&quot;)
             </label>
             <div className="grid grid-cols-3 gap-2">
-              <input value={ancora} onChange={e => setAncora(e.target.value)} placeholder="Parola ancora"
+              <input value={ancora} onChange={e => setAncora(e.target.value)} placeholder="Prima parola da cercare"
                 className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               {cercaColore ? (
                 <div className="border border-dashed border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-400 flex items-center">
-                  qualsiasi colore attivo
+                  un colore qualsiasi
                 </div>
               ) : (
-                <input value={obiettivo} onChange={e => setObiettivo(e.target.value)} placeholder="Parola obiettivo (dopo l'ancora)"
+                <input value={obiettivo} onChange={e => setObiettivo(e.target.value)} placeholder="Seconda parola da cercare"
                   className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               )}
-              <input value={distanza} onChange={e => setDistanza(e.target.value)} type="number" min={1} placeholder="Distanza max (caratteri)"
+              <input value={distanza} onChange={e => setDistanza(e.target.value)} type="number" min={1} placeholder="Distanza massima (caratteri)"
+                title="Quanto lontano può essere la seconda parola dalla prima, in numero di caratteri"
                 className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
           </div>
@@ -469,10 +469,15 @@ function TabRegole() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50 text-gray-500">
-              <th className="py-2.5 px-4 text-left font-medium">Prefisso</th>
+              <th className="py-2.5 px-4 text-left font-medium">Per commesse</th>
               <th className="py-2.5 px-4 text-left font-medium">Categoria</th>
-              <th className="py-2.5 px-4 text-left font-medium">Caratteristica</th>
-              <th className="py-2.5 px-4 text-left font-medium">Regola</th>
+              <th className="py-2.5 px-4 text-left font-medium">Cosa scrive</th>
+              <th className="py-2.5 px-4 text-left font-medium">Tipo ricerca</th>
+              <th className="py-2.5 px-4 text-left font-medium">Parola da cercare</th>
+              <th className="py-2.5 px-4 text-left font-medium">Prima parola</th>
+              <th className="py-2.5 px-4 text-left font-medium">Seconda parola</th>
+              <th className="py-2.5 px-4 text-left font-medium">Distanza massima</th>
+              <th className="py-2.5 px-4 text-center font-medium">Cerca un colore</th>
               <th className="py-2.5 px-4 text-left font-medium">Note</th>
               <th className="py-2.5 px-4 text-center font-medium">Attiva</th>
               <th className="py-2.5 px-4" />
@@ -500,12 +505,18 @@ function TabRegole() {
                 </select>
               </th>
               <th className="px-4 pb-2">
-                <select value={fRegola} onChange={e => setFRegola(e.target.value)}
+                <select value={fModo} onChange={e => setFModo(e.target.value)}
                   className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="">— Tutte —</option>
-                  {regolaOptions.map(v => <option key={v} value={v}>{v}</option>)}
+                  <option value="">— Tutti —</option>
+                  <option value="simple">Una parola</option>
+                  <option value="proximity">Due parole vicine</option>
                 </select>
               </th>
+              <th className="px-4 pb-2" />
+              <th className="px-4 pb-2" />
+              <th className="px-4 pb-2" />
+              <th className="px-4 pb-2" />
+              <th className="px-4 pb-2" />
               <th className="px-4 pb-2">
                 <select value={fNote} onChange={e => setFNote(e.target.value)}
                   className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -519,21 +530,26 @@ function TabRegole() {
           </thead>
           <tbody>
             {filteredRules.length === 0 && (
-              <tr><td colSpan={7} className="text-center text-gray-400 py-6">Nessuna regola</td></tr>
+              <tr><td colSpan={12} className="text-center text-gray-400 py-6">Nessuna regola</td></tr>
             )}
             {filteredRules.map(r => (
               <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="py-2 px-4 font-mono">{r.prefisso_commessa || <span className="italic text-gray-400">tutte</span>}</td>
                 <td className="py-2 px-4">{r.categoria}</td>
                 <td className="py-2 px-4">{r.caratteristica_derivata}</td>
+                <td className="py-2 px-4 text-gray-500">{modoLabel(r.modo)}</td>
+                <td className="py-2 px-4 text-gray-500">{r.parola_chiave ?? <span className="text-gray-300">–</span>}</td>
+                <td className="py-2 px-4 text-gray-500">{r.parola_ancora ?? <span className="text-gray-300">–</span>}</td>
                 <td className="py-2 px-4 text-gray-500">
-                  {r.modo === 'simple'
-                    ? <span>&quot;{r.parola_chiave}&quot;</span>
-                    : r.obiettivo_da_colori
-                      ? <span>&quot;{r.parola_ancora}&quot; → ≤{r.distanza_max_caratteri} car. → colore (da tab &quot;Colori&quot;)</span>
-                      : <span>&quot;{r.parola_ancora}&quot; → ≤{r.distanza_max_caratteri} car. → &quot;{r.parola_obiettivo}&quot;</span>}
+                  {r.modo === 'proximity' && r.obiettivo_da_colori
+                    ? <span className="italic">qualsiasi colore attivo</span>
+                    : r.parola_obiettivo ?? <span className="text-gray-300">–</span>}
                 </td>
-                <td className="py-2 px-4 text-gray-500 max-w-[240px] truncate" title={r.note ?? ''}>{r.note ?? '–'}</td>
+                <td className="py-2 px-4 text-gray-500">{r.distanza_max_caratteri ?? <span className="text-gray-300">–</span>}</td>
+                <td className="py-2 px-4 text-center text-gray-500">
+                  {r.modo === 'proximity' ? (r.obiettivo_da_colori ? 'Sì' : 'No') : <span className="text-gray-300">–</span>}
+                </td>
+                <td className="py-2 px-4 text-gray-500 max-w-[200px] truncate" title={r.note ?? ''}>{r.note ?? '–'}</td>
                 <td className="py-2 px-4 text-center">
                   <input type="checkbox" checked={r.active} onChange={() => toggleActive(r)} />
                 </td>
