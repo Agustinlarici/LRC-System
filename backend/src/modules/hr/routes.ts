@@ -17,6 +17,14 @@ const CAPO_ALLOWED_EVENT_TYPES = new Set([
   'malattia', 'maternita_paternita', 'infortunio', 'congedo', 'rientro', 'trasferimento', 'altro',
 ]);
 
+// Eventi il cui inizio/fine deve riflettersi sullo stato del dipendente — altrimenti
+// un evento "in corso" (senza end_date passata) resta invisibile ai filtri per stato
+// finché qualcuno non lo aggiorna a mano dalla scheda dipendente.
+const EVENT_TYPE_TO_STATO: Record<string, string> = {
+  malattia: 'malattia',
+  maternita_paternita: 'maternita_paternita',
+};
+
 async function isDirectCapoOf(user: AuthUser, employeeId: number): Promise<boolean> {
   const [row] = await db<{ ok: boolean }[]>`
     SELECT EXISTS (
@@ -82,6 +90,43 @@ mountCatalog('hr_department', 'departments');
 mountCatalog('hr_plant', 'plants');
 mountCatalog('hr_contract_company', 'contract-companies');
 
+// ─── Etichette (pallino colorato) — catalogo colore + significato ────────────
+
+hrRoutes.get('/tags', requireModule('hr'), async (c) => {
+  const rows = await db`SELECT id, name, color, description, sort_order, is_active FROM hr_employee_tag ORDER BY sort_order, name`;
+  return c.json(rows);
+});
+
+const tagFieldsSchema = z.object({
+  name:        z.string().min(1).max(60),
+  color:       z.string().min(1).max(20),
+  description: z.string().max(255).optional().nullable(),
+  sort_order:  z.number().int().optional(),
+  is_active:   z.boolean().optional(),
+});
+
+hrRoutes.post('/tags', requireManage('hr'), async (c) => {
+  const body = await parseBody(c, tagFieldsSchema);
+  const [row] = await db`
+    INSERT INTO hr_employee_tag ${db(body)}
+    RETURNING id, name, color, description, sort_order, is_active
+  `;
+  return c.json(row, 201);
+});
+
+hrRoutes.patch('/tags/:id', requireManage('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const body = await parseBody(c, tagFieldsSchema.partial());
+  if (!Object.keys(body).length) throw new HTTPException(400, { message: 'Nessun campo da aggiornare' });
+  const [row] = await db`
+    UPDATE hr_employee_tag SET ${db(body)} WHERE id = ${id}
+    RETURNING id, name, color, description, sort_order, is_active
+  `;
+  if (!row) throw new HTTPException(404, { message: 'Etichetta non trovata' });
+  return c.json(row);
+});
+
 // ─── Dipendenti — lista + ficha ───────────────────────────────────────────────
 
 const employeeSelect = db`
@@ -95,6 +140,8 @@ const employeeSelect = db`
     e.contract_company_id, cc.name AS contract_company_name,
     e.capo_id, (capo.nome || ' ' || capo.cognome) AS capo_nome,
     e.user_id, e.data_assunzione, e.data_cessazione, e.stato, e.note,
+    e.tag_id, tg.name AS tag_name, tg.color AS tag_color,
+    e.in_prova, e.import_warning,
     e.created_at, e.updated_at,
     ROUND(EXTRACT(EPOCH FROM AGE(COALESCE(e.data_cessazione, now()), e.data_assunzione)) / (365.25*86400))::int AS anzianita_anni,
     CASE WHEN e.data_nascita IS NOT NULL
@@ -105,6 +152,7 @@ const employeeSelect = db`
   LEFT JOIN hr_department d ON d.id = e.reparto_id
   LEFT JOIN hr_contract_company cc ON cc.id = e.contract_company_id
   LEFT JOIN hr_employee capo ON capo.id = e.capo_id
+  LEFT JOIN hr_employee_tag tg ON tg.id = e.tag_id
 `;
 
 hrRoutes.get('/employees', requireModule('hr'), async (c) => {
@@ -163,6 +211,9 @@ const employeeFieldsSchema = z.object({
   data_cessazione:      z.string().optional().nullable(),
   stato:                z.enum(['attivo', 'aspettativa', 'malattia', 'maternita_paternita', 'cessato']).optional(),
   note:                 z.string().optional().nullable(),
+  tag_id:               z.number().int().positive().optional().nullable(),
+  in_prova:             z.boolean().optional(),
+  import_warning:       z.string().optional().nullable(),
 });
 
 hrRoutes.post('/employees', requireManage('hr'), async (c) => {
@@ -351,7 +402,7 @@ hrRoutes.post('/employees/:id/events', requireModule('hr'), async (c) => {
     }
   }
 
-  const [existing] = await db`SELECT id FROM hr_employee WHERE id = ${id}`;
+  const [existing] = await db`SELECT id, stato FROM hr_employee WHERE id = ${id}`;
   if (!existing) throw new HTTPException(404, { message: 'Dipendente non trovato' });
 
   const [event] = await db`
@@ -363,6 +414,17 @@ hrRoutes.post('/employees/:id/events', requireModule('hr'), async (c) => {
     })}
     RETURNING id, employee_id, event_type, event_date, end_date, from_value, to_value, note, created_by_name, created_at
   `;
+
+  // Un evento con stato associato (malattia, maternità/paternità) ancora in corso
+  // — nessuna end_date, o end_date non ancora trascorsa — aggiorna lo stato del
+  // dipendente, così compare subito nei filtri senza bisogno di un intervento manuale.
+  const today = new Date().toISOString().slice(0, 10);
+  const newStato = EVENT_TYPE_TO_STATO[body.event_type];
+  if (newStato && existing.stato !== 'cessato' && (!body.end_date || body.end_date >= today)) {
+    await db`UPDATE hr_employee SET stato = ${newStato} WHERE id = ${id}`;
+  } else if (body.event_type === 'rientro' && (existing.stato === 'malattia' || existing.stato === 'maternita_paternita')) {
+    await db`UPDATE hr_employee SET stato = 'attivo' WHERE id = ${id}`;
+  }
 
   await auditLog({ userId: user.id, username: user.username, action: 'hr.event.create', entity: 'hr_employee_event', entityId: event.id, details: { employee_id: id, event_type: body.event_type } });
 

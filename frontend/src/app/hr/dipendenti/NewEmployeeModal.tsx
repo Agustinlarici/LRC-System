@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { HrDepartment, HrPlant, HrContractCompany } from '@/types';
+import type { HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
 import { PlantMultiSelect } from './PlantMultiSelect';
 import { usePromptDialog } from '@/components/ui/PromptDialog';
 import { useToast } from '@/components/ui/Toast';
@@ -14,21 +14,23 @@ interface Props {
   departments: HrDepartment[];
   plants: HrPlant[];
   companies: HrContractCompany[];
+  tags: HrEmployeeTag[];
   onClose: () => void;
   onCreated: () => void;
 }
 
-export function NewEmployeeModal({ departments: initialDepartments, plants: initialPlants, companies: initialCompanies, onClose, onCreated }: Props) {
+export function NewEmployeeModal({ departments: initialDepartments, plants: initialPlants, companies: initialCompanies, tags, onClose, onCreated }: Props) {
   const [departments, setDepartments] = useState(initialDepartments);
   const [plants, setPlants] = useState(initialPlants);
   const [companies, setCompanies] = useState(initialCompanies);
   const [form, setForm] = useState({
     matricola: '', nome: '', cognome: '', sesso: '', data_nascita: '', codice_fiscale: '', nazionalita: '',
     email: '', telefono: '', mansione: '', livello: '', categoria: '', tipo_contratto: '', funzione_aziendale: '',
-    reparto_id: '', contract_company_id: '', data_assunzione: '',
+    reparto_id: '', contract_company_id: '', data_assunzione: '', tag_id: '',
   });
   const [plantIds, setPlantIds] = useState<number[]>([]);
   const [l68, setL68] = useState(false);
+  const [inProva, setInProva] = useState(false);
   const { ask, dialog } = usePromptDialog();
   const toast = useToast();
   const [saving, setSaving] = useState(false);
@@ -85,6 +87,8 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
         reparto_id: form.reparto_id ? Number(form.reparto_id) : null,
         plant_ids: plantIds,
         l68,
+        in_prova: inProva,
+        tag_id: form.tag_id ? Number(form.tag_id) : null,
         contract_company_id: form.contract_company_id ? Number(form.contract_company_id) : null,
       }),
     });
@@ -151,6 +155,16 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
             </div>
             <div><label className="label">Tipo contratto</label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
             <div><label className="label">Data assunzione *</label><input type="date" className="input" value={form.data_assunzione} onChange={e => set('data_assunzione', e.target.value)} /></div>
+            <div><label className="label">Etichetta</label>
+              <select className="input" value={form.tag_id} onChange={e => set('tag_id', e.target.value)}>
+                <option value="">—</option>
+                {tags.filter(t => t.is_active).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer self-end pb-2">
+              <input type="checkbox" checked={inProva} onChange={e => setInProva(e.target.checked)} />
+              In prova
+            </label>
           </div>
 
           {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}

@@ -3,15 +3,19 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany } from '@/types';
+import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
 import { ImportExcelButton, type ImportResult } from '@/components/ui/ImportExcelButton';
 import { NewEmployeeModal } from './NewEmployeeModal';
+import { TagsSettingsModal } from './TagsSettingsModal';
 import { usePromptDialog, useChoiceDialog, SKIP_ALL } from '@/components/ui/PromptDialog';
+import { tagDotClass } from '@/lib/tagColors';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
+// Etichette complete (anche legacy) per il badge di stato — usate ovunque uno stato
+// vada mostrato. Il set selezionabile per nuovi stati è più ristretto: vedi STATO_FILTER_OPTIONS.
 const STATO_LABEL: Record<string, string> = {
   attivo: 'Attivo', aspettativa: 'Aspettativa', malattia: 'Malattia',
   maternita_paternita: 'Maternità/Paternità', cessato: 'Cessato',
@@ -23,14 +27,28 @@ const STATO_COLOR: Record<string, string> = {
   maternita_paternita: 'bg-purple-50 text-purple-700 border-purple-200',
   cessato: 'bg-gray-100 text-gray-500 border-gray-200',
 };
+// Stati selezionabili nel filtro: "aspettativa"/"malattia" restano nel database solo
+// per chi li aveva già (nessuna migrazione automatica), non sono più impostabili.
+const STATO_FILTER_OPTIONS: { value: string; label: string }[] = [
+  { value: 'attivo', label: 'Attivo' },
+  { value: 'maternita_paternita', label: 'Maternità/Paternità' },
+  { value: 'cessato', label: 'Cessato' },
+];
+
+const GRID_COLS = '28px minmax(130px,1fr) minmax(110px,1fr) 90px 56px minmax(100px,1fr) minmax(120px,1fr) '
+  + 'minmax(100px,1fr) minmax(120px,1fr) minmax(110px,1fr) minmax(110px,1fr) minmax(120px,1fr) 80px '
+  + 'minmax(120px,1fr) minmax(110px,1fr) 100px 100px 68px 118px 32px';
 
 // Intestazioni esattamente come nell'Excel STR — il parser CSV le trasforma in
 // minuscolo con underscore al posto degli spazi (mantiene apostrofi).
 const IMPORT_COLUMNS = [
   'COGNOME E NOME', 'MATRICOLA', 'SESSO', 'CATEGORIA', "SOCIETA' CONTRATTO", "NAZIONALITA'",
   'MANSIONE (MICRO)', 'LIVELLO', 'REPARTO', 'PLANT', 'RESPONSABILE', 'MANAGER', 'FUNZIONE AZIENDALE',
-  'DATA ASSUNZIONE', 'DATA CESSAZIONE', 'TIPOLOGIA CONTRATTO', "MATERNITA'",
+  'DATA ASSUNZIONE', 'DATA CESSAZIONE', 'TIPOLOGIA CONTRATTO', "MATERNITA'", 'IN PROVA',
 ];
+
+// Valori riconosciuti come "sì" nella colonna IN PROVA (case-insensitive)
+const IN_PROVA_TRUE = new Set(['si', 'sì', 'x', '1', 'true', 'yes']);
 
 // gg/mm/aa o gg/mm/aaaa → YYYY-MM-DD (formato date usato nell'Excel STR)
 function parseItalianDate(s: string | undefined): string | null {
@@ -50,16 +68,28 @@ export default function DipendentiPage() {
   const [departments, setDepartments] = useState<HrDepartment[]>([]);
   const [plants,       setPlants]       = useState<HrPlant[]>([]);
   const [companies,    setCompanies]    = useState<HrContractCompany[]>([]);
+  const [tags,         setTags]         = useState<HrEmployeeTag[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [fCognome, setFCognome] = useState('');
   const [fNome, setFNome] = useState('');
   const [fMatricola, setFMatricola] = useState('');
   const [fMansione, setFMansione] = useState('');
   const [fResp, setFResp] = useState('');
+  const [fSesso, setFSesso] = useState('');
+  const [fCategoria, setFCategoria] = useState('');
+  const [fNazionalita, setFNazionalita] = useState('');
+  const [fLivello, setFLivello] = useState('');
+  const [fTipoContratto, setFTipoContratto] = useState('');
   const [funzioneFilter, setFunzioneFilter] = useState('');
   const [repartoFilter, setRepartoFilter] = useState<number | ''>('');
+  const [plantFilter, setPlantFilter] = useState<number | ''>('');
+  const [societaFilter, setSocietaFilter] = useState<number | ''>('');
+  const [tagFilter, setTagFilter] = useState<number | ''>('');
+  const [inProvaFilter, setInProvaFilter] = useState<'' | 'si' | 'no'>('');
   const [statoFilter,   setStatoFilter]   = useState<string>('attivo');
   const [showNew,       setShowNew]       = useState(false);
+  const [showTags,      setShowTags]      = useState(false);
+  const [tagMenuFor,    setTagMenuFor]    = useState<number | null>(null);
   const { ask, dialog: promptDialog } = usePromptDialog();
   const { choose, dialog: choiceDialog } = useChoiceDialog();
 
@@ -68,36 +98,69 @@ export default function DipendentiPage() {
     const params = new URLSearchParams();
     if (repartoFilter) params.set('reparto_id', String(repartoFilter));
     if (statoFilter) params.set('stato', statoFilter);
-    const [empRes, depRes, plantRes, coRes] = await Promise.all([
+    const [empRes, depRes, plantRes, coRes, tagRes] = await Promise.all([
       fetch(`${BACKEND}/api/hr/employees?${params}`, { credentials: 'include' }),
       fetch(`${BACKEND}/api/hr/departments`, { credentials: 'include' }),
       fetch(`${BACKEND}/api/hr/plants`, { credentials: 'include' }),
       fetch(`${BACKEND}/api/hr/contract-companies`, { credentials: 'include' }),
+      fetch(`${BACKEND}/api/hr/tags`, { credentials: 'include' }),
     ]);
     if (empRes.ok) setEmployees(await empRes.json());
     if (depRes.ok) setDepartments(await depRes.json());
     if (plantRes.ok) setPlants(await plantRes.json());
     if (coRes.ok) setCompanies(await coRes.json());
+    if (tagRes.ok) setTags(await tagRes.json());
     setLoading(false);
   }, [repartoFilter, statoFilter]);
 
   useEffect(() => { load(); }, [load]);
 
-  const hasFilters = !!(fCognome || fNome || fMatricola || fMansione || fResp || funzioneFilter || repartoFilter || statoFilter !== 'attivo');
+  const hasFilters = !!(fCognome || fNome || fMatricola || fMansione || fResp || fSesso || fCategoria
+    || fNazionalita || fLivello || fTipoContratto || funzioneFilter || repartoFilter || plantFilter
+    || societaFilter || tagFilter || inProvaFilter || statoFilter !== 'attivo');
   function resetFilters() {
     setFCognome(''); setFNome(''); setFMatricola(''); setFMansione(''); setFResp('');
-    setFunzioneFilter(''); setRepartoFilter(''); setStatoFilter('attivo');
+    setFSesso(''); setFCategoria(''); setFNazionalita(''); setFLivello(''); setFTipoContratto('');
+    setFunzioneFilter(''); setRepartoFilter(''); setPlantFilter(''); setSocietaFilter('');
+    setTagFilter(''); setInProvaFilter(''); setStatoFilter('attivo');
   }
   const funzioni = Array.from(new Set(employees.map(e => e.funzione_aziendale).filter((f): f is string => !!f))).sort((a, b) => a.localeCompare(b));
+  const categorie = Array.from(new Set(employees.map(e => e.categoria).filter((f): f is string => !!f))).sort((a, b) => a.localeCompare(b));
+  const tipiContratto = Array.from(new Set(employees.map(e => e.tipo_contratto).filter((f): f is string => !!f))).sort((a, b) => a.localeCompare(b));
   const visible = employees.filter(e => {
     const has = (v: string | null | undefined, q: string) => !q.trim() || (v ?? '').toLowerCase().includes(q.trim().toLowerCase());
     return has(e.cognome, fCognome) && has(e.nome, fNome) && has(e.matricola, fMatricola)
-      && has(e.mansione, fMansione) && has(e.capo_nome, fResp)
+      && has(e.mansione, fMansione) && has(e.capo_nome, fResp) && has(e.nazionalita, fNazionalita)
+      && has(e.livello, fLivello)
+      && (!fSesso || e.sesso === fSesso)
+      && (!fCategoria || e.categoria === fCategoria)
+      && (!fTipoContratto || e.tipo_contratto === fTipoContratto)
+      && (!plantFilter || (e.plant_ids ?? []).includes(Number(plantFilter)))
+      && (!societaFilter || e.contract_company_id === Number(societaFilter))
+      && (!tagFilter || e.tag_id === Number(tagFilter))
+      && (!inProvaFilter || (inProvaFilter === 'si' ? e.in_prova : !e.in_prova))
       && (!funzioneFilter || (e.funzione_aziendale ?? '') === funzioneFilter);
   });
 
+  async function setEmployeeTag(employeeId: number, tagId: number | null) {
+    setTagMenuFor(null);
+    const res = await fetch(`${BACKEND}/api/hr/employees/${employeeId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ tag_id: tagId }),
+    });
+    if (res.ok) load();
+  }
+
+  async function clearImportWarning(employeeId: number) {
+    const res = await fetch(`${BACKEND}/api/hr/employees/${employeeId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ import_warning: null }),
+    });
+    if (res.ok) load();
+  }
+
   async function importRows(rows: Record<string, string>[]): Promise<ImportResult> {
-    let inserted = 0, updated = 0, skipped = 0, errors = 0;
+    let inserted = 0, updated = 0, skipped = 0, errors = 0, warnings = 0;
     const skippedRows: string[] = [];
     const today = new Date().toISOString().slice(0, 10);
 
@@ -160,15 +223,28 @@ export default function DipendentiPage() {
       const l68 = L68.test(rawName);
       const fullName = rawName.replace(L68, '').replace(/\s+/g, ' ').trim();
       const parts = fullName.split(/\s+/).filter(Boolean);
-      const dataAssunzione = parseItalianDate(row['data_assunzione']);
-      if (parts.length < 2 || !dataAssunzione) {
+      // Riga senza nessun nome: non c'è nulla da collegare a una persona, va saltata davvero.
+      if (parts.length === 0) {
         skipped++;
-        const motivo = parts.length < 2 ? 'nome e cognome incompleti' : `data assunzione mancante o non valida ("${row['data_assunzione'] ?? ''}")`;
-        skippedRows.push(`${fullName || '(riga vuota)'}: ${motivo}`);
+        skippedRows.push('(riga vuota): nessun nome');
         continue;
       }
-      const nome = parts[parts.length - 1];
-      const cognome = parts.slice(0, -1).join(' ');
+      // Dati incompleti/incerti (nome a una sola parola, data assunzione mancante o non
+      // valida): si carica comunque il dipendente, ma resta un avviso finché non si corregge.
+      const rowWarnings: string[] = [];
+      let nome: string, cognome: string;
+      if (parts.length < 2) {
+        nome = parts[0]; cognome = parts[0];
+        rowWarnings.push('nome e cognome incompleti nell\'Excel (una sola parola)');
+      } else {
+        nome = parts[parts.length - 1];
+        cognome = parts.slice(0, -1).join(' ');
+      }
+      let dataAssunzione = parseItalianDate(row['data_assunzione']);
+      if (!dataAssunzione) {
+        rowWarnings.push(`data assunzione mancante o non valida ("${row['data_assunzione'] ?? ''}"), impostata a oggi`);
+        dataAssunzione = today;
+      }
 
       const reparto_id           = await ensureCatalog(deptByName, 'departments', row['reparto']);
       // PLANT può contenere più sedi separate da / + & o virgola (es. "STR3/STR5")
@@ -200,7 +276,11 @@ export default function DipendentiPage() {
         reparto_id, plant_ids, contract_company_id,
         data_assunzione: dataAssunzione,
         data_cessazione: dataCessazione,
+        in_prova: IN_PROVA_TRUE.has((row['in_prova'] ?? '').trim().toLowerCase()),
+        // Rieseguendo l'import con l'Excel corretto l'avviso si aggiorna (o si pulisce da solo).
+        import_warning: rowWarnings.length ? rowWarnings.join(' | ') : null,
       };
+      if (rowWarnings.length) warnings++;
 
       const existingId = (matricola && empByMatricola.get(matricola.toLowerCase()))
         || empByFullName.get(`${cognome} ${nome}`.toLowerCase());
@@ -371,8 +451,9 @@ export default function DipendentiPage() {
     }
 
     return {
-      inserted, skipped, errors,
+      inserted, skipped, errors, warnings,
       detail: `Nuovi: ${inserted} · già presenti e aggiornati: ${updated}${createdChiefs ? ` · responsabili creati: ${createdChiefs} (controlla la data di assunzione)` : ''}. Responsabile e manager si collegano per cognome (o cognome e nome)`
+        + (warnings ? ` Con dati incompleti ma caricati comunque (vedi colonna avvisi nella tabella): ${warnings}.` : '')
         + (loops ? ` Collegamenti ignorati perché creavano un ciclo (A responsabile di B e B di A): ${loops}.` : '')
         + (skippedRows.length ? ` Saltati (${skippedRows.length}): ${skippedRows.slice(0, 40).join(' | ')}${skippedRows.length > 40 ? ' …' : ''}.` : '')
         + (ambiguous.size ? ` Responsabili ambigui (più persone con lo stesso cognome), non collegati: ${[...ambiguous].join(', ')} — nell'Excel indica cognome e nome.` : '')
@@ -381,7 +462,7 @@ export default function DipendentiPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" onClick={() => { if (tagMenuFor !== null) setTagMenuFor(null); }}>
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-lg font-medium text-gray-900">Dipendenti</h1>
@@ -389,6 +470,7 @@ export default function DipendentiPage() {
         {manage && (
           <div className="flex items-center gap-2">
             <ImportExcelButton columns={IMPORT_COLUMNS} processRows={importRows} onDone={load} label="Importa da Excel" />
+            <button onClick={() => setShowTags(true)} className="btn-secondary text-sm">Etichette</button>
             <button onClick={() => setShowNew(true)} className="btn-primary text-sm">+ Nuovo dipendente</button>
           </div>
         )}
@@ -404,10 +486,24 @@ export default function DipendentiPage() {
             <button onClick={resetFilters} className="text-xs text-gray-400 hover:text-gray-600">Pulisci filtri</button>
           )}
         </div>
-        <div className="grid grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_90px_minmax(120px,1fr)_minmax(110px,1fr)_minmax(110px,1fr)_minmax(110px,1fr)_100px] gap-x-3 px-4 py-3 items-center">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 px-4 py-3">
           <input value={fCognome} onChange={e => setFCognome(e.target.value)} placeholder="Cognome" className="input text-sm min-w-0" />
           <input value={fNome} onChange={e => setFNome(e.target.value)} placeholder="Nome" className="input text-sm min-w-0" />
           <input value={fMatricola} onChange={e => setFMatricola(e.target.value)} placeholder="Matricola" className="input text-sm min-w-0" />
+          <select value={fSesso} onChange={e => setFSesso(e.target.value)} className="input text-sm min-w-0">
+            <option value="">Sesso</option>
+            <option value="M">M</option>
+            <option value="F">F</option>
+          </select>
+          <select value={fCategoria} onChange={e => setFCategoria(e.target.value)} className="input text-sm min-w-0">
+            <option value="">Categoria</option>
+            {categorie.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={societaFilter} onChange={e => setSocietaFilter(e.target.value ? Number(e.target.value) : '')} className="input text-sm min-w-0">
+            <option value="">Società contratto</option>
+            {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <input value={fNazionalita} onChange={e => setFNazionalita(e.target.value)} placeholder="Nazionalità" className="input text-sm min-w-0" />
           <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className="input text-sm min-w-0">
             <option value="">Funzione</option>
             {funzioni.map(f => <option key={f} value={f}>{f}</option>)}
@@ -416,39 +512,108 @@ export default function DipendentiPage() {
             <option value="">Reparto</option>
             {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
+          <select value={plantFilter} onChange={e => setPlantFilter(e.target.value ? Number(e.target.value) : '')} className="input text-sm min-w-0">
+            <option value="">Plant</option>
+            {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
           <input value={fMansione} onChange={e => setFMansione(e.target.value)} placeholder="Mansione" className="input text-sm min-w-0" />
+          <input value={fLivello} onChange={e => setFLivello(e.target.value)} placeholder="Livello" className="input text-sm min-w-0" />
           <input value={fResp} onChange={e => setFResp(e.target.value)} placeholder="Responsabile" className="input text-sm min-w-0" />
+          <select value={fTipoContratto} onChange={e => setFTipoContratto(e.target.value)} className="input text-sm min-w-0">
+            <option value="">Tipo contratto</option>
+            {tipiContratto.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={tagFilter} onChange={e => setTagFilter(e.target.value ? Number(e.target.value) : '')} className="input text-sm min-w-0">
+            <option value="">Etichetta</option>
+            {tags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          <select value={inProvaFilter} onChange={e => setInProvaFilter(e.target.value as '' | 'si' | 'no')} className="input text-sm min-w-0">
+            <option value="">In prova</option>
+            <option value="si">Sì</option>
+            <option value="no">No</option>
+          </select>
           <select value={statoFilter} onChange={e => setStatoFilter(e.target.value)} className="input text-sm min-w-0">
             <option value="">Stato</option>
-            {Object.entries(STATO_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            {STATO_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
       </div>
 
-      <div className="card overflow-hidden p-0">
-        <div className="grid grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_90px_minmax(120px,1fr)_minmax(110px,1fr)_minmax(110px,1fr)_minmax(110px,1fr)_100px] gap-x-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide">
-          <div>Cognome</div><div>Nome</div><div>Matricola</div><div>Funzione</div><div>Reparto</div><div>Mansione</div><div>Responsabile</div><div className="text-center">Stato</div>
+      <div className="card overflow-x-auto p-0">
+        <div style={{ minWidth: 1700 }}>
+          <div className="grid gap-x-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide"
+            style={{ gridTemplateColumns: GRID_COLS }}>
+            <div />
+            <div>Cognome</div><div>Nome</div><div>Matricola</div><div>Sesso</div><div>Categoria</div>
+            <div>Società</div><div>Nazionalità</div><div>Funzione</div><div>Reparto</div><div>Plant</div>
+            <div>Mansione</div><div>Livello</div><div>Responsabile</div><div>Tipo contratto</div>
+            <div>Assunzione</div><div>Cessazione</div><div className="text-center">Prova</div>
+            <div className="text-center">Stato</div><div />
+          </div>
+          {loading ? (
+            <p className="text-sm text-gray-400 text-center py-12">Caricamento…</p>
+          ) : visible.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-12">Nessun dipendente trovato</p>
+          ) : visible.map(e => (
+            <Link key={e.id} href={`/hr/dipendenti/${e.id}`}
+              className="grid gap-x-3 px-4 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50 transition-colors items-center relative"
+              style={{ gridTemplateColumns: GRID_COLS }}
+            >
+              <div className="relative">
+                <button
+                  type="button"
+                  title={e.tag_name ? `${e.tag_name}${manage ? ' — clicca per cambiare' : ''}` : (manage ? 'Assegna etichetta' : 'Nessuna etichetta')}
+                  onClick={ev => { if (!manage) return; ev.preventDefault(); ev.stopPropagation(); setTagMenuFor(tagMenuFor === e.id ? null : e.id); }}
+                  className={`w-3 h-3 rounded-full ${tagDotClass(e.tag_color)} ${manage ? 'cursor-pointer' : ''}`}
+                />
+                {tagMenuFor === e.id && (
+                  <div
+                    onClick={ev => { ev.preventDefault(); ev.stopPropagation(); }}
+                    className="absolute z-10 top-5 left-0 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-44 text-sm"
+                  >
+                    <button type="button" onClick={() => setEmployeeTag(e.id, null)} className="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-gray-500">Nessuna</button>
+                    {tags.filter(t => t.is_active).map(t => (
+                      <button key={t.id} type="button" onClick={() => setEmployeeTag(e.id, t.id)} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-gray-50">
+                        <span className={`w-2.5 h-2.5 rounded-full ${tagDotClass(t.color)}`} />{t.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="text-sm font-medium text-gray-800 truncate">{e.cognome}</div>
+              <div className="text-sm text-gray-800 truncate">{e.nome}</div>
+              <div className="text-sm text-gray-600 truncate">{e.matricola ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.sesso ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.categoria ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.contract_company_name ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.nazionalita ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.funzione_aziendale ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.reparto_name ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.plant_name ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.mansione ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.livello ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.capo_nome ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.tipo_contratto ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.data_assunzione?.slice(0, 10) ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.data_cessazione?.slice(0, 10) ?? '—'}</div>
+              <div className="text-center text-sm text-gray-600">{e.in_prova ? 'Sì' : '—'}</div>
+              <div className="text-center">
+                <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${STATO_COLOR[e.stato]}`}>{STATO_LABEL[e.stato]}</span>
+              </div>
+              <div className="text-center">
+                {e.import_warning && (
+                  <button
+                    type="button" title={`${e.import_warning}${manage ? ' — clicca per segnare come risolto' : ''}`}
+                    onClick={ev => { if (!manage) return; ev.preventDefault(); ev.stopPropagation(); clearImportWarning(e.id); }}
+                    className="text-amber-500"
+                  >
+                    ⚠
+                  </button>
+                )}
+              </div>
+            </Link>
+          ))}
         </div>
-        {loading ? (
-          <p className="text-sm text-gray-400 text-center py-12">Caricamento…</p>
-        ) : visible.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-12">Nessun dipendente trovato</p>
-        ) : visible.map(e => (
-          <Link key={e.id} href={`/hr/dipendenti/${e.id}`}
-            className="grid grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_90px_minmax(120px,1fr)_minmax(110px,1fr)_minmax(110px,1fr)_minmax(110px,1fr)_100px] gap-x-3 px-4 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50 transition-colors items-center"
-          >
-            <div className="text-sm font-medium text-gray-800 truncate">{e.cognome}</div>
-            <div className="text-sm text-gray-800 truncate">{e.nome}</div>
-            <div className="text-sm text-gray-600 truncate">{e.matricola ?? '—'}</div>
-            <div className="text-sm text-gray-600 truncate">{e.funzione_aziendale ?? '—'}</div>
-            <div className="text-sm text-gray-600 truncate">{e.reparto_name ?? '—'}</div>
-            <div className="text-sm text-gray-600 truncate">{e.mansione ?? '—'}</div>
-            <div className="text-sm text-gray-600 truncate">{e.capo_nome ?? '—'}</div>
-            <div className="text-center">
-              <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${STATO_COLOR[e.stato]}`}>{STATO_LABEL[e.stato]}</span>
-            </div>
-          </Link>
-        ))}
       </div>
 
       {promptDialog}
@@ -459,8 +624,17 @@ export default function DipendentiPage() {
           departments={departments}
           plants={plants}
           companies={companies}
+          tags={tags}
           onClose={() => setShowNew(false)}
           onCreated={() => { setShowNew(false); load(); }}
+        />
+      )}
+
+      {showTags && (
+        <TagsSettingsModal
+          tags={tags}
+          onClose={() => setShowTags(false)}
+          onChanged={load}
         />
       )}
     </div>

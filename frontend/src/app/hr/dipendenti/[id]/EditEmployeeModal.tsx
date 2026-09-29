@@ -1,8 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany } from '@/types';
+import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
 import { PlantMultiSelect } from '../PlantMultiSelect';
+
+// Il set di stati validi è stato ridotto a questi 3: "aspettativa" e "malattia" restano
+// nel database solo per chi li aveva già (nessuna migrazione automatica, vedi migrate-hr-tags.sql),
+// ma non sono più selezionabili per nuovi cambi di stato.
+const STATO_OPTIONS: { value: string; label: string }[] = [
+  { value: 'attivo', label: 'Attivo' },
+  { value: 'maternita_paternita', label: 'Maternità/Paternità' },
+  { value: 'cessato', label: 'Cessato' },
+];
+const LEGACY_STATO_LABEL: Record<string, string> = { aspettativa: 'Aspettativa (legacy)', malattia: 'Malattia (legacy)' };
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -13,6 +23,7 @@ interface Props {
   departments: HrDepartment[];
   plants: HrPlant[];
   companies: HrContractCompany[];
+  tags: HrEmployeeTag[];
   allEmployees: HrEmployee[];
   fullManage: boolean;
   onClose: () => void;
@@ -21,7 +32,7 @@ interface Props {
 
 // Un capo senza gestione HR completa può aggiornare solo dati di contatto —
 // tutto il resto (reparto, mansione, livello, capo, stato) resta esclusivo di HR.
-export function EditEmployeeModal({ employee, departments, plants, companies, allEmployees, fullManage, onClose, onSaved }: Props) {
+export function EditEmployeeModal({ employee, departments, plants, companies, tags, allEmployees, fullManage, onClose, onSaved }: Props) {
   const [form, setForm] = useState({
     matricola: employee.matricola ?? '',
     nome: employee.nome,
@@ -37,6 +48,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, al
     funzione_aziendale: employee.funzione_aziendale ?? '',
     tipo_contratto: employee.tipo_contratto ?? '',
     stato: employee.stato,
+    tag_id: employee.tag_id ? String(employee.tag_id) : '',
     // <input type="date"> richiede esattamente "YYYY-MM-DD": il backend restituisce
     // le colonne DATE come timestamp ISO completo, va troncato.
     data_cessazione: employee.data_cessazione?.slice(0, 10) ?? '',
@@ -47,6 +59,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, al
   });
   const [plantIds, setPlantIds] = useState<number[]>(employee.plant_ids ?? []);
   const [l68, setL68] = useState(!!employee.l68);
+  const [inProva, setInProva] = useState(!!employee.in_prova);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
@@ -65,6 +78,8 @@ export function EditEmployeeModal({ employee, departments, plants, companies, al
           reparto_id: form.reparto_id ? Number(form.reparto_id) : null,
           plant_ids: plantIds,
           l68,
+          in_prova: inProva,
+          tag_id: form.tag_id ? Number(form.tag_id) : null,
           contract_company_id: form.contract_company_id ? Number(form.contract_company_id) : null,
           capo_id: form.capo_id ? Number(form.capo_id) : null,
           data_cessazione: form.data_cessazione || null,
@@ -136,13 +151,22 @@ export function EditEmployeeModal({ employee, departments, plants, companies, al
               <div><label className="label">Tipo contratto</label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
               <div><label className="label">Stato</label>
                 <select className="input" value={form.stato} onChange={e => set('stato', e.target.value)}>
-                  <option value="attivo">Attivo</option>
-                  <option value="aspettativa">Aspettativa</option>
-                  <option value="malattia">Malattia</option>
-                  <option value="maternita_paternita">Maternità/Paternità</option>
-                  <option value="cessato">Cessato</option>
+                  {STATO_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  {LEGACY_STATO_LABEL[employee.stato] && (
+                    <option value={employee.stato}>{LEGACY_STATO_LABEL[employee.stato]}</option>
+                  )}
                 </select>
               </div>
+              <div><label className="label">Etichetta</label>
+                <select className="input" value={form.tag_id} onChange={e => set('tag_id', e.target.value)}>
+                  <option value="">—</option>
+                  {tags.filter(t => t.is_active || String(t.id) === form.tag_id).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer self-end pb-2">
+                <input type="checkbox" checked={inProva} onChange={e => setInProva(e.target.checked)} />
+                In prova
+              </label>
               <div><label className="label">Data cessazione / fine contratto</label>
                 <input type="date" className="input" value={form.data_cessazione} onChange={e => set('data_cessazione', e.target.value)} />
                 <p className="text-[11px] text-gray-400 mt-1">Con stato Cessato, se vuota verrà usata la data di oggi. Una data futura con stato Attivo indica la scadenza del contratto.</p>

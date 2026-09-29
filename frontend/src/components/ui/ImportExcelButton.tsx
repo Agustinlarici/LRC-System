@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 
-export interface ImportResult { inserted: number; skipped: number; errors: number; detail?: string; }
+export interface ImportResult { inserted: number; skipped: number; errors: number; warnings?: number; detail?: string; }
 export type ImportProcessFn = (rows: Record<string, string>[]) => Promise<ImportResult>;
 
 interface Props {
@@ -52,7 +52,7 @@ export function ImportExcelButton({ columns, processRows, onDone, label = 'Impor
     }
   }
 
-  const hasIssue = result && (result.errors > 0 || result.skipped > 0);
+  const hasIssue = result && (result.errors > 0 || result.skipped > 0 || !!result.warnings);
 
   return (
     <div className="inline-flex flex-col items-start gap-1.5">
@@ -88,7 +88,8 @@ export function ImportExcelButton({ columns, processRows, onDone, label = 'Impor
         <div className={`text-xs px-2.5 py-1.5 rounded-lg flex flex-col gap-1 max-w-sm ${hasIssue ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
           <div className="flex items-center gap-3">
             {result.inserted > 0 && <span>✓ {result.inserted} inseriti</span>}
-            {result.skipped  > 0 && <span>⚠ {result.skipped} saltati</span>}
+            {!!result.warnings && result.warnings > 0 && <span>⚠ {result.warnings} con avvisi (caricati comunque)</span>}
+            {result.skipped  > 0 && <span>⊘ {result.skipped} saltati</span>}
             {result.errors   > 0 && <span>✕ {result.errors} errori</span>}
             {result.inserted === 0 && result.skipped === 0 && result.errors === 0 && <span>Nessuna riga trovata</span>}
             <button onClick={() => setResult(null)} className="opacity-40 hover:opacity-100 font-bold ml-auto">×</button>

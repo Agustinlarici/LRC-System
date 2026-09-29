@@ -4,10 +4,11 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany } from '@/types';
+import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
 import { EditEmployeeModal } from './EditEmployeeModal';
 import { EventTimeline } from './EventTimeline';
 import { SalaryHistory } from './SalaryHistory';
+import { tagBadgeClass } from '@/lib/tagColors';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -63,6 +64,7 @@ export default function EmployeeDetailPage() {
   const [departments, setDepartments] = useState<HrDepartment[]>([]);
   const [plants, setPlants] = useState<HrPlant[]>([]);
   const [companies, setCompanies] = useState<HrContractCompany[]>([]);
+  const [tags, setTags] = useState<HrEmployeeTag[]>([]);
   const [allEmployees, setAllEmployees] = useState<HrEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [showEdit, setShowEdit] = useState(false);
@@ -74,11 +76,12 @@ export default function EmployeeDetailPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [empRes, depRes, plantRes, coRes, allRes] = await Promise.all([
+    const [empRes, depRes, plantRes, coRes, tagRes, allRes] = await Promise.all([
       fetch(`${BACKEND}/api/hr/employees/${id}`, { credentials: 'include' }),
       fetch(`${BACKEND}/api/hr/departments`, { credentials: 'include' }),
       fetch(`${BACKEND}/api/hr/plants`, { credentials: 'include' }),
       fetch(`${BACKEND}/api/hr/contract-companies`, { credentials: 'include' }),
+      fetch(`${BACKEND}/api/hr/tags`, { credentials: 'include' }),
       fetch(`${BACKEND}/api/hr/employees`, { credentials: 'include' }),
     ]);
     if (empRes.status === 404) { setNotFound(true); setLoading(false); return; }
@@ -86,6 +89,7 @@ export default function EmployeeDetailPage() {
     if (depRes.ok) setDepartments(await depRes.json());
     if (plantRes.ok) setPlants(await plantRes.json());
     if (coRes.ok) setCompanies(await coRes.json());
+    if (tagRes.ok) setTags(await tagRes.json());
     if (allRes.ok) setAllEmployees(await allRes.json());
     setLoading(false);
   }, [id]);
@@ -107,7 +111,33 @@ export default function EmployeeDetailPage() {
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-xl font-semibold text-gray-900">{employee.cognome} {employee.nome}</h1>
         <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${STATO_COLOR[employee.stato]}`}>{STATO_LABEL[employee.stato]}</span>
+        {employee.tag_name && (
+          <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${tagBadgeClass(employee.tag_color)}`}>{employee.tag_name}</span>
+        )}
+        {employee.in_prova && (
+          <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-blue-50 text-blue-700 border-blue-200">In prova</span>
+        )}
       </div>
+
+      {employee.import_warning && (
+        <div className="flex items-center justify-between gap-3 text-sm bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-3 py-2">
+          <span>⚠ Importato dall&apos;Excel con dati incompleti: {employee.import_warning}</span>
+          {manage && (
+            <button
+              onClick={async () => {
+                await fetch(`${BACKEND}/api/hr/employees/${employee.id}`, {
+                  method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+                  body: JSON.stringify({ import_warning: null }),
+                });
+                load();
+              }}
+              className="text-xs font-medium text-amber-800 hover:underline shrink-0"
+            >
+              Segna come risolto
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
         {/* Colonna sinistra: dati della persona */}
@@ -130,6 +160,7 @@ export default function EmployeeDetailPage() {
             <Field label="Categoria" value={employee.categoria} />
             <Field label="Tipologia" value={employee.tipo_contratto} />
             <Field label="Legge 68" value={employee.l68 ? 'Sì' : 'No'} />
+            <Field label="In prova" value={employee.in_prova ? 'Sì' : 'No'} />
             <Field label="Data assunzione" value={fmtDate(employee.data_assunzione)} />
             <Field label="Anzianità" value={`${employee.anzianita_anni} ${employee.anzianita_anni === 1 ? 'anno' : 'anni'}`} />
             {employee.data_cessazione && <Field label="Fine contratto / cessazione" value={fmtDate(employee.data_cessazione)} />}
@@ -160,6 +191,7 @@ export default function EmployeeDetailPage() {
           departments={departments}
           plants={plants}
           companies={companies}
+          tags={tags}
           allEmployees={allEmployees.filter(e => e.id !== employee.id)}
           fullManage={manage}
           onClose={() => setShowEdit(false)}

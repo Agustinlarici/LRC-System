@@ -665,6 +665,15 @@ export interface HrDepartment {
 export type HrPlant = HrDepartment;
 export type HrContractCompany = HrDepartment;
 
+export interface HrEmployeeTag {
+  id:          number;
+  name:        string;
+  color:       string;
+  description: string | null;
+  sort_order:  number;
+  is_active:   boolean;
+}
+
 export interface HrEmployee {
   id:                       number;
   matricola:                string | null;
@@ -697,6 +706,11 @@ export interface HrEmployee {
   data_cessazione:          string | null;
   stato:                    HrEmployeeStatus;
   note:                     string | null;
+  tag_id:                   number | null;
+  tag_name:                 string | null;
+  tag_color:                string | null;
+  in_prova:                 boolean;
+  import_warning:           string | null;
   anzianita_anni:           number;
   eta:                      number | null;
   n_riporti:                number;
