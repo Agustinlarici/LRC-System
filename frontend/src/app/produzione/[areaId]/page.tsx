@@ -9,6 +9,11 @@ import { SheetTable } from '../_components/SheetTable';
 
 const PAGE_SIZE = 500;
 
+const btnBase      = 'inline-flex items-center gap-1 text-sm font-medium px-3 py-2 rounded-lg transition-colors';
+const btnPrimary   = `${btnBase} bg-blue-600 text-white hover:bg-blue-700`;
+const btnSecondary = `${btnBase} bg-white border border-gray-200 text-gray-700 hover:bg-gray-50`;
+const btnDark      = `${btnBase} bg-gray-700 text-white hover:bg-gray-800`;
+
 // Limite righe mostrate/stampate di default — evita di mandare in stampa
 // 500 righe per sbaglio quando non c'è nessun altro filtro attivo.
 const DEFAULT_MAX = '20';
@@ -19,15 +24,6 @@ interface SheetResponse {
   total: number;
 }
 
-function StatCard({ label, value, accent }: { label: string; value: number; accent?: string }) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 px-4 py-3">
-      <p className="text-xs text-gray-400 uppercase tracking-wide">{label}</p>
-      <p className={`text-xl font-bold mt-0.5 ${accent ?? 'text-gray-900'}`}>{value}</p>
-    </div>
-  );
-}
-
 export default function ProduzioneAreaSheetPage() {
   const params = useParams<{ areaId: string }>();
   const areaId = params.areaId;
@@ -36,7 +32,6 @@ export default function ProduzioneAreaSheetPage() {
   const [rows,        setRows]        = useState<ProdSheetRow[]>([]);
   const [total,       setTotal]       = useState(0);
   const [loading,     setLoading]     = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [error,       setError]       = useState<string | null>(null);
   const [storico,     setStorico]     = useState(false);
 
@@ -50,31 +45,29 @@ export default function ProduzioneAreaSheetPage() {
   const [fCaratt,   setFCaratt]   = useState('');
   const [fMax,      setFMax]      = useState(DEFAULT_MAX); // vuoto = nessun limite
 
-  const loadPage = useCallback(async (offset: number) => {
+  // Carica tutte le pagine: la limitazione delle righe è gestita dal filtro "Max righe".
+  const loadAll = useCallback(async () => {
     const storicoParam = storico ? '&storico=1' : '';
-    const d = await api.get<SheetResponse>(`/api/prod/aree/${areaId}/foglio?limit=${PAGE_SIZE}&offset=${offset}${storicoParam}`);
-    setArea(d.area);
-    setTotal(d.total);
-    setRows(prev => offset === 0 ? d.rows : [...prev, ...d.rows]);
+    let all: ProdSheetRow[] = [];
+    let tot = 0;
+    do {
+      const d = await api.get<SheetResponse>(`/api/prod/aree/${areaId}/foglio?limit=${PAGE_SIZE}&offset=${all.length}${storicoParam}`);
+      setArea(d.area);
+      tot = d.total;
+      if (d.rows.length === 0) break;
+      all = [...all, ...d.rows];
+    } while (all.length < tot);
+    setRows(all);
+    setTotal(tot);
   }, [areaId, storico]);
 
   useEffect(() => {
     setLoading(true);
-    loadPage(0)
+    setError(null);
+    loadAll()
       .catch(e => setError((e as Error).message))
       .finally(() => setLoading(false));
-  }, [loadPage]);
-
-  async function loadMore() {
-    setLoadingMore(true);
-    try {
-      await loadPage(rows.length);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoadingMore(false);
-    }
-  }
+  }, [loadAll]);
 
   const coloriDisponibili = useMemo(
     () => [...new Set(rows.map(r => r.colore).filter((c): c is string => !!c))].sort(),
@@ -108,10 +101,6 @@ export default function ProduzioneAreaSheetPage() {
     return fMax.trim() && Number.isFinite(max) && max > 0 ? filtered.slice(0, max) : filtered;
   }, [rows, fCommessa, fCodice, fOrigine, fStato, fColore, fCaratt, fMax]);
 
-  const confermatoCount = useMemo(() => rows.filter(r => r.fonte_ordine === 'confermato').length, [rows]);
-  const forecastCount   = useMemo(() => rows.filter(r => r.fonte_ordine === 'forecast').length, [rows]);
-  const speditoCount    = useMemo(() => rows.filter(r => r.chiuso).length, [rows]);
-
   const selectClass = 'border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500';
   const inputClass  = 'border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 
@@ -127,36 +116,26 @@ export default function ProduzioneAreaSheetPage() {
       {/* ── Header moderno (solo schermo) ─────────────────────────────────── */}
       <div className="d-print-none mb-6 flex items-start justify-between flex-wrap gap-3">
         <div>
-          <Link href="/produzione" className="text-sm text-gray-500 hover:text-gray-700">← Programma Produzione</Link>
-          <h1 className="text-2xl font-bold text-gray-900 mt-1">Programma Produzione</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Programma Produzione</h1>
           <p className="text-gray-500 text-sm mt-0.5">
             {storico ? 'Storico ordini spediti' : 'Area di montaggio'}: <span className="text-red-600 font-medium">{area?.description}</span>
           </p>
         </div>
         <div className="flex gap-2">
+          <Link href="/produzione" className={btnSecondary}>← Programma Produzione</Link>
           <button
             onClick={() => setStorico(s => !s)}
-            className={`text-sm px-3 py-2 rounded-lg transition-colors ${
-              storico ? 'bg-gray-700 text-white hover:bg-gray-800' : 'border border-gray-200 hover:bg-gray-50'
-            }`}
+            className={storico ? btnDark : btnSecondary}
           >
             {storico ? '← Torna al foglio' : 'Vedi storico'}
           </button>
           <button
             onClick={() => window.print()}
-            className="text-sm bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            className={btnPrimary}
           >
             🖨️ Stampa
           </button>
         </div>
-      </div>
-
-      {/* ── Statistiche rapide (solo schermo) ───────────────────────────── */}
-      <div className="d-print-none grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Caricati" value={rows.length} />
-        <StatCard label="Confermato" value={confermatoCount} accent="text-green-600" />
-        <StatCard label="Forecast" value={forecastCount} accent="text-yellow-600" />
-        <StatCard label="Spedito" value={speditoCount} accent="text-gray-500" />
       </div>
 
       {/* ── Filtri (solo schermo) ────────────────────────────────────────── */}
@@ -164,7 +143,7 @@ export default function ProduzioneAreaSheetPage() {
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-gray-700">Filtri</h2>
           {hasActiveFilters && (
-            <button onClick={resetFiltri} className="text-xs text-gray-400 hover:text-gray-600">
+            <button onClick={resetFiltri} className={btnSecondary}>
               Pulisci filtri
             </button>
           )}
@@ -190,13 +169,16 @@ export default function ProduzioneAreaSheetPage() {
           </select>
           <input value={fCaratt} onChange={e => setFCaratt(e.target.value)} placeholder="Categoria / caratteristica"
             className={inputClass} />
-          <input value={fMax} onChange={e => setFMax(e.target.value)} type="number" min={1} placeholder="Max righe"
-            title="Numero massimo di righe da mostrare/stampare — vuoto = nessun limite"
-            className={inputClass} />
+          <div className="flex items-center gap-2">
+            <label htmlFor="fMax" className="text-sm text-gray-500 whitespace-nowrap">Righe da mostrare</label>
+            <input id="fMax" value={fMax} onChange={e => setFMax(e.target.value)} type="number" min={1} placeholder="Tutte"
+              title="Numero massimo di righe da mostrare/stampare — vuoto = tutte"
+              className={`${inputClass} w-full min-w-0`} />
+          </div>
         </div>
         {filteredRows.length !== rows.length && (
-          <p className="text-xs text-gray-400 mt-3">
-            Mostrando {filteredRows.length} di {rows.length} caricati
+          <p className="text-xs text-gray-500 mt-3">
+            Mostrando {filteredRows.length} di {rows.length} righe
           </p>
         )}
       </div>
@@ -215,18 +197,6 @@ export default function ProduzioneAreaSheetPage() {
 
         <SheetTable rows={filteredRows} />
 
-        {rows.length < total && (
-          <div className="d-print-none mt-4 text-center">
-            <p className="text-sm text-gray-500 mb-2">Mostrando {rows.length} di {total}</p>
-            <button
-              onClick={loadMore}
-              disabled={loadingMore}
-              className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {loadingMore ? 'Caricamento...' : `Carica altri ${Math.min(PAGE_SIZE, total - rows.length)}`}
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );
