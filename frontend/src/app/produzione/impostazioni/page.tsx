@@ -308,35 +308,13 @@ function TabRegole() {
   const [cercaColore, setCercaColore] = useState(false);
   const [distanza,    setDistanza]    = useState('20');
   const [note,        setNote]        = useState('');
-  const [editingId,   setEditingId]   = useState<number | null>(null);
 
   const load = useCallback(() => {
     api.get<ProdKeywordRule[]>('/api/prod/keyword-rules').then(setRules).finally(() => setLoading(false));
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  function resetForm() {
-    setEditingId(null);
-    setModo('simple'); setPrefisso(''); setCategoria(''); setCaratt('');
-    setParolaCh(''); setAncora(''); setObiettivo(''); setCercaColore(false);
-    setDistanza('20'); setNote('');
-  }
-
-  function startEdit(r: ProdKeywordRule) {
-    setEditingId(r.id);
-    setModo(r.modo);
-    setPrefisso(r.prefisso_commessa ?? '');
-    setCategoria(r.categoria);
-    setCaratt(r.caratteristica_derivata);
-    setParolaCh(r.parola_chiave ?? '');
-    setAncora(r.parola_ancora ?? '');
-    setObiettivo(r.parola_obiettivo ?? '');
-    setCercaColore(r.obiettivo_da_colori);
-    setDistanza(r.distanza_max_caratteri != null ? String(r.distanza_max_caratteri) : '20');
-    setNote(r.note ?? '');
-  }
-
-  async function submit() {
+  async function add() {
     if (!categoria.trim() || !caratt.trim()) return;
     setBusy(true);
     try {
@@ -349,12 +327,8 @@ function TabRegole() {
             ...(cercaColore ? {} : { parolaObiettivo: obiettivo.trim() }),
             distanzaMaxCaratteri: parseInt(distanza) || 1, note: noteVal,
           };
-      if (editingId != null) {
-        await api.put<ProdKeywordRule>(`/api/prod/keyword-rules/${editingId}`, body);
-      } else {
-        await api.post<ProdKeywordRule>('/api/prod/keyword-rules', body);
-      }
-      resetForm();
+      await api.post<ProdKeywordRule>('/api/prod/keyword-rules', body);
+      setPrefisso(''); setCategoria(''); setCaratt(''); setParolaCh(''); setAncora(''); setObiettivo(''); setCercaColore(false); setNote('');
       load();
     } finally { setBusy(false); }
   }
@@ -362,6 +336,50 @@ function TabRegole() {
   async function toggleActive(r: ProdKeywordRule) {
     await api.put(`/api/prod/keyword-rules/${r.id}/active`, { active: !r.active });
     load();
+  }
+
+  // ─── Modifica in linea, direttamente nella riga della tabella ──────────────
+  // (invece di ricaricare i valori nel form grande sopra, che è pensato solo
+  // per aggiungere regole nuove).
+  interface EditRowState {
+    id: number; modo: ProdKeywordMode; prefisso: string; categoria: string; caratt: string;
+    parolaCh: string; ancora: string; obiettivo: string; cercaColore: boolean; distanza: string; note: string;
+  }
+  const [editRow,  setEditRow]  = useState<EditRowState | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
+
+  function startEditRow(r: ProdKeywordRule) {
+    setEditRow({
+      id: r.id, modo: r.modo,
+      prefisso: r.prefisso_commessa ?? '', categoria: r.categoria, caratt: r.caratteristica_derivata,
+      parolaCh: r.parola_chiave ?? '', ancora: r.parola_ancora ?? '', obiettivo: r.parola_obiettivo ?? '',
+      cercaColore: r.obiettivo_da_colori,
+      distanza: r.distanza_max_caratteri != null ? String(r.distanza_max_caratteri) : '20',
+      note: r.note ?? '',
+    });
+  }
+
+  function updateEditRow(patch: Partial<EditRowState>) {
+    setEditRow(prev => prev ? { ...prev, ...patch } : prev);
+  }
+
+  async function saveEditRow() {
+    if (!editRow || !editRow.categoria.trim() || !editRow.caratt.trim()) return;
+    setEditBusy(true);
+    try {
+      const noteVal = editRow.note.trim() || undefined;
+      const body = editRow.modo === 'simple'
+        ? { modo: editRow.modo, prefissoCommessa: editRow.prefisso.trim(), categoria: editRow.categoria.trim(), caratteristicaDerivata: editRow.caratt.trim(), parolaChiave: editRow.parolaCh.trim(), note: noteVal }
+        : {
+            modo: editRow.modo, prefissoCommessa: editRow.prefisso.trim(), categoria: editRow.categoria.trim(), caratteristicaDerivata: editRow.caratt.trim(),
+            parolaAncora: editRow.ancora.trim(), obiettivoDaColori: editRow.cercaColore,
+            ...(editRow.cercaColore ? {} : { parolaObiettivo: editRow.obiettivo.trim() }),
+            distanzaMaxCaratteri: parseInt(editRow.distanza) || 1, note: noteVal,
+          };
+      await api.put<ProdKeywordRule>(`/api/prod/keyword-rules/${editRow.id}`, body);
+      setEditRow(null);
+      load();
+    } finally { setEditBusy(false); }
   }
 
   async function del(id: number) {
@@ -410,13 +428,7 @@ function TabRegole() {
 
   return (
     <div className="space-y-4">
-      <div className={`bg-white border rounded-xl p-4 space-y-3 ${editingId != null ? 'border-blue-300' : 'border-gray-200'}`}>
-        {editingId != null && (
-          <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-sm text-blue-800">
-            <span>Stai modificando una regola esistente.</span>
-            <button onClick={resetForm} className="text-blue-700 underline hover:text-blue-900">Annulla</button>
-          </div>
-        )}
+      <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
         <div>
           <p className="text-xs text-gray-500 mb-1.5">Come vuoi cercare nella descrizione dell&apos;articolo?</p>
           <div className="flex gap-4 text-sm">
@@ -472,15 +484,10 @@ function TabRegole() {
           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
 
         <div className="flex items-center gap-2">
-          <button onClick={submit} disabled={busy}
+          <button onClick={add} disabled={busy}
             className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
-            {editingId != null ? 'Salva modifiche' : 'Aggiungi regola'}
+            Aggiungi regola
           </button>
-          {editingId != null && (
-            <button onClick={resetForm} className="text-sm text-gray-500 hover:text-gray-700 px-2">
-              Annulla
-            </button>
-          )}
           <ExcelImportButton
             endpoint="/api/prod/keyword-rules/import-excel"
             onDone={load}
@@ -564,33 +571,98 @@ function TabRegole() {
             {filteredRules.length === 0 && (
               <tr><td colSpan={12} className="text-center text-gray-400 py-6">Nessuna regola</td></tr>
             )}
-            {filteredRules.map(r => (
-              <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="py-2 px-4 font-mono">{r.prefisso_commessa || <span className="italic text-gray-400">tutte</span>}</td>
-                <td className="py-2 px-4">{r.categoria}</td>
-                <td className="py-2 px-4">{r.caratteristica_derivata}</td>
-                <td className="py-2 px-4 text-gray-500">{modoLabel(r.modo)}</td>
-                <td className="py-2 px-4 text-gray-500">{r.parola_chiave ?? <span className="text-gray-300">–</span>}</td>
-                <td className="py-2 px-4 text-gray-500">{r.parola_ancora ?? <span className="text-gray-300">–</span>}</td>
-                <td className="py-2 px-4 text-gray-500">
-                  {r.modo === 'proximity' && r.obiettivo_da_colori
-                    ? <span className="italic">qualsiasi colore attivo</span>
-                    : r.parola_obiettivo ?? <span className="text-gray-300">–</span>}
-                </td>
-                <td className="py-2 px-4 text-gray-500">{r.distanza_max_caratteri ?? <span className="text-gray-300">–</span>}</td>
-                <td className="py-2 px-4 text-center text-gray-500">
-                  {r.modo === 'proximity' ? (r.obiettivo_da_colori ? 'Sì' : 'No') : <span className="text-gray-300">–</span>}
-                </td>
-                <td className="py-2 px-4 text-gray-500 max-w-[200px] truncate" title={r.note ?? ''}>{r.note ?? '–'}</td>
-                <td className="py-2 px-4 text-center">
-                  <input type="checkbox" checked={r.active} onChange={() => toggleActive(r)} />
-                </td>
-                <td className="py-2 px-4 text-right whitespace-nowrap">
-                  <button onClick={() => startEdit(r)} className="text-xs text-blue-600 hover:text-blue-800 mr-3">Modifica</button>
-                  <button onClick={() => del(r.id)} className="text-xs text-red-500 hover:text-red-700">Elimina</button>
-                </td>
-              </tr>
-            ))}
+            {filteredRules.map(r => {
+              if (editRow && editRow.id === r.id) {
+                const cell = 'w-full border border-blue-300 rounded px-1.5 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400';
+                return (
+                  <tr key={r.id} className="border-b border-gray-100 bg-blue-50">
+                    <td className="py-2 px-2">
+                      <input value={editRow.prefisso} onChange={e => updateEditRow({ prefisso: e.target.value })}
+                        placeholder="tutte" className={cell} />
+                    </td>
+                    <td className="py-2 px-2">
+                      <input value={editRow.categoria} onChange={e => updateEditRow({ categoria: e.target.value })} className={cell} />
+                    </td>
+                    <td className="py-2 px-2">
+                      <input value={editRow.caratt} onChange={e => updateEditRow({ caratt: e.target.value })} className={cell} />
+                    </td>
+                    <td className="py-2 px-2">
+                      <select value={editRow.modo} onChange={e => updateEditRow({ modo: e.target.value as ProdKeywordMode })} className={cell}>
+                        <option value="simple">Una parola</option>
+                        <option value="proximity">Due parole vicine</option>
+                      </select>
+                    </td>
+                    <td className="py-2 px-2">
+                      {editRow.modo === 'simple' ? (
+                        <input value={editRow.parolaCh} onChange={e => updateEditRow({ parolaCh: e.target.value })} className={cell} />
+                      ) : <span className="text-gray-300">–</span>}
+                    </td>
+                    <td className="py-2 px-2">
+                      {editRow.modo === 'proximity' ? (
+                        <input value={editRow.ancora} onChange={e => updateEditRow({ ancora: e.target.value })} className={cell} />
+                      ) : <span className="text-gray-300">–</span>}
+                    </td>
+                    <td className="py-2 px-2">
+                      {editRow.modo === 'proximity' && !editRow.cercaColore ? (
+                        <input value={editRow.obiettivo} onChange={e => updateEditRow({ obiettivo: e.target.value })} className={cell} />
+                      ) : editRow.modo === 'proximity' ? (
+                        <span className="italic text-gray-400 text-xs">colore</span>
+                      ) : <span className="text-gray-300">–</span>}
+                    </td>
+                    <td className="py-2 px-2">
+                      {editRow.modo === 'proximity' ? (
+                        <input value={editRow.distanza} onChange={e => updateEditRow({ distanza: e.target.value })}
+                          type="number" min={1} className={cell} />
+                      ) : <span className="text-gray-300">–</span>}
+                    </td>
+                    <td className="py-2 px-2 text-center">
+                      {editRow.modo === 'proximity' ? (
+                        <input type="checkbox" checked={editRow.cercaColore} onChange={e => updateEditRow({ cercaColore: e.target.checked })} />
+                      ) : <span className="text-gray-300">–</span>}
+                    </td>
+                    <td className="py-2 px-2">
+                      <input value={editRow.note} onChange={e => updateEditRow({ note: e.target.value })} className={cell} />
+                    </td>
+                    <td className="py-2 px-4 text-center">
+                      <input type="checkbox" checked={r.active} onChange={() => toggleActive(r)} />
+                    </td>
+                    <td className="py-2 px-4 text-right whitespace-nowrap">
+                      <button onClick={saveEditRow} disabled={editBusy} className="text-xs text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded mr-2 disabled:opacity-50">
+                        Salva
+                      </button>
+                      <button onClick={() => setEditRow(null)} className="text-xs text-gray-500 hover:text-gray-700">Annulla</button>
+                    </td>
+                  </tr>
+                );
+              }
+              return (
+                <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="py-2 px-4 font-mono">{r.prefisso_commessa || <span className="italic text-gray-400">tutte</span>}</td>
+                  <td className="py-2 px-4">{r.categoria}</td>
+                  <td className="py-2 px-4">{r.caratteristica_derivata}</td>
+                  <td className="py-2 px-4 text-gray-500">{modoLabel(r.modo)}</td>
+                  <td className="py-2 px-4 text-gray-500">{r.parola_chiave ?? <span className="text-gray-300">–</span>}</td>
+                  <td className="py-2 px-4 text-gray-500">{r.parola_ancora ?? <span className="text-gray-300">–</span>}</td>
+                  <td className="py-2 px-4 text-gray-500">
+                    {r.modo === 'proximity' && r.obiettivo_da_colori
+                      ? <span className="italic">qualsiasi colore attivo</span>
+                      : r.parola_obiettivo ?? <span className="text-gray-300">–</span>}
+                  </td>
+                  <td className="py-2 px-4 text-gray-500">{r.distanza_max_caratteri ?? <span className="text-gray-300">–</span>}</td>
+                  <td className="py-2 px-4 text-center text-gray-500">
+                    {r.modo === 'proximity' ? (r.obiettivo_da_colori ? 'Sì' : 'No') : <span className="text-gray-300">–</span>}
+                  </td>
+                  <td className="py-2 px-4 text-gray-500 max-w-[200px] truncate" title={r.note ?? ''}>{r.note ?? '–'}</td>
+                  <td className="py-2 px-4 text-center">
+                    <input type="checkbox" checked={r.active} onChange={() => toggleActive(r)} />
+                  </td>
+                  <td className="py-2 px-4 text-right whitespace-nowrap">
+                    <button onClick={() => startEditRow(r)} className="text-xs text-blue-600 hover:text-blue-800 mr-3">Modifica</button>
+                    <button onClick={() => del(r.id)} className="text-xs text-red-500 hover:text-red-700">Elimina</button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
