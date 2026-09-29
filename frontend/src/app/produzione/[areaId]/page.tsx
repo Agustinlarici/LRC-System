@@ -14,9 +14,20 @@ const btnPrimary   = `${btnBase} bg-blue-600 text-white hover:bg-blue-700`;
 const btnSecondary = `${btnBase} bg-white border border-gray-200 text-gray-700 hover:bg-gray-50`;
 const btnDark      = `${btnBase} bg-gray-700 text-white hover:bg-gray-800`;
 
+// Wrapper con label sopra ogni campo filtro — così tutti i controlli hanno la
+// stessa altezza/allineamento invece di mischiare input "nudi" e con label.
+function FilterField({ label, highlight, children }: { label: string; highlight?: boolean; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className={`text-xs font-medium ${highlight ? 'text-blue-700' : 'text-gray-400'}`}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
 // Limite righe mostrate/stampate di default — evita di mandare in stampa
 // 500 righe per sbaglio quando non c'è nessun altro filtro attivo.
-const DEFAULT_MAX = '20';
+const DEFAULT_MAX = '200';
 
 interface SheetResponse {
   area:  ProdArea | null;
@@ -113,74 +124,94 @@ export default function ProduzioneAreaSheetPage() {
 
   return (
     <div>
-      {/* ── Header moderno (solo schermo) ─────────────────────────────────── */}
-      <div className="d-print-none mb-6 flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Programma Produzione</h1>
-          <p className="text-gray-500 text-sm mt-0.5">
-            {storico ? 'Storico ordini spediti' : 'Area di montaggio'}: <span className="text-red-600 font-medium">{area?.description}</span>
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Link href="/produzione" className={btnSecondary}>← Programma Produzione</Link>
-          <button
-            onClick={() => setStorico(s => !s)}
-            className={storico ? btnDark : btnSecondary}
-          >
-            {storico ? '← Torna al foglio' : 'Vedi storico'}
-          </button>
-          <button
-            onClick={() => window.print()}
-            className={btnPrimary}
-          >
-            🖨️ Stampa
-          </button>
-        </div>
-      </div>
-
-      {/* ── Filtri (solo schermo) ────────────────────────────────────────── */}
-      <div className="d-print-none bg-white rounded-xl border border-gray-200 p-4 mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-700">Filtri</h2>
-          {hasActiveFilters && (
-            <button onClick={resetFiltri} className={btnSecondary}>
-              Pulisci filtri
+      {/* ── Header + filtri: un'unica card, così tutto sopra la tabella è
+          allineato in modo coerente invece di due blocchi separati. ────── */}
+      <div className="d-print-none bg-white rounded-xl border border-gray-200 p-5 mb-6 space-y-4">
+        {/* Titolo area + azioni */}
+        <div className="flex items-start justify-between flex-wrap gap-3 pb-4 border-b border-gray-100">
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Programma Produzione</p>
+              <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full ${
+                storico ? 'bg-gray-100 text-gray-600' : 'bg-red-50 text-red-600'
+              }`}>
+                {storico ? 'Storico ordini spediti' : 'Area di montaggio'}
+              </span>
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 mt-1">{area?.description}</h1>
+          </div>
+          <div className="flex gap-2">
+            <Link href="/produzione" className={btnSecondary}>← Programma Produzione</Link>
+            <button
+              onClick={() => setStorico(s => !s)}
+              className={storico ? btnDark : btnSecondary}
+            >
+              {storico ? '← Torna al foglio' : 'Vedi storico'}
             </button>
-          )}
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
-          <input value={fCommessa} onChange={e => setFCommessa(e.target.value)} placeholder="Commessa"
-            className={inputClass} />
-          <input value={fCodice} onChange={e => setFCodice(e.target.value)} placeholder="Codice Articolo"
-            className={inputClass} />
-          <select value={fOrigine} onChange={e => setFOrigine(e.target.value as typeof fOrigine)} className={selectClass}>
-            <option value="">Origine — Tutte</option>
-            <option value="confermato">Confermato</option>
-            <option value="forecast">Forecast</option>
-          </select>
-          <select value={fStato} onChange={e => setFStato(e.target.value as typeof fStato)} className={selectClass}>
-            <option value="">Stato — Tutti</option>
-            <option value="attivo">Attivo</option>
-            <option value="spedito">Spedito</option>
-          </select>
-          <select value={fColore} onChange={e => setFColore(e.target.value)} className={selectClass}>
-            <option value="">Colore — Tutti</option>
-            {coloriDisponibili.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <input value={fCaratt} onChange={e => setFCaratt(e.target.value)} placeholder="Categoria / caratteristica"
-            className={inputClass} />
-          <div className="flex items-center gap-2">
-            <label htmlFor="fMax" className="text-sm text-gray-500 whitespace-nowrap">Righe da mostrare</label>
-            <input id="fMax" value={fMax} onChange={e => setFMax(e.target.value)} type="number" min={1} placeholder="Tutte"
-              title="Numero massimo di righe da mostrare/stampare — vuoto = tutte"
-              className={`${inputClass} w-full min-w-0`} />
+            <button
+              onClick={() => window.print()}
+              className={btnPrimary}
+            >
+              🖨️ Stampa
+            </button>
           </div>
         </div>
-        {filteredRows.length !== rows.length && (
-          <p className="text-xs text-gray-500 mt-3">
-            Mostrando {filteredRows.length} di {rows.length} righe
-          </p>
-        )}
+
+        {/* Filtri */}
+        <div>
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h2 className="text-sm font-semibold text-gray-700">Filtri</h2>
+            <div className="flex items-center gap-3">
+              <p className="text-xs text-gray-400">
+                Mostrando <span className="font-medium text-gray-600">{filteredRows.length}</span> di {rows.length} righe
+              </p>
+              {hasActiveFilters && (
+                <button onClick={resetFiltri} className={btnSecondary}>
+                  Cancella filtri
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+            <FilterField label="Commessa">
+              <input value={fCommessa} onChange={e => setFCommessa(e.target.value)} placeholder="Es. FL12345"
+                className={inputClass} />
+            </FilterField>
+            <FilterField label="Codice articolo">
+              <input value={fCodice} onChange={e => setFCodice(e.target.value)} placeholder="Es. 12345"
+                className={inputClass} />
+            </FilterField>
+            <FilterField label="Origine">
+              <select value={fOrigine} onChange={e => setFOrigine(e.target.value as typeof fOrigine)} className={selectClass}>
+                <option value="">Tutte</option>
+                <option value="confermato">Confermato</option>
+                <option value="forecast">Forecast</option>
+              </select>
+            </FilterField>
+            <FilterField label="Stato">
+              <select value={fStato} onChange={e => setFStato(e.target.value as typeof fStato)} className={selectClass}>
+                <option value="">Tutti</option>
+                <option value="attivo">Attivo</option>
+                <option value="spedito">Spedito</option>
+              </select>
+            </FilterField>
+            <FilterField label="Colore">
+              <select value={fColore} onChange={e => setFColore(e.target.value)} className={selectClass}>
+                <option value="">Tutti</option>
+                {coloriDisponibili.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </FilterField>
+            <FilterField label="Categoria / caratteristica">
+              <input value={fCaratt} onChange={e => setFCaratt(e.target.value)} placeholder="Es. Pelle nera"
+                className={inputClass} />
+            </FilterField>
+            <FilterField label="Righe da mostrare" highlight>
+              <input id="fMax" value={fMax} onChange={e => setFMax(e.target.value)} type="number" min={1} placeholder="Tutte"
+                title="Numero massimo di righe da mostrare/stampare — vuoto = tutte"
+                className="w-full border border-blue-200 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-blue-900 bg-blue-50 text-center focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            </FilterField>
+          </div>
+        </div>
       </div>
 
       {/* ── Contenuto stampabile — struttura identica a prima, a parte le

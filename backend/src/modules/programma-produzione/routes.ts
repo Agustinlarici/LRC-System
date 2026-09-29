@@ -56,14 +56,39 @@ programmaProduzioneRoutes.get('/aree', requireModule(MODULE), async (c) => {
   return c.json(rows);
 });
 
+// Sigla interna: solo per soddisfare la UNIQUE NOT NULL della tabella, non
+// ha bisogno di essere leggibile — l'utente lavora sempre con la descrizione
+// (vedi TabAree e importArticleCategoryArea, che accetta anche la descrizione
+// al posto del codice). Generata dalla descrizione, con suffisso numerico se
+// già esiste una sigla uguale.
+function slugifyAreaCode(description: string): string {
+  const base = description
+    .toUpperCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+  return base || 'AREA';
+}
+
+async function nextFreeAreaCode(description: string): Promise<string> {
+  const base = slugifyAreaCode(description);
+  let code = base;
+  let n = 1;
+  while (true) {
+    const [existing] = await db`SELECT 1 FROM prod_area_montaggio WHERE code = ${code}`;
+    if (!existing) return code;
+    code = `${base}_${++n}`;
+  }
+}
+
 programmaProduzioneRoutes.post('/aree', requireManage(MODULE), async (c) => {
   const body = await parseBody(c, z.object({
-    code:        z.string().min(1).max(50),
     description: z.string().min(1).max(255),
   }));
+  const code = await nextFreeAreaCode(body.description);
   const [row] = await db`
-    INSERT INTO prod_area_montaggio (code, description) VALUES (${body.code}, ${body.description})
-    ON CONFLICT (code) DO UPDATE SET description = EXCLUDED.description
+    INSERT INTO prod_area_montaggio (code, description) VALUES (${code}, ${body.description})
     RETURNING id, code, description
   `;
   return c.json(row, 201);
@@ -413,6 +438,49 @@ programmaProduzioneRoutes.post('/item-attribute-labels/import-excel', requireMan
   return c.json(await importItemAttributeLabels(buffer));
 });
 
+// ─── Ordine di visualizzazione delle categorie nel foglio ─────────────────────
+// Unisce tutte le categorie conosciute (regole parole chiave, caratteristiche
+// manuali, nomi attributi BC, + "X.EXTRA") con l'ordine salvato in
+// prod_category_order — chi non ha un ordine salvato va in fondo, alfabetico.
+
+programmaProduzioneRoutes.get('/category-order', requireModule(MODULE), async (c) => {
+  const [ruleCats, manualCats, attrCats, saved] = await Promise.all([
+    db<{ categoria: string }[]>`SELECT DISTINCT categoria FROM prod_keyword_rules`,
+    db<{ categoria: string | null }[]>`SELECT DISTINCT categoria FROM prod_article_info WHERE categoria IS NOT NULL`,
+    db<{ categoria_label: string }[]>`SELECT DISTINCT categoria_label FROM prod_item_attribute_label WHERE active = TRUE`,
+    db<{ categoria: string; ordine: number }[]>`SELECT categoria, ordine FROM prod_category_order`,
+  ]);
+  const all = new Set<string>(['X.EXTRA']);
+  for (const r of ruleCats) all.add(r.categoria);
+  for (const r of manualCats) {
+    for (const cat of (r.categoria ?? '').split(',').map(s => s.trim()).filter(Boolean)) all.add(cat);
+  }
+  for (const r of attrCats) all.add(r.categoria_label);
+
+  const orderMap = new Map(saved.map(s => [s.categoria, s.ordine]));
+  const list = [...all].map(categoria => ({ categoria, ordine: orderMap.get(categoria) ?? null }));
+  list.sort((a, b) => {
+    if (a.ordine != null && b.ordine != null) return a.ordine - b.ordine;
+    if (a.ordine != null) return -1;
+    if (b.ordine != null) return 1;
+    return a.categoria.localeCompare(b.categoria);
+  });
+  return c.json(list);
+});
+
+programmaProduzioneRoutes.put('/category-order', requireManage(MODULE), async (c) => {
+  const body = await parseBody(c, z.object({ categorie: z.array(z.string().min(1)) }));
+  await db.begin(async (txRaw) => {
+    const tx = txRaw as unknown as typeof db;
+    await tx`DELETE FROM prod_category_order`;
+    if (body.categorie.length > 0) {
+      const values = body.categorie.map((categoria, ordine) => ({ categoria, ordine }));
+      await tx`INSERT INTO prod_category_order ${tx(values)}`;
+    }
+  });
+  return c.json({ status: 'saved' });
+});
+
 // ─── Caratteristiche manuali per articolo ──────────────────────────────────────
 
 programmaProduzioneRoutes.get('/article-info', requireModule(MODULE), async (c) => {
@@ -644,4 +712,30 @@ programmaProduzioneRoutes.post('/article-category-area/import-excel', requireMan
 programmaProduzioneRoutes.get('/component-conflicts', requireModule(MODULE), async (c) => {
   const conflicts = await findComponentConflicts();
   return c.json(conflicts);
+});
+
+// Scelta manuale di quale codice articolo vince per una (categoria, commessa)
+// — sovrascrive l'automatico (vedi pickWinnerWithOverride in sheet.ts).
+programmaProduzioneRoutes.put('/component-conflicts/override', requireManage(MODULE), async (c) => {
+  const body = await parseBody(c, z.object({
+    categoria:      z.string().min(1).max(100),
+    commessa:       z.string().min(1).max(100),
+    codiceArticolo: z.string().min(1).max(100),
+  }));
+  await db`
+    INSERT INTO prod_component_conflict_override (categoria, commessa, codice_articolo)
+    VALUES (${body.categoria}, ${body.commessa}, ${body.codiceArticolo})
+    ON CONFLICT (categoria, commessa) DO UPDATE SET
+      codice_articolo = EXCLUDED.codice_articolo,
+      updated_at      = now()
+  `;
+  return c.json({ status: 'saved' });
+});
+
+// Torna alla scelta automatica per questa (categoria, commessa).
+programmaProduzioneRoutes.delete('/component-conflicts/override', requireManage(MODULE), async (c) => {
+  const categoria = requireParam(c.req.query('categoria'), 'categoria');
+  const commessa  = requireParam(c.req.query('commessa'),  'commessa');
+  await db`DELETE FROM prod_component_conflict_override WHERE categoria = ${categoria} AND commessa = ${commessa}`;
+  return c.json({ status: 'deleted' });
 });

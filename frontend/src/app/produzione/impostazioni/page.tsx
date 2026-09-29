@@ -5,12 +5,12 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import type {
   ProdArea, ProdKeywordRule, ProdKeywordMode, ProdColorKeyword, ProdColorSettings,
-  ProdItemAttributeLabel, ProdArticleInfo, ProdArticleAssignment,
+  ProdItemAttributeLabel, ProdArticleInfo, ProdArticleAssignment, ProdCategoryOrder,
 } from '@/types';
 import { ExcelImportButton } from '../_components/ExcelImportButton';
 
-type Tab = 'Aree' | 'Categoria - Area' | 'Regole Parole Chiave' | 'Colori' | 'Attributi BC' | 'Caratteristiche Manuali';
-const TABS: Tab[] = ['Aree', 'Categoria - Area', 'Regole Parole Chiave', 'Colori', 'Attributi BC', 'Caratteristiche Manuali'];
+type Tab = 'Aree' | 'Categoria - Area' | 'Regole Parole Chiave' | 'Colori' | 'Attributi BC' | 'Caratteristiche Manuali' | 'Ordine Categorie';
+const TABS: Tab[] = ['Aree', 'Categoria - Area', 'Regole Parole Chiave', 'Colori', 'Attributi BC', 'Caratteristiche Manuali', 'Ordine Categorie'];
 
 // Deve coincidere con EMPTY_FILTER_VALUE in backend/routes.ts — valore
 // riservato per l'opzione "(vuoto)" nei filtri Categoria/Area.
@@ -20,7 +20,6 @@ const EMPTY_FILTER_VALUE = '__EMPTY__';
 
 function TabAree() {
   const [aree,    setAree]    = useState<ProdArea[]>([]);
-  const [code,    setCode]    = useState('');
   const [descr,   setDescr]   = useState('');
   const [loading, setLoading] = useState(true);
   const [busy,    setBusy]    = useState(false);
@@ -31,11 +30,11 @@ function TabAree() {
   useEffect(() => { load(); }, [load]);
 
   async function addArea() {
-    if (!code.trim() || !descr.trim()) return;
+    if (!descr.trim()) return;
     setBusy(true);
     try {
-      await api.post<ProdArea>('/api/prod/aree', { code: code.trim(), description: descr.trim() });
-      setCode(''); setDescr(''); load();
+      await api.post<ProdArea>('/api/prod/aree', { description: descr.trim() });
+      setDescr(''); load();
     } finally { setBusy(false); }
   }
 
@@ -49,17 +48,16 @@ function TabAree() {
 
   return (
     <div>
-      <p className="text-xs text-gray-500 mb-3">
-        Per assegnare codici articolo a un&apos;area, vai alla tab &quot;Categoria - Area&quot;.
-      </p>
+      <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 mb-4 text-xs text-blue-800 space-y-1">
+        <p>Scrivi solo il nome dell&apos;area: è quello che vedi in grande, sia nella card sia nell&apos;intestazione del foglio (es. &quot;F171 Paraurto Posteriore&quot;).</p>
+        <p>Per assegnare codici articolo a un&apos;area, vai alla tab &quot;Categoria - Area&quot; — puoi usare lì lo stesso nome, non serve un codice a parte.</p>
+      </div>
 
       <div className="flex gap-2 mb-4">
-        <input value={code} onChange={e => setCode(e.target.value)} placeholder="Codice (es. LINEA1)"
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-        <input value={descr} onChange={e => setDescr(e.target.value)} placeholder="Descrizione area"
+        <input value={descr} onChange={e => setDescr(e.target.value)} placeholder="Nome area (es. F171 Paraurto Posteriore)"
           className="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
           onKeyDown={e => e.key === 'Enter' && addArea()} />
-        <button onClick={addArea} disabled={busy}
+        <button onClick={addArea} disabled={busy || !descr.trim()}
           className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
           Aggiungi
         </button>
@@ -73,10 +71,7 @@ function TabAree() {
         {aree.length === 0 && <p className="text-sm text-gray-400 py-4 text-center">Nessuna area</p>}
         {aree.map(a => (
           <div key={a.id} className="px-4 py-3 flex items-center justify-between">
-            <div>
-              <p className="font-medium text-gray-800">{a.description}</p>
-              <p className="text-xs text-gray-400">{a.code}</p>
-            </div>
+            <p className="font-medium text-gray-800">{a.description}</p>
             <button onClick={() => delArea(a.id)} className="text-xs text-red-500 hover:text-red-700">Elimina</button>
           </div>
         ))}
@@ -888,6 +883,85 @@ function TabManuali() {
   );
 }
 
+// ─── Ordine categorie nel foglio ───────────────────────────────────────────────
+// Le colonne del foglio (una per categoria: PARAURTI, COLORE, ecc.) sono in
+// ordine alfabetico di default — qui si può impostare un ordine a piacere
+// con le freccette. Salva l'intera lista come ordine (0, 1, 2...); chi non
+// tocca questa tab non cambia nulla (nessun ordine salvato = alfabetico).
+
+function TabOrdineCategorie() {
+  const [categorie, setCategorie] = useState<ProdCategoryOrder[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [busy,      setBusy]      = useState(false);
+  const [saved,     setSaved]     = useState(false);
+
+  const load = useCallback(() => {
+    api.get<ProdCategoryOrder[]>('/api/prod/category-order').then(setCategorie).finally(() => setLoading(false));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  function move(index: number, dir: -1 | 1) {
+    const target = index + dir;
+    if (target < 0 || target >= categorie.length) return;
+    setSaved(false);
+    setCategorie(prev => {
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  async function salva() {
+    setBusy(true);
+    try {
+      await api.put('/api/prod/category-order', { categorie: categorie.map(c => c.categoria) });
+      setSaved(true);
+      load();
+    } finally { setBusy(false); }
+  }
+
+  if (loading) return <p className="text-gray-400">Caricamento...</p>;
+
+  return (
+    <div>
+      <p className="text-xs text-gray-500 mb-3">
+        Usa le freccette per metterle nell&apos;ordine in cui vuoi vederle come colonne nel foglio, poi salva.
+        Le categorie senza un ordine impostato restano in fondo, in ordine alfabetico.
+      </p>
+
+      <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 mb-4">
+        {categorie.length === 0 && <p className="text-sm text-gray-400 py-4 text-center">Nessuna categoria trovata ancora</p>}
+        {categorie.map((c, i) => (
+          <div key={c.categoria} className="px-4 py-2.5 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400 w-6 text-right">{i + 1}</span>
+              <span className={`font-medium ${c.categoria === 'X.EXTRA' ? 'text-gray-500' : 'text-gray-800'}`}>{c.categoria}</span>
+            </div>
+            <div className="flex gap-1">
+              <button onClick={() => move(i, -1)} disabled={i === 0}
+                className="text-sm px-2 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">
+                ↑
+              </button>
+              <button onClick={() => move(i, 1)} disabled={i === categorie.length - 1}
+                className="text-sm px-2 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">
+                ↓
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button onClick={salva} disabled={busy || categorie.length === 0}
+          className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          {busy ? 'Salvataggio...' : 'Salva ordine'}
+        </button>
+        {saved && <span className="text-sm text-green-600">Ordine salvato</span>}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function ProduzioneImpostazioniPage() {
@@ -896,7 +970,7 @@ export default function ProduzioneImpostazioniPage() {
   return (
     <div>
       <div className="mb-6">
-        <Link href="/produzione" className="text-sm text-gray-500 hover:text-gray-700">← Programma Produzione</Link>
+        <Link href="/produzione" className="inline-flex items-center gap-1 text-sm font-medium px-3 py-2 rounded-lg transition-colors bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 mb-3">← Programma Produzione</Link>
         <h1 className="text-3xl font-bold text-gray-900 mt-2">Impostazioni</h1>
       </div>
 
@@ -920,6 +994,7 @@ export default function ProduzioneImpostazioniPage() {
       {tab === 'Colori' && <TabColori />}
       {tab === 'Attributi BC' && <TabAttributi />}
       {tab === 'Caratteristiche Manuali' && <TabManuali />}
+      {tab === 'Ordine Categorie' && <TabOrdineCategorie />}
     </div>
   );
 }

@@ -81,6 +81,27 @@ async function loadCategoryMap(codes: string[]): Promise<Map<string, string>> {
   return new Map(rows.map(r => [r.codice_articolo, r.categoria]));
 }
 
+// ─── Ordine colonne categoria nel foglio (impostabile da Impostazioni) ────────
+
+async function loadCategoryOrderMap(): Promise<Map<string, number>> {
+  const rows = await db<{ categoria: string; ordine: number }[]>`SELECT categoria, ordine FROM prod_category_order`;
+  return new Map(rows.map(r => [r.categoria, r.ordine]));
+}
+
+// Categorie con un ordine salvato vengono prima (nell'ordine impostato); il
+// resto va in fondo, alfabetico — con "X.EXTRA" per ultimo salvo che abbia
+// anche lui un ordine esplicito.
+function compareCategorie(a: string, b: string, orderMap: Map<string, number>): number {
+  const ao = orderMap.get(a);
+  const bo = orderMap.get(b);
+  if (ao != null && bo != null) return ao - bo;
+  if (ao != null) return -1;
+  if (bo != null) return 1;
+  if (a === 'X.EXTRA') return 1;
+  if (b === 'X.EXTRA') return -1;
+  return a.localeCompare(b);
+}
+
 interface CategoriaCommessaGroup {
   categoria: string;
   commessa:  string;
@@ -118,13 +139,39 @@ function pickWinner(rows: UnifiedOrderRow[]): UnifiedOrderRow {
   return best;
 }
 
+// ─── Scelta manuale del vincitore (da /produzione/conflitti) ─────────────────
+// Sovrascrive pickWinner per una (categoria, commessa) specifica — l'utente
+// ha verificato in Dynamics ed è quello il codice giusto, non necessariamente
+// il più recente. Se il codice scelto non è (più) tra i candidati del
+// gruppo, l'override viene ignorato e si ricade sull'automatico.
+
+function overrideKey(categoria: string, commessa: string): string {
+  return JSON.stringify([categoria, commessa]);
+}
+
+async function loadOverrideMap(): Promise<Map<string, string>> {
+  const rows = await db<{ categoria: string; commessa: string; codice_articolo: string }[]>`
+    SELECT categoria, commessa, codice_articolo FROM prod_component_conflict_override
+  `;
+  return new Map(rows.map(r => [overrideKey(r.categoria, r.commessa), r.codice_articolo]));
+}
+
+function pickWinnerWithOverride(group: CategoriaCommessaGroup, overrideMap: Map<string, string>): UnifiedOrderRow {
+  const overrideCode = overrideMap.get(overrideKey(group.categoria, group.commessa));
+  if (overrideCode) {
+    const chosen = group.rows.find(r => r.codice_articolo === overrideCode);
+    if (chosen) return chosen;
+  }
+  return pickWinner(group.rows);
+}
+
 async function applyComponentCategoryReplacement(rows: UnifiedOrderRow[]): Promise<UnifiedOrderRow[]> {
   const codes = [...new Set(rows.map(r => r.codice_articolo))];
-  const categoryMap = await loadCategoryMap(codes);
+  const [categoryMap, overrideMap] = await Promise.all([loadCategoryMap(codes), loadOverrideMap()]);
   if (categoryMap.size === 0) return rows;
 
   const { grouped, unmapped } = groupByCategoriaCommessa(rows, categoryMap);
-  const winners = [...grouped.values()].map(g => pickWinner(g.rows));
+  const winners = [...grouped.values()].map(g => pickWinnerWithOverride(g, overrideMap));
   return [...unmapped, ...winners];
 }
 
@@ -321,7 +368,8 @@ export async function buildFoglio(
   const codes    = [...new Set(pageRows.map(r => r.codice_articolo))];
   const commesse = [...new Set(pageRows.map(r => r.commessa))];
 
-  const [manualRows, autoRows, attrRows] = await Promise.all([
+  const [categoryOrderMap, manualRows, autoRows, attrRows] = await Promise.all([
+    loadCategoryOrderMap(),
     db<ManualInfoRow[]>`
       SELECT codice_articolo, categoria, caratteristiche_manuali
       FROM prod_article_info
@@ -424,12 +472,7 @@ export async function buildFoglio(
         .map(([valore, daAltroComponente]) => ({ valore, daAltroComponente }))
         .sort((a, b) => a.valore.localeCompare(b.valore)),
     }));
-    // 'X.EXTRA' sempre in fondo, come nel vecchio OperatorOrders.jsx
-    categorieOut.sort((a, b) => {
-      if (a.categoria === 'X.EXTRA') return 1;
-      if (b.categoria === 'X.EXTRA') return -1;
-      return a.categoria.localeCompare(b.categoria);
-    });
+    categorieOut.sort((a, b) => compareCategorie(a.categoria, b.categoria, categoryOrderMap));
 
     return {
       fonte_ordine:      r.fonte_ordine,
@@ -475,6 +518,9 @@ export interface ComponentConflict {
   categoria:  string;
   commessa:   string;
   candidates: ComponentConflictCandidate[];
+  // TRUE se il vincitore è stato scelto a mano da /produzione/conflitti,
+  // invece che dall'automatico (vedi pickWinnerWithOverride).
+  overridden: boolean;
 }
 
 // Data "vera" da usare per il confronto giorno-per-giorno: per un Forecast è
@@ -517,7 +563,7 @@ export async function findComponentConflicts(): Promise<ComponentConflict[]> {
   const deduped = dedupByArticoloCommessa(orderRows);
 
   const codes = [...new Set(deduped.map(r => r.codice_articolo))];
-  const categoryMap = await loadCategoryMap(codes);
+  const [categoryMap, overrideMap] = await Promise.all([loadCategoryMap(codes), loadOverrideMap()]);
   if (categoryMap.size === 0) return [];
 
   const { grouped } = groupByCategoriaCommessa(deduped, categoryMap);
@@ -525,10 +571,12 @@ export async function findComponentConflicts(): Promise<ComponentConflict[]> {
   const conflicts: ComponentConflict[] = [];
   for (const group of grouped.values()) {
     if (group.rows.length < 2) continue;
-    const winner = pickWinner(group.rows);
+    const overrideCode = overrideMap.get(overrideKey(group.categoria, group.commessa));
+    const winner = pickWinnerWithOverride(group, overrideMap);
     conflicts.push({
       categoria: group.categoria,
       commessa:  group.commessa,
+      overridden: overrideCode != null && overrideCode === winner.codice_articolo,
       candidates: markSameDayDuplicates(group.rows.map(r => ({
         codice_articolo: r.codice_articolo,
         fonte_ordine:    r.fonte_ordine,

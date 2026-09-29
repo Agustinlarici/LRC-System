@@ -504,6 +504,32 @@ CREATE UNIQUE INDEX IF NOT EXISTS prod_keyword_rules_proximity_color_uq
   ON prod_keyword_rules (prefisso_commessa, categoria, parola_ancora)
   WHERE modo = 'proximity' AND obiettivo_da_colori;
 
+-- ─── Ordine di visualizzazione delle categorie nel foglio ────────────────────
+-- Le colonne del foglio (una per categoria: PARAURTI, COLORE, ecc.) erano
+-- sempre in ordine alfabetico con "X.EXTRA" forzato in fondo. Questa tabella
+-- permette di impostare un ordine a piacere da Impostazioni → "Ordine
+-- Categorie" — le categorie non presenti qui restano in fondo, ordinate
+-- alfabeticamente (vedi sheet.ts/SheetTable.tsx).
+
+CREATE TABLE IF NOT EXISTS prod_category_order (
+    categoria VARCHAR(150) PRIMARY KEY,
+    ordine    INTEGER NOT NULL
+);
+
+-- ─── Scelta manuale del vincitore in /produzione/conflitti ────────────────────
+-- Quando due articoli diversi competono per la stessa (categoria, commessa) e
+-- l'utente ha verificato in Dynamics qual è quello giusto, questa scelta
+-- sovrascrive pickWinner (che di default prende il più recente) — vedi
+-- pickWinnerWithOverride in sheet.ts. Una riga per (categoria, commessa).
+
+CREATE TABLE IF NOT EXISTS prod_component_conflict_override (
+    categoria       VARCHAR(100) NOT NULL,
+    commessa        VARCHAR(100) NOT NULL,
+    codice_articolo VARCHAR(100) NOT NULL,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (categoria, commessa)
+);
+
 -- Helper usato solo sopra per sanare gli eventuali placeholder di schema.sql
 -- — non serve lasciarlo in giro nello schema.
 DROP FUNCTION IF EXISTS _prod_replace_if_legacy_placeholder(text, text);

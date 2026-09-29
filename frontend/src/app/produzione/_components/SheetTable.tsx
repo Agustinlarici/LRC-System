@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import type { ProdSheetRow, ProdSheetCategoria } from '@/types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { api } from '@/lib/api';
+import { compareCategorie } from '@/lib/utils';
+import type { ProdSheetRow, ProdSheetCategoria, ProdCategoryOrder } from '@/types';
 
 // Un'unica riga per commessa: unisce le categorie/caratteristiche di tutti
 // gli articoli/componenti della commessa (utile per vedere il quadro completo
 // senza scorrere righe separate per ogni componente).
-function raggruppaPerCommessa(rows: ProdSheetRow[]): ProdSheetRow[] {
+function raggruppaPerCommessa(rows: ProdSheetRow[], categoryOrderMap: Map<string, number>): ProdSheetRow[] {
   const gruppi = new Map<string, ProdSheetRow[]>();
   for (const r of rows) {
     const list = gruppi.get(r.commessa) ?? [];
@@ -42,11 +44,7 @@ function raggruppaPerCommessa(rows: ProdSheetRow[]): ProdSheetRow[] {
         .map(([valore, daAltroComponente]) => ({ valore, daAltroComponente }))
         .sort((a, b) => a.valore.localeCompare(b.valore)),
     }));
-    categorieOut.sort((a, b) => {
-      if (a.categoria === 'X.EXTRA') return 1;
-      if (b.categoria === 'X.EXTRA') return -1;
-      return a.categoria.localeCompare(b.categoria);
-    });
+    categorieOut.sort((a, b) => compareCategorie(a.categoria, b.categoria, categoryOrderMap));
 
     return {
       fonte_ordine:      gruppo.some(r => r.fonte_ordine === 'confermato') ? 'confermato' : 'forecast',
@@ -65,21 +63,26 @@ function raggruppaPerCommessa(rows: ProdSheetRow[]): ProdSheetRow[] {
 
 export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
   const [raggruppa, setRaggruppa] = useState(false);
+  const [categoryOrderMap, setCategoryOrderMap] = useState<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    api.get<ProdCategoryOrder[]>('/api/prod/category-order')
+      .then(list => setCategoryOrderMap(new Map(
+        list.filter(c => c.ordine != null).map(c => [c.categoria, c.ordine as number]),
+      )))
+      .catch(() => {});
+  }, []);
 
   const displayRows = useMemo(
-    () => raggruppa ? raggruppaPerCommessa(rows) : rows,
-    [rows, raggruppa],
+    () => raggruppa ? raggruppaPerCommessa(rows, categoryOrderMap) : rows,
+    [rows, raggruppa, categoryOrderMap],
   );
 
   const categorieUniche = useMemo(() => {
     const set = new Set<string>();
     displayRows.forEach(r => r.categorie.forEach(c => set.add(c.categoria)));
-    const list = [...set];
-    if (list.includes('X.EXTRA')) {
-      return [...list.filter(c => c !== 'X.EXTRA'), 'X.EXTRA'];
-    }
-    return list;
-  }, [displayRows]);
+    return [...set].sort((a, b) => compareCategorie(a, b, categoryOrderMap));
+  }, [displayRows, categoryOrderMap]);
 
   if (rows.length === 0) {
     return (
@@ -103,7 +106,7 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
       </div>
 
       <div className="overflow-auto max-h-[75vh] print:max-h-none print:overflow-visible">
-        <table className="w-full text-sm border-collapse operator-sheet">
+        <table className="w-full text-sm border-separate border-spacing-0 operator-sheet">
         <thead>
           <tr className="bg-gray-100">
             <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5">#</th>
@@ -111,6 +114,7 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
             <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">Stato</th>
             <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">Commessa</th>
             <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">Codice</th>
+            <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">Descrizione</th>
             <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left whitespace-nowrap">Ingresso Linea</th>
             <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">Colore</th>
             {categorieUniche.map(cat => (
@@ -122,7 +126,7 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
         </thead>
         <tbody>
           {displayRows.map((row, idx) => (
-            <tr key={`${row.codice_articolo}-${row.commessa}`} className="hover:bg-gray-50">
+            <tr key={`${row.codice_articolo}-${row.commessa}`} className="bg-white hover:bg-gray-50">
               <td className="border border-gray-200 px-2 py-1 text-center">{idx + 1}</td>
               <td className="border border-gray-200 px-2 py-1">
                 <span className={`inline-block text-xs px-2 py-0.5 rounded font-medium whitespace-nowrap ${
@@ -140,6 +144,9 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
               </td>
               <td className="border border-gray-200 px-2 py-1 font-mono">{row.commessa}</td>
               <td className="border border-gray-200 px-2 py-1 font-mono whitespace-pre-line">{row.codice_articolo}</td>
+              <td className="border border-gray-200 px-2 py-1 max-w-[260px] truncate" title={row.descrizione ?? ''}>
+                {row.descrizione ?? <span className="text-gray-300">–</span>}
+              </td>
               <td className="border border-gray-200 px-2 py-1 whitespace-nowrap">
                 {row.insertion_line_ts ? (
                   <>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { ProdComponentConflict, ProdComponentConflictCandidate } from '@/types';
@@ -23,20 +23,51 @@ export default function ProduzioneConflittiPage() {
   const [conflicts, setConflicts] = useState<ProdComponentConflict[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState<string | null>(null);
+  const [busyKey,   setBusyKey]   = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () => {
     // Scansiona tutto prod_order_unified senza filtro data — può richiedere
     // più del timeout di default (15s) su dataset grandi.
-    api.get<ProdComponentConflict[]>('/api/prod/component-conflicts', 60_000)
+    return api.get<ProdComponentConflict[]>('/api/prod/component-conflicts', 60_000)
       .then(setConflicts)
       .catch(e => setError((e as Error).message))
       .finally(() => setLoading(false));
-  }, []);
+  };
+  useEffect(() => { load(); }, []);
+
+  async function scegli(c: ProdComponentConflict, codiceArticolo: string) {
+    const key = `${c.categoria}|${c.commessa}`;
+    setBusyKey(key);
+    try {
+      await api.put('/api/prod/component-conflicts/override', {
+        categoria: c.categoria, commessa: c.commessa, codiceArticolo,
+      });
+      await load();
+    } finally { setBusyKey(null); }
+  }
+
+  async function tornaAutomatico(c: ProdComponentConflict) {
+    const key = `${c.categoria}|${c.commessa}`;
+    setBusyKey(key);
+    try {
+      await api.delete(`/api/prod/component-conflicts/override?categoria=${encodeURIComponent(c.categoria)}&commessa=${encodeURIComponent(c.commessa)}`);
+      await load();
+    } finally { setBusyKey(null); }
+  }
+
+  // I gruppi con almeno un candidato "stesso giorno" (il caso più probabile
+  // di doppione, evidenziato in rosso) vanno in cima — sono quelli da
+  // controllare per primi. Sort stabile: a parità, resta l'ordine di prima
+  // (commessa/categoria, dal backend).
+  const sortedConflicts = useMemo(() => {
+    const isRed = (c: ProdComponentConflict) => c.candidates.some(cand => cand.stesso_giorno_altro_codice);
+    return [...conflicts].sort((a, b) => Number(isRed(b)) - Number(isRed(a)));
+  }, [conflicts]);
 
   return (
     <div>
       <div className="mb-6">
-        <Link href="/produzione" className="text-sm text-gray-500 hover:text-gray-700">← Programma Produzione</Link>
+        <Link href="/produzione" className="inline-flex items-center gap-1 text-sm font-medium px-3 py-2 rounded-lg transition-colors bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 mb-3">← Programma Produzione</Link>
         <h1 className="text-3xl font-bold text-gray-900 mt-2">Componenti duplicati da verificare in Dynamics</h1>
         <p className="mt-1 text-gray-500">
           Più di un articolo della stessa categoria componente per la stessa commessa —
@@ -57,27 +88,39 @@ export default function ProduzioneConflittiPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {conflicts.map((c, i) => (
+          {sortedConflicts.map((c, i) => (
             <div key={i} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-                <div>
+                <div className="flex items-center gap-2">
                   <span className="font-semibold text-gray-800">{c.categoria}</span>
-                  <span className="text-gray-400 mx-2">·</span>
+                  <span className="text-gray-400">·</span>
                   <span className="font-mono text-gray-600">Commessa {c.commessa}</span>
+                  {c.overridden && (
+                    <span className="text-xs text-blue-700 bg-blue-100 px-2 py-0.5 rounded font-medium">Scelta manuale</span>
+                  )}
                 </div>
-                <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded font-medium">
-                  {c.candidates.length} articoli trovati
-                </span>
+                <div className="flex items-center gap-2">
+                  {c.overridden && (
+                    <button onClick={() => tornaAutomatico(c)} disabled={busyKey === `${c.categoria}|${c.commessa}`}
+                      className="text-xs text-gray-500 hover:text-gray-700 underline disabled:opacity-50">
+                      Torna automatico
+                    </button>
+                  )}
+                  <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded font-medium">
+                    {c.candidates.length} articoli trovati
+                  </span>
+                </div>
               </div>
               <table className="w-full text-sm table-fixed">
                 <colgroup>
+                  <col className="w-[9%]" />
+                  <col className="w-[17%]" />
+                  <col className="w-[17%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[14%]" />
                   <col className="w-[10%]" />
-                  <col className="w-[20%]" />
-                  <col className="w-[20%]" />
-                  <col className="w-[10%]" />
-                  <col className="w-[16%]" />
-                  <col className="w-[12%]" />
-                  <col className="w-[12%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[15%]" />
                 </colgroup>
                 <thead>
                   <tr className="text-gray-500 border-b border-gray-100">
@@ -88,6 +131,7 @@ export default function ProduzioneConflittiPage() {
                     <th className="py-2 px-4 text-left font-medium">File EDI</th>
                     <th className="py-2 px-4 text-left font-medium">Recency</th>
                     <th className="py-2 px-4 text-center font-medium">In uso</th>
+                    <th className="py-2 px-4 text-center font-medium">Scegli</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -128,6 +172,19 @@ export default function ProduzioneConflittiPage() {
                       </td>
                       <td className="py-2 px-4 text-center">
                         {cand.is_winner ? '✅' : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="py-2 px-4 text-center">
+                        {cand.is_winner ? (
+                          <span className="text-gray-300">—</span>
+                        ) : (
+                          <button
+                            onClick={() => scegli(c, cand.codice_articolo)}
+                            disabled={busyKey === `${c.categoria}|${c.commessa}`}
+                            className="text-xs text-blue-600 border border-blue-200 px-2 py-1 rounded hover:bg-blue-50 disabled:opacity-50"
+                          >
+                            Usa questo
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

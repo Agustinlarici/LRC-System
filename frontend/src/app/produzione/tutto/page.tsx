@@ -113,7 +113,7 @@ export default function ProduzioneTuttoPage() {
       {/* ── Header moderno (solo schermo) ─────────────────────────────────── */}
       <div className="d-print-none mb-6 flex items-start justify-between flex-wrap gap-3">
         <div>
-          <Link href="/produzione" className="text-sm text-gray-500 hover:text-gray-700">← Programma Produzione</Link>
+          <Link href="/produzione" className="inline-flex items-center gap-1 text-sm font-medium px-3 py-2 rounded-lg transition-colors bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 mb-2">← Programma Produzione</Link>
           <h1 className="text-2xl font-bold text-gray-900 mt-1">Programma Produzione</h1>
           <p className="text-gray-500 text-sm mt-0.5">
             {storico ? 'Storico ordini spediti' : 'Tutti gli ordini — nessuna area di montaggio richiesta'}

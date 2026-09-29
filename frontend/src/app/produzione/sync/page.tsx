@@ -68,7 +68,7 @@ export default function ProduzioneSyncPage() {
   return (
     <div>
       <div className="mb-6">
-        <Link href="/produzione" className="text-sm text-gray-500 hover:text-gray-700">← Programma Produzione</Link>
+        <Link href="/produzione" className="inline-flex items-center gap-1 text-sm font-medium px-3 py-2 rounded-lg transition-colors bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 mb-3">← Programma Produzione</Link>
         <h1 className="text-3xl font-bold text-gray-900 mt-2">Sincronizza</h1>
         <p className="mt-1 text-gray-500">
           Ordini da Business Central, Forecast EDI (automatico), motore parole chiave e rilevazione colore.
@@ -77,32 +77,32 @@ export default function ProduzioneSyncPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
         <SyncButton
-          label="🌀 Tutto in sequenza"
+          label="Tutto in sequenza"
           busyText="Sincronizzazione in corso..."
           onRun={async () => { const r = await api.post('/api/prod/sync/all', undefined, SYNC_ALL_TIMEOUT_MS); refreshLog(); return r; }}
         />
         <SyncButton
-          label="📥 Ordini da Business Central"
+          label="Ordini da Business Central"
           busyText="Importazione in corso..."
           onRun={async () => { const r = await api.post('/api/prod/sync/orders', undefined, SYNC_TIMEOUT_MS); refreshLog(); return r; }}
         />
         <SyncButton
-          label="🏷️ Attributi articolo (BC)"
+          label="Attributi articolo (BC)"
           busyText="Lettura attributi..."
           onRun={async () => { const r = await api.post('/api/prod/sync/item-attributes', undefined, SYNC_TIMEOUT_MS); refreshLog(); return r; }}
         />
         <SyncButton
-          label="✨ Genera caratteristiche (parole chiave)"
+          label="Genera caratteristiche (parole chiave)"
           busyText="Generazione in corso..."
           onRun={async () => { const r = await api.post('/api/prod/sync/keywords', undefined, SYNC_TIMEOUT_MS); refreshLog(); return r; }}
         />
         <SyncButton
-          label="🎨 Rileva colore"
+          label="Rileva colore"
           busyText="Analisi in corso..."
           onRun={async () => { const r = await api.post('/api/prod/sync/colors', undefined, SYNC_TIMEOUT_MS); refreshLog(); return r; }}
         />
         <SyncButton
-          label="📦 Chiudi Forecast già spediti"
+          label="Chiudi Forecast già spediti"
           busyText="Verifica spedizioni in corso..."
           onRun={async () => { const r = await api.post('/api/prod/sync/forecast-chiusi', undefined, SYNC_TIMEOUT_MS); refreshLog(); return r; }}
         />

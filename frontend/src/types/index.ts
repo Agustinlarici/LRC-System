@@ -596,6 +596,11 @@ export interface ProdItemAttributeLabel {
   updated_at:        string;
 }
 
+export interface ProdCategoryOrder {
+  categoria: string;
+  ordine:    number | null;
+}
+
 export interface ProdArticleInfo {
   id:                      number;
   codice_articolo:         string;
@@ -639,6 +644,7 @@ export interface ProdComponentConflict {
   categoria:  string;
   commessa:   string;
   candidates: ProdComponentConflictCandidate[];
+  overridden: boolean;
 }
 
 // ─── HR ─────────────────────────────────────────────────────────────────────

@@ -24,3 +24,20 @@ export function fmtDatetime(raw: string): string {
     hour: '2-digit', minute: '2-digit',
   });
 }
+
+/**
+ * Ordina le categorie del foglio Programma Produzione secondo l'ordine
+ * impostato in Impostazioni → "Ordine Categorie" (vedi backend sheet.ts,
+ * stessa logica). Chi non ha un ordine salvato va in fondo, alfabetico —
+ * "X.EXTRA" per ultimo salvo che abbia anche lui un ordine esplicito.
+ */
+export function compareCategorie(a: string, b: string, orderMap: Map<string, number>): number {
+  const ao = orderMap.get(a);
+  const bo = orderMap.get(b);
+  if (ao != null && bo != null) return ao - bo;
+  if (ao != null) return -1;
+  if (bo != null) return 1;
+  if (a === 'X.EXTRA') return 1;
+  if (b === 'X.EXTRA') return -1;
+  return a.localeCompare(b);
+}

@@ -3,18 +3,27 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import type { ProdArea } from '@/types';
+import type { ProdArea, ProdComponentConflict } from '@/types';
 
 export default function ProduzionePage() {
-  const [aree,    setAree]    = useState<ProdArea[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState<string | null>(null);
+  const [aree,        setAree]        = useState<ProdArea[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState<string | null>(null);
+  const [hasUrgentDup, setHasUrgentDup] = useState(false);
 
   useEffect(() => {
     api.get<ProdArea[]>('/api/prod/aree')
       .then(setAree)
       .catch(e => setError((e as Error).message))
       .finally(() => setLoading(false));
+
+    // Solo per colorare il bottone "Duplicati" in rosso quando c'è almeno un
+    // gruppo con candidati registrati/scansionati lo stesso giorno (il caso
+    // più probabile di doppione — vedi /produzione/conflitti). Silenzioso in
+    // caso di errore/timeout: non è critico per questa pagina.
+    api.get<ProdComponentConflict[]>('/api/prod/component-conflicts', 60_000)
+      .then(list => setHasUrgentDup(list.some(c => c.candidates.some(cand => cand.stesso_giorno_altro_codice))))
+      .catch(() => {});
   }, []);
 
   return (
@@ -27,7 +36,9 @@ export default function ProduzionePage() {
             Sincronizza
           </Link>
           <Link href="/produzione/conflitti"
-            className="flex items-center gap-1.5 text-sm bg-yellow-100 text-yellow-800 px-3 py-2 rounded-lg hover:bg-yellow-200 transition-colors">
+            className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg transition-colors ${
+              hasUrgentDup ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
+            }`}>
             Duplicati
           </Link>
           <Link href="/spma/import"
@@ -63,7 +74,6 @@ export default function ProduzionePage() {
               className="bg-white rounded-xl border border-gray-200 p-5 text-center hover:shadow-md hover:border-blue-200 transition-all"
             >
               <p className="font-semibold text-gray-900">{area.description}</p>
-              <p className="text-xs text-gray-400 mt-1">{area.code}</p>
             </Link>
           ))}
         </div>
