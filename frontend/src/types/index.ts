@@ -674,6 +674,28 @@ export interface HrEmployeeTag {
   is_active:   boolean;
 }
 
+// Coppia di co-responsabili: due persone che guidano insieme lo stesso team,
+// mostrate una accanto all'altra nell'organigramma.
+export interface HrCapoPair {
+  id:                  number;
+  employee_a_id:       number;
+  employee_a_nome:     string;
+  employee_b_id:       number;
+  employee_b_nome:     string;
+}
+
+// Regola di avviso scadenze: contract_company_ids vuoto / in_prova NULL = "qualsiasi"
+export interface HrDeadlineRule {
+  id:                      number;
+  label:                   string | null;
+  contract_company_ids:    number[];
+  contract_company_names:  string | null;
+  in_prova:                boolean | null;
+  giorni_avviso:           number;
+  sort_order:              number;
+  is_active:               boolean;
+}
+
 export interface HrEmployee {
   id:                       number;
   matricola:                string | null;

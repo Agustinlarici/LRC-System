@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 const options = [
   { href: '/hr/dipendenti',   title: 'Dipendenti',           desc: 'Anagrafica, dati lavorativi e storico eventi di ogni persona' },
+  { href: '/hr/scadenze',     title: 'Scadenze',              desc: 'Contratti in scadenza e regole di avviso' },
   { href: '/hr/organigramma', title: 'Organigramma',          desc: 'Struttura organizzativa, responsabili e team' },
   { href: '/hr/analisi',      title: 'Analisi HR',            desc: 'Organico, età, anzianità e distribuzioni' },
   { href: '/hr/evoluzione',   title: 'Evoluzione Aziendale',  desc: 'Come è cambiata l\'azienda nel tempo' },

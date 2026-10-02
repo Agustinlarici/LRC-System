@@ -63,25 +63,6 @@ function topN(data: Count[], n: number): Count[] {
   return [...data.slice(0, n), { name: 'Altre', value: rest }];
 }
 
-// Struttura per età: una riga per età, una colonna per funzione aziendale — usa
-// e.eta (già calcolato lato server) invece di ricalcolare l'età lato client.
-function ageByFunzione(list: HrEmployee[]) {
-  const seriesTotals = new Map<string, number>();
-  const rows = new Map<number, Record<string, number | string>>();
-  for (const e of list) {
-    if (e.eta == null) continue;
-    const funzione = e.funzione_aziendale?.trim() || NA;
-    if (!rows.has(e.eta)) rows.set(e.eta, { name: e.eta, _total: 0 });
-    const row = rows.get(e.eta)!;
-    row[funzione] = ((row[funzione] as number) ?? 0) + 1;
-    row._total = (row._total as number) + 1;
-    seriesTotals.set(funzione, (seriesTotals.get(funzione) ?? 0) + 1);
-  }
-  const series = [...seriesTotals.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
-  const data = [...rows.values()].sort((a, b) => (a.name as number) - (b.name as number));
-  return { data, series };
-}
-
 // Anzianità in fasce per funzione aziendale — a differenza dell'età, data_assunzione
 // è un campo obbligatorio: questo grafico ha sempre dati reali da mostrare oggi.
 const ANZIANITA_BUCKETS = ['<1 anno', '1-5 anni', '5-10 anni', '10-20 anni', '20+ anni'];
@@ -107,26 +88,6 @@ function anzianitaByFunzione(list: HrEmployee[]) {
   const series = [...seriesTotals.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
   // Ordine cronologico fisso (non per conteggio): si legge come una progressione
   const data = ANZIANITA_BUCKETS.map(b => rows.get(b)!);
-  return { data, series };
-}
-
-// Pivot: una riga per rowDim, una colonna per serDim
-function crossBy(list: HrEmployee[], rowDim: Dim, serDim: Dim, plantName: Map<number, string>) {
-  const seriesTotals = new Map<string, number>();
-  const rows = new Map<string, Record<string, number | string>>();
-  for (const e of list) {
-    for (const r of valuesOf(e, rowDim, plantName)) {
-      if (!rows.has(r)) rows.set(r, { name: r, _total: 0 });
-      const row = rows.get(r)!;
-      for (const s of valuesOf(e, serDim, plantName)) {
-        row[s] = ((row[s] as number) ?? 0) + 1;
-        row._total = (row._total as number) + 1;
-        seriesTotals.set(s, (seriesTotals.get(s) ?? 0) + 1);
-      }
-    }
-  }
-  const series = [...seriesTotals.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
-  const data = [...rows.values()].sort((a, b) => (b._total as number) - (a._total as number) || String(a.name).localeCompare(String(b.name)));
   return { data, series };
 }
 
@@ -295,33 +256,6 @@ function Stacked({ data, series, colorFor, asPct, labelWidth = 140, onSelect, ac
   );
 }
 
-// Barre verticali impilate — età sull'asse X, una serie colorata per funzione aziendale.
-// A differenza di Stacked (orizzontale), qui le categorie sull'asse principale sono
-// troppe (un'età per persona) per stare leggibili in una lista verticale di etichette.
-function AgeStack({ data, series, colorFor, onSelect, active }: {
-  data: Record<string, number | string>[]; series: string[]; colorFor: (s: string) => string;
-  onSelect?: (name: string) => void; active?: string[];
-}) {
-  if (data.length === 0) return <Empty />;
-  return (
-    <ResponsiveContainer width="100%" height={320}>
-      <BarChart data={data} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-        <XAxis dataKey="name" tick={TICK} label={{ value: 'Età', position: 'insideBottom', offset: -2, fontSize: 11, fill: '#9ca3af' }} />
-        <YAxis allowDecimals={false} tick={TICK} label={{ value: 'Persone', angle: -90, position: 'insideLeft', fontSize: 11, fill: '#9ca3af' }} />
-        <Tooltip cursor={{ fill: '#f3f4f6' }} />
-        <Legend wrapperStyle={{ fontSize: 12 }} onClick={onSelect ? (d: any) => isClickable(d.value) && onSelect(d.value) : undefined} cursor={onSelect ? 'pointer' : undefined} />
-        {series.map(s => (
-          <Bar key={s} dataKey={s} stackId="a" fill={colorFor(s)}
-            fillOpacity={!active?.length || active.includes(s) ? 1 : 0.35}
-            onClick={onSelect ? () => isClickable(s) && onSelect(s) : undefined}
-            cursor={onSelect ? 'pointer' : undefined} />
-        ))}
-      </BarChart>
-    </ResponsiveContainer>
-  );
-}
-
 function crossTable(cross: { data: Record<string, number | string>[]; series: string[] }, rowLabel: string) {
   const totals = cross.series.map(s => cross.data.reduce((sum, r) => sum + ((r[s] as number) ?? 0), 0));
   return (
@@ -381,39 +315,18 @@ function Kpi({ label, value, sub, tone }: { label: string; value: React.ReactNod
 
 // ─── Componente principale ─────────────────────────────────────────────────────
 
-type Tab = 'riepilogo' | 'distribuzioni' | 'scadenze';
-const TABS: { key: Tab; label: string }[] = [
-  { key: 'riepilogo', label: 'Riepilogo' }, { key: 'distribuzioni', label: 'Distribuzioni' },
-  { key: 'scadenze', label: 'Scadenze e cessazioni' },
-];
-
-// Viste rapide per la scheda Distribuzioni: raggruppa per / suddividi per
-const PRESETS: { label: string; group: Dim; split: Dim | '' }[] = [
-  { label: 'Società a contratto', group: 'societa', split: '' },
-  { label: 'Nazionalità', group: 'nazionalita', split: '' },
-  { label: 'Plant', group: 'plant', split: '' },
-  { label: 'Sesso', group: 'sesso', split: '' },
-  { label: 'Categoria', group: 'categoria', split: '' },
-  { label: 'Tipologia', group: 'tipologia', split: '' },
-  { label: 'Livello', group: 'livello', split: '' },
-  { label: 'Funzione aziendale', group: 'funzione', split: '' },
-  { label: 'Reparto per funzione aziendale', group: 'reparto', split: 'funzione' },
-  { label: 'Categoria per tipologia', group: 'categoria', split: 'tipologia' },
-  { label: 'Tipologia per sede', group: 'plant', split: 'tipologia' },
-  { label: 'Responsabile per plant', group: 'responsabile', split: 'plant' },
-];
+const STATO_LABEL: Record<string, string> = {
+  attivo: 'Attivo', aspettativa: 'Aspettativa', malattia: 'Malattia',
+  maternita_paternita: 'Maternità/paternità', cessato: 'Cessato',
+};
 
 export function AnalisiOrganico() {
   const [all, setAll] = useState<HrEmployee[]>([]);
   const [plants, setPlants] = useState<HrPlant[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<Filters>({});
-  const [tab, setTab] = useState<Tab>('riepilogo');
   const [mode, setMode] = useState<Mode>('chart');
   const [showFilters, setShowFilters] = useState(false);
-  const [exGroup, setExGroup] = useState<Dim>('plant');
-  const [exSplit, setExSplit] = useState<Dim | ''>('');
-  const [exPct, setExPct] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -448,7 +361,6 @@ export function AnalisiOrganico() {
   [filters, plantName]);
 
   const active = useMemo(() => allActive.filter(matches), [allActive, matches]);
-  const filteredAll = useMemo(() => all.filter(matches), [all, matches]);
 
   // Click su un grafico: applica/rimuove quel valore come filtro (stesso comportamento del menu Filtri)
   const toggleFilter = (dim: Dim, value: string) => {
@@ -468,19 +380,6 @@ export function AnalisiOrganico() {
   [active, today]);
   const expiring90 = expiring.filter(e => iso(e.data_cessazione) <= plus(90));
 
-  const yearly = useMemo(() => {
-    const years = new Map<string, { anno: string; cessazioni: number; scaduti: number; inScadenza: number }>();
-    const row = (y: string) => { if (!years.has(y)) years.set(y, { anno: y, cessazioni: 0, scaduti: 0, inScadenza: 0 }); return years.get(y)!; };
-    for (const e of filteredAll) {
-      const d = iso(e.data_cessazione);
-      if (!d) continue;
-      const r = row(d.slice(0, 4));
-      if (d <= today) { r.cessazioni++; if (isDeterminato(e.tipo_contratto)) r.scaduti++; }
-      else if (e.stato !== 'cessato') r.inScadenza++;
-    }
-    return [...years.values()].sort((a, b) => a.anno.localeCompare(b.anno));
-  }, [filteredAll, today]);
-
   const monthly = useMemo(() => {
     const months: { mese: string; key: string; count: number }[] = [];
     const base = new Date();
@@ -493,14 +392,13 @@ export function AnalisiOrganico() {
     return months;
   }, [expiring]);
 
-  const ageStruct = useMemo(() => ageByFunzione(active), [active]);
-  const overSixty = active.filter(e => (e.eta ?? 0) >= 60).length;
   const anzianitaStruct = useMemo(() => anzianitaByFunzione(active), [active]);
+  const maternityList = useMemo(() => active.filter(e => e.stato === 'maternita_paternita'), [active]);
+  const peopleRows = useMemo(() => [...active].sort((a, b) =>
+    a.cognome.localeCompare(b.cognome, 'it') || a.nome.localeCompare(b.nome, 'it')), [active]);
 
   if (loading) return <p className="text-sm text-gray-400 text-center py-10">Caricamento…</p>;
 
-  const show = (t: Tab) => tab === t;
-  const cur = new Date().getFullYear();
   const totActive = active.length;
   const determinati = active.filter(e => isDeterminato(e.tipo_contratto)).length;
   const senzaResp = active.filter(e => !e.capo_id).length;
@@ -511,66 +409,24 @@ export function AnalisiOrganico() {
   const etaMedia = conEta.length ? conEta.reduce((s, e) => s + (e.eta as number), 0) / conEta.length : null;
   const donne = active.filter(e => e.sesso?.trim().toUpperCase().startsWith('F')).length;
   const l68 = active.filter(e => e.l68).length;
-  const cessCurYear = yearly.find(y => y.anno === String(cur))?.cessazioni ?? 0;
   const activeFilters = FILTER_ORDER.filter(d => filters[d]?.length);
 
   // Tabelle e grafici riutilizzati
-  const countCard = (title: string, dim: Dim, opts: { hint?: string; sort?: 'value' | 'name'; top?: number; donut?: boolean; className?: string } = {}) => {
-    const raw = countBy(active, dim, plantName, opts.sort);
+  const countCard = (title: string, dim: Dim, opts: { hint?: string; sort?: 'value' | 'name'; top?: number; donut?: boolean; className?: string; list?: HrEmployee[] } = {}) => {
+    const source = opts.list ?? active;
+    const raw = countBy(source, dim, plantName, opts.sort);
     const data = opts.top ? topN(raw, opts.top) : raw;
     const total = data.reduce((s, d) => s + d.value, 0);
     const sel = filters[dim] ?? [];
     const onSelect = (name: string) => toggleFilter(dim, name);
     return (
-      <Card title={title} hint={opts.hint} className={opts.className}
+      <Card title={title} hint={opts.hint} className={`min-h-[300px] flex flex-col ${opts.className ?? ''}`}
         chart={() => opts.donut
           ? <Donut data={data} colorFor={colorFor(dim)} onSelect={onSelect} active={sel} />
           : <Bars data={data} onSelect={onSelect} active={sel} />}
         table={<DataTable head={[DIM_LABEL[dim], 'Persone', '%']} rows={data.map(d => [d.name, d.value, pct(d.value, total)])} foot={['Totale', total, '100%']} />} />
     );
   };
-
-  const crossCard = (title: string, rowDim: Dim, serDim: Dim, opts: { hint?: string; maxRows?: number; className?: string } = {}) => {
-    const cross = crossBy(active, rowDim, serDim, plantName);
-    const shown = opts.maxRows ? cross.data.slice(0, opts.maxRows) : cross.data;
-    return (
-      <Card title={title} canPct hint={opts.hint} className={opts.className}
-        chart={asPct => <Stacked data={shown} series={cross.series} colorFor={colorFor(serDim)} asPct={asPct}
-          onSelect={name => toggleFilter(serDim, name)} active={filters[serDim] ?? []} />}
-        table={crossTable(cross, DIM_LABEL[rowDim])} />
-    );
-  };
-
-  const expiringTable = (rows: HrEmployee[]) => (
-    <DataTable
-      head={['Cognome e nome', 'Plant', 'Responsabile', 'Tipologia', 'Scadenza', 'Giorni']}
-      rows={rows.map(e => {
-        const d = iso(e.data_cessazione);
-        const days = Math.round((new Date(d).getTime() - new Date(today).getTime()) / 86400000);
-        return [`${e.cognome} ${e.nome}`, valuesOf(e, 'plant', plantName).join(', '), e.capo_nome ?? '—', e.tipo_contratto ?? '—', fmtDate(d), days];
-      })}
-    />
-  );
-
-  const cessazioniCard = (
-    <Card title="Cessazioni e contratti scaduti per anno"
-      hint="Scaduti = cessazioni di contratti a tempo determinato. In scadenza = attivi con fine contratto in quell'anno."
-      chart={() => yearly.length === 0 ? <Empty /> : (
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={yearly} margin={{ top: 16, right: 16, bottom: 0, left: -16 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-            <XAxis dataKey="anno" tick={TICK} />
-            <YAxis allowDecimals={false} tick={TICK} />
-            <Tooltip cursor={{ fill: '#f3f4f6' }} />
-            <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Bar dataKey="cessazioni" name="Cessazioni" fill={PALETTE[0]} radius={[4, 4, 0, 0]} label={{ position: 'top', fontSize: 11, fill: '#374151' }} />
-            <Bar dataKey="scaduti" name="Contratti scaduti" fill={PALETTE[2]} radius={[4, 4, 0, 0]} label={{ position: 'top', fontSize: 11, fill: '#374151' }} />
-            <Bar dataKey="inScadenza" name="In scadenza (attivi)" fill={PALETTE[3]} radius={[4, 4, 0, 0]} label={{ position: 'top', fontSize: 11, fill: '#374151' }} />
-          </BarChart>
-        </ResponsiveContainer>
-      )}
-      table={<DataTable head={['Anno', 'Cessazioni', 'Contratti scaduti', 'In scadenza (attivi)']} rows={yearly.map(y => [y.anno, y.cessazioni, y.scaduti, y.inScadenza])} />} />
-  );
 
   const monthlyCard = (
     <Card title="Scadenze dei prossimi 12 mesi" hint="Contratti attivi che terminano, per mese: serve a pianificare rinnovi e sostituzioni"
@@ -588,67 +444,20 @@ export function AnalisiOrganico() {
       table={<DataTable head={['Mese', 'Contratti in scadenza']} rows={monthly.map(m => [m.mese, m.count])} foot={['Totale', monthly.reduce((s, m) => s + m.count, 0)]} />} />
   );
 
-  const exCount = countBy(active, exGroup, plantName, exGroup === 'livello' ? 'name' : 'value');
-  const exCross = exSplit ? crossBy(active, exGroup, exSplit, plantName) : null;
-  const exTitle = `Persone per ${DIM_LABEL[exGroup].toLowerCase()}${exSplit ? ` e ${DIM_LABEL[exSplit].toLowerCase()}` : ''}`;
-  const exTotal = exCount.reduce((s, d) => s + d.value, 0);
-  const selectCls = 'input text-sm w-auto';
-  const exploreCard = (
-    <div className="card print-card space-y-4">
-      <div className="flex flex-wrap items-end gap-3 d-print-none">
-        <div>
-          <label className="label text-xs">Vista rapida</label>
-          <select className={selectCls} value="" onChange={e => {
-            const p = PRESETS[Number(e.target.value)];
-            if (p) { setExGroup(p.group); setExSplit(p.split); }
-          }}>
-            <option value="" disabled>Scegli…</option>
-            {PRESETS.map((p, i) => <option key={p.label} value={i}>{p.label}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label text-xs">Raggruppa per</label>
-          <select className={selectCls} value={exGroup} onChange={e => { const d = e.target.value as Dim; setExGroup(d); if (d === exSplit) setExSplit(''); }}>
-            {FILTER_ORDER.map(d => <option key={d} value={d}>{DIM_LABEL[d]}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label text-xs">Suddividi per</label>
-          <select className={selectCls} value={exSplit} onChange={e => setExSplit(e.target.value as Dim | '')}>
-            <option value="">Nessuno</option>
-            {FILTER_ORDER.filter(d => d !== exGroup).map(d => <option key={d} value={d}>{DIM_LABEL[d]}</option>)}
-          </select>
-        </div>
-        <div className="ml-auto flex gap-2">
-          {exSplit && <button type="button" onClick={() => setExPct(v => !v)} className="btn-secondary text-sm py-1.5">{exPct ? 'Valori' : '% sul totale'}</button>}
-        </div>
-      </div>
-      <p className="text-base font-medium text-gray-700">{exTitle}</p>
-      {mode === 'table' ? (
-        exCross ? crossTable(exCross, DIM_LABEL[exGroup])
-          : <DataTable head={[DIM_LABEL[exGroup], 'Persone', '%']} rows={exCount.map(d => [d.name, d.value, pct(d.value, exTotal)])} foot={['Totale', exTotal, '100%']} />
-      ) : (
-        <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
-          <div className="xl:col-span-3">
-            {exCross
-              ? <Stacked data={exCross.data.slice(0, 20)} series={exCross.series} colorFor={colorFor(exSplit as Dim)} asPct={exPct} />
-              : <Bars data={topN(exCount, 20)} />}
-            {exCross && exCross.data.length > 20 && <p className="text-xs text-gray-400 mt-2">Grafico: primi 20 gruppi. La tabella mostra tutti.</p>}
-          </div>
-          <div className="xl:col-span-2">
-            {exCross ? crossTable(exCross, DIM_LABEL[exGroup])
-              : <DataTable head={[DIM_LABEL[exGroup], 'Persone', '%']} rows={exCount.map(d => [d.name, d.value, pct(d.value, exTotal)])} foot={['Totale', exTotal, '100%']} />}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  const expiringCard = (
-    <Card title="Contratti in scadenza nei prossimi 90 giorni"
-      hint={`${expiring90.length} ${expiring90.length === 1 ? 'persona' : 'persone'} — ordinate per data di scadenza`}
-      chart={() => expiring90.length === 0 ? <Empty /> : expiringTable(expiring90)}
-      table={expiringTable(expiring90)} />
+  const peopleListCard = (
+    <Card title="Elenco persone" hint={`${peopleRows.length} ${peopleRows.length === 1 ? 'persona' : 'persone'} corrispondenti ai filtri attivi`}
+      chart={() => <DataTable
+        head={['Cognome e nome', 'Funzione', 'Plant', 'Responsabile', 'Categoria', 'Stato']}
+        rows={peopleRows.map(e => [
+          `${e.cognome} ${e.nome}`, e.funzione_aziendale || '—', valuesOf(e, 'plant', plantName).join(', ') || '—',
+          e.capo_nome ?? '—', e.categoria || '—', STATO_LABEL[e.stato] ?? e.stato,
+        ])} />}
+      table={<DataTable
+        head={['Cognome e nome', 'Funzione', 'Plant', 'Responsabile', 'Categoria', 'Stato']}
+        rows={peopleRows.map(e => [
+          `${e.cognome} ${e.nome}`, e.funzione_aziendale || '—', valuesOf(e, 'plant', plantName).join(', ') || '—',
+          e.capo_nome ?? '—', e.categoria || '—', STATO_LABEL[e.stato] ?? e.stato,
+        ])} />} />
   );
 
   return (
@@ -656,7 +465,7 @@ export function AnalisiOrganico() {
       <div className="space-y-4">
         {/* Intestazione visibile solo in stampa: titolo, data e filtri applicati */}
         <div className="only-print">
-          <p className="text-lg font-semibold text-gray-900">Analisi HR — {TABS.find(t => t.key === tab)?.label}</p>
+          <p className="text-lg font-semibold text-gray-900">Analisi HR</p>
           <p className="text-xs text-gray-500">
             Stampato il {fmtDate(today)} · {totActive} persone attive
             {activeFilters.length ? ` · Filtri: ${activeFilters.map(d => `${DIM_LABEL[d]} = ${filters[d]!.join(', ')}`).join(' · ')}` : ' · Nessun filtro'}
@@ -701,76 +510,42 @@ export function AnalisiOrganico() {
           </div>
         )}
 
-        {/* Schede */}
-        <div className="flex gap-6 border-b border-gray-200 overflow-x-auto d-print-none">
-          {TABS.map(t => (
-            <button key={t.key} type="button" onClick={() => setTab(t.key)}
-              className={`text-sm pb-2.5 -mb-px whitespace-nowrap border-b-2 transition-colors ${tab === t.key ? 'border-blue-600 text-blue-600 font-medium' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <Section title="Riepilogo">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+            <Kpi label="Organico attivo" value={totActive} />
+            <Kpi label="Età media" value={etaMedia != null ? etaMedia.toFixed(1) : '—'} sub="anni" />
+            <Kpi label="Anzianità media" value={anzianita != null ? anzianita.toFixed(1) : '—'} sub="anni" />
+            <Kpi label="Donne" value={pct(donne, totActive)} sub={`${donne} persone`} />
+            <Kpi label="Categorie protette (L.68)" value={pct(l68, totActive)} sub={`${l68} persone`} />
+            <Kpi label="Tempo determinato" value={pct(determinati, totActive)} sub={`${determinati} persone`} />
+            <Kpi label="Scadenze entro 90 gg" value={expiring90.length} tone={expiring90.length ? 'warn' : undefined} sub="contratti da rinnovare" />
+            <Kpi label="Senza responsabile" value={senzaResp} tone={senzaResp ? 'warn' : undefined} sub="da assegnare" />
+          </div>
 
-        {show('riepilogo') && (
-          <Section title="Riepilogo">
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
-              <Kpi label="Organico attivo" value={totActive} />
-              <Kpi label="Età media" value={etaMedia != null ? etaMedia.toFixed(1) : '—'} sub="anni" />
-              <Kpi label="Anzianità media" value={anzianita != null ? anzianita.toFixed(1) : '—'} sub="anni" />
-              <Kpi label="Donne" value={pct(donne, totActive)} sub={`${donne} persone`} />
-              <Kpi label="Categorie protette (L.68)" value={pct(l68, totActive)} sub={`${l68} persone`} />
-              <Kpi label="Tempo determinato" value={pct(determinati, totActive)} sub={`${determinati} persone`} />
-              <Kpi label="Scadenze entro 90 gg" value={expiring90.length} tone={expiring90.length ? 'warn' : undefined} sub="contratti da rinnovare" />
-              <Kpi label="Senza responsabile" value={senzaResp} tone={senzaResp ? 'warn' : undefined} sub="da assegnare" />
-            </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {countCard('Per funzione aziendale', 'funzione', { top: 8 })}
+            {countCard('Per categoria', 'categoria', { donut: true })}
+            {countCard('Per tipologia', 'tipologia', { donut: true })}
+            {countCard('Per plant', 'plant', { top: 8 })}
+            {countCard('Per società', 'societa', { donut: true })}
+            {countCard('Per sesso', 'sesso', { donut: true })}
+            {countCard('In maternità/paternità', 'funzione', {
+              donut: true, list: maternityList,
+              hint: `${maternityList.length} ${maternityList.length === 1 ? 'persona' : 'persone'} attualmente in congedo, per funzione aziendale`,
+            })}
+          </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {countCard('Per funzione aziendale', 'funzione')}
-              {countCard('Per categoria', 'categoria', { donut: true })}
-              {countCard('Per tipologia', 'tipologia', { donut: true })}
-              {countCard('Per plant', 'plant')}
-              {countCard('Per società', 'societa', { donut: true })}
-              {countCard('Per sesso', 'sesso', { donut: true })}
-            </div>
+          <Card title="Anzianità in fasce"
+            canPct
+            hint="Da quanto tempo lavora in azienda l'organico attuale, per funzione aziendale."
+            chart={asPct => <Stacked data={anzianitaStruct.data} series={anzianitaStruct.series} colorFor={colorFor('funzione')} asPct={asPct} labelWidth={90}
+              onSelect={name => toggleFilter('funzione', name)} active={filters.funzione ?? []} />}
+            table={crossTable(anzianitaStruct, 'Anzianità')} />
 
-            <Card title="Anzianità in fasce"
-              canPct
-              hint="Da quanto tempo lavora in azienda l'organico attuale, per funzione aziendale — a differenza dell'età, questo dato è già completo oggi."
-              chart={asPct => <Stacked data={anzianitaStruct.data} series={anzianitaStruct.series} colorFor={colorFor('funzione')} asPct={asPct} labelWidth={90}
-                onSelect={name => toggleFilter('funzione', name)} active={filters.funzione ?? []} />}
-              table={crossTable(anzianitaStruct, 'Anzianità')} />
+          {monthlyCard}
 
-            {/* In fondo e senza risalto: richiede la data di nascita di ogni dipendente,
-                dato non ancora caricato per il personale reale — si popolerà da solo
-                man mano che verrà inserito, senza bisogno di toccare questa pagina. */}
-            <Card title="Struttura per età" className="opacity-90"
-              hint="Ogni barra è un'età; i colori mostrano da quale funzione aziendale arrivano i dipendenti. Richiede la data di nascita in anagrafica."
-              chart={() => (
-                <>
-                  <AgeStack data={ageStruct.data} series={ageStruct.series} colorFor={colorFor('funzione')}
-                    onSelect={name => toggleFilter('funzione', name)} active={filters.funzione ?? []} />
-                  {overSixty > 0 && (
-                    <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
-                      ⚠ {overSixty} {overSixty === 1 ? 'persona ha' : 'persone hanno'} 60 anni o più — struttura dell&apos;età da monitorare per il turnover in vista della pensione.
-                    </p>
-                  )}
-                </>
-              )}
-              table={crossTable(ageStruct, 'Età')} />
-          </Section>
-        )}
-
-        {show('distribuzioni') && <Section title="Distribuzioni">{exploreCard}</Section>}
-
-        {show('scadenze') && (
-          <Section title="Scadenze e cessazioni">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {cessazioniCard}
-              {monthlyCard}
-            </div>
-            {expiringCard}
-          </Section>
-        )}
+          {peopleListCard}
+        </Section>
 
       </div>
     </ModeCtx.Provider>

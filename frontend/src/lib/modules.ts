@@ -144,6 +144,11 @@ export const MODULES: ModuleConfig[] = [
     sidebar: 'IconUsers', hidden: false, moduleKey: 'hr',
   },
   {
+    href: '/hr/scadenze', label: 'Scadenze', group: 'HR',
+    description: 'Contratti in scadenza e regole di avviso per società/periodo di prova',
+    sidebar: 'IconClipboard', hidden: false, moduleKey: 'hr',
+  },
+  {
     href: '/hr/organigramma', label: 'Organigramma', group: 'HR',
     description: 'Struttura organizzativa dinamica, capi e team',
     sidebar: 'IconOrgChart', hidden: false, moduleKey: 'hr',

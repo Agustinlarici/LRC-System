@@ -19,6 +19,9 @@ function raggruppaPerCommessa(rows: ProdSheetRow[], categoryOrderMap: Map<string
   return [...gruppi.values()].map(gruppo => {
     const primo = gruppo[0];
     const codici = [...new Set(gruppo.map(r => r.codice_articolo))];
+    const descrizioni = codici.map(codice =>
+      gruppo.find(r => r.codice_articolo === codice)?.descrizione ?? '',
+    );
     const colori = [...new Set(gruppo.map(r => r.colore).filter((c): c is string => !!c))];
     const insertionTs = gruppo
       .map(r => r.insertion_line_ts)
@@ -50,7 +53,7 @@ function raggruppaPerCommessa(rows: ProdSheetRow[], categoryOrderMap: Map<string
       fonte_ordine:      gruppo.some(r => r.fonte_ordine === 'confermato') ? 'confermato' : 'forecast',
       codice_articolo:   codici.join('\n'),
       commessa:          primo.commessa,
-      descrizione:       primo.descrizione,
+      descrizione:       descrizioni.join('\n'),
       ubicazione:        primo.ubicazione,
       insertion_line_ts: insertionTs,
       insertion_schedulato: gruppo.some(r => r.insertion_schedulato),
@@ -144,7 +147,7 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
               </td>
               <td className="border border-gray-200 px-2 py-1 font-mono">{row.commessa}</td>
               <td className="border border-gray-200 px-2 py-1 font-mono whitespace-pre-line">{row.codice_articolo}</td>
-              <td className="border border-gray-200 px-2 py-1 max-w-[260px] truncate" title={row.descrizione ?? ''}>
+              <td className="border border-gray-200 px-2 py-1 max-w-[260px] whitespace-pre-line" title={row.descrizione ?? ''}>
                 {row.descrizione ?? <span className="text-gray-300">–</span>}
               </td>
               <td className="border border-gray-200 px-2 py-1 whitespace-nowrap">

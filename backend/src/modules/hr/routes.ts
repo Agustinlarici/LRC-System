@@ -127,6 +127,61 @@ hrRoutes.patch('/tags/:id', requireManage('hr'), async (c) => {
   return c.json(row);
 });
 
+// ─── Scadenze — regole di avviso su data_cessazione ──────────────────────────
+// Ogni regola filtra i dipendenti per società contratto e/o in_prova (NULL su un
+// filtro = qualsiasi) e dice quanti giorni prima della data_cessazione avvisare.
+// Vince la prima regola attiva che corrisponde, in ordine di sort_order.
+
+hrRoutes.get('/deadline-rules', requireModule('hr'), async (c) => {
+  const rows = await db`
+    SELECT r.id, r.label, r.contract_company_ids,
+           (SELECT string_agg(cc.name, ', ' ORDER BY cc.name) FROM hr_contract_company cc WHERE cc.id = ANY(r.contract_company_ids)) AS contract_company_names,
+           r.in_prova, r.giorni_avviso, r.sort_order, r.is_active
+    FROM hr_deadline_rule r
+    ORDER BY r.sort_order, r.id
+  `;
+  return c.json(rows);
+});
+
+const deadlineRuleFieldsSchema = z.object({
+  label:                 z.string().max(150).optional().nullable(),
+  contract_company_ids:  z.array(z.number().int().positive()).max(50).optional(),
+  in_prova:              z.boolean().optional().nullable(),
+  giorni_avviso:         z.number().int().min(0).max(3650),
+  sort_order:            z.number().int().optional(),
+  is_active:             z.boolean().optional(),
+});
+
+hrRoutes.post('/deadline-rules', requireManage('hr'), async (c) => {
+  const body = await parseBody(c, deadlineRuleFieldsSchema);
+  const [row] = await db`
+    INSERT INTO hr_deadline_rule ${db(body)}
+    RETURNING id, label, contract_company_ids, in_prova, giorni_avviso, sort_order, is_active
+  `;
+  return c.json(row, 201);
+});
+
+hrRoutes.patch('/deadline-rules/:id', requireManage('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const body = await parseBody(c, deadlineRuleFieldsSchema.partial());
+  if (!Object.keys(body).length) throw new HTTPException(400, { message: 'Nessun campo da aggiornare' });
+  const [row] = await db`
+    UPDATE hr_deadline_rule SET ${db(body)} WHERE id = ${id}
+    RETURNING id, label, contract_company_ids, in_prova, giorni_avviso, sort_order, is_active
+  `;
+  if (!row) throw new HTTPException(404, { message: 'Regola non trovata' });
+  return c.json(row);
+});
+
+hrRoutes.delete('/deadline-rules/:id', requireManage('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const [row] = await db`DELETE FROM hr_deadline_rule WHERE id = ${id} RETURNING id`;
+  if (!row) throw new HTTPException(404, { message: 'Regola non trovata' });
+  return c.json({ ok: true });
+});
+
 // ─── Dipendenti — lista + ficha ───────────────────────────────────────────────
 
 const employeeSelect = db`
@@ -490,4 +545,54 @@ hrRoutes.get('/org-chart', requireModule('hr'), async (c) => {
     ORDER BY e.cognome, e.nome
   `;
   return c.json(rows);
+});
+
+// ─── Coppie di co-responsabili ────────────────────────────────────────────────
+// Due persone che guidano insieme lo stesso team (es. co-responsabili di reparto):
+// nell'organigramma compaiono una accanto all'altra, separate da una riga sottile,
+// con lo stesso team sotto a entrambe — invece di avere ciascuna il proprio
+// responsabile singolo e duplicare/spezzare la squadra tra i due.
+
+hrRoutes.get('/capo-pairs', requireModule('hr'), async (c) => {
+  const rows = await db`
+    SELECT p.id, p.employee_a_id, (a.cognome || ' ' || a.nome) AS employee_a_nome,
+           p.employee_b_id, (b.cognome || ' ' || b.nome) AS employee_b_nome
+    FROM hr_capo_pair p
+    JOIN hr_employee a ON a.id = p.employee_a_id
+    JOIN hr_employee b ON b.id = p.employee_b_id
+    ORDER BY a.cognome, a.nome
+  `;
+  return c.json(rows);
+});
+
+const capoPairFieldsSchema = z.object({
+  employee_a_id: z.number().int().positive(),
+  employee_b_id: z.number().int().positive(),
+});
+
+hrRoutes.post('/capo-pairs', requireManage('hr'), async (c) => {
+  const body = await parseBody(c, capoPairFieldsSchema);
+  if (body.employee_a_id === body.employee_b_id) {
+    throw new HTTPException(400, { message: 'Le due persone devono essere diverse' });
+  }
+  // Ordine canonico (a < b) per evitare duplicati A-B / B-A
+  const [a, b] = [body.employee_a_id, body.employee_b_id].sort((x, y) => x - y);
+  try {
+    const [row] = await db`
+      INSERT INTO hr_capo_pair (employee_a_id, employee_b_id) VALUES (${a}, ${b})
+      RETURNING id, employee_a_id, employee_b_id
+    `;
+    return c.json(row, 201);
+  } catch (err: any) {
+    if (err?.code === '23505') throw new HTTPException(409, { message: 'Questa coppia esiste già' });
+    throw err;
+  }
+});
+
+hrRoutes.delete('/capo-pairs/:id', requireManage('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const [row] = await db`DELETE FROM hr_capo_pair WHERE id = ${id} RETURNING id`;
+  if (!row) throw new HTTPException(404, { message: 'Coppia non trovata' });
+  return c.json({ ok: true });
 });

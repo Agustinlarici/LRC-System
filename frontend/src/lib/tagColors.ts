@@ -1,21 +1,39 @@
-// Palette fissa per le etichette HR (pallino colorato) — le classi Tailwind devono
-// esistere staticamente nel bundle, quindi il colore scelto da HR è una chiave
-// di questa lista e non una stringa CSS libera.
+import type { CSSProperties } from 'react';
+
+// Palette fissa per le etichette HR (pallino colorato), applicata via style inline
+// e non via classi Tailwind: questo file vive in src/lib, fuori dalle cartelle che
+// Tailwind analizza (src/app, src/components, src/pages), quindi classi come
+// "bg-red-300" scritte solo qui non verrebbero mai generate nel CSS finale.
+// In alternativa si può scegliere un colore libero (vedi isCustomColor sotto),
+// salvato come stringa esadecimale ("#a3c9e0") invece che come chiave.
 export const TAG_COLOR_OPTIONS = [
-  { key: 'gray',   label: 'Grigio',   dot: 'bg-gray-400',   badge: 'bg-gray-100 text-gray-700 border-gray-200' },
-  { key: 'red',    label: 'Rosso',    dot: 'bg-red-500',    badge: 'bg-red-50 text-red-700 border-red-200' },
-  { key: 'amber',  label: 'Ambra',    dot: 'bg-amber-500',  badge: 'bg-amber-50 text-amber-700 border-amber-200' },
-  { key: 'yellow', label: 'Giallo',   dot: 'bg-yellow-400', badge: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
-  { key: 'green',  label: 'Verde',    dot: 'bg-green-500',  badge: 'bg-green-50 text-green-700 border-green-200' },
-  { key: 'blue',   label: 'Blu',      dot: 'bg-blue-500',   badge: 'bg-blue-50 text-blue-700 border-blue-200' },
-  { key: 'purple', label: 'Viola',    dot: 'bg-purple-500', badge: 'bg-purple-50 text-purple-700 border-purple-200' },
-  { key: 'pink',   label: 'Rosa',     dot: 'bg-pink-500',   badge: 'bg-pink-50 text-pink-700 border-pink-200' },
+  { key: 'gray',   label: 'Grigio',   dot: '#9ca3af', badgeBg: '#f3f4f6', badgeBorder: '#d1d5db', badgeText: '#4b5563' },
+  { key: 'red',    label: 'Rosso',    dot: '#ef4444', badgeBg: '#fef2f2', badgeBorder: '#fecaca', badgeText: '#b91c1c' },
+  { key: 'amber',  label: 'Ambra',    dot: '#f59e0b', badgeBg: '#fffbeb', badgeBorder: '#fde68a', badgeText: '#b45309' },
+  { key: 'yellow', label: 'Giallo',   dot: '#eab308', badgeBg: '#fefce8', badgeBorder: '#fef08a', badgeText: '#854d0e' },
+  { key: 'green',  label: 'Verde',    dot: '#22c55e', badgeBg: '#f0fdf4', badgeBorder: '#bbf7d0', badgeText: '#15803d' },
+  { key: 'blue',   label: 'Blu',      dot: '#3b82f6', badgeBg: '#eff6ff', badgeBorder: '#bfdbfe', badgeText: '#1d4ed8' },
+  { key: 'purple', label: 'Viola',    dot: '#a855f7', badgeBg: '#faf5ff', badgeBorder: '#e9d5ff', badgeText: '#7e22ce' },
+  { key: 'pink',   label: 'Rosa',     dot: '#ec4899', badgeBg: '#fdf2f8', badgeBorder: '#fbcfe8', badgeText: '#be185d' },
 ] as const;
 
-export function tagDotClass(color: string | null | undefined): string {
-  return TAG_COLOR_OPTIONS.find(c => c.key === color)?.dot ?? 'bg-gray-300';
+export function isCustomColor(color: string | null | undefined): boolean {
+  return !!color && color.startsWith('#');
 }
 
-export function tagBadgeClass(color: string | null | undefined): string {
-  return TAG_COLOR_OPTIONS.find(c => c.key === color)?.badge ?? 'bg-gray-100 text-gray-700 border-gray-200';
+export function tagDotStyle(color: string | null | undefined): { className: string; style?: CSSProperties } {
+  const hex = isCustomColor(color) ? (color as string) : (TAG_COLOR_OPTIONS.find(c => c.key === color)?.dot ?? '#9ca3af');
+  return { className: '', style: { backgroundColor: hex } };
+}
+
+export function tagBadgeStyle(color: string | null | undefined): { className: string; style?: CSSProperties } {
+  if (isCustomColor(color)) {
+    const hex = color as string;
+    return { className: 'border', style: { backgroundColor: `${hex}1a`, borderColor: hex, color: hex } };
+  }
+  const opt = TAG_COLOR_OPTIONS.find(c => c.key === color);
+  return {
+    className: 'border',
+    style: { backgroundColor: opt?.badgeBg ?? '#f3f4f6', borderColor: opt?.badgeBorder ?? '#d1d5db', color: opt?.badgeText ?? '#4b5563' },
+  };
 }

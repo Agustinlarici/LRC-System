@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
-import type { HrOrgNode } from '@/types';
+import type { HrOrgNode, HrCapoPair } from '@/types';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -12,28 +12,68 @@ const BACKEND = typeof window !== 'undefined'
 // così una persona ha lo stesso colore ovunque nel modulo HR.
 const PALETTE = ['#2563eb', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
 
-interface TreeNode extends HrOrgNode { children: TreeNode[]; }
+// Un "nodo" può rappresentare due persone insieme: una coppia di co-responsabili
+// configurata esplicitamente (stesso team), mostrate affiancate in un unico box
+// invece che separate — vedi "Gestisci coppie di co-responsabili" in pagina.
+interface TreeNode { people: HrOrgNode[]; children: TreeNode[]; }
 
-function buildTree(nodes: HrOrgNode[]): TreeNode[] {
-  const byId = new Map<number, TreeNode>(nodes.map(n => [n.id, { ...n, children: [] }]));
-  const roots: TreeNode[] = [];
+function buildTree(nodes: HrOrgNode[], pairs: HrCapoPair[]): TreeNode[] {
+  const byId = new Map<number, HrOrgNode>(nodes.map(n => [n.id, n]));
+
+  // Ogni persona appartiene al proprio gruppo: se fa parte di una coppia configurata
+  // (e il partner è visibile con gli stessi filtri) il gruppo è [lei, partner].
+  const groupOf = new Map<number, number[]>();
+  for (const n of nodes) groupOf.set(n.id, [n.id]);
+  for (const p of pairs) {
+    if (!byId.has(p.employee_a_id) || !byId.has(p.employee_b_id)) continue;
+    groupOf.set(p.employee_a_id, [p.employee_a_id, p.employee_b_id]);
+    groupOf.set(p.employee_b_id, [p.employee_a_id, p.employee_b_id]);
+  }
+
   // Un ciclo nei responsabili (A → B → A) non deve rompere l'albero né bloccare la pagina:
   // solo chi fa parte del ciclo diventa radice; chi sta sotto resta collegato normalmente.
-  const inCycle = (n: TreeNode) => {
+  const inCycle = (startId: number, firstCapo: number): boolean => {
     const seen = new Set<number>();
-    let cur = n.capo_id != null ? byId.get(n.capo_id) : undefined;
-    while (cur && !seen.has(cur.id)) {
-      if (cur.id === n.id) return true;
-      seen.add(cur.id);
-      cur = cur.capo_id != null ? byId.get(cur.capo_id) : undefined;
+    let cur: number | null = firstCapo;
+    while (cur != null && !seen.has(cur)) {
+      if (cur === startId) return true;
+      seen.add(cur);
+      cur = byId.get(cur)?.capo_id ?? null;
     }
     return false;
   };
-  for (const n of byId.values()) {
-    if (n.capo_id != null && byId.has(n.capo_id) && !inCycle(n)) byId.get(n.capo_id)!.children.push(n);
-    else roots.push(n);
+
+  const treeNodeOf = new Map<number, TreeNode>();
+  const roots: TreeNode[] = [];
+  const handled = new Set<number>();
+
+  function nodeFor(id: number): TreeNode {
+    const existing = treeNodeOf.get(id);
+    if (existing) return existing;
+    const group = groupOf.get(id) ?? [id];
+    const people = group.map(gid => byId.get(gid)!).sort((a, b) => a.cognome.localeCompare(b.cognome));
+    const tn: TreeNode = { people, children: [] };
+    for (const gid of group) treeNodeOf.set(gid, tn);
+    return tn;
   }
-  const sortByName = (a: TreeNode, b: TreeNode) => a.cognome.localeCompare(b.cognome);
+
+  for (const n of nodes) {
+    if (handled.has(n.id)) continue;
+    const group = groupOf.get(n.id) ?? [n.id];
+    group.forEach(id => handled.add(id));
+
+    const tn = nodeFor(n.id);
+    // Posizionamento nell'albero: il capo del primo membro del gruppo che ne ha uno
+    const anchor = group.find(gid => byId.get(gid)?.capo_id != null) ?? group[0];
+    const capo = byId.get(anchor)?.capo_id ?? null;
+    if (capo != null && byId.has(capo) && !group.includes(capo) && !inCycle(anchor, capo)) {
+      nodeFor(capo).children.push(tn);
+    } else {
+      roots.push(tn);
+    }
+  }
+
+  const sortByName = (a: TreeNode, b: TreeNode) => a.people[0].cognome.localeCompare(b.people[0].cognome);
   const sortRec = (list: TreeNode[]) => { list.sort(sortByName); list.forEach(n => sortRec(n.children)); };
   sortRec(roots);
   return roots;
@@ -49,36 +89,51 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
   node: TreeNode; colorFor: (n: HrOrgNode) => string; expanded: Set<number>; toggle: (id: number) => void;
   matches: Set<number>; selectedId: number | null; onSelect: (id: number) => void;
 }) {
-  const isOpen = expanded.has(node.id);
+  // L'id del nodo ai fini di espandi/comprimi è quello del primo membro — stabile
+  // finché il cluster di co-responsabili resta lo stesso.
+  const nodeId = node.people[0].id;
+  const isOpen = expanded.has(nodeId);
   const hasChildren = node.children.length > 0;
-  const isMatch = matches.has(node.id);
-  const isSelected = selectedId === node.id;
+  const isCluster = node.people.length > 1;
 
   return (
     <li>
       <div className="relative">
         <div
-          onClick={() => onSelect(node.id)}
-          title={node.mansione ?? undefined}
-          className={`org-node inline-flex flex-col items-center gap-0.5 bg-white border-2 rounded-md px-1 py-1.5 w-[78px] cursor-pointer shadow-sm transition-all hover:shadow-md
-            ${isSelected ? 'border-blue-500 ring-2 ring-blue-100' : isMatch ? 'border-amber-400' : 'border-gray-200'}`}
+          title={node.people.map(p => p.mansione).filter(Boolean).join(' · ') || undefined}
+          className={`org-node inline-flex bg-white border-2 border-gray-200 rounded-md shadow-sm transition-all hover:shadow-md
+            ${isCluster ? '' : 'flex-col items-center px-1 py-1.5 w-[78px] gap-0.5'}`}
         >
-          <div
-            className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-semibold shrink-0"
-            style={{ background: colorFor(node) }}
-          >
-            {initials(node.nome, node.cognome)}
-          </div>
-          <div className="text-center leading-tight w-full">
-            <p className={`text-[11px] font-medium break-words ${isMatch ? 'text-amber-700' : 'text-gray-800'}`}>{node.cognome}</p>
-            <p className="text-[10px] text-gray-500 break-words">{node.nome}</p>
-          </div>
-          {node.stato !== 'attivo' && <span className="text-[10px] text-amber-600 font-medium">{node.stato}</span>}
+          {node.people.map((p, i) => {
+            const isMatch = matches.has(p.id);
+            const isSelected = selectedId === p.id;
+            return (
+              <div
+                key={p.id}
+                onClick={() => onSelect(p.id)}
+                className={`flex flex-col items-center gap-0.5 cursor-pointer rounded
+                  ${isCluster ? `px-1 py-1.5 w-[78px] ${i > 0 ? 'border-l border-gray-200' : ''}` : ''}
+                  ${isSelected ? 'ring-2 ring-blue-200' : ''}`}
+              >
+                <div
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-semibold shrink-0"
+                  style={{ background: colorFor(p), outline: isSelected ? '2px solid #3b82f6' : isMatch ? '2px solid #f59e0b' : undefined }}
+                >
+                  {initials(p.nome, p.cognome)}
+                </div>
+                <div className="text-center leading-tight w-full">
+                  <p className={`text-[11px] font-medium break-words ${isMatch ? 'text-amber-700' : 'text-gray-800'}`}>{p.cognome}</p>
+                  <p className="text-[10px] text-gray-500 break-words">{p.nome}</p>
+                </div>
+                {p.stato !== 'attivo' && <span className="text-[10px] text-amber-600 font-medium">{p.stato}</span>}
+              </div>
+            );
+          })}
         </div>
 
         {hasChildren && (
           <button
-            onClick={(e) => { e.stopPropagation(); toggle(node.id); }}
+            onClick={(e) => { e.stopPropagation(); toggle(nodeId); }}
             title={isOpen ? 'Comprimi' : `Espandi (${node.children.length})`}
             className="absolute top-full mt-0.5 left-1/2 -translate-x-1/2 z-20 w-6 h-6 rounded-full bg-white border border-gray-300 text-[11px] font-medium cursor-pointer
               flex items-center justify-center text-gray-500 hover:border-blue-400 hover:text-blue-600 shadow-sm transition-colors"
@@ -91,7 +146,7 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
       {isOpen && hasChildren && (
         <ul>
           {node.children.map(c => (
-            <OrgCard key={c.id} node={c} colorFor={colorFor} expanded={expanded} toggle={toggle} matches={matches} selectedId={selectedId} onSelect={onSelect} />
+            <OrgCard key={c.people[0].id} node={c} colorFor={colorFor} expanded={expanded} toggle={toggle} matches={matches} selectedId={selectedId} onSelect={onSelect} />
           ))}
         </ul>
       )}
@@ -106,11 +161,18 @@ export default function OrganigrammaPage() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pairs, setPairs] = useState<HrCapoPair[]>([]);
 
+  // Le coppie di co-responsabili si gestiscono dalla ficha del dipendente
+  // (campo "Co-responsabile" nella modifica) — qui si leggono solo per disegnarle.
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`${BACKEND}/api/hr/org-chart`, { credentials: 'include' });
-    if (res.ok) setAllNodes(await res.json());
+    const [orgRes, pairsRes] = await Promise.all([
+      fetch(`${BACKEND}/api/hr/org-chart`, { credentials: 'include' }),
+      fetch(`${BACKEND}/api/hr/capo-pairs`, { credentials: 'include' }),
+    ]);
+    if (orgRes.ok) setAllNodes(await orgRes.json());
+    if (pairsRes.ok) setPairs(await pairsRes.json());
     setLoading(false);
   }, []);
 
@@ -180,12 +242,12 @@ export default function OrganigrammaPage() {
     return nodes.filter(n => keep.has(n.id));
   }, [nodes, search, matchIds]);
 
-  const tree = useMemo(() => buildTree(viewNodes), [viewNodes]);
+  const tree = useMemo(() => buildTree(viewNodes, pairs), [viewNodes, pairs]);
 
   // Profondità di ogni persona nell'albero visualizzato (0 = radice) e numero di livelli
   const depthOf = useMemo(() => {
     const m = new Map<number, number>();
-    const walk = (list: TreeNode[], d: number) => list.forEach(n => { m.set(n.id, d); walk(n.children, d + 1); });
+    const walk = (list: TreeNode[], d: number) => list.forEach(n => { n.people.forEach(p => m.set(p.id, d)); walk(n.children, d + 1); });
     walk(tree, 0);
     return m;
   }, [tree]);
@@ -205,6 +267,8 @@ export default function OrganigrammaPage() {
   }
 
   const selected = selectedId != null ? byId.get(selectedId) : null;
+  // Catena dei responsabili principali verso l'alto (il primo di capo_ids per ciascuno);
+  // eventuali co-responsabili allo stesso livello si vedono nel box dell'organigramma.
   const superiors = useMemo(() => {
     if (!selected) return [];
     const chain: HrOrgNode[] = [];
@@ -214,6 +278,15 @@ export default function OrganigrammaPage() {
     return chain;
   }, [selected, byId]);
   const directReports = useMemo(() => selected ? nodes.filter(n => n.capo_id === selected.id) : [], [selected, nodes]);
+  // Partner della persona selezionata, se fa parte di una coppia di co-responsabili configurata
+  const coCapi = useMemo(() => {
+    if (!selected) return [];
+    const partnerId = pairs.find(p => p.employee_a_id === selected.id)?.employee_b_id
+      ?? pairs.find(p => p.employee_b_id === selected.id)?.employee_a_id;
+    if (partnerId == null) return [];
+    const partner = byId.get(partnerId);
+    return partner ? [partner] : [];
+  }, [selected, byId, pairs]);
 
   return (
     <div className="space-y-4">
@@ -257,7 +330,7 @@ export default function OrganigrammaPage() {
           ) : (
             <ul className="org-tree mx-auto w-max">
               {tree.map(n => (
-                <OrgCard key={n.id} node={n} colorFor={colorFor} expanded={expanded} toggle={toggle} matches={matchIds} selectedId={selectedId} onSelect={setSelectedId} />
+                <OrgCard key={n.people[0].id} node={n} colorFor={colorFor} expanded={expanded} toggle={toggle} matches={matchIds} selectedId={selectedId} onSelect={setSelectedId} />
               ))}
             </ul>
           )}
@@ -279,6 +352,19 @@ export default function OrganigrammaPage() {
                 </div>
               </div>
               <Link href={`/hr/dipendenti/${selected.id}`} className="btn-secondary text-sm inline-block">Vedi scheda completa →</Link>
+
+              {coCapi.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-1.5">Co-responsabile</p>
+                  <div className="space-y-1">
+                    {coCapi.map(s => (
+                      <button key={s.id} onClick={() => setSelectedId(s.id)} className="btn-secondary text-xs flex items-center gap-1.5 w-full text-left">
+                        {s.cognome} {s.nome} {s.mansione && <span className="text-xs text-gray-400">— {s.mansione}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {superiors.length > 0 && (
                 <div>

@@ -8,7 +8,7 @@ import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTa
 import { EditEmployeeModal } from './EditEmployeeModal';
 import { EventTimeline } from './EventTimeline';
 import { SalaryHistory } from './SalaryHistory';
-import { tagBadgeClass } from '@/lib/tagColors';
+import { tagBadgeStyle } from '@/lib/tagColors';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -112,10 +112,18 @@ export default function EmployeeDetailPage() {
         <h1 className="text-xl font-semibold text-gray-900">{employee.cognome} {employee.nome}</h1>
         <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${STATO_COLOR[employee.stato]}`}>{STATO_LABEL[employee.stato]}</span>
         {employee.tag_name && (
-          <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${tagBadgeClass(employee.tag_color)}`}>{employee.tag_name}</span>
+          <span
+            className={`text-xs font-medium px-2.5 py-1 rounded-full border ${tagBadgeStyle(employee.tag_color).className}`}
+            style={tagBadgeStyle(employee.tag_color).style}
+          >
+            {employee.tag_name}
+          </span>
         )}
         {employee.in_prova && (
-          <span className="text-xs font-medium px-2.5 py-1 rounded-full border bg-blue-50 text-blue-700 border-blue-200">In prova</span>
+          <span className="text-xs font-medium px-2.5 py-1 rounded-md border bg-blue-50 text-blue-700 border-blue-200">In prova</span>
+        )}
+        {employee.l68 && (
+          <span className="text-xs font-medium px-2.5 py-1 rounded-md border bg-indigo-50 text-indigo-700 border-indigo-200">Legge 68</span>
         )}
       </div>
 
@@ -142,6 +150,27 @@ export default function EmployeeDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
         {/* Colonna sinistra: dati della persona */}
         <div className="lg:col-span-2 space-y-5">
+          <InfoCard title="Anagrafica e contatti">
+            <Field label="Sesso" value={employee.sesso} />
+            <Field label="Data di nascita" value={employee.data_nascita ? `${fmtDate(employee.data_nascita)}${employee.eta != null ? ` (${employee.eta} anni)` : ''}` : null} />
+            <Field label="Nazionalità" value={employee.nazionalita} />
+            <Field label="Codice fiscale" value={employee.codice_fiscale} />
+            <Field label="Email" value={employee.email} />
+            <Field label="Telefono" value={employee.telefono} />
+            <Field label="Indirizzo" value={employee.indirizzo} />
+            {employee.note && <Field label="Note" value={employee.note} />}
+          </InfoCard>
+
+          <InfoCard title="Contratto">
+            <Field label="Matricola" value={employee.matricola} />
+            <Field label="Società" value={employee.contract_company_name} />
+            <Field label="Categoria" value={employee.categoria} />
+            <Field label="Tipologia" value={employee.tipo_contratto} />
+            <Field label="Data assunzione" value={fmtDate(employee.data_assunzione)} />
+            <Field label="Anzianità" value={`${employee.anzianita_anni} ${employee.anzianita_anni === 1 ? 'anno' : 'anni'}`} />
+            {employee.data_cessazione && <Field label="Fine contratto / cessazione" value={fmtDate(employee.data_cessazione)} />}
+          </InfoCard>
+
           <InfoCard title="Lavoro">
             <Field label="Funzione aziendale" value={employee.funzione_aziendale} />
             <Field label="Reparto" value={employee.reparto_name} />
@@ -152,29 +181,6 @@ export default function EmployeeDetailPage() {
               ? <Link href={`/hr/dipendenti/${employee.capo_id}`} className="btn-secondary text-xs">{employee.capo_nome}</Link>
               : null} />
             <Field label="Riporti diretti" value={employee.n_riporti > 0 ? persone(employee.n_riporti) : null} />
-          </InfoCard>
-
-          <InfoCard title="Contratto">
-            <Field label="Matricola" value={employee.matricola} />
-            <Field label="Società" value={employee.contract_company_name} />
-            <Field label="Categoria" value={employee.categoria} />
-            <Field label="Tipologia" value={employee.tipo_contratto} />
-            <Field label="Legge 68" value={employee.l68 ? 'Sì' : 'No'} />
-            <Field label="In prova" value={employee.in_prova ? 'Sì' : 'No'} />
-            <Field label="Data assunzione" value={fmtDate(employee.data_assunzione)} />
-            <Field label="Anzianità" value={`${employee.anzianita_anni} ${employee.anzianita_anni === 1 ? 'anno' : 'anni'}`} />
-            {employee.data_cessazione && <Field label="Fine contratto / cessazione" value={fmtDate(employee.data_cessazione)} />}
-          </InfoCard>
-
-          <InfoCard title="Anagrafica e contatti">
-            <Field label="Sesso" value={employee.sesso} />
-            <Field label="Data di nascita" value={employee.data_nascita ? `${fmtDate(employee.data_nascita)}${employee.eta != null ? ` (${employee.eta} anni)` : ''}` : null} />
-            <Field label="Nazionalità" value={employee.nazionalita} />
-            <Field label="Codice fiscale" value={employee.codice_fiscale} />
-            <Field label="Email" value={employee.email} />
-            <Field label="Telefono" value={employee.telefono} />
-            <Field label="Indirizzo" value={employee.indirizzo} />
-            {employee.note && <Field label="Note" value={employee.note} />}
           </InfoCard>
         </div>
 

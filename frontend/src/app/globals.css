@@ -39,6 +39,29 @@ body {
   @apply bg-gray-200 rounded animate-pulse;
 }
 
+/* Tabelle larghe e lunghe con scroll sia verticale che orizzontale nello stesso
+   riquadro ad altezza fissa (es. dipendenti HR): barre più spesse e sempre visibili
+   appena sotto l'ultima riga visibile, non in fondo a centinaia di righe. */
+.hr-table-scroll {
+  scrollbar-width: auto;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+.hr-table-scroll::-webkit-scrollbar {
+  height: 12px;
+  width: 12px;
+}
+.hr-table-scroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+.hr-table-scroll::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 6px;
+  border: 2px solid #f1f5f9;
+}
+.hr-table-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+
 /* Scrollbar moderna e sottile per il menu laterale: track trasparente, thumb
    scuro che si illumina solo in hover, così sembra parte del menu. */
 .sidebar-scroll {

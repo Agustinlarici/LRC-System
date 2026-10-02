@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { HrEmployeeTag } from '@/types';
-import { TAG_COLOR_OPTIONS, tagDotClass } from '@/lib/tagColors';
+import { TAG_COLOR_OPTIONS, tagDotStyle, isCustomColor } from '@/lib/tagColors';
 import { useToast } from '@/components/ui/Toast';
 
 const BACKEND = typeof window !== 'undefined'
@@ -73,7 +73,7 @@ export function TagsSettingsModal({ tags, onClose, onChanged }: Props) {
             {tags.length === 0 && <p className="text-sm text-gray-400">Nessuna etichetta creata.</p>}
             {tags.map(t => (
               <div key={t.id} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border border-gray-200 ${t.is_active ? '' : 'opacity-50'}`}>
-                <span className={`w-3 h-3 rounded-full shrink-0 ${tagDotClass(t.color)}`} />
+                <span className={`w-3 h-3 rounded-full shrink-0 ${tagDotStyle(t.color).className}`} style={tagDotStyle(t.color).style} />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-gray-800 truncate">{t.name}</p>
                   {t.description && <p className="text-xs text-gray-500 truncate">{t.description}</p>}
@@ -92,13 +92,24 @@ export function TagsSettingsModal({ tags, onClose, onChanged }: Props) {
             <div><label className="label">Significato (facoltativo)</label><input className="input" value={description} onChange={e => setDescription(e.target.value)} placeholder="Spiega quando usarla" /></div>
             <div>
               <label className="label">Colore</label>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {TAG_COLOR_OPTIONS.map(c => (
                   <button
                     key={c.key} type="button" onClick={() => setColor(c.key)} title={c.label}
-                    className={`w-7 h-7 rounded-full ${c.dot} ${color === c.key ? 'ring-2 ring-offset-2 ring-gray-400' : ''}`}
+                    style={{ backgroundColor: c.dot }}
+                    className={`w-7 h-7 rounded-full ${color === c.key ? 'ring-2 ring-offset-2 ring-gray-400' : ''}`}
                   />
                 ))}
+                <div className="relative w-7 h-7">
+                  <input
+                    type="color"
+                    value={isCustomColor(color) ? color : '#94a3b8'}
+                    onChange={ev => setColor(ev.target.value)}
+                    title="Colore personalizzato"
+                    className={`w-7 h-7 rounded-full cursor-pointer border-0 p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-full [&::-webkit-color-swatch]:border-0 ${isCustomColor(color) ? 'ring-2 ring-offset-2 ring-gray-400' : ''}`}
+                  />
+                  <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-white text-sm font-bold [text-shadow:0_0_2px_rgba(0,0,0,0.6)]">+</span>
+                </div>
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-1">

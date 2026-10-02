@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
@@ -8,7 +8,7 @@ import { ImportExcelButton, type ImportResult } from '@/components/ui/ImportExce
 import { NewEmployeeModal } from './NewEmployeeModal';
 import { TagsSettingsModal } from './TagsSettingsModal';
 import { usePromptDialog, useChoiceDialog, SKIP_ALL } from '@/components/ui/PromptDialog';
-import { tagDotClass } from '@/lib/tagColors';
+import { tagDotStyle } from '@/lib/tagColors';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -93,6 +93,41 @@ export default function DipendentiPage() {
   const { ask, dialog: promptDialog } = usePromptDialog();
   const { choose, dialog: choiceDialog } = useChoiceDialog();
 
+  // Intestazione "congelata" fuori dall'area che scorre in verticale (invece di
+  // position:sticky, che su Chrome dentro un contenitore overflow con bordi arrotondati
+  // ha un bug di rendering visibile: righe che sembrano passare sopra l'intestazione).
+  // Lo scroll orizzontale dei due blocchi resta sincronizzato via JS.
+  const tableRef = useRef<HTMLDivElement>(null);
+  const headerScrollRef = useRef<HTMLDivElement>(null);
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
+  const [bodyMaxHeight, setBodyMaxHeight] = useState(440);
+  useEffect(() => {
+    function recompute() {
+      if (!tableRef.current || !headerScrollRef.current) return;
+      const top = tableRef.current.getBoundingClientRect().top;
+      const headerHeight = headerScrollRef.current.getBoundingClientRect().height;
+      setBodyMaxHeight(Math.max(200, window.innerHeight - top - headerHeight - 16));
+    }
+    recompute();
+    window.addEventListener('resize', recompute);
+    return () => window.removeEventListener('resize', recompute);
+  }, []);
+  function syncHeaderScroll() {
+    if (headerScrollRef.current && bodyScrollRef.current) {
+      headerScrollRef.current.scrollLeft = bodyScrollRef.current.scrollLeft;
+    }
+  }
+
+  // Ricarica leggera: solo l'elenco dipendenti, senza far sparire la tabella dietro
+  // "Caricamento…" — usata dopo azioni rapide (etichetta, avviso) che non toccano i cataloghi.
+  const refreshEmployees = useCallback(async () => {
+    const params = new URLSearchParams();
+    if (repartoFilter) params.set('reparto_id', String(repartoFilter));
+    if (statoFilter) params.set('stato', statoFilter);
+    const res = await fetch(`${BACKEND}/api/hr/employees?${params}`, { credentials: 'include' });
+    if (res.ok) setEmployees(await res.json());
+  }, [repartoFilter, statoFilter]);
+
   const load = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
@@ -148,7 +183,7 @@ export default function DipendentiPage() {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ tag_id: tagId }),
     });
-    if (res.ok) load();
+    if (res.ok) refreshEmployees();
   }
 
   async function clearImportWarning(employeeId: number) {
@@ -156,7 +191,7 @@ export default function DipendentiPage() {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ import_warning: null }),
     });
-    if (res.ok) load();
+    if (res.ok) refreshEmployees();
   }
 
   async function importRows(rows: Record<string, string>[]): Promise<ImportResult> {
@@ -490,59 +525,59 @@ export default function DipendentiPage() {
           <input value={fCognome} onChange={e => setFCognome(e.target.value)} placeholder="Cognome" className="input text-sm min-w-0" />
           <input value={fNome} onChange={e => setFNome(e.target.value)} placeholder="Nome" className="input text-sm min-w-0" />
           <input value={fMatricola} onChange={e => setFMatricola(e.target.value)} placeholder="Matricola" className="input text-sm min-w-0" />
-          <select value={fSesso} onChange={e => setFSesso(e.target.value)} className="input text-sm min-w-0">
+          <select value={fSesso} onChange={e => setFSesso(e.target.value)} className={`input text-sm min-w-0 ${fSesso ? '' : 'text-gray-400'}`}>
             <option value="">Sesso</option>
-            <option value="M">M</option>
-            <option value="F">F</option>
+            <option value="M" className="text-gray-900">M</option>
+            <option value="F" className="text-gray-900">F</option>
           </select>
-          <select value={fCategoria} onChange={e => setFCategoria(e.target.value)} className="input text-sm min-w-0">
+          <select value={fCategoria} onChange={e => setFCategoria(e.target.value)} className={`input text-sm min-w-0 ${fCategoria ? '' : 'text-gray-400'}`}>
             <option value="">Categoria</option>
-            {categorie.map(c => <option key={c} value={c}>{c}</option>)}
+            {categorie.map(c => <option key={c} value={c} className="text-gray-900">{c}</option>)}
           </select>
-          <select value={societaFilter} onChange={e => setSocietaFilter(e.target.value ? Number(e.target.value) : '')} className="input text-sm min-w-0">
+          <select value={societaFilter} onChange={e => setSocietaFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${societaFilter ? '' : 'text-gray-400'}`}>
             <option value="">Società contratto</option>
-            {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {companies.map(c => <option key={c.id} value={c.id} className="text-gray-900">{c.name}</option>)}
           </select>
           <input value={fNazionalita} onChange={e => setFNazionalita(e.target.value)} placeholder="Nazionalità" className="input text-sm min-w-0" />
-          <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className="input text-sm min-w-0">
+          <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className={`input text-sm min-w-0 ${funzioneFilter ? '' : 'text-gray-400'}`}>
             <option value="">Funzione</option>
-            {funzioni.map(f => <option key={f} value={f}>{f}</option>)}
+            {funzioni.map(f => <option key={f} value={f} className="text-gray-900">{f}</option>)}
           </select>
-          <select value={repartoFilter} onChange={e => setRepartoFilter(e.target.value ? Number(e.target.value) : '')} className="input text-sm min-w-0">
+          <select value={repartoFilter} onChange={e => setRepartoFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${repartoFilter ? '' : 'text-gray-400'}`}>
             <option value="">Reparto</option>
-            {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            {departments.map(d => <option key={d.id} value={d.id} className="text-gray-900">{d.name}</option>)}
           </select>
-          <select value={plantFilter} onChange={e => setPlantFilter(e.target.value ? Number(e.target.value) : '')} className="input text-sm min-w-0">
+          <select value={plantFilter} onChange={e => setPlantFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${plantFilter ? '' : 'text-gray-400'}`}>
             <option value="">Plant</option>
-            {plants.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {plants.map(p => <option key={p.id} value={p.id} className="text-gray-900">{p.name}</option>)}
           </select>
           <input value={fMansione} onChange={e => setFMansione(e.target.value)} placeholder="Mansione" className="input text-sm min-w-0" />
           <input value={fLivello} onChange={e => setFLivello(e.target.value)} placeholder="Livello" className="input text-sm min-w-0" />
           <input value={fResp} onChange={e => setFResp(e.target.value)} placeholder="Responsabile" className="input text-sm min-w-0" />
-          <select value={fTipoContratto} onChange={e => setFTipoContratto(e.target.value)} className="input text-sm min-w-0">
+          <select value={fTipoContratto} onChange={e => setFTipoContratto(e.target.value)} className={`input text-sm min-w-0 ${fTipoContratto ? '' : 'text-gray-400'}`}>
             <option value="">Tipo contratto</option>
-            {tipiContratto.map(t => <option key={t} value={t}>{t}</option>)}
+            {tipiContratto.map(t => <option key={t} value={t} className="text-gray-900">{t}</option>)}
           </select>
-          <select value={tagFilter} onChange={e => setTagFilter(e.target.value ? Number(e.target.value) : '')} className="input text-sm min-w-0">
+          <select value={tagFilter} onChange={e => setTagFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${tagFilter ? '' : 'text-gray-400'}`}>
             <option value="">Etichetta</option>
-            {tags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            {tags.map(t => <option key={t.id} value={t.id} className="text-gray-900">{t.name}</option>)}
           </select>
-          <select value={inProvaFilter} onChange={e => setInProvaFilter(e.target.value as '' | 'si' | 'no')} className="input text-sm min-w-0">
+          <select value={inProvaFilter} onChange={e => setInProvaFilter(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${inProvaFilter ? '' : 'text-gray-400'}`}>
             <option value="">In prova</option>
-            <option value="si">Sì</option>
-            <option value="no">No</option>
+            <option value="si" className="text-gray-900">Sì</option>
+            <option value="no" className="text-gray-900">No</option>
           </select>
-          <select value={statoFilter} onChange={e => setStatoFilter(e.target.value)} className="input text-sm min-w-0">
+          <select value={statoFilter} onChange={e => setStatoFilter(e.target.value)} className={`input text-sm min-w-0 ${statoFilter ? '' : 'text-gray-400'}`}>
             <option value="">Stato</option>
-            {STATO_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {STATO_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value} className="text-gray-900">{o.label}</option>)}
           </select>
         </div>
       </div>
 
-      <div className="card overflow-x-auto p-0">
-        <div style={{ minWidth: 1700 }}>
-          <div className="grid gap-x-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide"
-            style={{ gridTemplateColumns: GRID_COLS }}>
+      <div ref={tableRef} className="card p-0 overflow-hidden">
+        <div ref={headerScrollRef} className="overflow-x-hidden">
+          <div className="grid gap-x-3 px-4 py-2.5 bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-400 uppercase tracking-wide"
+            style={{ gridTemplateColumns: GRID_COLS, minWidth: 1700 }}>
             <div />
             <div>Cognome</div><div>Nome</div><div>Matricola</div><div>Sesso</div><div>Categoria</div>
             <div>Società</div><div>Nazionalità</div><div>Funzione</div><div>Reparto</div><div>Plant</div>
@@ -550,13 +585,16 @@ export default function DipendentiPage() {
             <div>Assunzione</div><div>Cessazione</div><div className="text-center">Prova</div>
             <div className="text-center">Stato</div><div />
           </div>
+        </div>
+        <div ref={bodyScrollRef} onScroll={syncHeaderScroll} className="hr-table-scroll overflow-auto" style={{ maxHeight: bodyMaxHeight }}>
+        <div style={{ minWidth: 1700 }}>
           {loading ? (
             <p className="text-sm text-gray-400 text-center py-12">Caricamento…</p>
           ) : visible.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-12">Nessun dipendente trovato</p>
           ) : visible.map(e => (
             <Link key={e.id} href={`/hr/dipendenti/${e.id}`}
-              className="grid gap-x-3 px-4 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50 transition-colors items-center relative"
+              className="relative z-0 grid gap-x-3 px-4 py-3 border-b border-gray-50 last:border-b-0 bg-white hover:bg-gray-50 transition-colors items-center"
               style={{ gridTemplateColumns: GRID_COLS }}
             >
               <div className="relative">
@@ -564,17 +602,18 @@ export default function DipendentiPage() {
                   type="button"
                   title={e.tag_name ? `${e.tag_name}${manage ? ' — clicca per cambiare' : ''}` : (manage ? 'Assegna etichetta' : 'Nessuna etichetta')}
                   onClick={ev => { if (!manage) return; ev.preventDefault(); ev.stopPropagation(); setTagMenuFor(tagMenuFor === e.id ? null : e.id); }}
-                  className={`w-3 h-3 rounded-full ${tagDotClass(e.tag_color)} ${manage ? 'cursor-pointer' : ''}`}
+                  className={`w-3 h-3 rounded-full ${tagDotStyle(e.tag_color).className} ${manage ? 'cursor-pointer' : ''}`}
+                  style={tagDotStyle(e.tag_color).style}
                 />
                 {tagMenuFor === e.id && (
                   <div
                     onClick={ev => { ev.preventDefault(); ev.stopPropagation(); }}
-                    className="absolute z-10 top-5 left-0 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-44 text-sm"
+                    className="absolute z-20 top-5 left-0 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-44 text-sm"
                   >
                     <button type="button" onClick={() => setEmployeeTag(e.id, null)} className="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-gray-500">Nessuna</button>
                     {tags.filter(t => t.is_active).map(t => (
                       <button key={t.id} type="button" onClick={() => setEmployeeTag(e.id, t.id)} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-gray-50">
-                        <span className={`w-2.5 h-2.5 rounded-full ${tagDotClass(t.color)}`} />{t.name}
+                        <span className={`w-2.5 h-2.5 rounded-full ${tagDotStyle(t.color).className}`} style={tagDotStyle(t.color).style} />{t.name}
                       </button>
                     ))}
                   </div>
@@ -613,6 +652,7 @@ export default function DipendentiPage() {
               </div>
             </Link>
           ))}
+        </div>
         </div>
       </div>
 

@@ -147,11 +147,18 @@ serve({ fetch: app.fetch, port }, async (info) => {
     .then(n => { if (n > 0) logger.info(`[Startup] Auto-turni: ${n} linee aggiornate per ${todayStr}`); })
     .catch(e => logger.warn(`[Startup] Auto-turni: ${e}`));
 
-  startScheduler();
-  startWatcher();
+  // Ambiente di test sullo stesso server di produzione: DISABLE_BACKGROUND_JOBS=true
+  // spegne scheduler, watcher cartelle, bot Telegram e sync esterni (WebThron/BC).
+  const backgroundJobs = process.env.DISABLE_BACKGROUND_JOBS !== 'true';
+  if (!backgroundJobs) logger.warn('[Startup] DISABLE_BACKGROUND_JOBS=true — job in background disattivati');
 
-  // Telegram bot: parte subito, non dipende dal sync
-  startTelegramBot();
+  if (backgroundJobs) {
+    startScheduler();
+    startWatcher();
+
+    // Telegram bot: parte subito, non dipende dal sync
+    startTelegramBot();
+  }
 
   // Cache da PostgreSQL locale — nessuna dipendenza da WebThron, parte subito
   logger.info('[Startup] Cache executive da PostgreSQL...');
@@ -190,10 +197,12 @@ serve({ fetch: app.fetch, port }, async (info) => {
 
     // 4. Lookup tables: refresh se vuote.
     const [{ count }] = await db`SELECT COUNT(*) AS count FROM webthron_lookup_fasi`;
-    if (Number(count) === 0) {
+    if (backgroundJobs && Number(count) === 0) {
       logger.info('[Startup] Lookup tables vuote — refresh iniziale (bassa priorità)...');
       refreshLookupTables().catch(e => logger.warn(`[Startup] Lookup refresh: ${e}`));
     }
+
+    if (!backgroundJobs) return;
 
     // 5. Primo sync WebThron: parte dopo 10 minuti dall'avvio.
     setNextRun('sync_incremental', new Date(Date.now() + 10 * 60_000));

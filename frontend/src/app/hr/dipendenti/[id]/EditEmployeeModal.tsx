@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
+import { useState, useEffect } from 'react';
+import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag, HrCapoPair } from '@/types';
 import { PlantMultiSelect } from '../PlantMultiSelect';
 
 // Il set di stati validi è stato ridotto a questi 3: "aspettativa" e "malattia" restano
@@ -63,6 +63,24 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
+  // Coppia di co-responsabile: due persone che guidano insieme lo stesso team —
+  // compaiono affiancate nell'organigramma. Si gestisce qui, non in una pagina a parte.
+  const [existingPair, setExistingPair] = useState<HrCapoPair | null>(null);
+  const [coResponsabileId, setCoResponsabileId] = useState('');
+  useEffect(() => {
+    if (!fullManage) return;
+    (async () => {
+      const res = await fetch(`${BACKEND}/api/hr/capo-pairs`, { credentials: 'include' });
+      if (!res.ok) return;
+      const pairs: HrCapoPair[] = await res.json();
+      const mine = pairs.find(p => p.employee_a_id === employee.id || p.employee_b_id === employee.id);
+      if (mine) {
+        setExistingPair(mine);
+        setCoResponsabileId(String(mine.employee_a_id === employee.id ? mine.employee_b_id : mine.employee_a_id));
+      }
+    })();
+  }, [fullManage, employee.id]);
+
   function set<K extends keyof typeof form>(key: K, value: string) {
     setForm(f => ({ ...f, [key]: value }));
   }
@@ -92,63 +110,47 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
       credentials: 'include',
       body: JSON.stringify(body),
     });
-    setSaving(false);
-    if (res.ok) onSaved();
-    else {
+    if (!res.ok) {
+      setSaving(false);
       const b = await res.json().catch(() => ({}));
       setError(b.message ?? 'Errore durante il salvataggio');
+      return;
     }
+
+    // Allinea la coppia di co-responsabile solo se è cambiata rispetto a quella esistente.
+    if (fullManage) {
+      const currentPartnerId = existingPair
+        ? (existingPair.employee_a_id === employee.id ? existingPair.employee_b_id : existingPair.employee_a_id)
+        : null;
+      const newPartnerId = coResponsabileId ? Number(coResponsabileId) : null;
+      if (newPartnerId !== currentPartnerId) {
+        if (existingPair) {
+          await fetch(`${BACKEND}/api/hr/capo-pairs/${existingPair.id}`, { method: 'DELETE', credentials: 'include' });
+        }
+        if (newPartnerId) {
+          await fetch(`${BACKEND}/api/hr/capo-pairs`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+            body: JSON.stringify({ employee_a_id: employee.id, employee_b_id: newPartnerId }),
+          });
+        }
+      }
+    }
+
+    setSaving(false);
+    onSaved();
   }
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="max-h-[90vh] overflow-y-auto p-6">
         <h2 className="text-base font-medium text-gray-900 mb-1">Modifica dipendente</h2>
         {!fullManage && <p className="text-xs text-amber-600 mb-4">Puoi modificare solo i dati di contatto del tuo team diretto.</p>}
         <form onSubmit={submit} className="space-y-4">
           {fullManage && (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div><label className="label">Matricola</label><input className="input" value={form.matricola} onChange={e => set('matricola', e.target.value)} placeholder="Vuota per contrattisti/agenzia" /></div>
               <div><label className="label">Cognome</label><input className="input" required value={form.cognome} onChange={e => set('cognome', e.target.value)} /></div>
               <div><label className="label">Nome</label><input className="input" required value={form.nome} onChange={e => set('nome', e.target.value)} /></div>
-              <div><label className="label">Sesso</label>
-                <select className="input" value={form.sesso} onChange={e => set('sesso', e.target.value)}>
-                  <option value="">—</option>
-                  <option value="M">M</option>
-                  <option value="F">F</option>
-                </select>
-              </div>
-              <div><label className="label">Nazionalità</label><input className="input" value={form.nazionalita} onChange={e => set('nazionalita', e.target.value)} /></div>
-              <div><label className="label">Funzione aziendale</label><input className="input" value={form.funzione_aziendale} onChange={e => set('funzione_aziendale', e.target.value)} /></div>
-              <div><label className="label">Reparto</label>
-                <select className="input" value={form.reparto_id} onChange={e => set('reparto_id', e.target.value)}>
-                  <option value="">—</option>
-                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
-              </div>
-              <div className="col-span-full"><label className="label">Plant / Sede (anche più di una)</label>
-                <PlantMultiSelect plants={plants} value={plantIds} onChange={setPlantIds} />
-              </div>
-              <div><label className="label">Responsabile</label>
-                <select className="input" value={form.capo_id} onChange={e => set('capo_id', e.target.value)}>
-                  <option value="">—</option>
-                  {allEmployees.map(e => <option key={e.id} value={e.id}>{e.cognome} {e.nome}</option>)}
-                </select>
-              </div>
-              <div><label className="label">Mansione</label><input className="input" value={form.mansione} onChange={e => set('mansione', e.target.value)} /></div>
-              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer self-end pb-2">
-                <input type="checkbox" checked={l68} onChange={e => setL68(e.target.checked)} />
-                Legge 68 (L.68)
-              </label>
-              <div><label className="label">Livello</label><input className="input" value={form.livello} onChange={e => set('livello', e.target.value)} /></div>
-              <div><label className="label">Categoria</label><input className="input" value={form.categoria} onChange={e => set('categoria', e.target.value)} /></div>
-              <div><label className="label">Società contratto</label>
-                <select className="input" value={form.contract_company_id} onChange={e => set('contract_company_id', e.target.value)}>
-                  <option value="">—</option>
-                  {companies.map(co => <option key={co.id} value={co.id}>{co.name}</option>)}
-                </select>
-              </div>
-              <div><label className="label">Tipo contratto</label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
               <div><label className="label">Stato</label>
                 <select className="input" value={form.stato} onChange={e => set('stato', e.target.value)}>
                   {STATO_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -167,17 +169,97 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
                 <input type="checkbox" checked={inProva} onChange={e => setInProva(e.target.checked)} />
                 In prova
               </label>
-              <div><label className="label">Data cessazione / fine contratto</label>
-                <input type="date" className="input" value={form.data_cessazione} onChange={e => set('data_cessazione', e.target.value)} />
-                <p className="text-[11px] text-gray-400 mt-1">Con stato Cessato, se vuota verrà usata la data di oggi. Una data futura con stato Attivo indica la scadenza del contratto.</p>
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer self-end pb-2">
+                <input type="checkbox" checked={l68} onChange={e => setL68(e.target.checked)} />
+                Legge 68 (L.68)
+              </label>
+            </div>
+          )}
+
+          {fullManage && (
+            <div>
+              <p className="text-sm font-semibold text-gray-700 mb-2">Anagrafica e contatti</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div><label className="label">Sesso</label>
+                  <select className="input" value={form.sesso} onChange={e => set('sesso', e.target.value)}>
+                    <option value="">—</option>
+                    <option value="M">M</option>
+                    <option value="F">F</option>
+                  </select>
+                </div>
+                <div><label className="label">Nazionalità</label><input className="input" value={form.nazionalita} onChange={e => set('nazionalita', e.target.value)} /></div>
               </div>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className="label">Telefono</label><input className="input" value={form.telefono} onChange={e => set('telefono', e.target.value)} /></div>
-            <div><label className="label">Email</label><input type="email" className="input" value={form.email} onChange={e => set('email', e.target.value)} /></div>
-            <div className="col-span-2"><label className="label">Indirizzo</label><input className="input" value={form.indirizzo} onChange={e => set('indirizzo', e.target.value)} /></div>
-            <div className="col-span-2"><label className="label">Note</label><textarea className="input" rows={2} value={form.note} onChange={e => set('note', e.target.value)} /></div>
+
+          {fullManage && (
+            <div>
+              <p className="text-sm font-semibold text-gray-700 mb-2">Contratto</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div><label className="label">Matricola</label><input className="input" value={form.matricola} onChange={e => set('matricola', e.target.value)} placeholder="Vuota per contrattisti/agenzia" /></div>
+                <div><label className="label">Società contratto</label>
+                  <select className="input" value={form.contract_company_id} onChange={e => set('contract_company_id', e.target.value)}>
+                    <option value="">—</option>
+                    {companies.map(co => <option key={co.id} value={co.id}>{co.name}</option>)}
+                  </select>
+                </div>
+                <div><label className="label">Categoria</label><input className="input" value={form.categoria} onChange={e => set('categoria', e.target.value)} /></div>
+                <div><label className="label">Tipo contratto</label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
+                <div><label className="label">Data cessazione / fine contratto</label>
+                  <input type="date" className="input" value={form.data_cessazione} onChange={e => set('data_cessazione', e.target.value)} />
+                  <p className="text-[11px] text-gray-400 mt-1">Con stato Cessato, se vuota verrà usata la data di oggi. Una data futura con stato Attivo indica la scadenza del contratto.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {fullManage && (
+            <div>
+              <p className="text-sm font-semibold text-gray-700 mb-2">Lavoro</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div><label className="label">Funzione aziendale</label><input className="input" value={form.funzione_aziendale} onChange={e => set('funzione_aziendale', e.target.value)} /></div>
+                <div><label className="label">Reparto</label>
+                  <select className="input" value={form.reparto_id} onChange={e => set('reparto_id', e.target.value)}>
+                    <option value="">—</option>
+                    {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </div>
+                <div className="col-span-full"><label className="label">Plant / Sede (anche più di una)</label>
+                  <PlantMultiSelect plants={plants} value={plantIds} onChange={setPlantIds} />
+                </div>
+                <div><label className="label">Mansione</label><input className="input" value={form.mansione} onChange={e => set('mansione', e.target.value)} /></div>
+                <div><label className="label">Livello</label><input className="input" value={form.livello} onChange={e => set('livello', e.target.value)} /></div>
+                <div><label className="label">Responsabile</label>
+                  <select className="input" value={form.capo_id} onChange={e => set('capo_id', e.target.value)}>
+                    <option value="">—</option>
+                    {allEmployees.map(e => <option key={e.id} value={e.id}>{e.cognome} {e.nome}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+          {fullManage && (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+              <p className="text-sm font-medium text-gray-700">{employee.nome} guida un team insieme a un&apos;altra persona?</p>
+              <p className="text-xs text-gray-500 mt-0.5 mb-2">
+                Usalo solo se {employee.nome} è responsabile di qualcuno e condivide quel team con un&apos;altra persona (co-responsabili).
+                Le due persone compariranno affiancate nell&apos;organigramma, separate da una riga sottile, con lo stesso team sotto a entrambe.
+                Non serve per indicare un secondo responsabile di {employee.nome}.
+              </p>
+              <select className="input text-sm max-w-xs" value={coResponsabileId} onChange={e => setCoResponsabileId(e.target.value)}>
+                <option value="">Nessun co-responsabile</option>
+                {allEmployees.map(e => <option key={e.id} value={e.id}>Insieme a {e.cognome} {e.nome}</option>)}
+              </select>
+            </div>
+          )}
+          <div>
+            {fullManage && <p className="text-sm font-semibold text-gray-700 mb-2">Contatti</p>}
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="label">Telefono</label><input className="input" value={form.telefono} onChange={e => set('telefono', e.target.value)} /></div>
+              <div><label className="label">Email</label><input type="email" className="input" value={form.email} onChange={e => set('email', e.target.value)} /></div>
+              <div className="col-span-2"><label className="label">Indirizzo</label><input className="input" value={form.indirizzo} onChange={e => set('indirizzo', e.target.value)} /></div>
+              <div className="col-span-2"><label className="label">Note</label><textarea className="input" rows={2} value={form.note} onChange={e => set('note', e.target.value)} /></div>
+            </div>
           </div>
 
           {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
@@ -187,6 +269,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
             <button type="submit" disabled={saving} className="btn-primary text-sm">{saving ? 'Salvataggio…' : 'Salva'}</button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );
