@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag, HrCapoPair } from '@/types';
 import { PlantMultiSelect } from '../PlantMultiSelect';
+import { usePromptDialog } from '@/components/ui/PromptDialog';
 
 // Il set di stati validi è stato ridotto a questi 3: "aspettativa" e "malattia" restano
 // nel database solo per chi li aveva già (nessuna migrazione automatica, vedi migrate-hr-tags.sql),
@@ -24,6 +25,7 @@ interface Props {
   plants: HrPlant[];
   companies: HrContractCompany[];
   tags: HrEmployeeTag[];
+  funzioni: string[];
   allEmployees: HrEmployee[];
   fullManage: boolean;
   onClose: () => void;
@@ -32,7 +34,9 @@ interface Props {
 
 // Un capo senza gestione HR completa può aggiornare solo dati di contatto —
 // tutto il resto (reparto, mansione, livello, capo, stato) resta esclusivo di HR.
-export function EditEmployeeModal({ employee, departments, plants, companies, tags, allEmployees, fullManage, onClose, onSaved }: Props) {
+export function EditEmployeeModal({ employee, departments, plants, companies, tags, funzioni: initialFunzioni, allEmployees, fullManage, onClose, onSaved }: Props) {
+  const [funzioni, setFunzioni] = useState(initialFunzioni);
+  const { ask, dialog } = usePromptDialog();
   const [form, setForm] = useState({
     matricola: employee.matricola ?? '',
     nome: employee.nome,
@@ -134,6 +138,14 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
           });
         }
       }
+      // Chi guida lo stesso team insieme deve avere lo stesso responsabile sopra, altrimenti
+      // il/la partner risulterebbe "senza responsabile" nell'organigramma pur avendone uno.
+      if (newPartnerId) {
+        await fetch(`${BACKEND}/api/hr/employees/${newPartnerId}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+          body: JSON.stringify({ capo_id: form.capo_id ? Number(form.capo_id) : null }),
+        });
+      }
     }
 
     setSaving(false);
@@ -141,6 +153,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
   }
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="max-h-[90vh] overflow-y-auto p-6">
@@ -217,7 +230,25 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
             <div>
               <p className="text-sm font-semibold text-gray-700 mb-2">Lavoro</p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div><label className="label">Funzione aziendale</label><input className="input" value={form.funzione_aziendale} onChange={e => set('funzione_aziendale', e.target.value)} /></div>
+                <div><label className="label">Funzione aziendale</label>
+                  <div className="flex gap-1.5">
+                    <select className="input" value={form.funzione_aziendale} onChange={e => set('funzione_aziendale', e.target.value)}>
+                      <option value="">—</option>
+                      {funzioni.map(f => <option key={f} value={f}>{f}</option>)}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const name = await ask({ title: 'Nuova funzione aziendale', label: 'Nome funzione', confirmLabel: 'Usa' });
+                        if (typeof name !== 'string' || !name.trim()) return;
+                        const trimmed = name.trim();
+                        setFunzioni(f => f.includes(trimmed) ? f : [...f, trimmed].sort((a, b) => a.localeCompare(b)));
+                        set('funzione_aziendale', trimmed);
+                      }}
+                      title="Nuova funzione aziendale" className="btn-secondary text-sm px-3 shrink-0"
+                    >+</button>
+                  </div>
+                </div>
                 <div><label className="label">Reparto</label>
                   <select className="input" value={form.reparto_id} onChange={e => set('reparto_id', e.target.value)}>
                     <option value="">—</option>
@@ -244,6 +275,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
               <p className="text-xs text-gray-500 mt-0.5 mb-2">
                 Usalo solo se {employee.nome} è responsabile di qualcuno e condivide quel team con un&apos;altra persona (co-responsabili).
                 Le due persone compariranno affiancate nell&apos;organigramma, separate da una riga sottile, con lo stesso team sotto a entrambe.
+                Il/la co-responsabile prende automaticamente lo stesso "Responsabile" impostato sopra, così la catena resta corretta.
                 Non serve per indicare un secondo responsabile di {employee.nome}.
               </p>
               <select className="input text-sm max-w-xs" value={coResponsabileId} onChange={e => setCoResponsabileId(e.target.value)}>
@@ -272,5 +304,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
         </div>
       </div>
     </div>
+    {dialog}
+    </>
   );
 }

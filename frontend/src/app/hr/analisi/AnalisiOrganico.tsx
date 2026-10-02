@@ -115,7 +115,7 @@ function DataTable({ head, rows, foot }: { head: string[]; rows: (string | numbe
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-gray-200 text-xs text-gray-400 uppercase tracking-wide">
+          <tr className="sticky top-0 bg-white border-b border-gray-200 text-xs text-gray-400 uppercase tracking-wide">
             {head.map((h, i) => <th key={i} className={`py-2 px-2 font-medium ${i === 0 ? 'text-left' : 'text-right'}`}>{h}</th>)}
           </tr>
         </thead>
@@ -141,17 +141,17 @@ function DataTable({ head, rows, foot }: { head: string[]; rows: (string | numbe
 const Empty = () => <p className="text-sm text-gray-400 text-center py-10">Nessun dato</p>;
 
 // Card con grafico o tabella (a seconda della vista globale), stampabile singolarmente
-function Card({ title, hint, chart, table, className = '', canPct = false }: {
-  title: string; hint?: string; chart: (pct: boolean) => React.ReactNode; table: React.ReactNode; className?: string; canPct?: boolean;
+function Card({ title, hint, chart, table, className = '', canPct = false, dense = false }: {
+  title: string; hint?: string; chart: (pct: boolean) => React.ReactNode; table: React.ReactNode; className?: string; canPct?: boolean; dense?: boolean;
 }) {
   const mode = useContext(ModeCtx);
   const [asPct, setAsPct] = useState(false);
 
   return (
-    <div className={`card print-card ${className}`}>
+    <div className={`card print-card ${dense ? '!p-3' : ''} ${className}`}>
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-base font-medium text-gray-700">{title}</p>
+          <p className={`font-medium text-gray-700 ${dense ? 'text-sm' : 'text-base'}`}>{title}</p>
           {hint && <p className="text-xs text-gray-400 mb-2">{hint}</p>}
         </div>
         <div className="flex gap-1.5 d-print-none shrink-0">
@@ -198,11 +198,11 @@ function Donut({ data, colorFor, onSelect, active }: { data: Count[]; colorFor: 
   if (data.length === 0) return <Empty />;
   const total = data.reduce((s, d) => s + d.value, 0);
   return (
-    <div className="flex items-center gap-4 flex-wrap">
-      <div className="relative w-32 h-32 shrink-0">
+    <div className="flex items-center gap-2">
+      <div className="relative w-20 h-20 shrink-0">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-            <Pie data={data} dataKey="value" nameKey="name" innerRadius={38} outerRadius={58} paddingAngle={2} stroke="none"
+            <Pie data={data} dataKey="value" nameKey="name" innerRadius={26} outerRadius={38} paddingAngle={2} stroke="none"
               onClick={onSelect ? (d: any) => isClickable(d.name) && onSelect(d.name) : undefined}
               cursor={onSelect ? 'pointer' : undefined}>
               {data.map(d => (
@@ -210,21 +210,22 @@ function Donut({ data, colorFor, onSelect, active }: { data: Count[]; colorFor: 
                   opacity={!active?.length || active.includes(d.name) ? 1 : 0.35} />
               ))}
             </Pie>
-            <Tooltip />
+            {/* wrapperStyle zIndex: senza, il tooltip finisce dietro l'overlay col totale al centro */}
+            <Tooltip wrapperStyle={{ zIndex: 50 }} />
           </PieChart>
         </ResponsiveContainer>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <span className="text-2xl font-semibold text-gray-800 leading-none">{total}</span>
-          <span className="text-[10px] text-gray-400 mt-1">persone</span>
+          <span className="text-base font-semibold text-gray-800 leading-none">{total}</span>
+          <span className="text-[9px] text-gray-400 mt-0.5 leading-none">persone</span>
         </div>
       </div>
-      <div className="flex-1 min-w-[140px] flex flex-col gap-1.5">
+      <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         {data.map(d => (
-          <div key={d.name} className={`flex items-center gap-2 text-sm ${onSelect && isClickable(d.name) ? 'cursor-pointer hover:opacity-70' : ''} ${active?.length && !active.includes(d.name) ? 'opacity-40' : ''}`}
+          <div key={d.name} className={`flex items-center gap-1.5 text-xs ${onSelect && isClickable(d.name) ? 'cursor-pointer hover:opacity-70' : ''} ${active?.length && !active.includes(d.name) ? 'opacity-40' : ''}`}
             onClick={onSelect && isClickable(d.name) ? () => onSelect(d.name) : undefined}>
-            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: colorFor(d.name) }} />
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: colorFor(d.name) }} />
             <span className="truncate flex-1 text-gray-700">{d.name}</span>
-            <span className="text-gray-500 tabular-nums">{d.value} · {pct(d.value, total)}</span>
+            <span className="text-gray-500 tabular-nums shrink-0">{d.value} · {pct(d.value, total)}</span>
           </div>
         ))}
       </div>
@@ -420,7 +421,7 @@ export function AnalisiOrganico() {
     const sel = filters[dim] ?? [];
     const onSelect = (name: string) => toggleFilter(dim, name);
     return (
-      <Card title={title} hint={opts.hint} className={`min-h-[300px] flex flex-col ${opts.className ?? ''}`}
+      <Card title={title} hint={opts.hint} dense={opts.donut} className={`${opts.donut ? 'flex flex-col' : 'min-h-[300px] flex flex-col'} ${opts.className ?? ''}`}
         chart={() => opts.donut
           ? <Donut data={data} colorFor={colorFor(dim)} onSelect={onSelect} active={sel} />
           : <Bars data={data} onSelect={onSelect} active={sel} />}
@@ -446,12 +447,14 @@ export function AnalisiOrganico() {
 
   const peopleListCard = (
     <Card title="Elenco persone" hint={`${peopleRows.length} ${peopleRows.length === 1 ? 'persona' : 'persone'} corrispondenti ai filtri attivi`}
-      chart={() => <DataTable
-        head={['Cognome e nome', 'Funzione', 'Plant', 'Responsabile', 'Categoria', 'Stato']}
-        rows={peopleRows.map(e => [
-          `${e.cognome} ${e.nome}`, e.funzione_aziendale || '—', valuesOf(e, 'plant', plantName).join(', ') || '—',
-          e.capo_nome ?? '—', e.categoria || '—', STATO_LABEL[e.stato] ?? e.stato,
-        ])} />}
+      chart={() => <div className="max-h-80 overflow-y-auto">
+        <DataTable
+          head={['Cognome e nome', 'Funzione', 'Plant', 'Responsabile', 'Categoria', 'Stato']}
+          rows={peopleRows.map(e => [
+            `${e.cognome} ${e.nome}`, e.funzione_aziendale || '—', valuesOf(e, 'plant', plantName).join(', ') || '—',
+            e.capo_nome ?? '—', e.categoria || '—', STATO_LABEL[e.stato] ?? e.stato,
+          ])} />
+      </div>}
       table={<DataTable
         head={['Cognome e nome', 'Funzione', 'Plant', 'Responsabile', 'Categoria', 'Stato']}
         rows={peopleRows.map(e => [
@@ -524,25 +527,30 @@ export function AnalisiOrganico() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {countCard('Per funzione aziendale', 'funzione', { top: 8 })}
-            {countCard('Per categoria', 'categoria', { donut: true })}
-            {countCard('Per tipologia', 'tipologia', { donut: true })}
             {countCard('Per plant', 'plant', { top: 8 })}
+            {countCard('Per tipologia', 'tipologia', { donut: true })}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {countCard('Per categoria', 'categoria', { donut: true })}
             {countCard('Per società', 'societa', { donut: true })}
             {countCard('Per sesso', 'sesso', { donut: true })}
             {countCard('In maternità/paternità', 'funzione', {
-              donut: true, list: maternityList,
+              donut: true, list: maternityList, className: 'col-span-2 sm:col-span-1',
               hint: `${maternityList.length} ${maternityList.length === 1 ? 'persona' : 'persone'} attualmente in congedo, per funzione aziendale`,
             })}
           </div>
 
-          <Card title="Anzianità in fasce"
-            canPct
-            hint="Da quanto tempo lavora in azienda l'organico attuale, per funzione aziendale."
-            chart={asPct => <Stacked data={anzianitaStruct.data} series={anzianitaStruct.series} colorFor={colorFor('funzione')} asPct={asPct} labelWidth={90}
-              onSelect={name => toggleFilter('funzione', name)} active={filters.funzione ?? []} />}
-            table={crossTable(anzianitaStruct, 'Anzianità')} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card title="Anzianità in fasce"
+              canPct
+              hint="Da quanto tempo lavora in azienda l'organico attuale, per funzione aziendale."
+              chart={asPct => <Stacked data={anzianitaStruct.data} series={anzianitaStruct.series} colorFor={colorFor('funzione')} asPct={asPct} labelWidth={90}
+                onSelect={name => toggleFilter('funzione', name)} active={filters.funzione ?? []} />}
+              table={crossTable(anzianitaStruct, 'Anzianità')} />
 
-          {monthlyCard}
+            {monthlyCard}
+          </div>
 
           {peopleListCard}
         </Section>

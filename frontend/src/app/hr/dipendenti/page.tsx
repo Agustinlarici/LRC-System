@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
@@ -90,6 +91,7 @@ export default function DipendentiPage() {
   const [showNew,       setShowNew]       = useState(false);
   const [showTags,      setShowTags]      = useState(false);
   const [tagMenuFor,    setTagMenuFor]    = useState<number | null>(null);
+  const [tagMenuPos,    setTagMenuPos]    = useState<{ top: number; left: number } | null>(null);
   const { ask, dialog: promptDialog } = usePromptDialog();
   const { choose, dialog: choiceDialog } = useChoiceDialog();
 
@@ -106,7 +108,7 @@ export default function DipendentiPage() {
       if (!tableRef.current || !headerScrollRef.current) return;
       const top = tableRef.current.getBoundingClientRect().top;
       const headerHeight = headerScrollRef.current.getBoundingClientRect().height;
-      setBodyMaxHeight(Math.max(200, window.innerHeight - top - headerHeight - 16));
+      setBodyMaxHeight(Math.max(200, window.innerHeight - top - headerHeight - 40));
     }
     recompute();
     window.addEventListener('resize', recompute);
@@ -116,6 +118,7 @@ export default function DipendentiPage() {
     if (headerScrollRef.current && bodyScrollRef.current) {
       headerScrollRef.current.scrollLeft = bodyScrollRef.current.scrollLeft;
     }
+    if (tagMenuFor !== null) setTagMenuFor(null);
   }
 
   // Ricarica leggera: solo l'elenco dipendenti, senza far sparire la tabella dietro
@@ -601,14 +604,22 @@ export default function DipendentiPage() {
                 <button
                   type="button"
                   title={e.tag_name ? `${e.tag_name}${manage ? ' — clicca per cambiare' : ''}` : (manage ? 'Assegna etichetta' : 'Nessuna etichetta')}
-                  onClick={ev => { if (!manage) return; ev.preventDefault(); ev.stopPropagation(); setTagMenuFor(tagMenuFor === e.id ? null : e.id); }}
+                  onClick={ev => {
+                    if (!manage) return;
+                    ev.preventDefault(); ev.stopPropagation();
+                    if (tagMenuFor === e.id) { setTagMenuFor(null); return; }
+                    const rect = ev.currentTarget.getBoundingClientRect();
+                    setTagMenuPos({ top: rect.bottom + 4, left: rect.left });
+                    setTagMenuFor(e.id);
+                  }}
                   className={`w-3 h-3 rounded-full ${tagDotStyle(e.tag_color).className} ${manage ? 'cursor-pointer' : ''}`}
                   style={tagDotStyle(e.tag_color).style}
                 />
-                {tagMenuFor === e.id && (
+                {tagMenuFor === e.id && tagMenuPos && createPortal(
                   <div
                     onClick={ev => { ev.preventDefault(); ev.stopPropagation(); }}
-                    className="absolute z-20 top-5 left-0 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-44 text-sm"
+                    style={{ top: tagMenuPos.top, left: tagMenuPos.left }}
+                    className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-44 text-sm"
                   >
                     <button type="button" onClick={() => setEmployeeTag(e.id, null)} className="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-gray-500">Nessuna</button>
                     {tags.filter(t => t.is_active).map(t => (
@@ -616,7 +627,8 @@ export default function DipendentiPage() {
                         <span className={`w-2.5 h-2.5 rounded-full ${tagDotStyle(t.color).className}`} style={tagDotStyle(t.color).style} />{t.name}
                       </button>
                     ))}
-                  </div>
+                  </div>,
+                  document.body
                 )}
               </div>
               <div className="text-sm font-medium text-gray-800 truncate">{e.cognome}</div>
@@ -665,6 +677,7 @@ export default function DipendentiPage() {
           plants={plants}
           companies={companies}
           tags={tags}
+          funzioni={funzioni}
           onClose={() => setShowNew(false)}
           onCreated={() => { setShowNew(false); load(); }}
         />

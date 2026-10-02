@@ -1,12 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 export interface MultiSelectOption { value: string; label: string; }
 
 // Menu a tendina con checkbox multiple + opzione "tutto" in cima — selezione vuota
 // equivale a "tutto" (nessun filtro), coerente con le regole di scadenza che
 // trattano una lista vuota come "qualsiasi".
+//
+// Il menu è renderizzato in un portal su document.body con position:fixed invece
+// che assoluto dentro il bottone: molti punti d'uso stanno dentro contenitori con
+// overflow-y-auto (es. modali) e un figlio absolute verrebbe ritagliato invece di
+// galleggiare sopra il contenuto.
 export function MultiSelectDropdown({ options, selected, onChange, allLabel = 'Tutte', className = '' }: {
   options: MultiSelectOption[];
   selected: string[];
@@ -15,6 +21,8 @@ export function MultiSelectDropdown({ options, selected, onChange, allLabel = 'T
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const isAll = selected.length === 0;
   const summary = isAll
     ? allLabel
@@ -26,19 +34,40 @@ export function MultiSelectDropdown({ options, selected, onChange, allLabel = 'T
     onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v]);
   }
 
+  function openMenu() {
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (rect) setPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    setOpen(true);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function close() { setOpen(false); }
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
+
   return (
     <div className={`relative inline-block ${className}`}>
       <button
-        type="button" onClick={() => setOpen(o => !o)}
-        className={`input text-sm text-left flex items-center justify-between gap-2 ${isAll ? 'text-gray-400' : ''}`}
+        ref={buttonRef}
+        type="button" onClick={() => (open ? setOpen(false) : openMenu())}
+        className={`input text-sm text-left flex items-center justify-between gap-2 w-full ${isAll ? 'text-gray-400' : ''}`}
       >
         <span className="truncate">{summary}</span>
         <span className="text-gray-400 text-xs shrink-0">▾</span>
       </button>
-      {open && (
+      {open && pos && createPortal(
         <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute z-20 top-full mt-1 left-0 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-56 max-h-64 overflow-y-auto text-sm">
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            style={{ top: pos.top, left: pos.left, minWidth: pos.width }}
+            className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-56 max-h-64 overflow-y-auto text-sm"
+          >
             <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer font-medium border-b border-gray-100 mb-1">
               <input type="checkbox" checked={isAll} onChange={() => onChange([])} />
               {allLabel}
@@ -50,7 +79,8 @@ export function MultiSelectDropdown({ options, selected, onChange, allLabel = 'T
               </label>
             ))}
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );

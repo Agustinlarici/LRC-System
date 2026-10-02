@@ -56,7 +56,6 @@ export default function ScadenzePage() {
   const [rules, setRules] = useState<HrDeadlineRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [societaFilter, setSocietaFilter] = useState<number[]>([]);
-  const [onlyAvviso, setOnlyAvviso] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [ruleForm, setRuleForm] = useState<RuleFormState>(EMPTY_RULE_FORM());
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
@@ -79,7 +78,10 @@ export default function ScadenzePage() {
 
   const today = useMemo(() => new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z'), []);
 
-  const deadlines = useMemo(() => {
+  // Un dipendente cessato (stato marcato come tale) esce da questa pagina anche se
+  // la sua data di cessazione è nel passato: le scadenze servono solo a segnalare
+  // le cessazioni ancora da gestire, non a tenere uno storico.
+  const allDeadlines = useMemo(() => {
     return employees
       .filter(e => e.stato !== 'cessato' && e.data_cessazione)
       .map(e => {
@@ -91,15 +93,18 @@ export default function ScadenzePage() {
         return { employee: e, giorniRimanenti, rule, inAvviso, overdue };
       })
       .filter(d => societaFilter.length === 0 || (d.employee.contract_company_id != null && societaFilter.includes(d.employee.contract_company_id)))
-      .filter(d => !onlyAvviso || d.inAvviso)
       .sort((a, b) => a.giorniRimanenti - b.giorniRimanenti);
-  }, [employees, rules, today, societaFilter, onlyAvviso]);
+  }, [employees, rules, today, societaFilter]);
+
+  // La pagina mostra solo chi è in avviso o già scaduto — una scadenza lontana
+  // senza regola che la segnali non ha motivo di comparire in questa lista.
+  const deadlines = useMemo(() => allDeadlines.filter(d => d.inAvviso || d.overdue), [allDeadlines]);
 
   const counts = useMemo(() => ({
-    totale:  deadlines.length,
-    scadute: deadlines.filter(d => d.overdue).length,
-    avviso:  deadlines.filter(d => d.inAvviso && !d.overdue).length,
-  }), [deadlines]);
+    totale:  allDeadlines.length,
+    scadute: allDeadlines.filter(d => d.overdue).length,
+    avviso:  allDeadlines.filter(d => d.inAvviso && !d.overdue).length,
+  }), [allDeadlines]);
 
   function resetRuleForm() { setEditingRuleId(null); setRuleForm(EMPTY_RULE_FORM()); }
   function startEditRule(r: HrDeadlineRule) {
@@ -137,14 +142,6 @@ export default function ScadenzePage() {
     setSavingRule(false);
     if (res.ok) { resetRuleForm(); load(); }
     else { const b = await res.json().catch(() => ({})); toast.error(b.message ?? 'Errore durante il salvataggio'); }
-  }
-
-  async function toggleRuleActive(r: HrDeadlineRule) {
-    const res = await fetch(`${BACKEND}/api/hr/deadline-rules/${r.id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ is_active: !r.is_active }),
-    });
-    if (res.ok) load();
   }
 
   async function deleteRule(r: HrDeadlineRule) {
@@ -198,7 +195,7 @@ export default function ScadenzePage() {
 
       {showRules && manage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowRules(false)}>
-          <div className="card w-full max-w-3xl max-h-[85vh] overflow-y-auto space-y-4 relative" onClick={e => e.stopPropagation()}>
+          <div className="card w-full max-w-6xl max-h-[95vh] overflow-y-auto space-y-4 relative" onClick={e => e.stopPropagation()}>
             <button type="button" onClick={() => setShowRules(false)} aria-label="Chiudi"
               className="absolute top-3 right-3 text-gray-400 hover:text-gray-700 text-xl leading-none w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">×</button>
 
@@ -246,7 +243,6 @@ export default function ScadenzePage() {
                         <td className="px-3 py-2">
                           <div className="flex items-center justify-end gap-2 whitespace-nowrap">
                             <button type="button" onClick={() => startEditRule(r)} className="text-xs text-blue-600 hover:text-blue-800">Modifica</button>
-                            <button type="button" onClick={() => toggleRuleActive(r)} className="text-xs text-gray-400 hover:text-gray-600">{r.is_active ? 'Disattiva' : 'Riattiva'}</button>
                             <button type="button" onClick={() => deleteRule(r)} className="text-xs text-red-400 hover:text-red-600">Elimina</button>
                           </div>
                         </td>
@@ -258,7 +254,7 @@ export default function ScadenzePage() {
             )}
 
             <form onSubmit={submitRule} className="space-y-3 border-t border-gray-100 pt-4">
-              <div className="flex items-end gap-3 flex-nowrap overflow-x-auto">
+              <div className="flex items-end gap-3 flex-wrap">
                 <div className="shrink-0"><label className="label">Nome (facoltativo)</label>
                   <input className="input text-sm" value={ruleForm.label} onChange={e => setRuleForm(f => ({ ...f, label: e.target.value }))} placeholder="es. STR in prova" />
                 </div>
@@ -282,10 +278,10 @@ export default function ScadenzePage() {
                     onChange={vals => setRuleForm(f => ({ ...f, contract_company_ids: vals.map(Number) }))}
                   />
                 </div>
-              </div>
-              <div className="flex justify-end gap-2">
-                {editingRuleId && <button type="button" onClick={resetRuleForm} className="btn-secondary text-sm">Annulla</button>}
-                <button type="submit" disabled={savingRule} className="btn-primary text-sm">{editingRuleId ? 'Salva' : 'Aggiungi regola'}</button>
+                <div className="flex items-center gap-2 ml-auto">
+                  {editingRuleId && <button type="button" onClick={resetRuleForm} className="btn-secondary text-sm">Annulla</button>}
+                  <button type="submit" disabled={savingRule} className="btn-primary text-sm whitespace-nowrap">{editingRuleId ? 'Salva' : 'Aggiungi regola'}</button>
+                </div>
               </div>
             </form>
           </div>
@@ -293,7 +289,7 @@ export default function ScadenzePage() {
       )}
 
       <div className="card p-0 overflow-hidden">
-        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-100 bg-gray-50 flex-nowrap overflow-x-auto">
+        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-100 bg-gray-50 flex-wrap">
           <MultiSelectDropdown
             className="w-56"
             allLabel="Tutte le società"
@@ -301,10 +297,7 @@ export default function ScadenzePage() {
             selected={societaFilter.map(String)}
             onChange={vals => setSocietaFilter(vals.map(Number))}
           />
-          <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
-            <input type="checkbox" checked={onlyAvviso} onChange={e => setOnlyAvviso(e.target.checked)} />
-            Solo in avviso o scadute
-          </label>
+          <span className="text-xs text-gray-400">Solo dipendenti in avviso o scaduti</span>
         </div>
 
         <div className="grid grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_minmax(110px,1fr)_90px_110px_130px_90px] gap-x-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide">

@@ -100,6 +100,7 @@ export default function EmployeeDetailPage() {
   if (notFound || !employee) return <p className="text-sm text-red-600 text-center py-16">Dipendente non trovato</p>;
 
   const persone = (n: number) => `${n} ${n === 1 ? 'persona' : 'persone'}`;
+  const funzioni = Array.from(new Set(allEmployees.map(e => e.funzione_aziendale).filter((f): f is string => !!f))).sort((a, b) => a.localeCompare(b));
 
   return (
     <div className="space-y-5">
@@ -198,6 +199,7 @@ export default function EmployeeDetailPage() {
           plants={plants}
           companies={companies}
           tags={tags}
+          funzioni={funzioni}
           allEmployees={allEmployees.filter(e => e.id !== employee.id)}
           fullManage={manage}
           onClose={() => setShowEdit(false)}

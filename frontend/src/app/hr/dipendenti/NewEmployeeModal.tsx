@@ -15,14 +15,16 @@ interface Props {
   plants: HrPlant[];
   companies: HrContractCompany[];
   tags: HrEmployeeTag[];
+  funzioni: string[];
   onClose: () => void;
   onCreated: () => void;
 }
 
-export function NewEmployeeModal({ departments: initialDepartments, plants: initialPlants, companies: initialCompanies, tags, onClose, onCreated }: Props) {
+export function NewEmployeeModal({ departments: initialDepartments, plants: initialPlants, companies: initialCompanies, tags, funzioni: initialFunzioni, onClose, onCreated }: Props) {
   const [departments, setDepartments] = useState(initialDepartments);
   const [plants, setPlants] = useState(initialPlants);
   const [companies, setCompanies] = useState(initialCompanies);
+  const [funzioni, setFunzioni] = useState(initialFunzioni);
   const [form, setForm] = useState({
     matricola: '', nome: '', cognome: '', sesso: '', data_nascita: '', codice_fiscale: '', nazionalita: '',
     email: '', telefono: '', mansione: '', livello: '', categoria: '', tipo_contratto: '', funzione_aziendale: '',
@@ -124,7 +126,25 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
             <div><label className="label">Email</label><input type="email" className="input" value={form.email} onChange={e => set('email', e.target.value)} /></div>
             <div><label className="label">Telefono</label><input className="input" value={form.telefono} onChange={e => set('telefono', e.target.value)} /></div>
 
-            <div><label className="label">Funzione aziendale</label><input className="input" value={form.funzione_aziendale} onChange={e => set('funzione_aziendale', e.target.value)} /></div>
+            <div><label className="label">Funzione aziendale</label>
+              <div className="flex gap-1.5">
+                <select className="input" value={form.funzione_aziendale} onChange={e => set('funzione_aziendale', e.target.value)}>
+                  <option value="">—</option>
+                  {funzioni.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const name = await ask({ title: 'Nuova funzione aziendale', label: 'Nome funzione', confirmLabel: 'Usa' });
+                    if (typeof name !== 'string' || !name.trim()) return;
+                    const trimmed = name.trim();
+                    setFunzioni(f => f.includes(trimmed) ? f : [...f, trimmed].sort((a, b) => a.localeCompare(b)));
+                    set('funzione_aziendale', trimmed);
+                  }}
+                  title="Nuova funzione aziendale" className="btn-secondary text-sm px-3 shrink-0"
+                >+</button>
+              </div>
+            </div>
             <div><label className="label">Reparto</label>
               <div className="flex gap-1.5">
                 <select className="input" value={form.reparto_id} onChange={e => set('reparto_id', e.target.value)}>
