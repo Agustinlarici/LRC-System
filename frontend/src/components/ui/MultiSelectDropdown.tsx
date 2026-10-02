@@ -30,8 +30,15 @@ export function MultiSelectDropdown({ options, selected, onChange, allLabel = 'T
       ? options.find(o => o.value === selected[0])?.label ?? selected[0]
       : `${selected.length} selezionate`;
 
+  // Selezione vuota = "tutte": i checkbox dei singoli elementi appaiono comunque
+  // spuntati, così toccare una voce la toglie lasciando "tutte tranne quella" invece
+  // di restringere la selezione alla sola voce toccata.
   function toggle(v: string) {
-    onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v]);
+    const base = isAll ? options.map(o => o.value) : selected;
+    const next = base.includes(v) ? base.filter(x => x !== v) : [...base, v];
+    // Se il risultato copre di nuovo tutte le opzioni, torna a [] per restare
+    // "qualsiasi" (coerente con le regole che trattano la lista vuota come tale).
+    onChange(next.length === options.length ? [] : next);
   }
 
   function openMenu() {
@@ -42,12 +49,15 @@ export function MultiSelectDropdown({ options, selected, onChange, allLabel = 'T
 
   useEffect(() => {
     if (!open) return;
-    function close() { setOpen(false); }
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
+    function reposition() {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (rect) setPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    }
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
     return () => {
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('resize', reposition);
     };
   }, [open]);
 
@@ -74,7 +84,7 @@ export function MultiSelectDropdown({ options, selected, onChange, allLabel = 'T
             </label>
             {options.map(o => (
               <label key={o.value} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer">
-                <input type="checkbox" checked={selected.includes(o.value)} onChange={() => toggle(o.value)} />
+                <input type="checkbox" checked={isAll || selected.includes(o.value)} onChange={() => toggle(o.value)} />
                 <span className="truncate">{o.label}</span>
               </label>
             ))}

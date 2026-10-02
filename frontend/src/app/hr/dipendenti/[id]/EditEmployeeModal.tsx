@@ -129,22 +129,40 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
       const newPartnerId = coResponsabileId ? Number(coResponsabileId) : null;
       if (newPartnerId !== currentPartnerId) {
         if (existingPair) {
-          await fetch(`${BACKEND}/api/hr/capo-pairs/${existingPair.id}`, { method: 'DELETE', credentials: 'include' });
+          const delRes = await fetch(`${BACKEND}/api/hr/capo-pairs/${existingPair.id}`, { method: 'DELETE', credentials: 'include' });
+          if (!delRes.ok) {
+            setSaving(false);
+            const b = await delRes.json().catch(() => ({}));
+            setError(b.message ?? 'Errore durante la rimozione del co-responsabile precedente');
+            return;
+          }
         }
         if (newPartnerId) {
-          await fetch(`${BACKEND}/api/hr/capo-pairs`, {
+          const pairRes = await fetch(`${BACKEND}/api/hr/capo-pairs`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
             body: JSON.stringify({ employee_a_id: employee.id, employee_b_id: newPartnerId }),
           });
+          if (!pairRes.ok) {
+            setSaving(false);
+            const b = await pairRes.json().catch(() => ({}));
+            setError(b.message ?? 'Errore durante il salvataggio del co-responsabile');
+            return;
+          }
         }
       }
       // Chi guida lo stesso team insieme deve avere lo stesso responsabile sopra, altrimenti
       // il/la partner risulterebbe "senza responsabile" nell'organigramma pur avendone uno.
       if (newPartnerId) {
-        await fetch(`${BACKEND}/api/hr/employees/${newPartnerId}`, {
+        const partnerRes = await fetch(`${BACKEND}/api/hr/employees/${newPartnerId}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
           body: JSON.stringify({ capo_id: form.capo_id ? Number(form.capo_id) : null }),
         });
+        if (!partnerRes.ok) {
+          setSaving(false);
+          const b = await partnerRes.json().catch(() => ({}));
+          setError(b.message ?? 'Co-responsabile salvato, ma non è stato possibile allineare il suo responsabile');
+          return;
+        }
       }
     }
 
@@ -178,14 +196,19 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
                   {tags.filter(t => t.is_active || String(t.id) === form.tag_id).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </div>
-              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer self-end pb-2">
-                <input type="checkbox" checked={inProva} onChange={e => setInProva(e.target.checked)} />
-                In prova
-              </label>
-              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer self-end pb-2">
-                <input type="checkbox" checked={l68} onChange={e => setL68(e.target.checked)} />
-                Legge 68 (L.68)
-              </label>
+            </div>
+          )}
+
+          {fullManage && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button" onClick={() => setInProva(v => !v)}
+                className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${inProva ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-gray-600 hover:border-blue-400'}`}
+              >In prova</button>
+              <button
+                type="button" onClick={() => setL68(v => !v)}
+                className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${l68 ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-gray-600 hover:border-blue-400'}`}
+              >Legge 68 (L.68)</button>
             </div>
           )}
 
@@ -272,15 +295,10 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
           {fullManage && (
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
               <p className="text-sm font-medium text-gray-700">{employee.nome} guida un team insieme a un&apos;altra persona?</p>
-              <p className="text-xs text-gray-500 mt-0.5 mb-2">
-                Usalo solo se {employee.nome} è responsabile di qualcuno e condivide quel team con un&apos;altra persona (co-responsabili).
-                Le due persone compariranno affiancate nell&apos;organigramma, separate da una riga sottile, con lo stesso team sotto a entrambe.
-                Il/la co-responsabile prende automaticamente lo stesso "Responsabile" impostato sopra, così la catena resta corretta.
-                Non serve per indicare un secondo responsabile di {employee.nome}.
-              </p>
+              <p className="text-xs text-gray-500 mt-0.5 mb-2">Compariranno affiancate nell&apos;organigramma, con lo stesso team sotto a entrambe.</p>
               <select className="input text-sm max-w-xs" value={coResponsabileId} onChange={e => setCoResponsabileId(e.target.value)}>
                 <option value="">Nessun co-responsabile</option>
-                {allEmployees.map(e => <option key={e.id} value={e.id}>Insieme a {e.cognome} {e.nome}</option>)}
+                {allEmployees.map(e => <option key={e.id} value={e.id}>{e.cognome} {e.nome}</option>)}
               </select>
             </div>
           )}

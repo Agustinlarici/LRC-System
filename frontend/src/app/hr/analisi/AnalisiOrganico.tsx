@@ -18,13 +18,13 @@ const TICK = { fontSize: 12, fill: '#374151' };
 
 // ─── Dimensioni di analisi ─────────────────────────────────────────────────────
 
-type Dim = 'l68' | 'funzione' | 'plant' | 'societa' | 'categoria' | 'tipologia' | 'livello' | 'responsabile' | 'reparto' | 'nazionalita' | 'sesso';
+type Dim = 'l68' | 'funzione' | 'plant' | 'societa' | 'categoria' | 'tipologia' | 'livello' | 'responsabile' | 'reparto' | 'nazionalita' | 'sesso' | 'anzianita';
 
 const DIM_LABEL: Record<Dim, string> = {
   l68: 'Legge 68', funzione: 'Funzione aziendale', plant: 'Plant', societa: 'Società', categoria: 'Categoria', tipologia: 'Tipologia', livello: 'Livello',
-  responsabile: 'Responsabile', reparto: 'Reparto', nazionalita: 'Nazionalità', sesso: 'Sesso',
+  responsabile: 'Responsabile', reparto: 'Reparto', nazionalita: 'Nazionalità', sesso: 'Sesso', anzianita: 'Anzianità',
 };
-const FILTER_ORDER: Dim[] = ['funzione', 'l68', 'plant', 'societa', 'categoria', 'tipologia', 'livello', 'responsabile', 'reparto', 'nazionalita', 'sesso'];
+const FILTER_ORDER: Dim[] = ['funzione', 'l68', 'plant', 'societa', 'categoria', 'tipologia', 'livello', 'responsabile', 'reparto', 'nazionalita', 'sesso', 'anzianita'];
 
 type Filters = Partial<Record<Dim, string[]>>;
 
@@ -41,6 +41,7 @@ function valuesOf(e: HrEmployee, dim: Dim, plantName: Map<number, string>): stri
     case 'reparto':      return [clean(e.reparto_name)];
     case 'funzione':     return [clean(e.funzione_aziendale)];
     case 'l68':          return [e.l68 ? 'Sì' : 'No'];
+    case 'anzianita':    return [anzianitaBucket(e.anzianita_anni)];
     // Una persona può lavorare su più sedi: conta in ognuna
     case 'plant':        return e.plant_ids?.length ? e.plant_ids.map(id => plantName.get(id) ?? NA) : [NA];
   }
@@ -171,6 +172,21 @@ function Card({ title, hint, chart, table, className = '', canPct = false, dense
 // filtrabile reale: il click va ignorato solo per quelli, non per "N/D".
 const isClickable = (name: string) => name !== 'Altre';
 
+// Etichetta dell'asse categorie cliccabile come la barra stessa (es. "20+ anni"):
+// stesso comportamento di filtro, non solo toccando il colore della barra.
+function ClickableCategoryTick({ x, y, payload, onSelect, active }: any) {
+  const name = payload.value as string;
+  const clickable = !!onSelect && isClickable(name);
+  const dimmed = !!active?.length && !active.includes(name);
+  return (
+    <text x={x} y={y} dy={4} textAnchor="end" fontSize={12} fill={dimmed ? '#9ca3af' : '#374151'}
+      style={{ cursor: clickable ? 'pointer' : 'default' }}
+      onClick={clickable ? () => onSelect(name) : undefined}>
+      {name}
+    </text>
+  );
+}
+
 function Bars({ data, color = PALETTE[0], onSelect, active }: { data: Count[]; color?: string; onSelect?: (name: string) => void; active?: string[] }) {
   if (data.length === 0) return <Empty />;
   const total = data.reduce((s, d) => s + d.value, 0);
@@ -178,7 +194,8 @@ function Bars({ data, color = PALETTE[0], onSelect, active }: { data: Count[]; c
     <ResponsiveContainer width="100%" height={Math.max(100, data.length * 26 + 12)}>
       <BarChart data={data} layout="vertical" margin={{ top: 0, right: 48, bottom: 0, left: 0 }}>
         <XAxis type="number" hide allowDecimals={false} />
-        <YAxis type="category" dataKey="name" width={120} tick={TICK} axisLine={false} tickLine={false} />
+        <YAxis type="category" dataKey="name" width={120} axisLine={false} tickLine={false}
+          tick={<ClickableCategoryTick onSelect={onSelect} active={active} />} />
         <Tooltip cursor={{ fill: '#f3f4f6' }} formatter={(v: any) => [`${v} (${pct(Number(v), total)})`, 'Persone']} />
         <Bar dataKey="value" name="Persone" radius={[0, 4, 4, 0]} barSize={14}
           label={{ position: 'right', fontSize: 12, fill: '#374151' }}
@@ -233,9 +250,12 @@ function Donut({ data, colorFor, onSelect, active }: { data: Count[]; colorFor: 
   );
 }
 
-function Stacked({ data, series, colorFor, asPct, labelWidth = 140, onSelect, active }: {
+function Stacked({ data, series, colorFor, asPct, labelWidth = 140, onSelect, active, onSelectRow, activeRow }: {
   data: Record<string, number | string>[]; series: string[]; colorFor: (s: string) => string; asPct: boolean; labelWidth?: number;
   onSelect?: (name: string) => void; active?: string[];
+  // Filtro per riga (es. fascia di anzianità "20+ anni"), diverso dalla serie: cliccando
+  // l'etichetta a sinistra si filtra per riga, cliccando una barra/la legenda per serie.
+  onSelectRow?: (name: string) => void; activeRow?: string[];
 }) {
   if (data.length === 0) return <Empty />;
   return (
@@ -243,7 +263,8 @@ function Stacked({ data, series, colorFor, asPct, labelWidth = 140, onSelect, ac
       <BarChart data={data} layout="vertical" stackOffset={asPct ? 'expand' : 'none'} margin={{ top: 0, right: 24, bottom: 0, left: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
         <XAxis type="number" allowDecimals={false} tick={TICK} tickFormatter={asPct ? (v: number) => `${Math.round(v * 100)}%` : undefined} />
-        <YAxis type="category" dataKey="name" width={labelWidth} tick={TICK} axisLine={false} tickLine={false} />
+        <YAxis type="category" dataKey="name" width={labelWidth} axisLine={false} tickLine={false}
+          tick={<ClickableCategoryTick onSelect={onSelectRow ?? onSelect} active={activeRow ?? active} />} />
         <Tooltip cursor={{ fill: '#f3f4f6' }} />
         <Legend wrapperStyle={{ fontSize: 12 }} onClick={onSelect ? (d: any) => isClickable(d.value) && onSelect(d.value) : undefined} cursor={onSelect ? 'pointer' : undefined} />
         {series.map(s => (
@@ -402,7 +423,10 @@ export function AnalisiOrganico() {
 
   const totActive = active.length;
   const determinati = active.filter(e => isDeterminato(e.tipo_contratto)).length;
-  const senzaResp = active.filter(e => !e.capo_id).length;
+  // Chi guida persone (n_riporti > 0) ma non ha un responsabile sopra è la cima della
+  // catena (es. il presidente) — normale, non un dato da sistemare. Qui si contano solo
+  // le persone senza nessuno sopra E senza nessuno sotto: quelle sì mancano di un collegamento.
+  const senzaResp = active.filter(e => !e.capo_id && e.n_riporti === 0).length;
   const anzianita = active.length
     ? active.reduce((s, e) => s + (Date.now() - new Date(`${iso(e.data_assunzione)}T12:00:00Z`).getTime()) / (365.25 * 86400000), 0) / active.length
     : null;
@@ -546,7 +570,8 @@ export function AnalisiOrganico() {
               canPct
               hint="Da quanto tempo lavora in azienda l'organico attuale, per funzione aziendale."
               chart={asPct => <Stacked data={anzianitaStruct.data} series={anzianitaStruct.series} colorFor={colorFor('funzione')} asPct={asPct} labelWidth={90}
-                onSelect={name => toggleFilter('funzione', name)} active={filters.funzione ?? []} />}
+                onSelect={name => toggleFilter('funzione', name)} active={filters.funzione ?? []}
+                onSelectRow={name => toggleFilter('anzianita', name)} activeRow={filters.anzianita ?? []} />}
               table={crossTable(anzianitaStruct, 'Anzianità')} />
 
             {monthlyCard}
