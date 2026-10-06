@@ -55,6 +55,12 @@ CREATE TABLE IF NOT EXISTS spma_componente_map (
 CREATE INDEX IF NOT EXISTS idx_scm_cat
   ON spma_componente_map (component_category_id) WHERE active = TRUE;
 
+-- Categorie del Programma Produzione (prod_article_component_category.categoria)
+-- che corrispondono a questo componente. Possono essere più di una, ma per ogni
+-- commessa esiste un solo articolo di quelle categorie.
+ALTER TABLE spma_componente_map
+  ADD COLUMN IF NOT EXISTS prod_categorie TEXT[] NOT NULL DEFAULT '{}';
+
 -- ============================================================
 -- Backfill history from existing cache (run once on first deploy)
 -- ============================================================

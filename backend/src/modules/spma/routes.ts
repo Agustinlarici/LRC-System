@@ -454,7 +454,7 @@ spmaRoutes.post('/confirm/send', requireModule(MODULE), async (c) => {
 spmaRoutes.get('/componente-map', requireModule(MODULE), async (c) => {
   const rows = await db`
     SELECT m.id, m.componente_iknow, m.component_category_id,
-           c.name AS category_name, m.active
+           c.name AS category_name, m.active, m.prod_categorie
     FROM spma_componente_map m
     JOIN spma_component_category c ON c.id = m.component_category_id
     ORDER BY m.componente_iknow
@@ -462,19 +462,47 @@ spmaRoutes.get('/componente-map', requireModule(MODULE), async (c) => {
   return c.json(rows);
 });
 
+// Categorie distinte del Programma Produzione, per il selettore del mapping
+spmaRoutes.get('/componente-map/prod-categorie', requireModule(MODULE), async (c) => {
+  const rows = await db<{ categoria: string }[]>`
+    SELECT DISTINCT categoria FROM prod_article_component_category
+    WHERE categoria IS NOT NULL AND categoria <> ''
+    ORDER BY categoria
+  `;
+  return c.json(rows.map(r => r.categoria));
+});
+
 spmaRoutes.post('/componente-map', requireManage(MODULE), async (c) => {
   const body = await parseBody(c, z.object({
     componenteIknow:     z.string().min(1),
     componentCategoryId: z.number().int().positive(),
+    prodCategorie:       z.array(z.string().min(1).max(200)).max(50).default([]),
   }));
   const [row] = await db`
-    INSERT INTO spma_componente_map (componente_iknow, component_category_id, active)
-    VALUES (${body.componenteIknow}, ${body.componentCategoryId}, TRUE)
+    INSERT INTO spma_componente_map (componente_iknow, component_category_id, prod_categorie, active)
+    VALUES (${body.componenteIknow}, ${body.componentCategoryId}, ${db.array(body.prodCategorie ?? [])}::text[], TRUE)
     ON CONFLICT (componente_iknow, component_category_id)
-      DO UPDATE SET active = TRUE
-    RETURNING id, componente_iknow, component_category_id, active
+      DO UPDATE SET active = TRUE, prod_categorie = EXCLUDED.prod_categorie
+    RETURNING id, componente_iknow, component_category_id, active, prod_categorie
   `;
-  return c.json(row, 201);
+  const [full] = await db`
+    SELECT m.id, m.componente_iknow, m.component_category_id,
+           c.name AS category_name, m.active, m.prod_categorie
+    FROM spma_componente_map m
+    JOIN spma_component_category c ON c.id = m.component_category_id
+    WHERE m.id = ${row.id}
+  `;
+  return c.json(full, 201);
+});
+
+spmaRoutes.put('/componente-map/:id', requireManage(MODULE), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (!c.req.param('id') || isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const body = await parseBody(c, z.object({
+    prodCategorie: z.array(z.string().min(1).max(200)).max(50),
+  }));
+  await db`UPDATE spma_componente_map SET prod_categorie = ${db.array(body.prodCategorie)}::text[] WHERE id = ${id}`;
+  return c.json({ status: 'updated' });
 });
 
 spmaRoutes.delete('/componente-map/:id', requireManage(MODULE), async (c) => {

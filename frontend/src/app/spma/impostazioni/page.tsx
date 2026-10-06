@@ -330,7 +330,7 @@ function TableList({
 
 // ─── Mapping iKnow ↔ Categoria SPMA ─────────────────────────────────────────
 
-interface CompMap { id: number; componente_iknow: string; component_category_id: number; category_name: string; active: boolean }
+interface CompMap { id: number; componente_iknow: string; component_category_id: number; category_name: string; active: boolean; prod_categorie: string[] }
 
 function TabMapping() {
   const [maps,    setMaps]    = useState<CompMap[]>([]);
@@ -338,6 +338,8 @@ function TabMapping() {
   const [compAll, setCompAll] = useState<string[]>([]);
   const [iknow,   setIknow]   = useState('');
   const [catId,   setCatId]   = useState('');
+  const [prodAll, setProdAll] = useState<string[]>([]);
+  const [prodSel, setProdSel] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy,    setBusy]    = useState(false);
 
@@ -346,7 +348,8 @@ function TabMapping() {
       api.get<CompMap[]>('/api/spma/componente-map'),
       api.get<SpmaCategory[]>('/api/spma/categories'),
       api.get<string[]>('/api/dashboards/lead-time/componenti'),
-    ]).then(([m, c, comp]) => { setMaps(m); setCats(c); setCompAll(comp); })
+      api.get<string[]>('/api/spma/componente-map/prod-categorie'),
+    ]).then(([m, c, comp, prod]) => { setMaps(m); setCats(c); setCompAll(comp); setProdAll(prod); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -357,12 +360,13 @@ function TabMapping() {
       const row = await api.post<CompMap>('/api/spma/componente-map', {
         componenteIknow:     iknow.trim(),
         componentCategoryId: parseInt(catId),
+        prodCategorie:       prodSel,
       });
       setMaps(prev => {
         const without = prev.filter(m => !(m.componente_iknow === row.componente_iknow && m.component_category_id === row.component_category_id));
         return [...without, row];
       });
-      setIknow(''); setCatId('');
+      setIknow(''); setCatId(''); setProdSel([]);
     } finally { setBusy(false); }
   }
 
@@ -378,6 +382,8 @@ function TabMapping() {
       <p className="text-sm text-gray-500">
         Collega il nome del componente in iKnow/WebThron alla categoria Avanzamento Prod corrispondente.
         Usato dal grafico Lead Time per filtrare e abbinare le fasi.
+        Le categorie Programma Produzione possono essere più di una: per ogni commessa esiste un solo articolo di quelle categorie.
+        Per modificare le categorie di un abbinamento esistente, riaggiungilo con lo stesso componente e la stessa categoria.
       </p>
       <div className="flex gap-2 flex-wrap">
         <input value={iknow} onChange={e => setIknow(e.target.value)}
@@ -392,14 +398,29 @@ function TabMapping() {
           <option value="">Categoria Avanzamento Prod</option>
           {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
+        <details className="relative">
+          <summary className="border border-gray-200 rounded-lg px-3 py-2 text-sm cursor-pointer select-none bg-white">
+            {prodSel.length ? `Categorie Programma Produzione (${prodSel.length})` : 'Categorie Programma Produzione'}
+          </summary>
+          <div className="absolute z-10 mt-1 w-72 max-h-64 overflow-auto bg-white border border-gray-200 rounded-lg shadow-lg p-2 space-y-1">
+            {prodAll.length === 0 && <p className="text-xs text-gray-400 px-1">Nessuna categoria disponibile</p>}
+            {prodAll.map(cat => (
+              <label key={cat} className="flex items-center gap-2 text-sm px-1 hover:bg-gray-50 cursor-pointer">
+                <input type="checkbox" checked={prodSel.includes(cat)}
+                  onChange={e => setProdSel(prev => e.target.checked ? [...prev, cat] : prev.filter(x => x !== cat))} />
+                {cat}
+              </label>
+            ))}
+          </div>
+        </details>
         <button onClick={add} disabled={busy || !iknow.trim() || !catId}
           className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
           Aggiungi
         </button>
       </div>
       <TableList
-        headers={['ID', 'Componente iKnow', 'Categoria Avanzamento Prod']}
-        rows={maps.map(m => ({ id: m.id, cells: [m.id, m.componente_iknow, m.category_name] }))}
+        headers={['ID', 'Componente iKnow', 'Categoria Avanzamento Prod', 'Categorie Programma Produzione']}
+        rows={maps.map(m => ({ id: m.id, cells: [m.id, m.componente_iknow, m.category_name, (m.prod_categorie ?? []).join(', ') || '—'] }))}
         onDelete={del}
       />
     </div>
