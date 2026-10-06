@@ -532,6 +532,7 @@ export function AnalisiOrganico({ view = 'main' }: { view?: 'main' | 'mansioni' 
   return (
     <ModeCtx.Provider value={mode}>
       <div className="space-y-4 analisi-print">
+        <style>{`@media print { @page { size: A4 landscape; margin: 8mm; } }`}</style>
         {/* Intestazione visibile solo in stampa: titolo, data e filtri applicati */}
         <div className="only-print">
           <p className="text-lg font-semibold text-gray-900">Analisi HR</p>

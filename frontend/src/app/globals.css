@@ -192,12 +192,10 @@ body {
   body[data-print-only] h2 { display: none !important; }
 }
 
-/* Report Analisi HR: A4 orizzontale, compatto e uniforme, poche pagine. La pagina
-   con nome (`page: analisi`) evita di cambiare formato alle altre stampe. */
-@page analisi { size: A4 landscape; margin: 8mm; }
+/* Report Analisi HR: compatto e uniforme (il formato A4 orizzontale è impostato dal
+   componente). Niente `page:` con nome né zoom: il primo forza un'interruzione di
+   pagina prima del contenuto, il secondo sfasa la misura dei grafici Recharts. */
 @media print {
-  .analisi-print { page: analisi; zoom: 0.82; }
-  .analisi-print.space-y-4 > * + *,
   .analisi-print .space-y-4 > * + * { margin-top: 8px !important; }
   .analisi-print .grid { gap: 8px !important; }
   .analisi-print .card { padding: 8px !important; border: 1px solid #e5e7eb !important; }
