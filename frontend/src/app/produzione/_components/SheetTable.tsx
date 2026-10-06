@@ -87,6 +87,36 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
     return [...set].sort((a, b) => compareCategorie(a, b, categoryOrderMap));
   }, [displayRows, categoryOrderMap]);
 
+  async function esportaExcel() {
+    const XLSX = await import('xlsx');
+    const data = displayRows.map((row, idx) => {
+      const out: Record<string, string | number> = {
+        '#':             idx + 1,
+        Origine:         row.fonte_ordine === 'confermato' ? 'Confermato' : 'Forecast',
+        Stato:           row.chiuso ? 'Spedito' : '',
+        Commessa:        row.commessa,
+        Codice:          row.codice_articolo,
+        Descrizione:     row.descrizione ?? '',
+        'Ingresso Linea': row.insertion_line_ts
+          ? new Date(row.insertion_line_ts).toLocaleString('it-IT', {
+              day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+            })
+          : '',
+        Colore:          row.colore ?? '',
+      };
+      for (const cat of categorieUniche) {
+        const match = row.categorie.find(c => c.categoria === cat);
+        out[cat] = match ? match.caratteristiche.map(c => c.valore).join(', ') : '';
+      }
+      return out;
+    });
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Programma Produzione');
+    const stamp = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `programma-produzione-${stamp}.xlsx`);
+  }
+
   if (rows.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400">
@@ -97,7 +127,13 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
 
   return (
     <div>
-      <div className="d-print-none mb-2 flex justify-end">
+      <div className="d-print-none mb-2 flex justify-end gap-2">
+        <button
+          onClick={esportaExcel}
+          className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+        >
+          📥 Scarica Excel
+        </button>
         <button
           onClick={() => setRaggruppa(g => !g)}
           className={`text-sm px-3 py-1.5 rounded-lg transition-colors ${
