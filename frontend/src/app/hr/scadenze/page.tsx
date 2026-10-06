@@ -393,7 +393,7 @@ export default function ScadenzePage() {
                 <button
                   type="button"
                   onClick={e => { e.preventDefault(); e.stopPropagation(); setAck(d.employee.id, 'preso_in_carico'); }}
-                  className="shrink-0 text-[11px] font-medium text-gray-400 border border-gray-200 rounded-full px-2 py-0.5 hover:border-green-500 hover:text-green-600 hover:bg-green-50 transition-colors"
+                  className="shrink-0 text-[11px] font-medium text-gray-600 border border-gray-300 rounded-full px-2 py-0.5 hover:border-green-500 hover:text-green-600 hover:bg-green-50 transition-colors"
                 >
                   Prendi in carico
                 </button>
