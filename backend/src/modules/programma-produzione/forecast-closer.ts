@@ -20,7 +20,9 @@ interface CandidateRow {
  * commessa) si chiude solo se:
  *   1. non compete con un ordine Confermato ancora aperto (present_now = TRUE)
  *   2. risulta già spedita nella query BC "EOS CWS Shipment Line" (la stessa
- *      usata dal modulo WebDDT per generare i DESADV a Ferrari)
+ *      usata dal modulo WebDDT per generare i DESADV a Ferrari), con lo stesso
+ *      codice articolo OPPURE con un altro articolo della stessa categoria
+ *      componente per la stessa commessa (prod_article_component_category)
  * Il risultato va in prod_forecast_chiuso (vedi commento sulla tabella in
  * migrate-programma-produzione.sql) — non tocca edi_ferrari_delins, che viene
  * ricreato da zero ad ogni sync EDI.
@@ -60,7 +62,32 @@ export async function closeShippedForecasts(): Promise<ForecastCloserStats> {
     const shipped    = await getShippedPairsSince();
     const shippedSet = new Set(shipped.map(s => `${s.article_code} ${s.lsa_task_no}`));
 
-    const toClose = candidates.filter(c => shippedSet.has(`${c.codice_articolo} ${c.commessa}`));
+    // Categoria componente (es. "Paraurto Anteriore") degli articoli candidati e
+    // di quelli spediti per le stesse commesse: Ferrari può cambiare il codice
+    // tra Forecast e spedizione reale — se per la commessa è già partito un
+    // articolo della stessa categoria, il Forecast è evaso.
+    const candidateCommesse = new Set(candidates.map(c => c.commessa));
+    const shippedForCommesse = shipped.filter(s => candidateCommesse.has(s.lsa_task_no));
+    const allCodes = [...new Set([
+      ...candidates.map(c => c.codice_articolo),
+      ...shippedForCommesse.map(s => s.article_code),
+    ])];
+    const categoryRows = await db<{ codice_articolo: string; categoria: string }[]>`
+      SELECT codice_articolo, categoria FROM prod_article_component_category
+      WHERE codice_articolo = ANY(${allCodes}) AND categoria IS NOT NULL
+    `;
+    const categoryOf = new Map(categoryRows.map(r => [r.codice_articolo, r.categoria]));
+    const shippedCategorySet = new Set<string>();
+    for (const s of shippedForCommesse) {
+      const cat = categoryOf.get(s.article_code);
+      if (cat) shippedCategorySet.add(`${cat}\u0000${s.lsa_task_no}`);
+    }
+
+    const toClose = candidates.filter(c => {
+      if (shippedSet.has(`${c.codice_articolo} ${c.commessa}`)) return true;
+      const cat = categoryOf.get(c.codice_articolo);
+      return !!cat && shippedCategorySet.has(`${cat}\u0000${c.commessa}`);
+    });
 
     if (toClose.length > 0) {
       const BATCH = 500;

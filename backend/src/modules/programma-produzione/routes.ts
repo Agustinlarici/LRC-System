@@ -573,10 +573,14 @@ programmaProduzioneRoutes.post('/sync/all', requireManage(MODULE), async (c) => 
     logger.error({ err }, 'programma-produzione: sync/all — attributi BC falliti');
     return { error: (err as Error).message };
   });
+  const forecastChiusi = await closeShippedForecasts().catch(err => {
+    logger.error({ err }, 'programma-produzione: sync/all — chiusura forecast spediti fallita');
+    return { error: (err as Error).message };
+  });
   const keywords = await runKeywordEngine();
   const colors   = await runColorEngine();
 
-  return c.json({ orders, itemAttributes, keywords, colors });
+  return c.json({ orders, itemAttributes, forecastChiusi, keywords, colors });
 });
 
 programmaProduzioneRoutes.get('/sync/log', requireModule(MODULE), async (c) => {

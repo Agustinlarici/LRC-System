@@ -183,7 +183,7 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
               </td>
               <td className="border border-gray-200 px-2 py-1 font-mono">{row.commessa}</td>
               <td className="border border-gray-200 px-2 py-1 font-mono whitespace-pre-line">{row.codice_articolo}</td>
-              <td className="border border-gray-200 px-2 py-1 max-w-[260px] whitespace-pre-line" title={row.descrizione ?? ''}>
+              <td className="border border-gray-200 px-2 py-1 min-w-[180px] max-w-[260px] whitespace-pre-line break-words" title={row.descrizione ?? ''}>
                 {row.descrizione ?? <span className="text-gray-300">–</span>}
               </td>
               <td className="border border-gray-200 px-2 py-1 whitespace-nowrap">
