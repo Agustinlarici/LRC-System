@@ -288,11 +288,12 @@ function TabStazioni() {
 // ─── Shared table ─────────────────────────────────────────────────────────────
 
 function TableList({
-  headers, rows, onDelete,
+  headers, rows, onDelete, onEdit,
 }: {
   headers: string[];
   rows: { id: number; cells: (string | number)[] }[];
   onDelete: (id: number) => void;
+  onEdit?: (id: number) => void;
 }) {
   if (rows.length === 0) {
     return <p className="text-sm text-gray-400 py-4 text-center">Nessun elemento</p>;
@@ -312,7 +313,15 @@ function TableList({
               {row.cells.map((c, i) => (
                 <td key={i} className="py-2 px-4 text-gray-700">{c}</td>
               ))}
-              <td className="py-2 px-4 text-right">
+              <td className="py-2 px-4 text-right whitespace-nowrap">
+                {onEdit && (
+                  <button
+                    onClick={() => onEdit(row.id)}
+                    className="text-xs text-blue-600 hover:text-blue-800 transition-colors mr-3"
+                  >
+                    Modifica
+                  </button>
+                )}
                 <button
                   onClick={() => onDelete(row.id)}
                   className="text-xs text-red-500 hover:text-red-700 transition-colors"
@@ -340,6 +349,7 @@ function TabMapping() {
   const [catId,   setCatId]   = useState('');
   const [prodAll, setProdAll] = useState<string[]>([]);
   const [prodSel, setProdSel] = useState<string[]>([]);
+  const [editId,  setEditId]  = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy,    setBusy]    = useState(false);
 
@@ -352,6 +362,29 @@ function TabMapping() {
     ]).then(([m, c, comp, prod]) => { setMaps(m); setCats(c); setCompAll(comp); setProdAll(prod); })
       .finally(() => setLoading(false));
   }, []);
+
+  function startEdit(id: number) {
+    const m = maps.find(x => x.id === id);
+    if (!m) return;
+    setEditId(id);
+    setIknow(m.componente_iknow);
+    setCatId(String(m.component_category_id));
+    setProdSel(m.prod_categorie ?? []);
+  }
+
+  function cancelEdit() {
+    setEditId(null); setIknow(''); setCatId(''); setProdSel([]);
+  }
+
+  async function saveEdit() {
+    if (editId === null) return;
+    setBusy(true);
+    try {
+      await api.put(`/api/spma/componente-map/${editId}`, { prodCategorie: prodSel });
+      setMaps(prev => prev.map(m => m.id === editId ? { ...m, prod_categorie: prodSel } : m));
+      cancelEdit();
+    } finally { setBusy(false); }
+  }
 
   async function add() {
     if (!iknow.trim() || !catId) return;
@@ -373,6 +406,7 @@ function TabMapping() {
   async function del(id: number) {
     await api.delete(`/api/spma/componente-map/${id}`);
     setMaps(prev => prev.filter(m => m.id !== id));
+    if (editId === id) cancelEdit();
   }
 
   if (loading) return <p className="text-gray-400">Caricamento...</p>;
@@ -383,18 +417,19 @@ function TabMapping() {
         Collega il nome del componente in iKnow/WebThron alla categoria Avanzamento Prod corrispondente.
         Usato dal grafico Lead Time per filtrare e abbinare le fasi.
         Le categorie Programma Produzione possono essere più di una: per ogni commessa esiste un solo articolo di quelle categorie.
-        Per modificare le categorie di un abbinamento esistente, riaggiungilo con lo stesso componente e la stessa categoria.
+        Usa "Modifica" per cambiare le categorie Programma Produzione di un abbinamento esistente.
       </p>
       <div className="flex gap-2 flex-wrap">
         <input value={iknow} onChange={e => setIknow(e.target.value)}
           placeholder="Nome componente iKnow (es. PARAURTI ANT)"
+          disabled={editId !== null}
           list="iknow-list"
           className="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 min-w-48 focus:outline-none focus:ring-2 focus:ring-blue-500"
           onKeyDown={e => e.key === 'Enter' && add()}
         />
         <datalist id="iknow-list">{compAll.map(c => <option key={c} value={c} />)}</datalist>
-        <select value={catId} onChange={e => setCatId(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <select value={catId} onChange={e => setCatId(e.target.value)} disabled={editId !== null}
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50">
           <option value="">Categoria Avanzamento Prod</option>
           {cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
@@ -413,15 +448,22 @@ function TabMapping() {
             ))}
           </div>
         </details>
-        <button onClick={add} disabled={busy || !iknow.trim() || !catId}
+        <button onClick={editId !== null ? saveEdit : add} disabled={busy || !iknow.trim() || !catId}
           className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
-          Aggiungi
+          {editId !== null ? 'Salva' : 'Aggiungi'}
         </button>
+        {editId !== null && (
+          <button onClick={cancelEdit}
+            className="border border-gray-200 px-4 py-2 text-sm rounded-lg hover:bg-gray-50 transition-colors">
+            Annulla
+          </button>
+        )}
       </div>
       <TableList
         headers={['ID', 'Componente iKnow', 'Categoria Avanzamento Prod', 'Categorie Programma Produzione']}
         rows={maps.map(m => ({ id: m.id, cells: [m.id, m.componente_iknow, m.category_name, (m.prod_categorie ?? []).join(', ') || '—'] }))}
         onDelete={del}
+        onEdit={startEdit}
       />
     </div>
   );
