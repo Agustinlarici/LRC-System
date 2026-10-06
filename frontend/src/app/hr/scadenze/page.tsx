@@ -371,26 +371,32 @@ export default function ScadenzePage() {
               ${ack ? 'opacity-60' : d.overdue ? 'bg-red-50/60' : d.inAvviso ? 'bg-amber-50/60' : ''}`}
           >
             <div className="flex items-center gap-2 min-w-0">
-              <button
-                type="button"
-                aria-label={ack ? 'Rimuovi presa in carico' : 'Prendi in carico'}
-                title={ack ? 'Preso in carico — clicca per annullare' : 'Prendi in carico'}
-                onClick={e => { e.preventDefault(); e.stopPropagation(); setAck(d.employee.id, ack ? null : 'preso_in_carico'); }}
-                className={`shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                  ack ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-gray-300 text-transparent hover:border-green-500 hover:text-green-500'
-                }`}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} className="w-3.5 h-3.5">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-              </button>
               {ack ? (
-                <div className="min-w-0 leading-tight" title={`${ack.user_name ?? '—'} · ${fmtDateTime(ack.acted_at)}`}>
-                  <p className="text-[11px] font-medium text-gray-600 truncate">{ack.user_name ?? '—'}</p>
-                  <p className="text-[10px] text-gray-400">{fmtDateTime(ack.acted_at)}</p>
-                </div>
+                <>
+                  <button
+                    type="button"
+                    aria-label="Rimuovi presa in carico"
+                    title="Preso in carico — clicca per annullare"
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); setAck(d.employee.id, null); }}
+                    className="shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center bg-green-500 border-green-500 text-white"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} className="w-3.5 h-3.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  </button>
+                  <div className="min-w-0 leading-tight" title={`${ack.user_name ?? '—'} · ${fmtDateTime(ack.acted_at)}`}>
+                    <p className="text-[11px] font-medium text-gray-600 truncate">{ack.user_name ?? '—'}</p>
+                    <p className="text-[10px] text-gray-400">{fmtDateTime(ack.acted_at)}</p>
+                  </div>
+                </>
               ) : (
-                <span className="text-[11px] text-gray-300">Da gestire</span>
+                <button
+                  type="button"
+                  onClick={e => { e.preventDefault(); e.stopPropagation(); setAck(d.employee.id, 'preso_in_carico'); }}
+                  className="shrink-0 text-[11px] font-medium text-gray-400 border border-gray-200 rounded-full px-2 py-0.5 hover:border-green-500 hover:text-green-600 hover:bg-green-50 transition-colors"
+                >
+                  Prendi in carico
+                </button>
               )}
             </div>
             <div className="text-sm font-medium text-gray-800 truncate">{d.employee.cognome}</div>

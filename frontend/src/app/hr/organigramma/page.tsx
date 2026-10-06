@@ -187,6 +187,8 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
   }
   const isOpen = expanded.has(nodeId);
   const hasChildren = node.children.length > 0;
+  // I blocchi raggruppati (griglia / mansione) contano per le persone che contengono, non per 1
+  const childrenCount = node.children.reduce((sum, c) => sum + (c.grid || c.mansione !== undefined ? c.people.length : 1), 0);
   const isCluster = node.people.length > 1;
 
   return (
@@ -227,11 +229,11 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
         {hasChildren && (
           <button
             onClick={(e) => { e.stopPropagation(); toggle(nodeId); }}
-            title={isOpen ? 'Comprimi' : `Espandi (${node.children.length})`}
+            title={isOpen ? 'Comprimi' : `Espandi (${childrenCount})`}
             className="absolute top-full mt-0.5 left-1/2 -translate-x-1/2 z-20 w-6 h-6 rounded-full bg-white border border-gray-300 text-[11px] font-medium cursor-pointer
               flex items-center justify-center text-gray-500 hover:border-blue-400 hover:text-blue-600 shadow-sm transition-colors"
           >
-            {isOpen ? '−' : node.children.length}
+            {isOpen ? '−' : childrenCount}
           </button>
         )}
       </div>
