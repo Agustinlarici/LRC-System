@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import type { HrOrgNode, HrCapoPair } from '@/types';
 
@@ -15,7 +15,39 @@ const PALETTE = ['#2563eb', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899', '#06b6d4
 // Un "nodo" può rappresentare due persone insieme: una coppia di co-responsabili
 // configurata esplicitamente (stesso team), mostrate affiancate in un unico box
 // invece che separate — vedi "Gestisci coppie di co-responsabili" in pagina.
-interface TreeNode { people: HrOrgNode[]; children: TreeNode[]; }
+// Con "Dividi per mansione" i nodi foglia sotto un responsabile vengono raccolti in
+// nodi-gruppo (mansione valorizzata): un box con il titolo della mansione e l'elenco dei nomi.
+interface TreeNode { people: HrOrgNode[]; children: TreeNode[]; mansione?: string; grid?: boolean; }
+
+// Oltre questa soglia le persone senza riporti di uno stesso responsabile vengono
+// messe in un unico blocco a griglia, invece di una lunghissima riga orizzontale.
+const GRID_THRESHOLD = 6;
+const GRID_COLS = 6;
+
+function groupLeavesInGrid(list: TreeNode[]): TreeNode[] {
+  list.forEach(n => { n.children = groupLeavesInGrid(n.children); });
+  const isLeaf = (n: TreeNode) => n.children.length === 0 && n.people.length === 1;
+  const leaves = list.filter(isLeaf);
+  if (leaves.length <= GRID_THRESHOLD) return list;
+  const grid: TreeNode = { people: leaves.map(l => l.people[0]), children: [], grid: true };
+  return [...list.filter(n => !isLeaf(n)), grid];
+}
+
+function groupLeavesByMansione(list: TreeNode[]): TreeNode[] {
+  list.forEach(n => { n.children = groupLeavesByMansione(n.children); });
+  const isLeaf = (n: TreeNode) => n.children.length === 0 && n.people.length === 1;
+  const leaves = list.filter(isLeaf);
+  if (leaves.length === 0) return list;
+  const byMansione = new Map<string, HrOrgNode[]>();
+  for (const l of leaves) {
+    const key = l.people[0].mansione?.trim() || 'Senza mansione';
+    byMansione.set(key, [...(byMansione.get(key) ?? []), l.people[0]]);
+  }
+  const groups: TreeNode[] = [...byMansione.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([mansione, people]) => ({ mansione, people: people.sort((a, b) => a.cognome.localeCompare(b.cognome)), children: [] }));
+  return [...list.filter(n => !isLeaf(n)), ...groups];
+}
 
 function buildTree(nodes: HrOrgNode[], pairs: HrCapoPair[]): TreeNode[] {
   const byId = new Map<number, HrOrgNode>(nodes.map(n => [n.id, n]));
@@ -92,6 +124,67 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
   // L'id del nodo ai fini di espandi/comprimi è quello del primo membro — stabile
   // finché il cluster di co-responsabili resta lo stesso.
   const nodeId = node.people[0].id;
+  if (node.grid) {
+    return (
+      <li>
+        <div className="org-node inline-grid bg-gray-200 border-2 border-gray-200 rounded-md shadow-sm overflow-hidden gap-px" style={{ gridTemplateColumns: `repeat(${Math.min(GRID_COLS, node.people.length)}, 78px)` }}>
+          {node.people.map(p => {
+            const isMatch = matches.has(p.id);
+            const isSelected = selectedId === p.id;
+            return (
+              <div
+                key={p.id}
+                onClick={() => onSelect(p.id)}
+                title={p.mansione ?? undefined}
+                className={`flex flex-col items-center gap-0.5 px-1 py-1.5 cursor-pointer bg-white hover:bg-gray-50 ${isSelected ? 'ring-2 ring-inset ring-blue-300' : ''}`}
+              >
+                <div
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-semibold shrink-0"
+                  style={{ background: colorFor(p), outline: isSelected ? '2px solid #3b82f6' : isMatch ? '2px solid #f59e0b' : undefined }}
+                >
+                  {initials(p.nome, p.cognome)}
+                </div>
+                <div className="text-center leading-tight w-full">
+                  <p className={`text-[11px] font-medium break-words ${isMatch ? 'text-amber-700' : 'text-gray-800'}`}>{p.cognome}</p>
+                  <p className="text-[10px] text-gray-500 break-words">{p.nome}</p>
+                </div>
+                {p.stato !== 'attivo' && <span className="text-[10px] text-amber-600 font-medium">{p.stato}</span>}
+              </div>
+            );
+          })}
+          {Array.from({ length: (GRID_COLS - (node.people.length % GRID_COLS)) % GRID_COLS * (node.people.length > GRID_COLS ? 1 : 0) }, (_, i) => <div key={`pad${i}`} className="bg-white" />)}
+        </div>
+      </li>
+    );
+  }
+  if (node.mansione !== undefined) {
+    return (
+      <li>
+        <div className="org-node inline-flex flex-col bg-white border-2 border-gray-200 rounded-md shadow-sm w-[130px] text-left">
+          <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-wide px-2 py-1 border-b border-gray-200 bg-gray-50 rounded-t break-words">
+            {node.mansione} <span className="text-gray-400 font-normal">({node.people.length})</span>
+          </p>
+          <div className="py-1">
+            {node.people.map(p => {
+              const isSelected = selectedId === p.id;
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => onSelect(p.id)}
+                  className={`flex items-center gap-1.5 px-2 py-0.5 cursor-pointer hover:bg-gray-50 ${isSelected ? 'bg-blue-50' : ''}`}
+                >
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: colorFor(p) }} />
+                  <span className={`text-[11px] leading-tight break-words ${matches.has(p.id) ? 'text-amber-700 font-medium' : 'text-gray-800'}`}>
+                    {p.cognome} {p.nome}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </li>
+    );
+  }
   const isOpen = expanded.has(nodeId);
   const hasChildren = node.children.length > 0;
   const isCluster = node.people.length > 1;
@@ -242,7 +335,11 @@ export default function OrganigrammaPage() {
     return nodes.filter(n => keep.has(n.id));
   }, [nodes, search, matchIds]);
 
-  const tree = useMemo(() => buildTree(viewNodes, pairs), [viewNodes, pairs]);
+  const [byMansione, setByMansione] = useState(false);
+  const tree = useMemo(() => {
+    const t = buildTree(viewNodes, pairs);
+    return byMansione ? groupLeavesByMansione(t) : groupLeavesInGrid(t);
+  }, [viewNodes, pairs, byMansione]);
 
   // Profondità di ogni persona nell'albero visualizzato (0 = radice) e numero di livelli
   const depthOf = useMemo(() => {
@@ -261,6 +358,17 @@ export default function OrganigrammaPage() {
     const all = !!search.trim();
     setExpanded(new Set(viewNodes.filter(n => all || (depthOf.get(n.id) ?? 0) + 1 < level).map(n => n.id)));
   }, [viewNodes, depthOf, level, search]);
+
+  // Stampa solo l'albero attualmente visibile, in orizzontale: lo scala per farlo stare in una pagina A4.
+  const treeRef = useRef<HTMLUListElement>(null);
+  function handlePrint() {
+    const el = treeRef.current;
+    if (el) {
+      const availW = 1000, availH = 630; // area utile A4 orizzontale a 96dpi, con margini
+      el.style.setProperty('--print-zoom', String(Math.min(1, availW / el.scrollWidth, availH / el.scrollHeight)));
+    }
+    window.print();
+  }
 
   function toggle(id: number) {
     setExpanded(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
@@ -290,12 +398,29 @@ export default function OrganigrammaPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-lg font-medium text-gray-900">Organigramma</h1>
-        <p className="text-xs text-gray-400 mt-0.5">Struttura organizzativa: dipendente → responsabile → manager → direzione</p>
+      <style>{`@media print { @page { size: A4 landscape; margin: 8mm; } }`}</style>
+      <div className="d-print-none flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-lg font-medium text-gray-900">Organigramma</h1>
+          <p className="text-xs text-gray-400 mt-0.5">Struttura organizzativa: dipendente → responsabile → manager → direzione</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={handlePrint} className="btn-primary text-xs">Stampa</button>
+          <div className="flex items-center rounded-md border border-gray-300 overflow-hidden text-xs" role="group" aria-label="Vista organigramma">
+            {([[false, 'Per persona'], [true, 'Per mansione']] as const).map(([val, label]) => (
+              <button
+                key={label}
+                onClick={() => setByMansione(val)}
+                className={`px-3 py-1.5 transition-colors ${byMansione === val ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap d-print-none">
         <input type="text" placeholder="Cerca una persona…" value={search} onChange={e => setSearch(e.target.value)} className="input text-sm w-64" />
         <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className="input text-sm w-auto">
           <option value="">Tutte le funzioni</option>
@@ -322,13 +447,21 @@ export default function OrganigrammaPage() {
       </div>
 
       <div>
-        <div className="card overflow-x-auto overflow-y-hidden py-6">
+        <div className="only-print mb-3">
+          <h1 className="text-base font-semibold text-gray-900">
+            Organigramma{funzioneFilter ? ` — ${funzioneFilter}` : ''}{search.trim() ? ` — Ricerca: "${search.trim()}"` : ''}
+          </h1>
+          <p className="text-[11px] text-gray-500">
+            {[funzioneFilter && `Funzione: ${funzioneFilter}`, search.trim() && `Persona: ${search.trim()}`, byMansione && 'Vista per mansione'].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+        <div className="card overflow-x-auto overflow-y-hidden py-6 org-print-area">
           {loading ? (
             <p className="text-sm text-gray-400 text-center py-12">Caricamento…</p>
           ) : tree.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-12">Nessun dipendente trovato</p>
           ) : (
-            <ul className="org-tree mx-auto w-max">
+            <ul ref={treeRef} className="org-tree mx-auto w-max org-print-zoom">
               {tree.map(n => (
                 <OrgCard key={n.people[0].id} node={n} colorFor={colorFor} expanded={expanded} toggle={toggle} matches={matchIds} selectedId={selectedId} onSelect={setSelectedId} />
               ))}

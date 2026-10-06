@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell, PieChart, Pie,
 } from 'recharts';
+import Link from 'next/link';
 import type { HrEmployee, HrPlant } from '@/types';
 
 const BACKEND = typeof window !== 'undefined'
@@ -18,13 +19,13 @@ const TICK = { fontSize: 12, fill: '#374151' };
 
 // ─── Dimensioni di analisi ─────────────────────────────────────────────────────
 
-type Dim = 'l68' | 'funzione' | 'plant' | 'societa' | 'categoria' | 'tipologia' | 'livello' | 'responsabile' | 'reparto' | 'nazionalita' | 'sesso' | 'anzianita';
+type Dim = 'mansione' | 'l68' | 'funzione' | 'plant' | 'societa' | 'categoria' | 'tipologia' | 'livello' | 'responsabile' | 'reparto' | 'nazionalita' | 'sesso' | 'anzianita';
 
 const DIM_LABEL: Record<Dim, string> = {
-  l68: 'Legge 68', funzione: 'Funzione aziendale', plant: 'Plant', societa: 'Società', categoria: 'Categoria', tipologia: 'Tipologia', livello: 'Livello',
+  l68: 'Legge 68', mansione: 'Mansione', funzione: 'Funzione aziendale', plant: 'Plant', societa: 'Società', categoria: 'Categoria', tipologia: 'Tipologia', livello: 'Livello',
   responsabile: 'Responsabile', reparto: 'Reparto', nazionalita: 'Nazionalità', sesso: 'Sesso', anzianita: 'Anzianità',
 };
-const FILTER_ORDER: Dim[] = ['funzione', 'l68', 'plant', 'societa', 'categoria', 'tipologia', 'livello', 'responsabile', 'reparto', 'nazionalita', 'sesso', 'anzianita'];
+const FILTER_ORDER: Dim[] = ['funzione', 'mansione', 'l68', 'plant', 'societa', 'categoria', 'tipologia', 'livello', 'responsabile', 'reparto', 'nazionalita', 'sesso', 'anzianita'];
 
 type Filters = Partial<Record<Dim, string[]>>;
 
@@ -37,6 +38,7 @@ function valuesOf(e: HrEmployee, dim: Dim, plantName: Map<number, string>): stri
     case 'categoria':    return [clean(e.categoria)];
     case 'tipologia':    return [clean(e.tipo_contratto)];
     case 'livello':      return [clean(e.livello)];
+    case 'mansione':     return [clean(e.mansione)];
     case 'responsabile': return [clean(e.capo_nome)];
     case 'reparto':      return [clean(e.reparto_name)];
     case 'funzione':     return [clean(e.funzione_aziendale)];
@@ -89,6 +91,34 @@ function anzianitaByFunzione(list: HrEmployee[]) {
   const series = [...seriesTotals.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
   // Ordine cronologico fisso (non per conteggio): si legge come una progressione
   const data = ANZIANITA_BUCKETS.map(b => rows.get(b)!);
+  return { data, series };
+}
+
+// Livelli per mansione: una riga per mansione (tutte; maxRows permette di raggruppare il resto in "Altre"),
+// una serie per livello. L'ordine dei livelli è naturale (1, 2, 3… 10).
+function livelliByMansione(list: HrEmployee[], maxRows = Infinity) {
+  const rows = new Map<string, Record<string, number | string>>();
+  const levels = new Set<string>();
+  for (const e of list) {
+    const mansione = e.mansione?.trim() || NA;
+    const livello = e.livello?.trim() || NA;
+    const row = rows.get(mansione) ?? { name: mansione, _total: 0 };
+    row[livello] = ((row[livello] as number) ?? 0) + 1;
+    row._total = (row._total as number) + 1;
+    rows.set(mansione, row);
+    levels.add(livello);
+  }
+  const sorted = [...rows.values()].sort((a, b) => (b._total as number) - (a._total as number) || (a.name as string).localeCompare(b.name as string));
+  let data = sorted;
+  if (sorted.length > maxRows) {
+    const other: Record<string, number | string> = { name: 'Altre', _total: 0 };
+    for (const r of sorted.slice(maxRows - 1)) for (const [k, v] of Object.entries(r)) {
+      if (k === 'name') continue;
+      other[k] = ((other[k] as number) ?? 0) + (v as number);
+    }
+    data = [...sorted.slice(0, maxRows - 1), other];
+  }
+  const series = [...levels].sort((a, b) => (a === NA ? 1 : b === NA ? -1 : a.localeCompare(b, 'it', { numeric: true })));
   return { data, series };
 }
 
@@ -263,7 +293,7 @@ function Stacked({ data, series, colorFor, asPct, labelWidth = 140, onSelect, ac
       <BarChart data={data} layout="vertical" stackOffset={asPct ? 'expand' : 'none'} margin={{ top: 0, right: 24, bottom: 0, left: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
         <XAxis type="number" allowDecimals={false} tick={TICK} tickFormatter={asPct ? (v: number) => `${Math.round(v * 100)}%` : undefined} />
-        <YAxis type="category" dataKey="name" width={labelWidth} axisLine={false} tickLine={false}
+        <YAxis type="category" dataKey="name" width={labelWidth} interval={0} axisLine={false} tickLine={false}
           tick={<ClickableCategoryTick onSelect={onSelectRow ?? onSelect} active={activeRow ?? active} />} />
         <Tooltip cursor={{ fill: '#f3f4f6' }} />
         <Legend wrapperStyle={{ fontSize: 12 }} onClick={onSelect ? (d: any) => isClickable(d.value) && onSelect(d.value) : undefined} cursor={onSelect ? 'pointer' : undefined} />
@@ -342,7 +372,7 @@ const STATO_LABEL: Record<string, string> = {
   maternita_paternita: 'Maternità/paternità', cessato: 'Cessato',
 };
 
-export function AnalisiOrganico() {
+export function AnalisiOrganico({ view = 'main' }: { view?: 'main' | 'mansioni' }) {
   const [all, setAll] = useState<HrEmployee[]>([]);
   const [plants, setPlants] = useState<HrPlant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -416,6 +446,7 @@ export function AnalisiOrganico() {
   }, [expiring]);
 
   const anzianitaStruct = useMemo(() => anzianitaByFunzione(active), [active]);
+  const livelliStruct = useMemo(() => livelliByMansione(active), [active]);
   const maternityList = useMemo(() => active.filter(e => e.stato === 'maternita_paternita'), [active]);
   const peopleRows = useMemo(() => [...active].sort((a, b) =>
     a.cognome.localeCompare(b.cognome, 'it') || a.nome.localeCompare(b.nome, 'it')), [active]);
@@ -488,9 +519,19 @@ export function AnalisiOrganico() {
         ])} />} />
   );
 
+  const livelliCard = (
+    <Card title="Livelli per mansione"
+            canPct
+            hint="Per ogni mansione, quante persone hanno ciascun livello. Clic su una mansione o un livello per filtrare."
+            chart={asPct => <Stacked data={livelliStruct.data} series={livelliStruct.series} colorFor={colorFor('livello')} asPct={asPct} labelWidth={200}
+              onSelect={name => toggleFilter('livello', name)} active={filters.livello ?? []}
+              onSelectRow={name => toggleFilter('mansione', name)} activeRow={filters.mansione ?? []} />}
+            table={crossTable(livelliStruct, 'Mansione')} />
+  );
+
   return (
     <ModeCtx.Provider value={mode}>
-      <div className="space-y-4">
+      <div className="space-y-4 analisi-print">
         {/* Intestazione visibile solo in stampa: titolo, data e filtri applicati */}
         <div className="only-print">
           <p className="text-lg font-semibold text-gray-900">Analisi HR</p>
@@ -532,6 +573,9 @@ export function AnalisiOrganico() {
                 </button>
               ))}
             </div>
+            {view === 'main'
+              ? <Link href="/hr/analisi/mansioni" className="btn-secondary text-sm py-1.5">Livelli per mansione →</Link>
+              : <Link href="/hr/analisi" className="btn-secondary text-sm py-1.5">← Analisi HR</Link>}
             <button type="button" onClick={() => window.print()} className="btn-primary text-sm py-1.5">Stampa</button>
           </div>
         </div>
@@ -547,6 +591,7 @@ export function AnalisiOrganico() {
         )}
 
         <Section title="Riepilogo">
+          {view === 'mansioni' ? livelliCard : <>
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
             <Kpi label={scope === 'cessati' ? 'Organico cessato' : 'Organico attivo'} value={totActive} />
             <Kpi label="Età media" value={etaMedia != null ? etaMedia.toFixed(1) : '—'} sub="anni" />
@@ -586,7 +631,9 @@ export function AnalisiOrganico() {
             {monthlyCard}
           </div>
 
-          {peopleListCard}
+          {/* L'elenco nominativo non serve nel report stampato: resta solo a schermo */}
+          <div className="d-print-none">{peopleListCard}</div>
+          </>}
         </Section>
 
       </div>

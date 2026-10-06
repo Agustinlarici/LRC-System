@@ -152,6 +152,7 @@ run_migrations() {
     "db/migrate-hr-deadlines-multi-societa.sql"
     "db/migrate-hr-capo-pairs.sql"
     "db/migrate-hr-documents.sql"
+    "db/migrate-hr-deadline-acks.sql"
   )
   for f in "${MIGRATIONS[@]}"; do
     if [ -f "$f" ]; then

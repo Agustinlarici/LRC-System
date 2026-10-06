@@ -38,6 +38,20 @@ function ruleDescription(r: HrDeadlineRule): string {
   return `${ruleSocieta(r)} · ${r.in_prova == null ? 'in prova o no' : r.in_prova ? 'in prova' : 'non in prova'}`;
 }
 
+interface DeadlineAck {
+  employee_id: number;
+  data_cessazione: string;
+  status: 'preso_in_carico';
+  user_name: string | null;
+  acted_at: string;
+}
+
+function fmtDateTime(d: string): string {
+  return new Date(d).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+const COLS = 'grid-cols-[160px_minmax(110px,1fr)_minmax(110px,1fr)_minmax(100px,1fr)_70px_100px_130px_80px]';
+
 interface RuleFormState {
   label: string;
   contract_company_ids: number[]; // [] = tutte
@@ -54,6 +68,7 @@ export default function ScadenzePage() {
   const [employees, setEmployees] = useState<HrEmployee[]>([]);
   const [companies, setCompanies] = useState<HrContractCompany[]>([]);
   const [rules, setRules] = useState<HrDeadlineRule[]>([]);
+  const [acks, setAcks] = useState<Map<number, DeadlineAck>>(new Map());
   const [loading, setLoading] = useState(true);
   const [societaFilter, setSocietaFilter] = useState<number[]>([]);
   const [showRules, setShowRules] = useState(false);
@@ -63,14 +78,16 @@ export default function ScadenzePage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [empRes, coRes, ruleRes] = await Promise.all([
+    const [empRes, coRes, ruleRes, ackRes] = await Promise.all([
       fetch(`${BACKEND}/api/hr/employees`, { credentials: 'include' }),
       fetch(`${BACKEND}/api/hr/contract-companies`, { credentials: 'include' }),
       fetch(`${BACKEND}/api/hr/deadline-rules`, { credentials: 'include' }),
+      fetch(`${BACKEND}/api/hr/deadline-acks`, { credentials: 'include' }),
     ]);
     if (empRes.ok) setEmployees(await empRes.json());
     if (coRes.ok) setCompanies(await coRes.json());
     if (ruleRes.ok) setRules(await ruleRes.json());
+    if (ackRes.ok) setAcks(new Map((await ackRes.json() as DeadlineAck[]).map(a => [a.employee_id, a])));
     setLoading(false);
   }, []);
 
@@ -114,6 +131,23 @@ export default function ScadenzePage() {
       scadute: mine.filter(d => d.overdue).length,
     };
   }), [rules, allDeadlines]);
+
+  // Il numero nella sidebar si aggiorna tramite l'evento, senza aspettare il
+  // prossimo cambio pagina.
+  async function setAck(employeeId: number, status: 'preso_in_carico' | null) {
+    const res = await fetch(`${BACKEND}/api/hr/deadline-acks/${employeeId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) { const b = await res.json().catch(() => ({})); toast.error(b.message ?? 'Errore durante il salvataggio'); return; }
+    const saved: DeadlineAck | null = status === null ? null : await res.json();
+    setAcks(prev => {
+      const next = new Map(prev);
+      if (saved) next.set(employeeId, saved); else next.delete(employeeId);
+      return next;
+    });
+    window.dispatchEvent(new Event('hr-deadlines-changed'));
+  }
 
   function resetRuleForm() { setEditingRuleId(null); setRuleForm(EMPTY_RULE_FORM()); }
   function startEditRule(r: HrDeadlineRule) {
@@ -319,19 +353,46 @@ export default function ScadenzePage() {
           <span className="text-xs text-gray-400">Solo dipendenti in avviso o scaduti</span>
         </div>
 
-        <div className="grid grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_minmax(110px,1fr)_90px_110px_130px_90px] gap-x-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide">
-          <div>Cognome</div><div>Nome</div><div>Società</div><div className="text-center">Prova</div>
+        <div className={`grid ${COLS} gap-x-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide`}>
+          <div>In carico</div><div>Cognome</div><div>Nome</div><div>Società</div><div className="text-center">Prova</div>
           <div>Cessazione</div><div>Regola applicata</div><div className="text-center">Giorni</div>
         </div>
         {loading ? (
           <p className="text-sm text-gray-400 text-center py-12">Caricamento…</p>
         ) : deadlines.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-12">Nessuna scadenza trovata</p>
-        ) : deadlines.map(d => (
+        ) : deadlines.map(d => {
+          // Lo stato vale solo per la data di cessazione a cui si riferiva.
+          const stored = acks.get(d.employee.id);
+          const ack = stored && stored.data_cessazione === d.employee.data_cessazione?.slice(0, 10) ? stored : null;
+          return (
           <Link key={d.employee.id} href={`/hr/dipendenti/${d.employee.id}`}
-            className={`grid grid-cols-[minmax(120px,1fr)_minmax(120px,1fr)_minmax(110px,1fr)_90px_110px_130px_90px] gap-x-3 px-4 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50 transition-colors items-center
-              ${d.overdue ? 'bg-red-50/60' : d.inAvviso ? 'bg-amber-50/60' : ''}`}
+            className={`grid ${COLS} gap-x-3 px-4 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50 transition-colors items-center
+              ${ack ? 'opacity-60' : d.overdue ? 'bg-red-50/60' : d.inAvviso ? 'bg-amber-50/60' : ''}`}
           >
+            <div className="flex items-center gap-2 min-w-0">
+              <button
+                type="button"
+                aria-label={ack ? 'Rimuovi presa in carico' : 'Prendi in carico'}
+                title={ack ? 'Preso in carico — clicca per annullare' : 'Prendi in carico'}
+                onClick={e => { e.preventDefault(); e.stopPropagation(); setAck(d.employee.id, ack ? null : 'preso_in_carico'); }}
+                className={`shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                  ack ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-gray-300 text-transparent hover:border-green-500 hover:text-green-500'
+                }`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} className="w-3.5 h-3.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </button>
+              {ack ? (
+                <div className="min-w-0 leading-tight" title={`${ack.user_name ?? '—'} · ${fmtDateTime(ack.acted_at)}`}>
+                  <p className="text-[11px] font-medium text-gray-600 truncate">{ack.user_name ?? '—'}</p>
+                  <p className="text-[10px] text-gray-400">{fmtDateTime(ack.acted_at)}</p>
+                </div>
+              ) : (
+                <span className="text-[11px] text-gray-300">Da gestire</span>
+              )}
+            </div>
             <div className="text-sm font-medium text-gray-800 truncate">{d.employee.cognome}</div>
             <div className="text-sm text-gray-800 truncate">{d.employee.nome}</div>
             <div className="text-sm text-gray-600 truncate">{d.employee.contract_company_name ?? '—'}</div>
@@ -348,7 +409,8 @@ export default function ScadenzePage() {
               </span>
             </div>
           </Link>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

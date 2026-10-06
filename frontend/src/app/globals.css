@@ -191,3 +191,22 @@ body {
   body[data-print-only] .print-card:not([data-print-target]) { display: none !important; }
   body[data-print-only] h2 { display: none !important; }
 }
+
+/* Report Analisi HR: A4 orizzontale, compatto e uniforme, poche pagine. La pagina
+   con nome (`page: analisi`) evita di cambiare formato alle altre stampe. */
+@page analisi { size: A4 landscape; margin: 8mm; }
+@media print {
+  .analisi-print { page: analisi; zoom: 0.82; }
+  .analisi-print.space-y-4 > * + *,
+  .analisi-print .space-y-4 > * + * { margin-top: 8px !important; }
+  .analisi-print .grid { gap: 8px !important; }
+  .analisi-print .card { padding: 8px !important; border: 1px solid #e5e7eb !important; }
+  .analisi-print .min-h-\[300px\] { min-height: 0 !important; }
+}
+
+/* ─── Stampa Organigramma: solo l'albero, A4 orizzontale, scalato da handlePrint ─ */
+@media print {
+  .org-print-area { overflow: visible !important; box-shadow: none !important; border: 0 !important; padding: 0 !important; }
+  .org-print-zoom { zoom: var(--print-zoom, 1); }
+  .org-tree li, .org-node { break-inside: avoid; }
+}

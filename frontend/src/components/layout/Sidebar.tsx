@@ -33,6 +33,20 @@ function IconChevron({ open }: { open: boolean }) {
   );
 }
 
+const BACKEND = typeof window !== 'undefined'
+  ? `${window.location.protocol}//${window.location.hostname}:3001`
+  : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
+
+// Pallino con il numero di scadenze HR non ancora prese in carico (0 = nascosto)
+function CountBadge({ n, className = '' }: { n: number; className?: string }) {
+  if (n <= 0) return null;
+  return (
+    <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none shrink-0 ${className}`}>
+      {n > 99 ? '99+' : n}
+    </span>
+  );
+}
+
 // ─── Permission key map ───────────────────────────────────────────────────────
 
 const MODULE_KEY_MAP: Record<string, ModuleKey> = {
@@ -72,6 +86,24 @@ export function Sidebar() {
   const [expanded,   setExpanded]   = useState(true);
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const { user, canView, canManage, logout } = useAuth();
+  const [deadlineCount, setDeadlineCount] = useState(0);
+  const canSeeHr = canView('hr');
+
+  // Scadenze HR da vedere: si aggiorna a ogni cambio pagina e quando la pagina
+  // Scadenze segna qualcosa come visto/in lavorazione.
+  useEffect(() => {
+    if (!canSeeHr) { setDeadlineCount(0); return; }
+    let cancelled = false;
+    async function loadCount() {
+      try {
+        const res = await fetch(`${BACKEND}/api/hr/deadline-pending-count`, { credentials: 'include' });
+        if (res.ok && !cancelled) setDeadlineCount((await res.json()).count ?? 0);
+      } catch { /* badge opzionale */ }
+    }
+    loadCount();
+    window.addEventListener('hr-deadlines-changed', loadCount);
+    return () => { cancelled = true; window.removeEventListener('hr-deadlines-changed', loadCount); };
+  }, [canSeeHr, pathname]);
 
   // Restore sidebar expanded state + open the group containing the current page
   useEffect(() => {
@@ -185,7 +217,10 @@ export function Sidebar() {
                         : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'}`}
                   >
                     <span>{group}</span>
-                    <IconChevron open={groupOpen} />
+                    <span className="flex items-center gap-1.5">
+                      {group === 'HR' && !groupOpen && <CountBadge n={deadlineCount} />}
+                      <IconChevron open={groupOpen} />
+                    </span>
                   </button>
                   {groupOpen && (
                     <div className="mt-0.5 space-y-0.5">
@@ -198,7 +233,8 @@ export function Sidebar() {
                               ${active ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'}`}
                           >
                             <Icon />
-                            <span className="truncate font-medium">{m.label}</span>
+                            <span className="truncate font-medium flex-1">{m.label}</span>
+                            {m.href === '/hr/scadenze' && <CountBadge n={deadlineCount} />}
                           </Link>
                         );
                       })}
@@ -211,7 +247,10 @@ export function Sidebar() {
                   className={`w-full flex justify-center px-2.5 py-2.5 rounded-lg transition-colors
                     ${groupActive ? 'text-blue-400 bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'}`}
                 >
-                  <GroupIcon />
+                  <span className="relative">
+                    <GroupIcon />
+                    {group === 'HR' && <CountBadge n={deadlineCount} className="absolute -top-1.5 -right-2" />}
+                  </span>
                 </button>
               )}
             </div>

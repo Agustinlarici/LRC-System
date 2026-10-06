@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
 import { ImportExcelButton, type ImportResult } from '@/components/ui/ImportExcelButton';
@@ -43,7 +43,7 @@ const GRID_COLS = '28px minmax(130px,1fr) minmax(110px,1fr) 90px 56px minmax(100
 // Intestazioni esattamente come nell'Excel STR — il parser CSV le trasforma in
 // minuscolo con underscore al posto degli spazi (mantiene apostrofi).
 const IMPORT_COLUMNS = [
-  'COGNOME E NOME', 'MATRICOLA', 'SESSO', 'CATEGORIA', "SOCIETA' CONTRATTO", "NAZIONALITA'",
+  'COGNOME E NOME', 'MATRICOLA', 'CODICE FISCALE', 'SESSO', 'CATEGORIA', "SOCIETA' CONTRATTO", "NAZIONALITA'",
   'MANSIONE (MICRO)', 'LIVELLO', 'REPARTO', 'PLANT', 'RESPONSABILE', 'MANAGER', 'FUNZIONE AZIENDALE',
   'DATA ASSUNZIONE', 'DATA CESSAZIONE', 'TIPOLOGIA CONTRATTO', "MATERNITA'", 'IN PROVA',
 ];
@@ -62,6 +62,7 @@ function parseItalianDate(s: string | undefined): string | null {
 }
 
 export default function DipendentiPage() {
+  const router = useRouter();
   const { canManage } = useAuth();
   const manage = canManage('hr');
 
@@ -71,8 +72,7 @@ export default function DipendentiPage() {
   const [companies,    setCompanies]    = useState<HrContractCompany[]>([]);
   const [tags,         setTags]         = useState<HrEmployeeTag[]>([]);
   const [loading,      setLoading]      = useState(true);
-  const [fCognome, setFCognome] = useState('');
-  const [fNome, setFNome] = useState('');
+  const [fNominativo, setFNominativo] = useState('');
   const [fMatricola, setFMatricola] = useState('');
   const [fMansione, setFMansione] = useState('');
   const [fResp, setFResp] = useState('');
@@ -88,6 +88,7 @@ export default function DipendentiPage() {
   const [tagFilter, setTagFilter] = useState<number | ''>('');
   const [inProvaFilter, setInProvaFilter] = useState<'' | 'si' | 'no'>('');
   const [statoFilter,   setStatoFilter]   = useState<string>('attivo');
+  const [showFilters,   setShowFilters]   = useState(true);
   const [showNew,       setShowNew]       = useState(false);
   const [showTags,      setShowTags]      = useState(false);
   const [tagMenuFor,    setTagMenuFor]    = useState<number | null>(null);
@@ -187,23 +188,31 @@ export default function DipendentiPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const hasFilters = !!(fCognome || fNome || fMatricola || fMansione || fResp || fSesso || fCategoria
+  const hasFilters = !!(fNominativo || fMatricola || fMansione || fResp || fSesso || fCategoria
     || fNazionalita || fLivello || fTipoContratto || funzioneFilter || repartoFilter || plantFilter
     || societaFilter || tagFilter || inProvaFilter || statoFilter !== 'attivo');
   function resetFilters() {
-    setFCognome(''); setFNome(''); setFMatricola(''); setFMansione(''); setFResp('');
+    setFNominativo(''); setFMatricola(''); setFMansione(''); setFResp('');
     setFSesso(''); setFCategoria(''); setFNazionalita(''); setFLivello(''); setFTipoContratto('');
     setFunzioneFilter(''); setRepartoFilter(''); setPlantFilter(''); setSocietaFilter('');
     setTagFilter(''); setInProvaFilter(''); setStatoFilter('attivo');
   }
   const funzioni = Array.from(new Set(employees.map(e => e.funzione_aziendale).filter((f): f is string => !!f))).sort((a, b) => a.localeCompare(b));
   const categorie = Array.from(new Set(employees.map(e => e.categoria).filter((f): f is string => !!f))).sort((a, b) => a.localeCompare(b));
+  const distinctOf = (vals: (string | null)[]) => Array.from(new Set(vals.filter((v): v is string => !!v))).sort((a, b) => a.localeCompare(b));
+  const nazionalita = distinctOf(employees.map(e => e.nazionalita));
+  const mansioni = distinctOf(employees.map(e => e.mansione));
+  const livelli = distinctOf(employees.map(e => e.livello));
+  const responsabili = distinctOf(employees.map(e => e.capo_nome));
   const tipiContratto = Array.from(new Set(employees.map(e => e.tipo_contratto).filter((f): f is string => !!f))).sort((a, b) => a.localeCompare(b));
   const visible = employees.filter(e => {
     const has = (v: string | null | undefined, q: string) => !q.trim() || (v ?? '').toLowerCase().includes(q.trim().toLowerCase());
-    return has(e.cognome, fCognome) && has(e.nome, fNome) && has(e.matricola, fMatricola)
-      && has(e.mansione, fMansione) && has(e.capo_nome, fResp) && has(e.nazionalita, fNazionalita)
-      && has(e.livello, fLivello)
+    // Nome e cognome in un solo filtro: ogni parola digitata deve comparire, in qualunque ordine
+    const fullName = `${e.cognome} ${e.nome}`.toLowerCase();
+    return fNominativo.trim().toLowerCase().split(/\s+/).filter(Boolean).every(w => fullName.includes(w))
+      && has(e.matricola, fMatricola)
+      && (!fMansione || e.mansione === fMansione) && (!fResp || e.capo_nome === fResp)
+      && (!fNazionalita || e.nazionalita === fNazionalita) && (!fLivello || e.livello === fLivello)
       && (!fSesso || e.sesso === fSesso)
       && (!fCategoria || e.categoria === fCategoria)
       && (!fTipoContratto || e.tipo_contratto === fTipoContratto)
@@ -253,11 +262,13 @@ export default function DipendentiPage() {
       empByCognome.set(k, [...(empByCognome.get(k) ?? []), id]);
     };
     const empByMatricola = new Map<string, number>();
+    const empByCF = new Map<string, number>();
     const empByFullName  = new Map<string, number>();
     const empByNomeCognome = new Map<string, number>();
     for (const e of all) {
       addCognome(e.cognome, e.id, e.nome);
       if (e.matricola) empByMatricola.set(e.matricola.toLowerCase(), e.id);
+      if (e.codice_fiscale) empByCF.set(e.codice_fiscale.replace(/\s+/g, '').toUpperCase(), e.id);
       empByFullName.set(`${e.cognome} ${e.nome}`.toLowerCase(), e.id);
       empByNomeCognome.set(`${e.nome} ${e.cognome}`.toLowerCase(), e.id);
     }
@@ -335,8 +346,13 @@ export default function DipendentiPage() {
       const dataCessazione = parseItalianDate(row['data_cessazione']);
       const cessato = !!dataCessazione && dataCessazione <= today;
 
+      // Codice fiscale: solo se presente nella riga, così un Excel senza la colonna (o con la cella
+      // vuota) non cancella un valore già inserito a mano nella scheda.
+      const cf = (row['codice_fiscale'] ?? '').replace(/\s+/g, '').toUpperCase();
+
       const fields = {
         matricola, nome, cognome,
+        ...(cf ? { codice_fiscale: cf } : {}),
         sesso: row['sesso'] || null,
         categoria: row['categoria'] || null,
         nazionalita: row["nazionalita'"] || null,
@@ -355,6 +371,7 @@ export default function DipendentiPage() {
       if (rowWarnings.length) warnings++;
 
       const existingId = (matricola && empByMatricola.get(matricola.toLowerCase()))
+        || (cf && empByCF.get(cf))
         || empByFullName.get(`${cognome} ${nome}`.toLowerCase());
 
       let id: number | null = null;
@@ -374,6 +391,7 @@ export default function DipendentiPage() {
           empByFullName.set(`${cognome} ${nome}`.toLowerCase(), emp.id);
           empByNomeCognome.set(`${nome} ${cognome}`.toLowerCase(), emp.id);
           if (matricola) empByMatricola.set(matricola.toLowerCase(), emp.id);
+          if (cf) empByCF.set(cf, emp.id);
 
           const maternita = row["maternita'"]?.trim();
           if (maternita) {
@@ -550,18 +568,21 @@ export default function DipendentiPage() {
       </div>
 
       <div className="card p-0 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50">
-          <span className="flex items-center gap-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide">
+        <div className={`flex items-center justify-between px-4 py-2.5 bg-gray-50 ${showFilters ? 'border-b border-gray-100' : ''}`}>
+          <button type="button" onClick={() => setShowFilters(v => !v)} aria-expanded={showFilters}
+            className="flex items-center gap-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide hover:text-gray-700">
             <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 011-1h12a1 1 0 01.8 1.6L12 11v5a1 1 0 01-1.45.9l-2-1A1 1 0 018 15v-4L3.2 4.6A1 1 0 013 4z" /></svg>
             Filtri
-          </span>
+            {hasFilters && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" title="Filtri attivi" />}
+            <svg className={`w-3 h-3 transition-transform ${showFilters ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor"><path d="M5.3 7.3a1 1 0 011.4 0L10 10.6l3.3-3.3a1 1 0 111.4 1.4l-4 4a1 1 0 01-1.4 0l-4-4a1 1 0 010-1.4z" /></svg>
+          </button>
           {hasFilters && (
             <button onClick={resetFilters} className="text-xs text-gray-400 hover:text-gray-600">Pulisci filtri</button>
           )}
         </div>
+        {showFilters && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 px-4 py-3">
-          <input value={fCognome} onChange={e => setFCognome(e.target.value)} placeholder="Cognome" className="input text-sm min-w-0" />
-          <input value={fNome} onChange={e => setFNome(e.target.value)} placeholder="Nome" className="input text-sm min-w-0" />
+          <input value={fNominativo} onChange={e => setFNominativo(e.target.value)} placeholder="Nome e cognome" className="input text-sm min-w-0" />
           <input value={fMatricola} onChange={e => setFMatricola(e.target.value)} placeholder="Matricola" className="input text-sm min-w-0" />
           <select value={fSesso} onChange={e => setFSesso(e.target.value)} className={`input text-sm min-w-0 ${fSesso ? '' : 'text-gray-400'}`}>
             <option value="">Sesso</option>
@@ -576,7 +597,10 @@ export default function DipendentiPage() {
             <option value="">Società contratto</option>
             {companies.map(c => <option key={c.id} value={c.id} className="text-gray-900">{c.name}</option>)}
           </select>
-          <input value={fNazionalita} onChange={e => setFNazionalita(e.target.value)} placeholder="Nazionalità" className="input text-sm min-w-0" />
+          <select value={fNazionalita} onChange={e => setFNazionalita(e.target.value)} className={`input text-sm min-w-0 ${fNazionalita ? '' : 'text-gray-400'}`}>
+            <option value="">Nazionalità</option>
+            {nazionalita.map(v => <option key={v} value={v} className="text-gray-900">{v}</option>)}
+          </select>
           <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className={`input text-sm min-w-0 ${funzioneFilter ? '' : 'text-gray-400'}`}>
             <option value="">Funzione</option>
             {funzioni.map(f => <option key={f} value={f} className="text-gray-900">{f}</option>)}
@@ -589,9 +613,18 @@ export default function DipendentiPage() {
             <option value="">Plant</option>
             {plants.map(p => <option key={p.id} value={p.id} className="text-gray-900">{p.name}</option>)}
           </select>
-          <input value={fMansione} onChange={e => setFMansione(e.target.value)} placeholder="Mansione" className="input text-sm min-w-0" />
-          <input value={fLivello} onChange={e => setFLivello(e.target.value)} placeholder="Livello" className="input text-sm min-w-0" />
-          <input value={fResp} onChange={e => setFResp(e.target.value)} placeholder="Responsabile" className="input text-sm min-w-0" />
+          <select value={fMansione} onChange={e => setFMansione(e.target.value)} className={`input text-sm min-w-0 ${fMansione ? '' : 'text-gray-400'}`}>
+            <option value="">Mansione</option>
+            {mansioni.map(v => <option key={v} value={v} className="text-gray-900">{v}</option>)}
+          </select>
+          <select value={fLivello} onChange={e => setFLivello(e.target.value)} className={`input text-sm min-w-0 ${fLivello ? '' : 'text-gray-400'}`}>
+            <option value="">Livello</option>
+            {livelli.map(v => <option key={v} value={v} className="text-gray-900">{v}</option>)}
+          </select>
+          <select value={fResp} onChange={e => setFResp(e.target.value)} className={`input text-sm min-w-0 ${fResp ? '' : 'text-gray-400'}`}>
+            <option value="">Responsabile</option>
+            {responsabili.map(v => <option key={v} value={v} className="text-gray-900">{v}</option>)}
+          </select>
           <select value={fTipoContratto} onChange={e => setFTipoContratto(e.target.value)} className={`input text-sm min-w-0 ${fTipoContratto ? '' : 'text-gray-400'}`}>
             <option value="">Tipo contratto</option>
             {tipiContratto.map(t => <option key={t} value={t} className="text-gray-900">{t}</option>)}
@@ -610,6 +643,7 @@ export default function DipendentiPage() {
             {STATO_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value} className="text-gray-900">{o.label}</option>)}
           </select>
         </div>
+        )}
       </div>
 
       <div ref={tableRef} className="card p-0 overflow-hidden">
@@ -631,8 +665,16 @@ export default function DipendentiPage() {
           ) : visible.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-12">Nessun dipendente trovato</p>
           ) : visible.map(e => (
-            <Link key={e.id} href={`/hr/dipendenti/${e.id}`}
-              className="relative z-0 grid gap-x-3 px-4 py-3 border-b border-gray-50 last:border-b-0 bg-white hover:bg-gray-50 transition-colors items-center"
+            // Riga cliccabile ma NON un <a>: dentro un link il browser trascina invece di selezionare il testo,
+            // e il copia/incolla dalla tabella non funziona. Se c'è testo selezionato, il click non apre la scheda.
+            <div key={e.id} role="link" tabIndex={0}
+              onClick={ev => {
+                if (window.getSelection()?.toString()) return;
+                const href = `/hr/dipendenti/${e.id}`;
+                if (ev.ctrlKey || ev.metaKey) window.open(href, '_blank'); else router.push(href);
+              }}
+              onKeyDown={ev => { if (ev.key === 'Enter') router.push(`/hr/dipendenti/${e.id}`); }}
+              className="relative z-0 grid gap-x-3 px-4 py-3 border-b border-gray-50 last:border-b-0 bg-white hover:bg-gray-50 transition-colors items-center cursor-pointer select-text"
               style={{ gridTemplateColumns: GRID_COLS }}
             >
               <div className="relative">
@@ -697,7 +739,7 @@ export default function DipendentiPage() {
                   </button>
                 )}
               </div>
-            </Link>
+            </div>
           ))}
         </div>
         </div>

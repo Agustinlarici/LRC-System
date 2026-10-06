@@ -129,6 +129,22 @@ hrRoutes.patch('/tags/:id', requireManage('hr'), async (c) => {
   return c.json(row);
 });
 
+// Eliminare un'etichetta la toglie anche ai dipendenti che la avevano (restano senza etichetta)
+hrRoutes.delete('/tags/:id', requireManage('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const user = c.get('user');
+  const removed = await db.begin(async (sql) => {
+    const tx = sql as unknown as typeof db;
+    const cleared = await tx`UPDATE hr_employee SET tag_id = NULL WHERE tag_id = ${id} RETURNING id`;
+    const [row] = await tx`DELETE FROM hr_employee_tag WHERE id = ${id} RETURNING id, name`;
+    if (!row) throw new HTTPException(404, { message: 'Etichetta non trovata' });
+    return { name: row.name, employees: cleared.length };
+  });
+  await auditLog({ userId: user.id, username: user.username, action: 'hr.tag.delete', entity: 'hr_employee_tag', entityId: id, details: removed });
+  return c.json({ ok: true, employees: removed.employees });
+});
+
 // ─── Scadenze — regole di avviso su data_cessazione ──────────────────────────
 // Ogni regola filtra i dipendenti per società contratto e/o in_prova (NULL su un
 // filtro = qualsiasi) e dice quanti giorni prima della data_cessazione avvisare.
@@ -182,6 +198,72 @@ hrRoutes.delete('/deadline-rules/:id', requireManage('hr'), async (c) => {
   const [row] = await db`DELETE FROM hr_deadline_rule WHERE id = ${id} RETURNING id`;
   if (!row) throw new HTTPException(404, { message: 'Regola non trovata' });
   return c.json({ ok: true });
+});
+
+// Presa in carico: "preso in carico", con chi e quando. Vale solo per la
+// data_cessazione a cui era riferito (vedi migrate-hr-deadline-acks.sql).
+hrRoutes.get('/deadline-acks', requireModule('hr'), async (c) => {
+  const rows = await db`
+    SELECT employee_id, to_char(data_cessazione, 'YYYY-MM-DD') AS data_cessazione,
+           status, user_name, acted_at
+    FROM hr_deadline_ack
+  `;
+  return c.json(rows);
+});
+
+const deadlineAckSchema = z.object({
+  status: z.enum(['preso_in_carico']).nullable(),   // null = rimuovi la marcatura
+});
+
+hrRoutes.put('/deadline-acks/:employeeId', requireModule('hr'), async (c) => {
+  const employeeId = parseInt(c.req.param('employeeId') ?? '', 10);
+  if (isNaN(employeeId)) throw new HTTPException(400, { message: 'ID non valido' });
+  const { status } = await parseBody(c, deadlineAckSchema);
+  const user = c.get('user');
+
+  if (status === null) {
+    await db`DELETE FROM hr_deadline_ack WHERE employee_id = ${employeeId}`;
+    return c.json({ ok: true });
+  }
+  const [emp] = await db<{ data_cessazione: string | null }[]>`
+    SELECT to_char(data_cessazione, 'YYYY-MM-DD') AS data_cessazione FROM hr_employee WHERE id = ${employeeId}
+  `;
+  if (!emp) throw new HTTPException(404, { message: 'Dipendente non trovato' });
+  if (!emp.data_cessazione) throw new HTTPException(400, { message: 'Il dipendente non ha una data di cessazione' });
+
+  const [row] = await db`
+    INSERT INTO hr_deadline_ack (employee_id, data_cessazione, status, user_id, user_name, acted_at)
+    VALUES (${employeeId}, ${emp.data_cessazione}, ${status}, ${user.id}, ${user.display_name}, now())
+    ON CONFLICT (employee_id) DO UPDATE SET
+      data_cessazione = EXCLUDED.data_cessazione, status = EXCLUDED.status,
+      user_id = EXCLUDED.user_id, user_name = EXCLUDED.user_name, acted_at = now()
+    RETURNING employee_id, to_char(data_cessazione, 'YYYY-MM-DD') AS data_cessazione, status, user_name, acted_at
+  `;
+  return c.json(row);
+});
+
+// Scadenze in avviso o scadute non ancora prese in carico — numero mostrato nella
+// sidebar. Stessa logica della pagina: vince la prima regola attiva che corrisponde;
+// una scadenza già passata conta anche senza regola.
+hrRoutes.get('/deadline-pending-count', requireModule('hr'), async (c) => {
+  const [row] = await db<{ n: number }[]>`
+    SELECT COUNT(*)::int AS n
+    FROM hr_employee e
+    LEFT JOIN LATERAL (
+      SELECT r.giorni_avviso FROM hr_deadline_rule r
+      WHERE r.is_active
+        AND (cardinality(r.contract_company_ids) = 0 OR e.contract_company_id = ANY(r.contract_company_ids))
+        AND (r.in_prova IS NULL OR r.in_prova = e.in_prova)
+      ORDER BY r.sort_order, r.id
+      LIMIT 1
+    ) rule ON true
+    LEFT JOIN hr_deadline_ack a ON a.employee_id = e.id AND a.data_cessazione = e.data_cessazione
+    WHERE e.stato <> 'cessato' AND e.data_cessazione IS NOT NULL
+      AND a.employee_id IS NULL
+      AND (e.data_cessazione < CURRENT_DATE
+           OR (rule.giorni_avviso IS NOT NULL AND e.data_cessazione - CURRENT_DATE <= rule.giorni_avviso))
+  `;
+  return c.json({ count: row?.n ?? 0 });
 });
 
 // ─── Dipendenti — lista + ficha ───────────────────────────────────────────────

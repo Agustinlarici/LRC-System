@@ -63,6 +63,18 @@ export function TagsSettingsModal({ tags, onClose, onChanged }: Props) {
     if (res.ok) onChanged();
   }
 
+  async function remove(t: HrEmployeeTag) {
+    if (!window.confirm(`Eliminare l'etichetta "${t.name}"? Verrà tolta anche ai dipendenti che la hanno.`)) return;
+    const res = await fetch(`${BACKEND}/api/hr/tags/${t.id}`, { method: 'DELETE', credentials: 'include' });
+    if (res.ok) {
+      if (editingId === t.id) resetForm();
+      onChanged();
+    } else {
+      const b = await res.json().catch(() => ({}));
+      toast.error(b.message ?? "Errore durante l'eliminazione");
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -82,6 +94,7 @@ export function TagsSettingsModal({ tags, onClose, onChanged }: Props) {
                 <button type="button" onClick={() => toggleActive(t)} className="text-xs text-gray-400 hover:text-gray-600 shrink-0">
                   {t.is_active ? 'Disattiva' : 'Riattiva'}
                 </button>
+                <button type="button" onClick={() => remove(t)} className="text-xs text-red-400 hover:text-red-600 shrink-0">Elimina</button>
               </div>
             ))}
           </div>
