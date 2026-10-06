@@ -92,6 +92,40 @@ export default function DipendentiPage() {
   const [showTags,      setShowTags]      = useState(false);
   const [tagMenuFor,    setTagMenuFor]    = useState<number | null>(null);
   const [tagMenuPos,    setTagMenuPos]    = useState<{ top: number; left: number } | null>(null);
+  const [showMatricole, setShowMatricole] = useState(false);
+  const [matricoleBands, setMatricoleBands] = useState<{ from: number; to: number; last: number | null; next: number | null; count: number }[] | null>(null);
+
+  // Prossima matricola per ogni migliaio (0-999, 1000-1999, …): ultima usata + 1.
+  // Considera tutti i dipendenti, anche cessati, perché una matricola non va riassegnata.
+  async function openMatricole() {
+    setShowMatricole(true);
+    setMatricoleBands(null);
+    const res = await fetch(`${BACKEND}/api/hr/employees`, { credentials: 'include' });
+    const all: HrEmployee[] = res.ok ? await res.json() : [];
+    const lastByBand = new Map<number, number>();
+    const countByBand = new Map<number, number>();
+    for (const e of all) {
+      const m = e.matricola?.trim();
+      if (!m || !/^\d+$/.test(m)) continue;
+      const n = parseInt(m, 10);
+      const band = Math.floor(n / 1000);
+      countByBand.set(band, (countByBand.get(band) ?? 0) + 1);
+      if (n > (lastByBand.get(band) ?? -1)) lastByBand.set(band, n);
+    }
+    const maxBand = Math.max(0, ...lastByBand.keys());
+    const bands = [];
+    for (let b = 0; b <= maxBand; b++) {
+      const last = lastByBand.get(b) ?? null;
+      const candidate = last === null ? b * 1000 : last + 1;
+      bands.push({
+        from: b * 1000, to: b * 1000 + 999, last,
+        next: candidate <= b * 1000 + 999 ? candidate : null,
+        count: countByBand.get(b) ?? 0,
+      });
+    }
+    setMatricoleBands(bands);
+  }
+
   const { ask, dialog: promptDialog } = usePromptDialog();
   const { choose, dialog: choiceDialog } = useChoiceDialog();
 
@@ -508,6 +542,7 @@ export default function DipendentiPage() {
         {manage && (
           <div className="flex items-center gap-2">
             <ImportExcelButton columns={IMPORT_COLUMNS} processRows={importRows} onDone={load} label="Importa da Excel" />
+            <button onClick={openMatricole} className="btn-secondary text-sm">Prossima matricola</button>
             <button onClick={() => setShowTags(true)} className="btn-secondary text-sm">Etichette</button>
             <button onClick={() => setShowNew(true)} className="btn-primary text-sm">+ Nuovo dipendente</button>
           </div>
@@ -670,6 +705,46 @@ export default function DipendentiPage() {
 
       {promptDialog}
       {choiceDialog}
+
+      {showMatricole && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setShowMatricole(false)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={ev => ev.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+              <h2 className="text-base font-medium text-gray-900">Prossima matricola</h2>
+              <button onClick={() => setShowMatricole(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+            </div>
+            <div className="overflow-auto px-5 py-3">
+              {!matricoleBands ? (
+                <p className="text-sm text-gray-400 py-6 text-center">Caricamento…</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-gray-400 uppercase tracking-wide text-left">
+                      <th className="py-1.5 font-medium">Fascia</th>
+                      <th className="py-1.5 font-medium">Ultima usata</th>
+                      <th className="py-1.5 font-medium">Prossima</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matricoleBands.map(b => (
+                      <tr key={b.from} className="border-t border-gray-50">
+                        <td className="py-2 text-gray-600">{b.from} – {b.to}</td>
+                        <td className="py-2 text-gray-600">{b.last ?? '—'}</td>
+                        <td className="py-2">
+                          {b.next === null
+                            ? <span className="text-xs text-red-600">fascia esaurita</span>
+                            : <span className="font-semibold text-gray-900">{b.next}</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <p className="text-xs text-gray-400 mt-3">Calcolata sull&apos;ultima matricola numerica di ogni fascia, includendo i dipendenti cessati.</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showNew && (
         <NewEmployeeModal

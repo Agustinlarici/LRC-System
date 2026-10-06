@@ -696,6 +696,28 @@ export interface HrDeadlineRule {
   is_active:               boolean;
 }
 
+export interface HrDocument {
+  id:               number;
+  name:             string;
+  description:      string | null;
+  kind:             'modello' | 'consultazione';
+  event_type:       HrEventType | 'aumento_retributivo' | null;
+  file_name:        string | null;
+  file_size:        number | null;
+  has_file:         boolean;
+  placeholders:     string[];
+  sort_order:       number;
+  is_active:        boolean;
+  uploaded_by_name: string | null;
+  uploaded_at:      string | null;
+}
+
+export interface HrDocumentPlaceholder {
+  key:   string;
+  label: string;
+  group: 'anagrafica' | 'evento' | 'retribuzione';
+}
+
 export interface HrEmployee {
   id:                       number;
   matricola:                string | null;

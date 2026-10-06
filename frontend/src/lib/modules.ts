@@ -149,6 +149,11 @@ export const MODULES: ModuleConfig[] = [
     sidebar: 'IconClipboard', hidden: false, moduleKey: 'hr',
   },
   {
+    href: '/hr/documenti', label: 'Documenti', group: 'HR',
+    description: 'Modelli di lettera (cambio mansione, retribuzione…) e documenti di consultazione',
+    sidebar: 'IconClipboard', hidden: false, moduleKey: 'hr',
+  },
+  {
     href: '/hr/organigramma', label: 'Organigramma', group: 'HR',
     description: 'Struttura organizzativa dinamica, capi e team',
     sidebar: 'IconOrgChart', hidden: false, moduleKey: 'hr',

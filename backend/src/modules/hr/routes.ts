@@ -6,9 +6,11 @@ import { requireModule, requireManage, type Env, type AuthUser } from '../../lib
 import { parseBody } from '../../lib/validate.js';
 import { auditLog } from '../../lib/audit.js';
 import { hrAnalyticsRoutes } from './analytics.js';
+import { hrDocumentRoutes } from './documents.js';
 
 export const hrRoutes = new Hono<Env>();
 hrRoutes.route('/analytics', hrAnalyticsRoutes);
+hrRoutes.route('/documents', hrDocumentRoutes);
 
 // Eventi che un capo può registrare per il proprio team diretto, senza permesso
 // di gestione HR completo — tutto ciò che è strutturale/sensibile (promozioni,

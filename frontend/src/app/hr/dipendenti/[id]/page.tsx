@@ -188,7 +188,7 @@ export default function EmployeeDetailPage() {
         {/* Colonna destra: retribuzione e storico */}
         <div className="space-y-5">
           {salaryView && <SalaryHistory employeeId={employee.id} canManageSalary={canManage('hr_salary')} />}
-          <EventTimeline employeeId={employee.id} canManage={manage} canManageLimited={canEditLimited} />
+          <EventTimeline employeeId={employee.id} employee={employee} departments={departments} plants={plants} allEmployees={allEmployees} canManage={manage} canManageLimited={canEditLimited} />
         </div>
       </div>
 

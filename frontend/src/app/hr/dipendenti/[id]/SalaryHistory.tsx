@@ -56,15 +56,23 @@ export function SalaryHistory({ employeeId, canManageSalary }: { employeeId: num
           <p className="text-sm font-medium text-gray-600">Dati retributivi <span className="text-[10px] text-amber-600 font-normal">(riservato)</span></p>
           {latest && <p className="text-xs text-gray-500 mt-0.5">Attuale: {latest.livello_retributivo ?? '—'} · {fmtCurrency(latest.retribuzione_annua_lorda)}/anno</p>}
         </div>
-        {canManageSalary && <button onClick={() => setShowForm(s => !s)} className="btn-secondary text-sm">{showForm ? 'Chiudi' : '+ Nuovo livello'}</button>}
+        {canManageSalary && <button onClick={() => setShowForm(s => !s)} className="btn-secondary text-sm">{showForm ? 'Chiudi' : '+ Modifica dati retributivi'}</button>}
       </div>
 
       {showForm && (
         <form onSubmit={submit} className="bg-white border border-gray-200 rounded-lg p-4 mb-3 space-y-3">
           <div className="grid grid-cols-3 gap-3">
             <div><label className="label">Decorrenza</label><input type="date" className="input" value={form.data_decorrenza} onChange={e => setForm(f => ({ ...f, data_decorrenza: e.target.value }))} /></div>
-            <div><label className="label">Livello retributivo</label><input className="input" value={form.livello_retributivo} onChange={e => setForm(f => ({ ...f, livello_retributivo: e.target.value }))} /></div>
-            <div><label className="label">Retribuzione annua lorda (€)</label><input type="number" step="0.01" className="input" value={form.retribuzione_annua_lorda} onChange={e => setForm(f => ({ ...f, retribuzione_annua_lorda: e.target.value }))} /></div>
+            <div>
+              <label className="label">Nuovo livello retributivo</label>
+              <input className="input" value={form.livello_retributivo} onChange={e => setForm(f => ({ ...f, livello_retributivo: e.target.value }))} />
+              <p className="text-[11px] text-gray-400 mt-0.5">Attuale: {latest?.livello_retributivo ?? '—'}</p>
+            </div>
+            <div>
+              <label className="label">Nuova retribuzione annua lorda (€)</label>
+              <input type="number" step="0.01" className="input" value={form.retribuzione_annua_lorda} onChange={e => setForm(f => ({ ...f, retribuzione_annua_lorda: e.target.value }))} />
+              <p className="text-[11px] text-gray-400 mt-0.5">Attuale: {latest ? fmtCurrency(latest.retribuzione_annua_lorda) : '—'}</p>
+            </div>
             <div className="col-span-3"><label className="label">Note</label><input className="input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} /></div>
           </div>
           <div className="flex justify-end">

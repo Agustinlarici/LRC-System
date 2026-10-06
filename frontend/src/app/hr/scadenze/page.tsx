@@ -101,10 +101,19 @@ export default function ScadenzePage() {
   const deadlines = useMemo(() => allDeadlines.filter(d => d.inAvviso || d.overdue), [allDeadlines]);
 
   const counts = useMemo(() => ({
-    totale:  allDeadlines.length,
     scadute: allDeadlines.filter(d => d.overdue).length,
     avviso:  allDeadlines.filter(d => d.inAvviso && !d.overdue).length,
   }), [allDeadlines]);
+
+  // Per ogni regola attiva: quanti dipendenti (che la regola "vince") sono in avviso o scaduti.
+  const ruleCards = useMemo(() => rules.filter(r => r.is_active).map(r => {
+    const mine = allDeadlines.filter(d => d.rule?.id === r.id);
+    return {
+      rule: r,
+      avviso: mine.filter(d => d.inAvviso && !d.overdue).length,
+      scadute: mine.filter(d => d.overdue).length,
+    };
+  }), [rules, allDeadlines]);
 
   function resetRuleForm() { setEditingRuleId(null); setRuleForm(EMPTY_RULE_FORM()); }
   function startEditRule(r: HrDeadlineRule) {
@@ -172,25 +181,35 @@ export default function ScadenzePage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-lg font-medium text-gray-900">Scadenze</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Contratti con data di cessazione in arrivo, in base alle regole di avviso</p>
-        </div>
+          <h1 className="text-lg font-medium text-gray-900">Scadenze</h1>        </div>
         {manage && <button onClick={() => setShowRules(true)} className="btn-secondary text-sm">Gestisci regole di avviso</button>}
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
-        <div className="card text-center py-4">
-          <p className="text-2xl font-semibold text-gray-800">{counts.totale}</p>
-          <p className="text-xs text-gray-400 mt-0.5">Con data cessazione</p>
+      <div className="flex flex-wrap items-stretch gap-2">
+        <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5">
+          <span className="text-xs font-medium text-amber-700">In avviso</span>
+          <span className="text-base font-semibold text-amber-700">{counts.avviso}</span>
         </div>
-        <div className="card text-center py-4 bg-amber-50 border-amber-200">
-          <p className="text-2xl font-semibold text-amber-700">{counts.avviso}</p>
-          <p className="text-xs text-amber-600 mt-0.5">In avviso</p>
+        <div className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5">
+          <span className="text-xs font-medium text-red-700">Scadute</span>
+          <span className="text-base font-semibold text-red-700">{counts.scadute}</span>
         </div>
-        <div className="card text-center py-4 bg-red-50 border-red-200">
-          <p className="text-2xl font-semibold text-red-700">{counts.scadute}</p>
-          <p className="text-xs text-red-600 mt-0.5">Scadute</p>
-        </div>
+        {ruleCards.map(({ rule, avviso, scadute }) => (
+          <div
+            key={rule.id}
+            className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-1.5"
+            title={`${ruleDescription(rule)} · avviso a ${rule.giorni_avviso} giorni`}
+          >
+            <div>
+              <p className="text-xs font-medium text-gray-700 whitespace-nowrap">{rule.label || ruleDescription(rule)}</p>
+              <p className="text-[10px] text-gray-400">{rule.giorni_avviso} giorni</p>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 whitespace-nowrap">{avviso} <span className="font-normal">in avviso</span></span>
+              <span className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 whitespace-nowrap">{scadute} <span className="font-normal">scadute</span></span>
+            </div>
+          </div>
+        ))}
       </div>
 
       {showRules && manage && (
@@ -266,9 +285,6 @@ export default function ScadenzePage() {
                     onChange={vals => setRuleForm(f => ({ ...f, in_prova: new Set(vals as ('si' | 'no')[]) }))}
                   />
                 </div>
-                <div className="shrink-0 w-28"><label className="label">Giorni avviso</label>
-                  <input type="number" min={0} className="input text-sm" value={ruleForm.giorni_avviso} onChange={e => setRuleForm(f => ({ ...f, giorni_avviso: e.target.value }))} />
-                </div>
                 <div className="shrink-0"><label className="label">Società (nessuna = tutte)</label>
                   <MultiSelectDropdown
                     className="w-56"
@@ -277,6 +293,9 @@ export default function ScadenzePage() {
                     selected={ruleForm.contract_company_ids.map(String)}
                     onChange={vals => setRuleForm(f => ({ ...f, contract_company_ids: vals.map(Number) }))}
                   />
+                </div>
+                <div className="shrink-0 w-28"><label className="label">Giorni avviso</label>
+                  <input type="number" min={0} className="input text-sm" value={ruleForm.giorni_avviso} onChange={e => setRuleForm(f => ({ ...f, giorni_avviso: e.target.value }))} />
                 </div>
                 <div className="flex items-center gap-2 ml-auto">
                   {editingRuleId && <button type="button" onClick={resetRuleForm} className="btn-secondary text-sm">Annulla</button>}

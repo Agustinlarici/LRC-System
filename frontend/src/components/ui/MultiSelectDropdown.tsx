@@ -23,8 +23,12 @@ export function MultiSelectDropdown({ options, selected, onChange, allLabel = 'T
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const isAll = selected.length === 0;
-  const summary = isAll
+  // "Svuotato": l'utente ha tolto la spunta a "tutto" per scegliere singole voci.
+  // Il valore resta [] (= nessun filtro) finché non spunta qualcosa, ma i checkbox
+  // devono apparire tutti deselezionati mentre il menu è aperto.
+  const [cleared, setCleared] = useState(false);
+  const isAll = selected.length === 0 && !cleared;
+  const summary = selected.length === 0
     ? allLabel
     : selected.length === 1
       ? options.find(o => o.value === selected[0])?.label ?? selected[0]
@@ -38,7 +42,18 @@ export function MultiSelectDropdown({ options, selected, onChange, allLabel = 'T
     const next = base.includes(v) ? base.filter(x => x !== v) : [...base, v];
     // Se il risultato copre di nuovo tutte le opzioni, torna a [] per restare
     // "qualsiasi" (coerente con le regole che trattano la lista vuota come tale).
+    setCleared(false);
     onChange(next.length === options.length ? [] : next);
+  }
+
+  function toggleAll() {
+    setCleared(isAll);
+    onChange([]);
+  }
+
+  function closeMenu() {
+    setCleared(false);
+    setOpen(false);
   }
 
   function openMenu() {
@@ -65,7 +80,7 @@ export function MultiSelectDropdown({ options, selected, onChange, allLabel = 'T
     <div className={`relative inline-block ${className}`}>
       <button
         ref={buttonRef}
-        type="button" onClick={() => (open ? setOpen(false) : openMenu())}
+        type="button" onClick={() => (open ? closeMenu() : openMenu())}
         className={`input text-sm text-left flex items-center justify-between gap-2 w-full ${isAll ? 'text-gray-400' : ''}`}
       >
         <span className="truncate">{summary}</span>
@@ -73,13 +88,13 @@ export function MultiSelectDropdown({ options, selected, onChange, allLabel = 'T
       </button>
       {open && pos && createPortal(
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="fixed inset-0 z-[60]" onClick={closeMenu} />
           <div
             style={{ top: pos.top, left: pos.left, minWidth: pos.width }}
-            className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-56 max-h-64 overflow-y-auto text-sm"
+            className="fixed z-[70] bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-56 max-h-64 overflow-y-auto text-sm"
           >
             <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer font-medium border-b border-gray-100 mb-1">
-              <input type="checkbox" checked={isAll} onChange={() => onChange([])} />
+              <input type="checkbox" checked={isAll} onChange={toggleAll} />
               {allLabel}
             </label>
             {options.map(o => (

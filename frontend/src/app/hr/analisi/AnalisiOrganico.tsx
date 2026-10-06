@@ -194,7 +194,7 @@ function Bars({ data, color = PALETTE[0], onSelect, active }: { data: Count[]; c
     <ResponsiveContainer width="100%" height={Math.max(100, data.length * 26 + 12)}>
       <BarChart data={data} layout="vertical" margin={{ top: 0, right: 48, bottom: 0, left: 0 }}>
         <XAxis type="number" hide allowDecimals={false} />
-        <YAxis type="category" dataKey="name" width={120} axisLine={false} tickLine={false}
+        <YAxis type="category" dataKey="name" width={120} interval={0} axisLine={false} tickLine={false}
           tick={<ClickableCategoryTick onSelect={onSelect} active={active} />} />
         <Tooltip cursor={{ fill: '#f3f4f6' }} formatter={(v: any) => [`${v} (${pct(Number(v), total)})`, 'Persone']} />
         <Bar dataKey="value" name="Persone" radius={[0, 4, 4, 0]} barSize={14}
@@ -348,6 +348,7 @@ export function AnalisiOrganico() {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<Filters>({});
   const [mode, setMode] = useState<Mode>('chart');
+  const [scope, setScope] = useState<'attivi' | 'cessati'>('attivi');
   const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
@@ -363,7 +364,7 @@ export function AnalisiOrganico() {
   }, []);
 
   const plantName = useMemo(() => new Map(plants.map(p => [p.id, p.name])), [plants]);
-  const allActive = useMemo(() => all.filter(e => e.stato !== 'cessato'), [all]);
+  const allActive = useMemo(() => all.filter(e => (scope === 'cessati') === (e.stato === 'cessato')), [all, scope]);
 
   // Colori stabili: un valore ha sempre lo stesso colore, qualunque filtro sia attivo
   const colorMaps = useMemo(() => {
@@ -494,7 +495,7 @@ export function AnalisiOrganico() {
         <div className="only-print">
           <p className="text-lg font-semibold text-gray-900">Analisi HR</p>
           <p className="text-xs text-gray-500">
-            Stampato il {fmtDate(today)} · {totActive} persone attive
+            Stampato il {fmtDate(today)} · {totActive} persone {scope === 'cessati' ? 'cessate' : 'attive'}
             {activeFilters.length ? ` · Filtri: ${activeFilters.map(d => `${DIM_LABEL[d]} = ${filters[d]!.join(', ')}`).join(' · ')}` : ' · Nessun filtro'}
           </p>
         </div>
@@ -515,6 +516,14 @@ export function AnalisiOrganico() {
           ))}
           {activeFilters.length > 0 && <button type="button" onClick={() => setFilters({})} className="text-sm px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100">Azzera</button>}
           <div className="ml-auto flex items-center gap-2">
+            <div className="flex rounded-lg overflow-hidden border border-gray-300">
+              {(['attivi', 'cessati'] as const).map(s => (
+                <button key={s} type="button" onClick={() => { setScope(s); setFilters({}); }}
+                  className={`text-sm px-3 py-1.5 ${scope === s ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                  {s === 'attivi' ? 'Attivi' : 'Cessati'}
+                </button>
+              ))}
+            </div>
             <div className="flex rounded-lg overflow-hidden border border-gray-300">
               {(['chart', 'table'] as Mode[]).map(m => (
                 <button key={m} type="button" onClick={() => setMode(m)}
@@ -539,7 +548,7 @@ export function AnalisiOrganico() {
 
         <Section title="Riepilogo">
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
-            <Kpi label="Organico attivo" value={totActive} />
+            <Kpi label={scope === 'cessati' ? 'Organico cessato' : 'Organico attivo'} value={totActive} />
             <Kpi label="Età media" value={etaMedia != null ? etaMedia.toFixed(1) : '—'} sub="anni" />
             <Kpi label="Anzianità media" value={anzianita != null ? anzianita.toFixed(1) : '—'} sub="anni" />
             <Kpi label="Donne" value={pct(donne, totActive)} sub={`${donne} persone`} />
