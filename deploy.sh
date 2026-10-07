@@ -4,8 +4,9 @@
 #
 # Uso:
 #   ./deploy.sh            → primo avvio o deploy completo (build + swap)
-#   ./deploy.sh update     → aggiornamento zero-downtime (pull + migrate + build + swap)
+#   ./deploy.sh update     → aggiornamento zero-downtime (backup + pull + migrate + build + swap + verifica)
 #   ./deploy.sh migrate    → solo migrazioni DB (stack in running)
+#   ./deploy.sh rollback   → torna alla versione prima dell'ultimo update
 #   ./deploy.sh stop       → ferma lo stack
 #   ./deploy.sh restart    → riavvia senza rebuild
 #   ./deploy.sh logs       → log live
@@ -42,8 +43,8 @@ case "$CMD" in
     info "Riavviato."
     exit 0
     ;;
-  up|update|migrate) ;;
-  *) error "Comando sconosciuto: $CMD. Usa: up | update | migrate | stop | restart | logs" ;;
+  up|update|migrate|rollback) ;;
+  *) error "Comando sconosciuto: $CMD. Usa: up | update | migrate | rollback | stop | restart | logs" ;;
 esac
 
 # ─── Controllo .env ───────────────────────────────────────────────
@@ -62,9 +63,6 @@ for var in "${required_vars[@]}"; do
 done
 [ "$missing" -eq 1 ] && error "Compila le variabili obbligatorie nel .env prima di continuare."
 
-DB_USER="$(grep POSTGRES_USER .env | cut -d= -f2)"
-DB_NAME="$(grep POSTGRES_DB .env   | cut -d= -f2)"
-DB_NAME="${DB_NAME:-lrc_system}"
 
 # ─── Cartelle necessarie ──────────────────────────────────────────
 SCAN_HOST="${SCAN_FOLDER_HOST:-./test-scansioni}"
@@ -117,31 +115,98 @@ fi
 # ═══════════════════════════════════════════════════════════════════
 # update — zero-downtime: pull → migrate → build → swap
 # ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+# Funzioni di sicurezza per l'update
+# ═══════════════════════════════════════════════════════════════════
+# Il backend risponde /health con status "ok" entro 90 secondi?
+backend_healthy() {
+  local elapsed=0
+  while [ $elapsed -lt 90 ]; do
+    docker compose exec -T backend wget -qO- http://localhost:3001/health 2>/dev/null | grep -q '"status":"ok"' && return 0
+    sleep 3; elapsed=$((elapsed+3))
+  done
+  return 1
+}
+
+# Riporta il codice alla versione precedente (mantiene eventuali modifiche
+# locali non committate: --keep si rifiuta invece di sovrascriverle).
+revert_code() {
+  warn "Riporto il codice alla versione precedente ($(git rev-parse --short "$1"))..."
+  git reset --keep "$1" || warn "git reset non riuscito: eseguire a mano  git reset --keep $1"
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# update — zero-downtime: backup → pull → migrate → build → swap → verifica
+# Se qualcosa fallisce, la versione in funzione resta (o torna) quella precedente.
+# ═══════════════════════════════════════════════════════════════════
 if [ "$CMD" = "update" ]; then
-  step "0/4  Backup di sicurezza pre-aggiornamento..."
+  PREV_COMMIT="$(git rev-parse HEAD)"
+
+  step "0/5  Backup di sicurezza pre-aggiornamento..."
   BACKUP_KIND=pre-deploy bash scripts/backup/backup.sh \
-    || error "Backup pre-aggiornamento fallito: aggiornamento annullato."
+    || error "Backup pre-aggiornamento fallito: aggiornamento annullato (niente è stato modificato)."
 
-  step "1/4  Git pull..."
-  git pull
+  step "1/5  Git pull..."
+  git pull || error "git pull fallito: aggiornamento annullato (niente è stato modificato)."
+  if [ "$(git rev-parse HEAD)" = "$PREV_COMMIT" ]; then
+    info "Nessuna novità da aggiornare."
+  fi
 
-  step "2/4  Migrazioni DB (stack in running — nessun downtime)..."
+  step "2/5  Migrazioni DB (stack in running — nessun downtime)..."
   docker compose run --rm migrate --status || true
-  run_migrations
+  if ! docker compose run --rm migrate; then
+    revert_code "$PREV_COMMIT"
+    error "Migrazioni fallite (annullate, nessuna modifica parziale). Il programma continua a funzionare con la versione precedente."
+  fi
 
-  step "3/4  Build nuove immagini in background (nessun downtime)..."
-  docker compose build --no-cache
+  step "3/5  Build nuove immagini in background (nessun downtime)..."
+  if ! docker compose build --no-cache; then
+    revert_code "$PREV_COMMIT"
+    error "Build fallita. Il programma continua a funzionare con la versione precedente."
+  fi
 
-  step "4/4  Swap container (~5 secondi di interruzione)..."
+  step "4/5  Swap container (~5 secondi di interruzione)..."
   docker compose up -d
   fix_upload_perms
 
-  info "Aggiornamento completato."
+  step "5/5  Verifica che il backend risponda..."
+  if ! backend_healthy; then
+    warn "Il backend non risponde dopo l'aggiornamento: torno automaticamente alla versione precedente."
+    revert_code "$PREV_COMMIT"
+    docker compose build && docker compose up -d
+    if backend_healthy; then
+      error "Aggiornamento annullato: ripristinata la versione precedente, che funziona. Log: docker compose logs backend"
+    else
+      error "ATTENZIONE: anche la versione precedente non risponde. Vedi docs/DISASTER-RECOVERY.md (procedura B)."
+    fi
+  fi
+  echo "$PREV_COMMIT" > .deploy-previous
+
+  info "Aggiornamento completato e verificato."
   echo ""
   SERVER_IP_ECHO="$(grep -E '^SERVER_IP=' .env | cut -d= -f2-)"
   echo "  Frontend (ufficio)  →  http://${SERVER_IP_ECHO}:3000"
   echo "  Frontend (tablet)   →  https://${SERVER_IP_ECHO}:3443"
   echo "  Log live  →  ./deploy.sh logs"
+  echo "  Tornare indietro  →  ./deploy.sh rollback"
+  exit 0
+fi
+
+# ═══════════════════════════════════════════════════════════════════
+# rollback — torna alla versione prima dell'ultimo update riuscito
+# (il database non viene toccato: le migrazioni aggiungono e non tolgono;
+#  per tornare anche coi dati: docs/DISASTER-RECOVERY.md, procedura B)
+# ═══════════════════════════════════════════════════════════════════
+if [ "$CMD" = "rollback" ]; then
+  [ -f .deploy-previous ] || error "Nessun update precedente registrato (.deploy-previous mancante)."
+  PREV_COMMIT="$(cat .deploy-previous)"
+  step "Torno alla versione $(git rev-parse --short "$PREV_COMMIT")..."
+  git reset --keep "$PREV_COMMIT" || error "git reset non riuscito (modifiche locali in conflitto?)."
+  docker compose build
+  docker compose up -d
+  backend_healthy && info "Rollback completato, il backend risponde." \
+    || error "Il backend non risponde dopo il rollback. Vedi docs/DISASTER-RECOVERY.md."
+  rm -f .deploy-previous
   exit 0
 fi
 

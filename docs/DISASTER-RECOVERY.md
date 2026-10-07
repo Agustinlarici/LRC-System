@@ -58,10 +58,14 @@ Per annullare: ripristinare l'ultima cartella in `pre-restore/`.
 
 ### B. Aggiornamento andato male
 
+`./deploy.sh update` si protegge da solo: backup prima, e se migrazioni, build o avvio
+del backend falliscono torna automaticamente alla versione precedente.
+Se il problema si scopre dopo (es. un errore funzionale):
+
 ```bash
-git checkout <commit-precedente>                     # vedi git_commit in manifest.txt
+./deploy.sh rollback                                 # torna al codice precedente (DB invariato)
+# Se servono anche i dati di prima dell'update:
 sudo scripts/backup/restore.sh "$(ls -d /srv/lrc-backups/pre-deploy/*/ | tail -1)"
-docker compose up -d --build
 ```
 
 ### C. Server nuovo (il vecchio è perso, il disco dei backup è salvo)
