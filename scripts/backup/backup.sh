@@ -42,8 +42,11 @@ chmod 700 "$BACKUP_DIR"   # contiene .env e dati personali (HR)
 setup_logging backup
 
 # Un solo backup alla volta
-exec 9>"$BACKUP_DIR/.lock"
-flock -n 9 || die "Un altro backup è già in corso"
+# Un solo backup alla volta (restore.sh tiene già il lock e lo segnala)
+if [ "${BACKUP_LOCK_HELD:-0}" != 1 ]; then
+  exec 9>"$BACKUP_DIR/.lock"
+  flock -n 9 || die "Un altro backup o ripristino è già in corso"
+fi
 
 STAMP="$(date +%Y-%m-%d_%H%M%S)"
 WORK="$BACKUP_DIR/.in-progress-$STAMP"
