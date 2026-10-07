@@ -92,9 +92,24 @@ fix_upload_perms() {
 }
 
 # ═══════════════════════════════════════════════════════════════════
+# Funzione: file SQL lasciati in db/ invece che in db/migrations/
+# (abitudine del vecchio sistema: non verrebbero mai applicati)
+# ═══════════════════════════════════════════════════════════════════
+stray_sql() {
+  local stray
+  stray="$(find db -maxdepth 1 -name '*.sql' 2>/dev/null)"
+  [ -z "$stray" ] && return 1
+  warn "File SQL fuori da db/migrations/ (non verrebbero applicati):"
+  echo "$stray" | sed 's/^/        /'
+  warn "Spostarli in db/migrations/ col numero successivo (vedi db/README.md)."
+  return 0
+}
+
+# ═══════════════════════════════════════════════════════════════════
 # Funzione: applica le migrazioni (stack deve essere running)
 # ═══════════════════════════════════════════════════════════════════
 run_migrations() {
+  stray_sql && error "Migrazioni non applicate: sistemare i file indicati sopra."
   step "Applico le migrazioni al database (db/migrations, vedi db/README.md)..."
   # Servizio one-shot "migrate": ogni file una sola volta, in transazione,
   # si ferma al primo errore (prima gli errori venivano ignorati).
@@ -150,6 +165,11 @@ if [ "$CMD" = "update" ]; then
   git pull || error "git pull fallito: aggiornamento annullato (niente è stato modificato)."
   if [ "$(git rev-parse HEAD)" = "$PREV_COMMIT" ]; then
     info "Nessuna novità da aggiornare."
+  fi
+
+  if stray_sql; then
+    revert_code "$PREV_COMMIT"
+    error "Aggiornamento annullato prima di toccare il database. Il programma continua a funzionare."
   fi
 
   step "2/5  Migrazioni DB (stack in running — nessun downtime)..."
@@ -214,6 +234,7 @@ fi
 # up — primo avvio o deploy completo
 # ═══════════════════════════════════════════════════════════════════
 step "Avvio stack LRC System..."
+stray_sql && error "Avvio annullato: sistemare i file SQL indicati sopra."
 # Il servizio "migrate" gira automaticamente prima del backend (depends_on)
 docker compose up --build -d \
   || error "Avvio fallito. Se il problema sono le migrazioni: docker compose logs migrate"
