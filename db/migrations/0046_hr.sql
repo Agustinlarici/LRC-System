@@ -1,3 +1,4 @@
+-- migrate:no-transaction  (ALTER TYPE ... ADD VALUE: il nuovo valore non è usabile nella stessa transazione)
 -- ============================================================
 -- LRC-System — Modulo HR (Risorse Umane)
 -- Run AFTER migrate-auth.sql

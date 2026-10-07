@@ -1,3 +1,4 @@
+-- migrate:no-transaction  (ALTER TYPE ... ADD VALUE: il nuovo valore non è usabile nella stessa transazione)
 -- Monitor Resumen: gruppi configurabili di linee andon
 ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'monitor_resumen';
 CREATE TABLE IF NOT EXISTS monitor_resumen (

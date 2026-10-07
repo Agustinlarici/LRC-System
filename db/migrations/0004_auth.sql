@@ -1,3 +1,4 @@
+-- migrate:no-transaction  (ALTER TYPE ... ADD VALUE: il nuovo valore non è usabile nella stessa transazione)
 -- ============================================================
 -- LRC-System — System-wide Auth Migration
 -- Run AFTER migrate-tickets.sql

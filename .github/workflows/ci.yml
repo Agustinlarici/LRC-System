@@ -47,3 +47,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: shellcheck -S warning scripts/backup/*.sh
+
+  migrations:
+    name: Database — migrazioni (DB vuoto, idempotenza, rollback, legacy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck -S warning db/migrate.sh db/test-migrations.sh db/check-drift.sh
+      - run: db/test-migrations.sh

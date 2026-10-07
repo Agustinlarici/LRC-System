@@ -1,3 +1,4 @@
+-- migrate:no-transaction  (ALTER TYPE ... ADD VALUE: il nuovo valore non è usabile nella stessa transazione)
 -- ============================================================
 -- LRC-System — Programma Produzione Module Migration
 -- Porta e rinnova prod_ins_routes.py / schede/* di ProduzioneSTR:

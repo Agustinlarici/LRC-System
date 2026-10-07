@@ -51,8 +51,10 @@ sudo scripts/backup/restore.sh /srv/lrc-backups/daily/2026-10-07_023000
 # Solo DB:   aggiungere --db-only     Solo file: --files-only
 ```
 Lo script verifica i checksum, chiede di scrivere `RIPRISTINA`, salva lo stato attuale in
-`pre-restore/`, ferma il backend, ripristina e riavvia. Per annullare: ripristinare
-l'ultima cartella in `pre-restore/`.
+`pre-restore/` e ripristina in un **database temporaneo**: la produzione viene sostituita
+solo se il ripristino è riuscito (altrimenti resta intatta e il backend riparte).
+Il database sostituito resta come `lrc_system_pre_restore` fino al ripristino successivo.
+Per annullare: ripristinare l'ultima cartella in `pre-restore/`.
 
 ### B. Aggiornamento andato male
 
@@ -68,12 +70,12 @@ docker compose up -d --build
 # 1. Installare Ubuntu + Docker, montare il disco dei backup su /srv/lrc-backups
 git clone <repo> LRC-System && cd LRC-System
 git checkout <git_commit del manifest>
-# 2. Creare un .env minimo (verrà sostituito dal ripristino):
-echo "POSTGRES_PASSWORD=temp" > .env
 docker volume create lrc-system-pgdata-prod
-# 3. Ripristinare (il .env originale torna dal backup)
-sudo scripts/backup/restore.sh --no-safety latest
-# 4. Controllare SERVER_IP / NEXT_PUBLIC_API_URL / CORS_ORIGINS in .env se cambia l'IP
+# 2. Prima i file: riporta .env, certificati e allegati (non serve il DB)
+sudo scripts/backup/restore.sh --no-safety --files-only latest
+# 3. Poi il database (avvia PostgreSQL e lo ripristina)
+sudo scripts/backup/restore.sh --no-safety --db-only latest
+# 4. Se cambia l'IP: aggiornare SERVER_IP / NEXT_PUBLIC_API_URL / CORS_ORIGINS in .env
 ./deploy.sh
 sudo scripts/backup/install-cron.sh
 ```

@@ -13,35 +13,6 @@ services:
       TZ:                Europe/Rome
     volumes:
       - lrc-system-pgdata-prod:/var/lib/postgresql/data
-      - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
-      - ./db/migrate-tickets.sql:/docker-entrypoint-initdb.d/02_tickets.sql:ro
-      - ./db/migrate-auth.sql:/docker-entrypoint-initdb.d/03_auth.sql:ro
-      - ./db/migrate-tickets-user-profile.sql:/docker-entrypoint-initdb.d/03b_tickets_user_profile.sql:ro
-      - ./db/migrate-tickets-approval.sql:/docker-entrypoint-initdb.d/03c_tickets_approval.sql:ro
-      - ./db/migrate-tickets-category-edit.sql:/docker-entrypoint-initdb.d/03d_tickets_category_edit.sql:ro
-      - ./db/migrate-tickets-created-by.sql:/docker-entrypoint-initdb.d/03e_tickets_created_by.sql:ro
-      - ./db/migrate-tickets-priority-backfill.sql:/docker-entrypoint-initdb.d/03f_tickets_priority_backfill.sql:ro
-      - ./db/migrate-tickets-resolved-backfill.sql:/docker-entrypoint-initdb.d/03g_tickets_resolved_backfill.sql:ro
-      - ./db/migrate-tickets-reopen-backfill.sql:/docker-entrypoint-initdb.d/03h_tickets_reopen_backfill.sql:ro
-      - ./db/migrate-tickets-delete.sql:/docker-entrypoint-initdb.d/03i_tickets_delete.sql:ro
-      - ./db/migrate-heatmap.sql:/docker-entrypoint-initdb.d/04_heatmap.sql:ro
-      - ./db/migrate-heatmap-hourly.sql:/docker-entrypoint-initdb.d/05_heatmap_hourly.sql:ro
-      - ./db/migrate.sql:/docker-entrypoint-initdb.d/06_migrate.sql:ro
-      - ./db/migrate-dashboards.sql:/docker-entrypoint-initdb.d/07_dashboards.sql:ro
-      - ./db/migrate-webthron-cache.sql:/docker-entrypoint-initdb.d/08_webthron_cache.sql:ro
-      - ./db/migrate-system-config.sql:/docker-entrypoint-initdb.d/09_system_config.sql:ro
-      - ./db/migrate-impostazioni.sql:/docker-entrypoint-initdb.d/10_impostazioni.sql:ro
-      - ./db/migrate-spma.sql:/docker-entrypoint-initdb.d/11_spma.sql:ro
-      - ./db/migrate-spma-import-log.sql:/docker-entrypoint-initdb.d/12_spma_import_log.sql:ro
-      - ./db/migrate-lead-time.sql:/docker-entrypoint-initdb.d/13_lead_time.sql:ro
-      - ./db/migrate-unified-sync.sql:/docker-entrypoint-initdb.d/14_unified_sync.sql:ro
-      - ./db/migrate-iknow-tracking.sql:/docker-entrypoint-initdb.d/15_iknow_tracking.sql:ro
-      - ./db/migrate-alerts.sql:/docker-entrypoint-initdb.d/16_alerts.sql:ro
-      - ./db/migrate-recepciones.sql:/docker-entrypoint-initdb.d/17_recepciones.sql:ro
-      - ./db/migrate-spma-onedrive.sql:/docker-entrypoint-initdb.d/18_spma_onedrive.sql:ro
-      - ./db/migrate-audit-log.sql:/docker-entrypoint-initdb.d/19_audit_log.sql:ro
-      - ./db/migrate-edi-establishment-generic.sql:/docker-entrypoint-initdb.d/20_edi_establishment_generic.sql:ro
-      - ./db/migrate-edi-ferrari-delins.sql:/docker-entrypoint-initdb.d/21_edi_ferrari_delins.sql:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -49,6 +20,24 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # ─── Migrazioni DB (one-shot, vedi db/README.md) ──────────────────────────────
+  # Applica le migrazioni mancanti e termina. Il backend parte solo se riesce.
+  migrate:
+    image: postgres:16-alpine
+    restart: "no"
+    entrypoint: ["bash", "/migrate.sh"]
+    environment:
+      PGHOST:     db
+      PGUSER:     ${POSTGRES_USER:-lrc}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-lrc_system}
+    volumes:
+      - ./db/migrate.sh:/migrate.sh:ro
+      - ./db/migrations:/migrations:ro
+    depends_on:
+      db:
+        condition: service_healthy
 
   # ─── Backend (Hono) ───────────────────────────────────────────────────────────
   backend:
@@ -121,6 +110,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   # ─── Frontend (Next.js) ───────────────────────────────────────────────────────
   frontend:

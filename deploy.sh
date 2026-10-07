@@ -12,6 +12,10 @@
 # ═══════════════════════════════════════════════════════════════════
 set -e
 
+# Tutto lo script tra graffe: bash lo legge per intero prima di eseguirlo,
+# così il "git pull" dell'update non può cambiare lo script mentre gira.
+{
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 info()  { echo -e "${GREEN}[LRC]${NC} $1"; }
 step()  { echo -e "${CYAN}[LRC]${NC} $1"; }
@@ -93,74 +97,11 @@ fix_upload_perms() {
 # Funzione: applica le migrazioni (stack deve essere running)
 # ═══════════════════════════════════════════════════════════════════
 run_migrations() {
-  step "Applico le migrazioni al database..."
-
-  # Attendo che il DB sia pronto
-  timeout=60; elapsed=0
-  while ! docker compose exec db pg_isready -U "$DB_USER" -d "$DB_NAME" -q 2>/dev/null; do
-    sleep 2; elapsed=$((elapsed+2))
-    [ $elapsed -ge $timeout ] && error "Database non pronto dopo ${timeout}s."
-  done
-
-  MIGRATIONS=(
-    "db/migrate.sql"
-    "db/migrate-tickets.sql"
-    "db/migrate-auth.sql"
-    "db/migrate-tickets-user-profile.sql"
-    "db/migrate-tickets-approval.sql"
-    "db/migrate-tickets-category-edit.sql"
-    "db/migrate-tickets-created-by.sql"
-    "db/migrate-tickets-priority-backfill.sql"
-    "db/migrate-tickets-resolved-backfill.sql"
-    "db/migrate-tickets-reopen-backfill.sql"
-    "db/migrate-tickets-delete.sql"
-    "db/migrate-heatmap.sql"
-    "db/migrate-heatmap-hourly.sql"
-    "db/migrate-dashboards.sql"
-    "db/migrate-webthron-cache.sql"
-    "db/migrate-system-config.sql"
-    "db/migrate-impostazioni.sql"
-    "db/migrate-unified-sync.sql"
-    "db/migrate-alerts.sql"
-    "db/migrate-resumen.sql"
-    "db/migrate-spma.sql"
-    "db/migrate-spma-import-log.sql"
-    "db/migrate-spma-alerts.sql"
-    "db/migrate-spma-telegram.sql"
-    "db/migrate-spma-email.sql"
-    "db/migrate-spma-onedrive.sql"
-    "db/migrate-iknow-tracking.sql"
-    "db/migrate-lead-time.sql"
-    "db/migrate-recepciones.sql"
-    "db/migrate-edi.sql"
-    "db/migrate-edi-rename-supplier-code.sql"
-    "db/migrate-edi-establishment-generic.sql"
-    "db/migrate-edi-auto-generate.sql"
-    "db/migrate-audit-log.sql"
-    "db/migrate-monitor-stops.sql"
-    "db/migrate-edi-ferrari-delins.sql"
-    "db/migrate-edi-ferrari-delins-idx.sql"
-    "db/migrate-webddt.sql"
-    "db/migrate-qualita.sql"
-    "db/migrate-webddt-po-mapping.sql"
-    "db/migrate-programma-produzione.sql"
-    "db/migrate-device-auth.sql"
-    "db/migrate-force-password-change.sql"
-    "db/migrate-hr.sql"
-    "db/migrate-hr-tags.sql"
-    "db/migrate-hr-deadlines.sql"
-    "db/migrate-hr-deadlines-multi-societa.sql"
-    "db/migrate-hr-capo-pairs.sql"
-    "db/migrate-hr-documents.sql"
-    "db/migrate-hr-deadline-acks.sql"
-  )
-  for f in "${MIGRATIONS[@]}"; do
-    if [ -f "$f" ]; then
-      docker compose cp "$f" "db:/tmp/$(basename "$f")"
-      docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -q -f "/tmp/$(basename "$f")"
-      info "  ✓ $(basename "$f")"
-    fi
-  done
+  step "Applico le migrazioni al database (db/migrations, vedi db/README.md)..."
+  # Servizio one-shot "migrate": ogni file una sola volta, in transazione,
+  # si ferma al primo errore (prima gli errori venivano ignorati).
+  docker compose run --rm migrate \
+    || error "Migrazioni fallite: nessuna modifica parziale applicata. Lo stack attuale resta in funzione."
   info "Migrazioni completate."
 }
 
@@ -185,6 +126,7 @@ if [ "$CMD" = "update" ]; then
   git pull
 
   step "2/4  Migrazioni DB (stack in running — nessun downtime)..."
+  docker compose run --rm migrate --status || true
   run_migrations
 
   step "3/4  Build nuove immagini in background (nessun downtime)..."
@@ -207,9 +149,10 @@ fi
 # up — primo avvio o deploy completo
 # ═══════════════════════════════════════════════════════════════════
 step "Avvio stack LRC System..."
-docker compose up --build -d
+# Il servizio "migrate" gira automaticamente prima del backend (depends_on)
+docker compose up --build -d \
+  || error "Avvio fallito. Se il problema sono le migrazioni: docker compose logs migrate"
 
-run_migrations
 fix_upload_perms
 
 info "Stack avviato con successo!"
@@ -225,3 +168,5 @@ echo ""
 echo "  Log live  →  ./deploy.sh logs"
 echo "  Stop      →  ./deploy.sh stop"
 echo "  Update    →  ./deploy.sh update"
+exit 0
+}
