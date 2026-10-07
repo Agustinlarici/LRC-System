@@ -177,6 +177,10 @@ fi
 # update — zero-downtime: pull → migrate → build → swap
 # ═══════════════════════════════════════════════════════════════════
 if [ "$CMD" = "update" ]; then
+  step "0/4  Backup di sicurezza pre-aggiornamento..."
+  BACKUP_KIND=pre-deploy bash scripts/backup/backup.sh \
+    || error "Backup pre-aggiornamento fallito: aggiornamento annullato."
+
   step "1/4  Git pull..."
   git pull
 
