@@ -65,6 +65,7 @@ export function getDynamicsConfig(): sql.config {
 export interface DynamicsShipment {
   shipment_id:      string;
   shipment_date:    string;
+  shipment_time:    string | null; // ISO UTC, da $systemCreatedAt (Posting Date non ha l'ora)
   customer_account: string;
   document_number:  string;
   document_date:    string;
@@ -125,7 +126,8 @@ export async function getShipments(
       SELECT
         l.[Document No_]                                    AS shipment_id,
         CONVERT(VARCHAR(10), MIN(l.[Posting Date]), 23)     AS shipment_date,
-        l.[Destination No_]                                 AS customer_account,
+        CONVERT(VARCHAR(19), MIN(l.[$systemCreatedAt]), 126) + 'Z' AS shipment_time,
+        l.[Destination No_]                               AS customer_account,
         l.[Document No_]                                    AS document_number,
         CONVERT(VARCHAR(10), MIN(l.[Posting Date]), 23)     AS document_date,
         CAST(0 AS BIT)                                      AS is_extra_cee,

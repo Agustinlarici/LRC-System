@@ -353,6 +353,7 @@ export interface EdiClient {
 export interface EdiShipment {
   shipment_id:      string;
   shipment_date:    string;
+  shipment_time?:   string | null;
   customer_account: string;
   document_number:  string;
   document_date:    string;
