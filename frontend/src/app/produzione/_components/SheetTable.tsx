@@ -59,6 +59,7 @@ function raggruppaPerCommessa(rows: ProdSheetRow[], categoryOrderMap: Map<string
       insertion_schedulato: gruppo.some(r => r.insertion_schedulato),
       chiuso:            gruppo.every(r => r.chiuso),
       colore:            colori.join(', ') || null,
+      ultima_fase:       [...new Set(gruppo.map(r => r.ultima_fase).filter((f): f is string => !!f))].join('\n') || null,
       categorie:         categorieOut,
     };
   });
@@ -103,6 +104,7 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
             })
           : '',
         Colore:          row.colore ?? '',
+        'Ultima Fase':   row.ultima_fase ?? '',
       };
       for (const cat of categorieUniche) {
         const match = row.categorie.find(c => c.categoria === cat);
@@ -156,6 +158,7 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
             <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">Descrizione</th>
             <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left whitespace-nowrap">Ingresso Linea</th>
             <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">Colore</th>
+            <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left whitespace-nowrap">Ultima Fase</th>
             {categorieUniche.map(cat => (
               <th key={cat} className={`sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-center ${cat === 'X.EXTRA' ? 'font-bold' : ''}`}>
                 {cat}
@@ -204,6 +207,7 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
                 ) : '–'}
               </td>
               <td className="border border-gray-200 px-2 py-1">{row.colore ?? <span className="text-gray-300">–</span>}</td>
+              <td className="border border-gray-200 px-2 py-1 whitespace-pre-line">{row.ultima_fase ?? <span className="text-gray-300">–</span>}</td>
               {categorieUniche.map(cat => {
                 const match = row.categorie.find(c => c.categoria === cat);
                 return (

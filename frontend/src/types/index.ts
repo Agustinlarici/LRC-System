@@ -557,6 +557,9 @@ export interface ProdSheetRow {
   insertion_schedulato: boolean;
   chiuso:            boolean;
   colore:            string | null;
+  // Ultima fase registrata in WebThron (come in Avanzamento Prod), cercata per
+  // commessa tra i componenti iKnow mappati alla categoria dell'articolo.
+  ultima_fase:       string | null;
   categorie:         ProdSheetCategoria[];
 }
 

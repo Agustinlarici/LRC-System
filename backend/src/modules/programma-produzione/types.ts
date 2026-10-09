@@ -25,5 +25,8 @@ export interface ProdSheetRow {
   // FALSE) — resta visibile come storico invece di sparire dal foglio.
   chiuso:            boolean;
   colore:            string | null;
+  // Ultima fase registrata in WebThron (come in Avanzamento Prod), cercata per
+  // commessa tra i componenti iKnow mappati alla categoria dell'articolo.
+  ultima_fase:       string | null;
   categorie:         ProdSheetCategoria[];
 }
