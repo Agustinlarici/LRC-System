@@ -78,6 +78,8 @@ services:
       # JWT (Ticket IT)
       JWT_SECRET:     ${JWT_SECRET:?JWT_SECRET is required}
       # Delibera qualità
+      # Spedizione Bucci — finestra di ricerca su iKnow (giorni, max 365)
+      BUCCI_LOOKBACK_DAYS: ${BUCCI_LOOKBACK_DAYS:-90}
       DELIBERA_FASI:     ${DELIBERA_FASI:-DELIBERA FINALE - PROX}
       DELIBERA_ESITO_OK: ${DELIBERA_ESITO_OK:-Accettato}
       # ─── Ricezione DDT (scanner) ───────────────────────────────────────────

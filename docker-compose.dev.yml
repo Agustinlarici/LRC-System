@@ -77,6 +77,7 @@ services:
       BC_PASSWORD:         ${BC_PASSWORD}
       BC_DOMAIN:           ${BC_DOMAIN:-}
       JWT_SECRET:          ${JWT_SECRET:-dev-secret-change-in-production}
+      BUCCI_LOOKBACK_DAYS: ${BUCCI_LOOKBACK_DAYS:-90}
       DELIBERA_FASI:       "DELIBERA FINALE - PROX"
       DELIBERA_ESITO_OK:   "Accettato"
       SPMA_ONEDRIVE_SHARE_URL: ${SPMA_ONEDRIVE_SHARE_URL:-}

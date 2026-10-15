@@ -143,6 +143,7 @@ run_migrations() {
     "db/migrate-webddt.sql"
     "db/migrate-qualita.sql"
     "db/migrate-webddt-po-mapping.sql"
+    "db/migrate-spedizione-bucci.sql"
     "db/migrate-programma-produzione.sql"
     "db/migrate-device-auth.sql"
     "db/migrate-force-password-change.sql"

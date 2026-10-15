@@ -68,6 +68,7 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/recepciones':             'recepciones',
   '/edi':                     'edi',
   '/webddt':                  'webddt',
+  '/spedizione-bucci':        'spedizione_bucci',
   '/admin/monitor/parate':    'monitor_parate',
   '/admin/monitor/motivi':    'monitor_motivi',
   '/qualita':                 'qualita',

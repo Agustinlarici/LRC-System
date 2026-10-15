@@ -124,6 +124,12 @@ export const MODULES: ModuleConfig[] = [
     sidebar: 'IconWebDdt', hidden: false, moduleKey: 'webddt',
   },
 
+  {
+    href: '/spedizione-bucci', label: 'Spedizione Bucci', group: 'Logistica',
+    description: 'Scansione cofani Bucci per seriale o commessa e registro delle spedizioni',
+    sidebar: 'IconScan', hidden: false, moduleKey: 'spedizione_bucci',
+  },
+
   // ── Qualità ────────────────────────────────────────────────────────────────
   {
     href: '/qualita', label: 'Difetti', group: 'Qualità',
