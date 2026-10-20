@@ -18,7 +18,7 @@ cd "$(dirname "$0")/.."
 env_get() { { grep -E "^$1=" .env 2>/dev/null || true; } | tail -n1 | cut -d= -f2- | tr -d '\r"'"'"; }
 DB_USER="$(env_get POSTGRES_USER)"; DB_USER="${DB_USER:-lrc}"
 DB_NAME="$(env_get POSTGRES_DB)";   DB_NAME="${DB_NAME:-lrc_system}"
-IMAGE="${PG_IMAGE:-postgres:16-alpine}"
+IMAGE="${PG_IMAGE:-postgres:16.15-alpine}"
 C="lrc-drift-$$"
 REPORT="drift-report-$(date +%Y%m%d-%H%M).txt"
 TMP="$(mktemp -d)"
