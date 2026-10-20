@@ -8,6 +8,7 @@ import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTa
 import { EditEmployeeModal } from './EditEmployeeModal';
 import { EventTimeline } from './EventTimeline';
 import { SalaryHistory } from './SalaryHistory';
+import { EmployeeAvatar } from '@/components/hr/EmployeeAvatar';
 import { tagBadgeStyle } from '@/lib/tagColors';
 
 const BACKEND = typeof window !== 'undefined'
@@ -52,6 +53,17 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+// Ridimensiona la foto (lato massimo 400px) e la converte in JPEG prima dell'upload
+async function resizePhoto(file: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 400 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return new Promise((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('Conversione non riuscita')), 'image/jpeg', 0.85));
+}
+
 export default function EmployeeDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -69,6 +81,8 @@ export default function EmployeeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [showEdit, setShowEdit] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState('');
 
   const isDirectCapo = employee != null && user != null &&
     allEmployees.some(e => e.id === employee.capo_id && e.user_id === user.id);
@@ -96,6 +110,30 @@ export default function EmployeeDetailPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  async function uploadPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setPhotoBusy(true); setPhotoError('');
+    try {
+      const form = new FormData();
+      form.append('file', await resizePhoto(file), 'foto.jpg');
+      const res = await fetch(`${BACKEND}/api/hr/employees/${id}/photo`, { method: 'PUT', credentials: 'include', body: form });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.message ?? 'Caricamento non riuscito');
+      await load();
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : 'Caricamento non riuscito');
+    } finally { setPhotoBusy(false); }
+  }
+
+  async function removePhoto() {
+    if (!window.confirm('Rimuovere la foto?')) return;
+    setPhotoBusy(true);
+    await fetch(`${BACKEND}/api/hr/employees/${id}/photo`, { method: 'DELETE', credentials: 'include' });
+    await load();
+    setPhotoBusy(false);
+  }
+
   if (loading) return <p className="text-sm text-gray-400 text-center py-16">Caricamento…</p>;
   if (notFound || !employee) return <p className="text-sm text-red-600 text-center py-16">Dipendente non trovato</p>;
 
@@ -109,7 +147,21 @@ export default function EmployeeDetailPage() {
         {canEditLimited && <button onClick={() => setShowEdit(true)} className="btn-primary text-sm">Modifica</button>}
       </div>
 
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex flex-col items-center gap-1">
+          <EmployeeAvatar id={employee.id} nome={employee.nome} cognome={employee.cognome} photoVersion={employee.photo_version}
+            className="w-24 h-24 text-2xl" background="#9ca3af" />
+          {manage && (
+            <div className="flex items-center gap-2 text-xs">
+              <label className={`text-blue-600 hover:underline cursor-pointer ${photoBusy ? 'opacity-50 pointer-events-none' : ''}`}>
+                {employee.photo_version ? 'Cambia foto' : 'Aggiungi foto'}
+                <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={uploadPhoto} disabled={photoBusy} />
+              </label>
+              {employee.photo_version && <button onClick={removePhoto} disabled={photoBusy} className="text-gray-400 hover:text-red-600">Rimuovi</button>}
+            </div>
+          )}
+          {photoError && <p className="text-xs text-red-600">{photoError}</p>}
+        </div>
         <h1 className="text-xl font-semibold text-gray-900">{employee.cognome} {employee.nome}</h1>
         <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${STATO_COLOR[employee.stato]}`}>{STATO_LABEL[employee.stato]}</span>
         {employee.tag_name && (

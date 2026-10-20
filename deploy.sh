@@ -154,15 +154,46 @@ run_migrations() {
     "db/migrate-hr-capo-pairs.sql"
     "db/migrate-hr-documents.sql"
     "db/migrate-hr-deadline-acks.sql"
+    "db/migrate-hr-photo.sql"
   )
+  # Migrazioni obsolete, volutamente non eseguite (sostituite da altre / tabella non più usata)
+  IGNORED_MIGRATIONS=(
+    "db/migrate-hr-multi-capo.sql"
+  )
+
+  mig_problems=0
   for f in "${MIGRATIONS[@]}"; do
-    if [ -f "$f" ]; then
-      docker compose cp "$f" "db:/tmp/$(basename "$f")"
-      docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -q -f "/tmp/$(basename "$f")"
+    if [ ! -f "$f" ]; then
+      warn "  ✗ $f nella lista ma NON trovato su disco (git pull incompleto?)"
+      mig_problems=1
+      continue
+    fi
+    docker compose cp "$f" "db:/tmp/$(basename "$f")"
+    # psql esce con 0 anche se una istruzione fallisce: leggo l'output per accorgermene.
+    mig_out="$(docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -q -f "/tmp/$(basename "$f")" 2>&1)" || true
+    if echo "$mig_out" | grep -q "ERROR:"; then
+      warn "  ✗ $(basename "$f") — errori durante l'esecuzione:"
+      echo "$mig_out" | grep "ERROR:" | head -5 | sed 's/^/      /'
+      mig_problems=1
+    else
       info "  ✓ $(basename "$f")"
     fi
   done
-  info "Migrazioni completate."
+
+  # Migrazioni presenti in db/ ma dimenticate nella lista: non verrebbero mai eseguite.
+  for f in db/migrate-*.sql; do
+    [ -f "$f" ] || continue
+    case " ${MIGRATIONS[*]} ${IGNORED_MIGRATIONS[*]} " in
+      *" $f "*) ;;
+      *) warn "  ! $f NON è nella lista MIGRATIONS di deploy.sh (non viene eseguita)"; mig_problems=1 ;;
+    esac
+  done
+
+  if [ "$mig_problems" -eq 1 ]; then
+    warn "Migrazioni completate CON AVVISI: controlla le righe sopra prima di usare i nuovi moduli."
+  else
+    info "Migrazioni completate."
+  fi
 }
 
 # ═══════════════════════════════════════════════════════════════════
@@ -178,8 +209,15 @@ fi
 # update — zero-downtime: pull → migrate → build → swap
 # ═══════════════════════════════════════════════════════════════════
 if [ "$CMD" = "update" ]; then
-  step "1/4  Git pull..."
-  git pull
+  # git pull può riscrivere questo stesso file mentre bash lo sta eseguendo: la lista
+  # MIGRATIONS già caricata in memoria sarebbe quella VECCHIA e le migrazioni nuove
+  # verrebbero saltate. Dopo il pull rilancio lo script, così legge la versione aggiornata.
+  if [ -z "${LRC_PULLED:-}" ]; then
+    step "1/4  Git pull..."
+    git pull
+    export LRC_PULLED=1
+    exec bash "$0" update
+  fi
 
   step "2/4  Migrazioni DB (stack in running — nessun downtime)..."
   run_migrations

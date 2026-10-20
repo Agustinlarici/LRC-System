@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
+import * as XLSX from 'xlsx';
 import { useAuth } from '@/lib/auth';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
 import { ImportExcelButton, type ImportResult } from '@/components/ui/ImportExcelButton';
@@ -148,7 +149,7 @@ export default function DipendentiPage() {
     recompute();
     window.addEventListener('resize', recompute);
     return () => window.removeEventListener('resize', recompute);
-  }, []);
+  }, [showFilters]);
   function syncHeaderScroll() {
     if (headerScrollRef.current && bodyScrollRef.current) {
       headerScrollRef.current.scrollLeft = bodyScrollRef.current.scrollLeft;
@@ -205,7 +206,7 @@ export default function DipendentiPage() {
   const livelli = distinctOf(employees.map(e => e.livello));
   const responsabili = distinctOf(employees.map(e => e.capo_nome));
   const tipiContratto = Array.from(new Set(employees.map(e => e.tipo_contratto).filter((f): f is string => !!f))).sort((a, b) => a.localeCompare(b));
-  const visible = employees.filter(e => {
+  const matches = (e: HrEmployee, skipSocieta = false) => {
     const has = (v: string | null | undefined, q: string) => !q.trim() || (v ?? '').toLowerCase().includes(q.trim().toLowerCase());
     // Nome e cognome in un solo filtro: ogni parola digitata deve comparire, in qualunque ordine
     const fullName = `${e.cognome} ${e.nome}`.toLowerCase();
@@ -217,11 +218,31 @@ export default function DipendentiPage() {
       && (!fCategoria || e.categoria === fCategoria)
       && (!fTipoContratto || e.tipo_contratto === fTipoContratto)
       && (!plantFilter || (e.plant_ids ?? []).includes(Number(plantFilter)))
-      && (!societaFilter || e.contract_company_id === Number(societaFilter))
+      && (skipSocieta || !societaFilter || e.contract_company_id === Number(societaFilter))
       && (!tagFilter || e.tag_id === Number(tagFilter))
       && (!inProvaFilter || (inProvaFilter === 'si' ? e.in_prova : !e.in_prova))
       && (!funzioneFilter || (e.funzione_aziendale ?? '') === funzioneFilter);
-  });
+  };
+  const visible = employees.filter(e => matches(e));
+  // Società offerte nel filtro: solo quelle con almeno un dipendente tra gli altri filtri attivi
+  const societaDisponibili = new Set(employees.filter(e => matches(e, true)).map(e => e.contract_company_id));
+  const companiesShown = companies.filter(c => societaDisponibili.has(c.id) || c.id === Number(societaFilter));
+
+  function exportExcel() {
+    const rows = visible.map(e => ({
+      Cognome: e.cognome, Nome: e.nome, Matricola: e.matricola ?? '', Sesso: e.sesso ?? '',
+      Categoria: e.categoria ?? '', Società: e.contract_company_name ?? '', Nazionalità: e.nazionalita ?? '',
+      Funzione: e.funzione_aziendale ?? '', Reparto: e.reparto_name ?? '', Plant: e.plant_name ?? '',
+      Mansione: e.mansione ?? '', Livello: e.livello ?? '', Responsabile: e.capo_nome ?? '',
+      'Tipo contratto': e.tipo_contratto ?? '', Assunzione: e.data_assunzione?.slice(0, 10) ?? '',
+      Cessazione: e.data_cessazione?.slice(0, 10) ?? '', 'In prova': e.in_prova ? 'Sì' : '',
+      Stato: STATO_LABEL[e.stato] ?? e.stato,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Dipendenti');
+    XLSX.writeFile(wb, `dipendenti-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
 
   async function setEmployeeTag(employeeId: number, tagId: number | null) {
     setTagMenuFor(null);
@@ -554,17 +575,25 @@ export default function DipendentiPage() {
   return (
     <div className="space-y-4" onClick={() => { if (tagMenuFor !== null) setTagMenuFor(null); }}>
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
+        <div className="flex items-center gap-3">
           <h1 className="text-lg font-medium text-gray-900">Dipendenti</h1>
+          {!loading && (
+            <span className="text-sm font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-3 py-1">
+              {visible.length} {visible.length === 1 ? 'dipendente selezionato' : 'dipendenti selezionati'}
+            </span>
+          )}
         </div>
+        <div className="flex items-center gap-2">
+          <button onClick={exportExcel} disabled={loading || visible.length === 0} className="btn-secondary text-sm">Esporta Excel</button>
         {manage && (
-          <div className="flex items-center gap-2">
-            <ImportExcelButton columns={IMPORT_COLUMNS} processRows={importRows} onDone={load} label="Importa da Excel" />
+          <>
+            <ImportExcelButton columns={IMPORT_COLUMNS} processRows={importRows} onDone={load} label="Importa da Excel" iconOnly />
             <button onClick={openMatricole} className="btn-secondary text-sm">Prossima matricola</button>
             <button onClick={() => setShowTags(true)} className="btn-secondary text-sm">Etichette</button>
             <button onClick={() => setShowNew(true)} className="btn-primary text-sm">+ Nuovo dipendente</button>
-          </div>
+          </>
         )}
+        </div>
       </div>
 
       <div className="card p-0 overflow-hidden">
@@ -595,7 +624,7 @@ export default function DipendentiPage() {
           </select>
           <select value={societaFilter} onChange={e => setSocietaFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${societaFilter ? '' : 'text-gray-400'}`}>
             <option value="">Società contratto</option>
-            {companies.map(c => <option key={c.id} value={c.id} className="text-gray-900">{c.name}</option>)}
+            {companiesShown.map(c => <option key={c.id} value={c.id} className="text-gray-900">{c.name}</option>)}
           </select>
           <select value={fNazionalita} onChange={e => setFNazionalita(e.target.value)} className={`input text-sm min-w-0 ${fNazionalita ? '' : 'text-gray-400'}`}>
             <option value="">Nazionalità</option>

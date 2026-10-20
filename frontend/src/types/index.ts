@@ -762,6 +762,7 @@ export interface HrEmployee {
   anzianita_anni:           number;
   eta:                      number | null;
   n_riporti:                number;
+  photo_version:            number | null;
   created_at:               string;
   updated_at:               string;
 }
@@ -798,6 +799,7 @@ export interface HrOrgNode {
   stato:        HrEmployeeStatus;
   capo_id:      number | null;
   n_riporti:    number;
+  photo_version: number | null;
 }
 
 export interface HrAnalyticsSummary {
