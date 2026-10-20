@@ -16,7 +16,7 @@
 set -Eeuo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-PG_IMAGE="$(env_get BACKUP_VERIFY_IMAGE postgres:16-alpine)"
+PG_IMAGE="$(env_get BACKUP_VERIFY_IMAGE postgres:16.15-alpine)"
 SRC="$(resolve_backup "${1:-latest}")"
 [ -n "$SRC" ] && [ -d "$SRC" ] || die "Nessun backup da verificare"
 

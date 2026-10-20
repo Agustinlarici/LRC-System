@@ -16,7 +16,7 @@
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 
-IMAGE="${PG_IMAGE:-postgres:16-alpine}"
+IMAGE="${PG_IMAGE:-postgres:16.15-alpine}"
 NET="lrc-migtest-$$"
 DB_C="lrc-migtest-db-$$"
 WORK="$(mktemp -d)"

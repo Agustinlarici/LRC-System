@@ -11,7 +11,7 @@ services:
   # ─── PostgreSQL ──────────────────────────────────────────────────────────────
   db:
     logging: *default-logging
-    image: postgres:16-alpine
+    image: postgres:16.15-alpine
     restart: unless-stopped
     command: postgres -c timezone=Europe/Rome
     environment:
@@ -33,7 +33,7 @@ services:
   # Applica le migrazioni mancanti e termina. Il backend parte solo se riesce.
   migrate:
     logging: *default-logging
-    image: postgres:16-alpine
+    image: postgres:16.15-alpine
     restart: "no"
     entrypoint: ["bash", "/migrate.sh"]
     environment:
@@ -148,7 +148,7 @@ services:
   # HTTPS (richiesto da Chrome per installare la PWA come app sul tablet).
   nginx:
     logging: *default-logging
-    image: nginx:alpine
+    image: nginx:1.30.6-alpine
     restart: unless-stopped
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
@@ -165,7 +165,7 @@ services:
   # ─── Adminer ────────────────────────────────────────────────────────────────
   adminer:
     logging: *default-logging
-    image: adminer
+    image: adminer:6.1.2
     restart: unless-stopped
     ports:
       - "8888:8080"
