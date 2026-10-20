@@ -2,7 +2,7 @@
 # ═══════════════════════════════════════════════════════════════════
 # LRC System — Test di ripristino automatico
 #
-# Uso:  scripts/backup/verify-restore.sh [cartella-backup]   (default: ultimo)
+# Uso:  scripts/backup/verify-restore.sh [cartella-backup | latest | latest-pre-deploy]   (default: latest)
 #
 # Ripristina il backup in un container PostgreSQL TEMPORANEO e isolato
 # (non tocca la produzione) e controlla che:
@@ -17,7 +17,7 @@ set -Eeuo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 PG_IMAGE="$(env_get BACKUP_VERIFY_IMAGE postgres:16-alpine)"
-SRC="${1:-$(latest_backup)}"
+SRC="$(resolve_backup "${1:-latest}")"
 [ -n "$SRC" ] && [ -d "$SRC" ] || die "Nessun backup da verificare"
 
 setup_logging verify
@@ -78,6 +78,10 @@ q "SELECT relname || ': ' || n_live_tup FROM pg_stat_user_tables ORDER BY n_live
 
 tar -tzf "$SRC/files.tar.gz" > /dev/null
 log "  ✓ files.tar.gz leggibile ($(tar -tzf "$SRC/files.tar.gz" | wc -l) voci)"
+if [ -f "$SRC/files-extra.tar.gz" ]; then
+  tar -tzf "$SRC/files-extra.tar.gz" > /dev/null
+  log "  ✓ files-extra.tar.gz leggibile"
+fi
 
 echo "OK $(date -Iseconds) $SRC" > "$STATUS_FILE"
 resolve_alert "backup_verify_failed" "Test di ripristino OK: $SRC"

@@ -128,10 +128,7 @@ if [ "$CMD" = "migrate" ]; then
 fi
 
 # ═══════════════════════════════════════════════════════════════════
-# update — zero-downtime: pull → migrate → build → swap
-# ═══════════════════════════════════════════════════════════════════
-# ═══════════════════════════════════════════════════════════════════
-# Funzioni di sicurezza per l'update
+# Funzioni di sicurezza per l'update / rollback
 # ═══════════════════════════════════════════════════════════════════
 # Il backend risponde /health con status "ok" entro 90 secondi?
 backend_healthy() {
@@ -150,51 +147,114 @@ revert_code() {
   git reset --keep "$1" || warn "git reset non riuscito: eseguire a mano  git reset --keep $1"
 }
 
+# Immagini costruite da questo progetto (backend, frontend)
+built_images() { docker compose config --images 2>/dev/null | grep -E -- '-(backend|frontend)(:|$)' || true; }
+
+# Prima della build: conserva le immagini in funzione come ":previous",
+# così il ritorno indietro è immediato e identico (niente ricompilazione).
+save_images() {
+  local img
+  for img in $(built_images); do
+    docker image inspect "$img" >/dev/null 2>&1 && docker tag "$img" "${img%%:*}:previous"
+  done
+  return 0
+}
+
+# Rimette in uso le immagini ":previous" (false se mancano)
+restore_images() {
+  local img ok=0
+  for img in $(built_images); do
+    if docker image inspect "${img%%:*}:previous" >/dev/null 2>&1; then
+      docker tag "${img%%:*}:previous" "$img"
+    else
+      ok=1
+    fi
+  done
+  return $ok
+}
+
+# Torna alla versione precedente (codice + immagini) e verifica che risponda.
+# Il DB resta com'è: le migrazioni aggiungono, il codice vecchio le ignora
+# (migrate.sh accetta un DB "più avanti" del codice).
+go_back() {
+  revert_code "$1"
+  if restore_images; then
+    docker compose up -d --no-build || return 1
+  else
+    warn "Immagini precedenti non disponibili: ricompilo la versione precedente..."
+    docker compose build && docker compose up -d || return 1
+  fi
+  backend_healthy
+}
+
+# Backup pre-deploy: la cartella dei backup è di root, il resto del deploy no
+# (git deve girare con l'utente che possiede il repository).
+pre_deploy_backup() {
+  if [ "$(id -u)" = 0 ]; then
+    BACKUP_KIND=pre-deploy bash scripts/backup/backup.sh
+  else
+    info "Il backup richiede i permessi di root (sudo):"
+    sudo env BACKUP_KIND=pre-deploy bash scripts/backup/backup.sh
+  fi
+}
+
 # ═══════════════════════════════════════════════════════════════════
-# update — zero-downtime: backup → pull → migrate → build → swap → verifica
+# update — zero-downtime: backup → pull → migrate → controllo schema →
+#          build → swap → verifica
 # Se qualcosa fallisce, la versione in funzione resta (o torna) quella precedente.
 # ═══════════════════════════════════════════════════════════════════
 if [ "$CMD" = "update" ]; then
+  [ "$(id -u)" = 0 ] && warn "Stai eseguendo deploy.sh come root: meglio come utente normale (il backup chiede sudo da solo)."
   PREV_COMMIT="$(git rev-parse HEAD)"
 
-  step "0/5  Backup di sicurezza pre-aggiornamento..."
-  BACKUP_KIND=pre-deploy bash scripts/backup/backup.sh \
-    || error "Backup pre-aggiornamento fallito: aggiornamento annullato (niente è stato modificato)."
-
-  step "1/5  Git pull..."
-  git pull || error "git pull fallito: aggiornamento annullato (niente è stato modificato)."
-  if [ "$(git rev-parse HEAD)" = "$PREV_COMMIT" ]; then
+  step "0/6  Controllo novità..."
+  git fetch || error "git fetch fallito: aggiornamento annullato (niente è stato modificato)."
+  UPSTREAM="$(git rev-parse '@{u}' 2>/dev/null)" || error "Il branch attuale non segue un branch remoto (git checkout <branch>)."
+  if [ "$UPSTREAM" = "$PREV_COMMIT" ]; then
     info "Nessuna novità da aggiornare."
+    exit 0
   fi
+
+  step "1/6  Backup di sicurezza pre-aggiornamento..."
+  pre_deploy_backup || error "Backup pre-aggiornamento fallito: aggiornamento annullato (niente è stato modificato)."
+
+  step "2/6  Git pull..."
+  git pull --ff-only || error "git pull fallito: aggiornamento annullato (niente è stato modificato)."
 
   if stray_sql; then
     revert_code "$PREV_COMMIT"
     error "Aggiornamento annullato prima di toccare il database. Il programma continua a funzionare."
   fi
 
-  step "2/5  Migrazioni DB (stack in running — nessun downtime)..."
+  step "3/6  Migrazioni DB (stack in running — nessun downtime)..."
   docker compose run --rm migrate --status || true
   if ! docker compose run --rm migrate; then
     revert_code "$PREV_COMMIT"
     error "Migrazioni fallite (annullate, nessuna modifica parziale). Il programma continua a funzionare con la versione precedente."
   fi
 
-  step "3/5  Build nuove immagini in background (nessun downtime)..."
+  # Lo schema reale deve coincidere con quello delle migrazioni: protegge da
+  # modifiche fatte a mano e dal passaggio dal vecchio sistema (DB "legacy").
+  step "4/6  Controllo schema (produzione = migrazioni)..."
+  if ! bash db/check-drift.sh; then
+    revert_code "$PREV_COMMIT"
+    error "Lo schema del DB non coincide con le migrazioni (vedi drift-report-*.txt). Aggiornamento annullato prima dello swap: il programma continua a funzionare. Dopo aver verificato il report: LRC_ACCEPT_DRIFT=1 ./deploy.sh update"
+  fi
+
+  step "5/6  Build nuove immagini in background (nessun downtime)..."
+  save_images
   if ! docker compose build --no-cache; then
     revert_code "$PREV_COMMIT"
+    restore_images || true
     error "Build fallita. Il programma continua a funzionare con la versione precedente."
   fi
 
-  step "4/5  Swap container (~5 secondi di interruzione)..."
-  docker compose up -d
-  fix_upload_perms
-
-  step "5/5  Verifica che il backend risponda..."
-  if ! backend_healthy; then
+  step "6/6  Swap container (~5 secondi di interruzione) e verifica..."
+  if docker compose up -d && backend_healthy; then
+    fix_upload_perms
+  else
     warn "Il backend non risponde dopo l'aggiornamento: torno automaticamente alla versione precedente."
-    revert_code "$PREV_COMMIT"
-    docker compose build && docker compose up -d
-    if backend_healthy; then
+    if go_back "$PREV_COMMIT"; then
       error "Aggiornamento annullato: ripristinata la versione precedente, che funziona. Log: docker compose logs backend"
     else
       error "ATTENZIONE: anche la versione precedente non risponde. Vedi docs/DISASTER-RECOVERY.md (procedura B)."
@@ -214,19 +274,21 @@ fi
 
 # ═══════════════════════════════════════════════════════════════════
 # rollback — torna alla versione prima dell'ultimo update riuscito
-# (il database non viene toccato: le migrazioni aggiungono e non tolgono;
-#  per tornare anche coi dati: docs/DISASTER-RECOVERY.md, procedura B)
+# Il database resta com'è (le migrazioni aggiungono, il codice vecchio le
+# ignora). Per tornare anche ai dati di prima dell'update:
+#   sudo scripts/backup/restore.sh latest-pre-deploy
 # ═══════════════════════════════════════════════════════════════════
 if [ "$CMD" = "rollback" ]; then
   [ -f .deploy-previous ] || error "Nessun update precedente registrato (.deploy-previous mancante)."
   PREV_COMMIT="$(cat .deploy-previous)"
   step "Torno alla versione $(git rev-parse --short "$PREV_COMMIT")..."
-  git reset --keep "$PREV_COMMIT" || error "git reset non riuscito (modifiche locali in conflitto?)."
-  docker compose build
-  docker compose up -d
-  backend_healthy && info "Rollback completato, il backend risponde." \
-    || error "Il backend non risponde dopo il rollback. Vedi docs/DISASTER-RECOVERY.md."
-  rm -f .deploy-previous
+  if go_back "$PREV_COMMIT"; then
+    rm -f .deploy-previous
+    info "Rollback completato, il backend risponde. Il DB non è stato modificato."
+    info "Se servono anche i dati di prima dell'update: sudo scripts/backup/restore.sh latest-pre-deploy"
+  else
+    error "Il backend non risponde dopo il rollback. Vedi docs/DISASTER-RECOVERY.md."
+  fi
   exit 0
 fi
 

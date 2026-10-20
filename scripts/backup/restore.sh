@@ -3,7 +3,8 @@
 # LRC System — Ripristino da backup
 #
 # Uso:
-#   scripts/backup/restore.sh latest                 → ultimo backup disponibile
+#   scripts/backup/restore.sh latest                 → ultimo backup giornaliero/manuale
+#   scripts/backup/restore.sh latest-pre-deploy      → backup fatto prima dell'ultimo update
 #   scripts/backup/restore.sh /srv/lrc-backups/daily/2026-10-07_0230
 #
 # Opzioni:
@@ -30,12 +31,13 @@ for a in "$@"; do
   esac
 done
 [ -n "$SRC" ] || { sed -n '2,17p' "$0"; exit 1; }
-[ "$SRC" = latest ] && SRC="$(latest_backup)"
+SRC="$(resolve_backup "$SRC")"
 [ -n "$SRC" ] && [ -d "$SRC" ] || die "Backup non trovato: ${SRC:-<nessuno>}"
 SRC="$(realpath "$SRC")"
 
 setup_logging restore
 log "═══ Ripristino da $SRC"
+log "    tipo: $(grep '^kind=' "$SRC/manifest.txt" | cut -d= -f2)   creato: $(grep '^created=' "$SRC/manifest.txt" | cut -d= -f2)"
 sed 's/^/    /' "$SRC/manifest.txt"
 
 verify_checksums "$SRC"
@@ -60,11 +62,16 @@ NEED_DB=0
 exec 9>"$BACKUP_DIR/.lock"
 flock -n 9 || die "Un backup è in corso: riprovare tra qualche minuto"
 
-BACKEND_STOPPED=0
+BACKEND_STOPPED=0; DB_SWAPPED=0
 on_exit() {
   local rc=$?
   if [ "$rc" != 0 ] && [ "$BACKEND_STOPPED" = 1 ]; then
-    log "Ripristino interrotto: riavvio il backend (il database di produzione non è stato toccato)"
+    if [ "$DB_SWAPPED" = 1 ]; then
+      log "Ripristino interrotto DOPO la sostituzione del database: il DB è già quello del backup,"
+      log "il precedente è in ${DB_NAME}_pre_restore. Riavvio il backend."
+    else
+      log "Ripristino interrotto: riavvio il backend (il database di produzione non è stato toccato)"
+    fi
     dc start backend >/dev/null 2>&1 || true
   fi
 }
@@ -128,6 +135,7 @@ END \$\$;
 ALTER DATABASE "$TMP_DB" RENAME TO "$DB_NAME";
 COMMIT;
 SQL
+  DB_SWAPPED=1
   log "  ✓ database ripristinato (il precedente è conservato come $OLD_DB)"
 fi
 
@@ -135,8 +143,18 @@ fi
 if [ "$DO_FILES" = 1 ]; then
   log "Ripristino file..."
   [ -f .env ] && cp -p .env ".env.before-restore-$(date +%Y%m%d%H%M%S)"
-  tar -xzpf "$SRC/files.tar.gz" -C /
-  log "  ✓ file ripristinati (il .env precedente è in .env.before-restore-*)"
+  if grep -q '^files_layout=relative' "$SRC/manifest.txt"; then
+    tar -xzpf "$SRC/files.tar.gz" -C "$LRC_DIR"
+    log "  ✓ file del progetto ripristinati in $LRC_DIR"
+    if [ -f "$SRC/files-extra.tar.gz" ]; then
+      tar -xzpf "$SRC/files-extra.tar.gz" -C /
+      log "  ✓ percorsi extra ripristinati: $(tar -tzf "$SRC/files-extra.tar.gz" | cut -d/ -f1-3 | sort -u | sed 's|^|/|' | tr '\n' ' ')"
+    fi
+  else
+    tar -xzpf "$SRC/files.tar.gz" -C /   # backup vecchio formato (percorsi assoluti)
+    log "  ✓ file ripristinati (formato vecchio, percorsi originali)"
+  fi
+  log "    il .env precedente è in .env.before-restore-*"
 fi
 
 if [ "$NEED_DB" = 1 ] || [ "$BACKEND_STOPPED" = 1 ]; then

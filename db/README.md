@@ -31,11 +31,28 @@ db/check-drift.sh                          # confronta lo schema di produzione c
 db/test-migrations.sh                      # test completi su DB temporanei
 ```
 
+## Controllo dello schema a ogni deploy
+
+`./deploy.sh update`, dopo le migrazioni e prima dello swap, esegue `db/check-drift.sh`:
+se lo schema di produzione è diverso da quello che le migrazioni creano su un DB vuoto
+(modifiche fatte a mano, o DB nato col vecchio sistema) l'update si ferma e il programma
+continua con la versione precedente. Dopo aver letto `drift-report-*.txt`:
+`LRC_ACCEPT_DRIFT=1 ./deploy.sh update` accetta **quelle** differenze (salvate in
+`.drift-accepted` sul server); qualunque differenza nuova blocca di nuovo.
+La soluzione vera è una migrazione di riallineamento.
+
+## Rollback del codice
+
+Dopo `./deploy.sh rollback` il DB può avere migrazioni che il codice vecchio non conosce:
+il runner lo segnala con un avviso e prosegue (le migrazioni aggiungono, il codice vecchio
+le ignora). Una migrazione applicata che manca *in mezzo* (file cancellato) è invece un errore.
+
 ## Passaggio dal vecchio sistema
 
 Prima `deploy.sh` rieseguiva tutti i file `db/migrate-*.sql` a ogni deploy ignorando gli
 errori. Alla prima esecuzione su un DB esistente (senza `schema_migrations`) il runner fa
-la stessa cosa **una sola volta** (modalità *legacy*), registra tutto e da lì in poi vale
-il sistema nuovo. Gli errori tollerati vengono mostrati nel log.
+la stessa cosa **una sola volta** (modalità *legacy*) e registra tutto; i file che danno
+errore restano marcati `mode = 'legacy-err'`. Subito dopo il controllo dello schema dice
+se il DB è allineato.
 
 `db/scripts/` contiene correzioni una-tantum da eseguire a mano, non migrazioni.

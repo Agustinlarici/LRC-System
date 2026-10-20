@@ -12,7 +12,7 @@
 #   daily/AAAA-MM-GG_HHMMSS/    ← ultimi BACKUP_KEEP_DAILY  (default 7)
 #   weekly/…                    ← domenica, ultimi BACKUP_KEEP_WEEKLY  (default 4)
 #   monthly/…                   ← giorno 1, ultimi BACKUP_KEEP_MONTHLY (default 12)
-#   manual/ pre-deploy/ pre-restore/  ← ultimi BACKUP_KEEP_OTHER (default 5)
+#   manual/ pre-deploy/ pre-restore/  ← ultimi BACKUP_KEEP_OTHER (default 10)
 #   logs/  last-backup.status
 #
 # Ogni backup contiene:
@@ -32,16 +32,19 @@ case "$KIND" in daily|manual|pre-deploy|pre-restore) ;; *) die "BACKUP_KIND non 
 KEEP_DAILY="$(env_get BACKUP_KEEP_DAILY 7)"
 KEEP_WEEKLY="$(env_get BACKUP_KEEP_WEEKLY 4)"
 KEEP_MONTHLY="$(env_get BACKUP_KEEP_MONTHLY 12)"
-KEEP_OTHER="$(env_get BACKUP_KEEP_OTHER 5)"
+KEEP_OTHER="$(env_get BACKUP_KEEP_OTHER 10)"
 MIN_FREE_MB="$(env_get BACKUP_MIN_FREE_MB 2048)"
 TICKETS_HOST="$(env_get TICKETS_UPLOADS_HOST ./data/tickets-uploads)"
 EXTRA_PATHS="$(env_get BACKUP_EXTRA_PATHS "")"   # separati da virgola
 
-mkdir -p "$BACKUP_DIR"/{daily,weekly,monthly,manual,pre-deploy,pre-restore}
+if ! mkdir -p "$BACKUP_DIR"/{daily,weekly,monthly,manual,pre-deploy,pre-restore} 2>/dev/null \
+   || [ ! -w "$BACKUP_DIR" ]; then
+  echo "ERRORE: impossibile scrivere in $BACKUP_DIR. Eseguire come root (sudo)." >&2
+  exit 1
+fi
 chmod 700 "$BACKUP_DIR"   # contiene .env e dati personali (HR)
 setup_logging backup
 
-# Un solo backup alla volta
 # Un solo backup alla volta (restore.sh tiene già il lock e lo segnala)
 if [ "${BACKUP_LOCK_HELD:-0}" != 1 ]; then
   exec 9>"$BACKUP_DIR/.lock"
@@ -57,6 +60,8 @@ STATUS_FILE="$BACKUP_DIR/last-backup.status"
 on_error() {
   trap - ERR
   local cmd="$1"
+  # Ogni passo può fallire a sua volta (es. disco pieno): non deve impedire l'avviso
+  set +e
   log "BACKUP FALLITO ($KIND) — comando: $cmd" >&2
   rm -rf "$WORK"
   echo "FAILED $(date -Iseconds) $KIND" > "$STATUS_FILE"
@@ -101,22 +106,37 @@ if [ -n "$EXTRA_PATHS" ]; then
   IFS=',' read -r -a extra <<< "$EXTRA_PATHS"
   paths+=("${extra[@]}")
 fi
-abs_paths=()
+# Percorsi dentro il progetto → files.tar.gz RELATIVI a $LRC_DIR (così su un
+# server nuovo finiscono nella cartella del progetto, ovunque sia).
+# Percorsi fuori dal progetto → files-extra.tar.gz assoluti (ripristino in /).
+rel_paths=(); ext_paths=()
+root="$(realpath "$LRC_DIR")"
 for p in "${paths[@]}"; do
   p="$(echo "$p" | sed 's/^ *//;s/ *$//')"
   [ -z "$p" ] && continue
   ap="$(realpath -m "$p")"
-  if [ -e "$ap" ]; then
-    abs_paths+=("${ap#/}")
-    log "  + $ap"
-  else
+  if [ ! -e "$ap" ]; then
     log "  - $ap (non esiste, saltato)"
+  elif [[ "$ap" == "$root"/* ]]; then
+    rel_paths+=("${ap#"$root"/}"); log "  + $ap"
+  else
+    ext_paths+=("${ap#/}"); log "  + $ap (fuori dal progetto)"
   fi
 done
-# Percorsi assoluti salvati senza "/" iniziale → si ripristinano con tar -C /
-tar -czf "$WORK/files.tar.gz" -C / "${abs_paths[@]}"
+if [ "${#rel_paths[@]}" -gt 0 ]; then
+  tar -czf "$WORK/files.tar.gz" -C "$root" "${rel_paths[@]}"
+else
+  tar -czf "$WORK/files.tar.gz" -T /dev/null
+fi
 tar -tzf "$WORK/files.tar.gz" > /dev/null
 log "  ✓ files.tar.gz $(du -h "$WORK/files.tar.gz" | cut -f1)"
+sums=(db.dump files.tar.gz manifest.txt db.toc)
+if [ "${#ext_paths[@]}" -gt 0 ]; then
+  tar -czf "$WORK/files-extra.tar.gz" -C / "${ext_paths[@]}"
+  tar -tzf "$WORK/files-extra.tar.gz" > /dev/null
+  sums+=(files-extra.tar.gz)
+  log "  ✓ files-extra.tar.gz $(du -h "$WORK/files-extra.tar.gz" | cut -f1)"
+fi
 
 # ─── 3. Manifest + checksum ──────────────────────────────────────
 cat > "$WORK/manifest.txt" <<EOF
@@ -131,8 +151,9 @@ db_user=$DB_USER
 db_tables=$tables
 db_dump_bytes=$(stat -c %s "$WORK/db.dump")
 files_bytes=$(stat -c %s "$WORK/files.tar.gz")
+files_layout=relative
 EOF
-(cd "$WORK" && sha256sum db.dump files.tar.gz manifest.txt db.toc > SHA256SUMS)
+(cd "$WORK" && sha256sum "${sums[@]}" > SHA256SUMS)
 chmod -R go-rwx "$WORK"
 
 # Spostamento atomico: una cartella in $KIND/ è sempre un backup completo

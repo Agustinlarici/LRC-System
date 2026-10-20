@@ -91,17 +91,20 @@ if [ "$LEGACY" = 1 ]; then
   for f in "${FILES[@]}"; do
     start=$(now_ms)
     if out=$(psql -X -q -f "$MIGRATIONS_DIR/$f" 2>&1); then :; fi
+    mode=legacy
     if echo "$out" | grep -q 'ERROR'; then
-      warnings=$((warnings+1))
+      warnings=$((warnings+1)); mode=legacy-err
       log "  ! $f (errori tollerati come nel vecchio deploy):"
       echo "$out" | grep 'ERROR' | sed 's/^/        /'
     else
       log "  ✓ $f"
     fi
+    # mode=legacy-err resta visibile in schema_migrations per le verifiche successive
     q "INSERT INTO schema_migrations (version, name, checksum, mode, duration_ms)
-       VALUES ('${f:0:4}', '$f', '$(checksum "$f")', 'legacy', $(( $(now_ms) - start )))" >/dev/null
+       VALUES ('${f:0:4}', '$f', '$(checksum "$f")', '$mode', $(( $(now_ms) - start )))" >/dev/null
   done
-  log "Registrazione completata: ${#FILES[@]} migrazioni, $warnings con errori tollerati."
+  log "Registrazione completata: ${#FILES[@]} migrazioni, $warnings con errori tollerati (mode=legacy-err)."
+  [ "$warnings" = 0 ] || log "  Gli errori sono quelli che il vecchio deploy ignorava a ogni esecuzione; db/check-drift.sh dice se lo schema è allineato."
   exit 0
 fi
 
@@ -112,11 +115,20 @@ while IFS='|' read -r v name sum; do
   APPLIED[$v]="$name|$sum"
 done < <(q "SELECT version, name, checksum FROM schema_migrations ORDER BY version")
 
-errors=0
+# Versione più alta presente nel codice: le migrazioni applicate oltre questa
+# significano "DB più avanti del codice" (rollback del codice): è normale e
+# sicuro, perché le migrazioni aggiungono e il codice vecchio le ignora.
+code_max="${FILES[-1]:0:4}"
+errors=0; ahead=0
 for v in "${!APPLIED[@]}"; do
   name="${APPLIED[$v]%%|*}"; sum="${APPLIED[$v]##*|}"
   if [ -z "${SEEN[$v]:-}" ]; then
-    echo "[migrate] ERRORE: la migrazione applicata $name non esiste più nel codice" >&2; errors=$((errors+1))
+    if [[ "$v" > "$code_max" ]]; then
+      log "  ATTENZIONE: $name è applicata ma questo codice non la conosce (codice più vecchio del DB, es. dopo un rollback)"
+      ahead=$((ahead+1))
+    else
+      echo "[migrate] ERRORE: la migrazione applicata $name non esiste più nel codice (file cancellato o rinominato)" >&2; errors=$((errors+1))
+    fi
   elif [ "$(checksum "${SEEN[$v]}")" != "$sum" ]; then
     echo "[migrate] ERRORE: ${SEEN[$v]} è stata MODIFICATA dopo essere stata applicata." >&2
     echo "[migrate]         Ripristinare il file originale e mettere la modifica in una nuova migrazione." >&2

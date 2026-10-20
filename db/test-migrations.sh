@@ -6,8 +6,12 @@
 #   2. Seconda esecuzione: nessuna migrazione da applicare (idempotenza)
 #   3. Migrazione modificata dopo l'applicazione: il runner si rifiuta
 #   4. Migrazione che fallisce: rollback completo, niente registrato
-#   5. DB "legacy" (vecchio deploy.sh): registrazione iniziale e poi 0 pendenti
-#   6. Schema finale identico tra installazione nuova e DB legacy
+#   5. DB senza schema_migrations: registrazione iniziale (legacy) e poi 0 pendenti
+#   6. Rieseguire tutte le migrazioni non cambia lo schema (come il vecchio deploy)
+#   7. DB nato col VECCHIO sistema (file presi da git, LEGACY_REF): il runner lo
+#      registra e il controllo di schema (normalizzazione di check-drift.sh)
+#      RILEVA le differenze note (tabelle SPMA) → il deploy si fermerebbe
+#   8. DB più avanti del codice (rollback): il runner avvisa ed esce con 0
 # ═══════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
@@ -77,7 +81,7 @@ if run fresh "$WORK/broken" > "$WORK/out4" 2>&1; then fail "una migrazione rotta
 [ "$(sql fresh "SELECT count(*) FROM schema_migrations WHERE version='9999'")" = 0 ] || fail "9999 registrata"
 pass "rollback completo, la migrazione fallita non è registrata"
 
-echo "5. DB legacy (vecchio deploy.sh: file rieseguiti a ogni deploy, errori ignorati)"
+echo "5. DB senza schema_migrations (file rieseguiti come il vecchio deploy, errori ignorati)"
 newdb legacy
 for _ in 1 2; do
   for f in db/migrations/*.sql; do docker exec -i "$DB_C" psql -U lrc -d legacy -X -q < "$f" >/dev/null 2>&1 || true; done
@@ -89,12 +93,46 @@ run legacy "$PWD/db/migrations" > "$WORK/out5b" 2>&1 || { cat "$WORK/out5b"; fai
 grep -q "0 da applicare" "$WORK/out5b" || fail "legacy: seconda esecuzione non vuota"
 pass "registrazione legacy e poi 0 da applicare"
 
-echo "6. Schema: installazione nuova = DB legacy"
+echo "6. Rieseguire tutte le migrazioni non cambia lo schema"
 newdb fresh2
 run fresh2 "$PWD/db/migrations" >/dev/null 2>&1
 if ! diff <(schema fresh2) <(schema legacy) > "$WORK/diff6"; then
   head -60 "$WORK/diff6"; fail "gli schemi differiscono"
 fi
 pass "schemi identici ($(schema fresh2 | grep -c '^CREATE TABLE') tabelle)"
+
+echo "7. DB nato col vecchio sistema (git ${LEGACY_REF:=54cfdf8})"
+if git cat-file -e "$LEGACY_REF:db/schema.sql" 2>/dev/null; then
+  newdb oldsys
+  old_list=$(git show "$LEGACY_REF:deploy.sh" | sed -n '/MIGRATIONS=(/,/^  )/p' | grep -oE 'db/[a-z0-9-]+\.sql')
+  git show "$LEGACY_REF:db/schema.sql" | docker exec -i "$DB_C" psql -U lrc -d oldsys -X -q >/dev/null 2>&1 || true
+  for _ in 1 2; do
+    for f in $old_list; do
+      git show "$LEGACY_REF:$f" | docker exec -i "$DB_C" psql -U lrc -d oldsys -X -q >/dev/null 2>&1 || true
+    done
+  done
+  run oldsys "$PWD/db/migrations" > "$WORK/out7" 2>&1 || { cat "$WORK/out7"; fail "registrazione del DB vecchio sistema"; }
+  [ "$(sql oldsys "SELECT count(*) FROM schema_migrations WHERE mode='legacy-err'")" -gt 0 ] \
+    || fail "gli errori tollerati non sono marcati legacy-err"
+  eval "$(sed -n '/^normalize()/,/^}/p' db/check-drift.sh)"
+  dumpn() { docker exec "$DB_C" pg_dump -U lrc -d "$1" --schema-only --no-owner --no-privileges -T schema_migrations | normalize; }
+  if diff <(dumpn fresh2) <(dumpn oldsys) > "$WORK/diff7"; then
+    fail "il controllo di schema NON vede le differenze del vecchio sistema"
+  fi
+  grep -q 'spma' "$WORK/diff7" || { head -20 "$WORK/diff7"; fail "attese differenze sulle tabelle SPMA"; }
+  pass "registrato (errori marcati legacy-err) e differenze rilevate: $(grep -c '^[<>]' "$WORK/diff7") righe"
+else
+  echo "  - saltato: commit $LEGACY_REF non disponibile (in CI serve fetch-depth: 0)"
+fi
+
+echo "8. DB più avanti del codice (rollback del codice)"
+cp -r db/migrations "$WORK/ahead"
+echo "CREATE TABLE test_ahead (id INT);" > "$WORK/ahead/9000_test-ahead.sql"
+run fresh2 "$WORK/ahead" >/dev/null 2>&1 || fail "applicazione 9000"
+run fresh2 "$PWD/db/migrations" > "$WORK/out8" 2>&1 || { cat "$WORK/out8"; fail "il runner blocca un DB più avanti del codice"; }
+grep -q "codice più vecchio del DB" "$WORK/out8" || fail "avviso atteso assente"
+rm "$WORK/ahead/0010_"*.sql
+if run fresh2 "$WORK/ahead" > "$WORK/out8b" 2>&1; then fail "una migrazione cancellata in mezzo è stata accettata"; fi
+pass "DB avanti accettato con avviso; migrazione mancante in mezzo rifiutata"
 
 echo "Tutti i test superati."

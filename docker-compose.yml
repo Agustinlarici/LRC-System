@@ -1,8 +1,16 @@
 name: lrc-system
 
+# Rotazione dei log Docker (altrimenti crescono senza limite e riempiono il disco)
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # ─── PostgreSQL ──────────────────────────────────────────────────────────────
   db:
+    logging: *default-logging
     image: postgres:16-alpine
     restart: unless-stopped
     command: postgres -c timezone=Europe/Rome
@@ -24,6 +32,7 @@ services:
   # ─── Migrazioni DB (one-shot, vedi db/README.md) ──────────────────────────────
   # Applica le migrazioni mancanti e termina. Il backend parte solo se riesce.
   migrate:
+    logging: *default-logging
     image: postgres:16-alpine
     restart: "no"
     entrypoint: ["bash", "/migrate.sh"]
@@ -41,6 +50,7 @@ services:
 
   # ─── Backend (Hono) ───────────────────────────────────────────────────────────
   backend:
+    logging: *default-logging
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -117,6 +127,7 @@ services:
 
   # ─── Frontend (Next.js) ───────────────────────────────────────────────────────
   frontend:
+    logging: *default-logging
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -136,11 +147,14 @@ services:
   # pubblicano ancora diretti). Queste porte servono solo per chi vuole accedere via
   # HTTPS (richiesto da Chrome per installare la PWA come app sul tablet).
   nginx:
+    logging: *default-logging
     image: nginx:alpine
     restart: unless-stopped
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./certs:/etc/nginx/certs:ro
+      # Solo certificato e chiave del server: la chiave della CA (ca-key.pem) resta fuori dal container
+      - ./certs/server-cert.pem:/etc/nginx/certs/server-cert.pem:ro
+      - ./certs/server-key.pem:/etc/nginx/certs/server-key.pem:ro
     ports:
       - "3443:3443"
       - "3444:3444"
@@ -150,6 +164,7 @@ services:
 
   # ─── Adminer ────────────────────────────────────────────────────────────────
   adminer:
+    logging: *default-logging
     image: adminer
     restart: unless-stopped
     ports:

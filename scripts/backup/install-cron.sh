@@ -18,15 +18,15 @@ VERIFY_CRON="${VERIFY_CRON:-30 4 * * 0}"
 CRON_FILE=/etc/cron.d/lrc-system-backup
 
 chmod +x "$LRC_DIR"/scripts/backup/*.sh
-mkdir -p "$BACKUP_DIR"
+mkdir -p "$BACKUP_DIR/logs"
 chmod 700 "$BACKUP_DIR"
 
 cat > "$CRON_FILE" <<EOF
 # LRC System — backup automatici (generato da scripts/backup/install-cron.sh)
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-$BACKUP_CRON root $LRC_DIR/scripts/backup/backup.sh >/dev/null 2>&1
-$VERIFY_CRON root $LRC_DIR/scripts/backup/verify-restore.sh >/dev/null 2>&1
+$BACKUP_CRON root $LRC_DIR/scripts/backup/backup.sh >>$BACKUP_DIR/logs/cron.log 2>&1
+$VERIFY_CRON root $LRC_DIR/scripts/backup/verify-restore.sh >>$BACKUP_DIR/logs/cron.log 2>&1
 EOF
 chmod 644 "$CRON_FILE"
 

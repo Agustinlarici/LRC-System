@@ -48,3 +48,4 @@ certs/*.srl
 *.tsbuildinfo
 drift-report-*.txt
 .deploy-previous
+.drift-accepted

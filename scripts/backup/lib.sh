@@ -45,8 +45,9 @@ wait_db() {
   local timeout="${1:-60}" elapsed=0
   until dc exec -T db pg_isready -U "$DB_USER" -d postgres -q 2>/dev/null; do
     sleep 2; elapsed=$((elapsed+2))
-    [ "$elapsed" -ge "$timeout" ] && return 1
+    if [ "$elapsed" -ge "$timeout" ]; then return 1; fi
   done
+  return 0   # senza questo il ciclo restituirebbe l'esito dell'ultimo test (1)
 }
 
 # Apre/chiude un avviso in system_alerts (visibile nella pagina Sistema).
@@ -65,10 +66,26 @@ resolve_alert() {
               WHERE alert_key='$key' AND resolved_at IS NULL;" >/dev/null 2>&1 || true
 }
 
-# Ultimo backup completo (cartella) tra tutte le tipologie
+# Ultimo backup di una o più tipologie (default: daily e manual).
+# pre-restore e pre-deploy sono esclusi apposta: pre-restore contiene lo stato
+# (magari corrotto) salvato appena prima di un ripristino.
 latest_backup() {
-  find "$BACKUP_DIR"/{daily,pre-deploy,pre-restore,manual} -mindepth 1 -maxdepth 1 -type d \
-       -name '20*' 2>/dev/null | awk -F/ '{print $NF"\t"$0}' | sort | tail -n1 | cut -f2
+  local kinds=("$@") dirs=()
+  [ "$#" -eq 0 ] && kinds=(daily manual)
+  for k in "${kinds[@]}"; do dirs+=("$BACKUP_DIR/$k"); done
+  find "${dirs[@]}" -mindepth 1 -maxdepth 1 -type d -name '20*' 2>/dev/null \
+    | awk -F/ '{print $NF"\t"$0}' | sort | tail -n1 | cut -f2
+}
+
+# Traduce l'argomento dell'utente in una cartella di backup:
+#   latest | latest-pre-deploy | latest-pre-restore | <percorso>
+resolve_backup() {
+  case "$1" in
+    latest)             latest_backup daily manual ;;
+    latest-pre-deploy)  latest_backup pre-deploy ;;
+    latest-pre-restore) latest_backup pre-restore ;;
+    *)                  printf '%s' "$1" ;;
+  esac
 }
 
 # Controlla gli hash SHA256 di una cartella di backup
