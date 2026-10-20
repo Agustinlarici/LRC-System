@@ -28,6 +28,9 @@ trap 'docker rm -f "$C" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
 # delle colonne dipende dalla storia degli ALTER e non è una differenza reale.
 normalize() {
   grep -vE '^(--|SET |SELECT pg_catalog|\\(un)?restrict )' | sed '/^$/d' | awk '
+    # Copie manuali tipo "tabella_backup_20260929": non fanno parte dello schema
+    /^CREATE TABLE public\.[a-z0-9_]+_backup_[0-9]{8} \($/ { skip=1; next }
+    skip { if ($0 ~ /^\);?$/) skip=0; next }
     /^CREATE TABLE .*\($/ { print; intable=1; n=0; next }
     intable && /^\);?$|^\)/ {
       cmd="sort"; for (i=1;i<=n;i++) print cols[i] | cmd; close(cmd); print; intable=0; next }
