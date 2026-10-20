@@ -40,3 +40,9 @@ ALTER TABLE bucci_shipment ADD COLUMN IF NOT EXISTS modified_by_name TEXT;
 
 -- Conto Garanzia: flag per cofano, impostato dall'operatore durante la spedizione
 ALTER TABLE bucci_shipment_item ADD COLUMN IF NOT EXISTS conto_garanzia BOOLEAN NOT NULL DEFAULT false;
+
+-- "Modificata" conta solo le modifiche fatte dopo la prima chiusura (non la compilazione iniziale)
+ALTER TABLE bucci_shipment ADD COLUMN IF NOT EXISTS was_closed BOOLEAN NOT NULL DEFAULT false;
+UPDATE bucci_shipment SET was_closed = true WHERE status = 'closed' AND NOT was_closed;
+-- Azzera le etichette "modificata" generate dalla vecchia logica (compilazione iniziale)
+UPDATE bucci_shipment SET modified_at = NULL, modified_by_name = NULL WHERE NOT was_closed AND modified_at IS NOT NULL;

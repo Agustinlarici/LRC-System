@@ -32,7 +32,7 @@ async function requireOpenShipment(id: number) {
 }
 
 async function touchShipment(id: number, userName: string) {
-  await db`UPDATE bucci_shipment SET modified_at = now(), modified_by_name = ${userName} WHERE id = ${id}`;
+  await db`UPDATE bucci_shipment SET modified_at = now(), modified_by_name = ${userName} WHERE id = ${id} AND was_closed`;
 }
 
 // ─── Lista / dettaglio ────────────────────────────────────────────────────────
@@ -88,7 +88,7 @@ spedizioneBucciRoutes.post('/shipments/:id/close', requireModule(MODULE), async 
   const user = c.get('user');
   const [row] = await db`
     UPDATE bucci_shipment
-    SET status = 'closed', closed_at = now(), closed_by_name = ${user.display_name}
+    SET status = 'closed', was_closed = true, closed_at = now(), closed_by_name = ${user.display_name}
     WHERE id = ${id} AND status = 'open'
     RETURNING id
   `;
@@ -105,8 +105,7 @@ spedizioneBucciRoutes.post('/shipments/:id/reopen', requireManage(MODULE), async
   const user = c.get('user');
   const [row] = await db`
     UPDATE bucci_shipment
-    SET status = 'open', closed_at = NULL, closed_by_name = NULL,
-        modified_at = now(), modified_by_name = ${user.display_name}
+    SET status = 'open', closed_at = NULL, closed_by_name = NULL
     WHERE id = ${id} AND status = 'closed'
     RETURNING id
   `;
