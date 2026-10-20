@@ -4,13 +4,18 @@
 #
 # Uso:
 #   ./deploy.sh            → primo avvio o deploy completo (build + swap)
-#   ./deploy.sh update     → aggiornamento zero-downtime (pull + migrate + build + swap)
+#   ./deploy.sh update     → aggiornamento zero-downtime (backup + pull + migrate + build + swap + verifica)
 #   ./deploy.sh migrate    → solo migrazioni DB (stack in running)
+#   ./deploy.sh rollback   → torna alla versione prima dell'ultimo update
 #   ./deploy.sh stop       → ferma lo stack
 #   ./deploy.sh restart    → riavvia senza rebuild
 #   ./deploy.sh logs       → log live
 # ═══════════════════════════════════════════════════════════════════
 set -e
+
+# Tutto lo script tra graffe: bash lo legge per intero prima di eseguirlo,
+# così il "git pull" dell'update non può cambiare lo script mentre gira.
+{
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 info()  { echo -e "${GREEN}[LRC]${NC} $1"; }
@@ -38,8 +43,8 @@ case "$CMD" in
     info "Riavviato."
     exit 0
     ;;
-  up|update|migrate) ;;
-  *) error "Comando sconosciuto: $CMD. Usa: up | update | migrate | stop | restart | logs" ;;
+  up|update|migrate|rollback) ;;
+  *) error "Comando sconosciuto: $CMD. Usa: up | update | migrate | rollback | stop | restart | logs" ;;
 esac
 
 # ─── Controllo .env ───────────────────────────────────────────────
@@ -58,9 +63,6 @@ for var in "${required_vars[@]}"; do
 done
 [ "$missing" -eq 1 ] && error "Compila le variabili obbligatorie nel .env prima di continuare."
 
-DB_USER="$(grep POSTGRES_USER .env | cut -d= -f2)"
-DB_NAME="$(grep POSTGRES_DB .env   | cut -d= -f2)"
-DB_NAME="${DB_NAME:-lrc_system}"
 
 # ─── Cartelle necessarie ──────────────────────────────────────────
 SCAN_HOST="${SCAN_FOLDER_HOST:-./test-scansioni}"
@@ -90,110 +92,30 @@ fix_upload_perms() {
 }
 
 # ═══════════════════════════════════════════════════════════════════
+# Funzione: file SQL lasciati in db/ invece che in db/migrations/
+# (abitudine del vecchio sistema: non verrebbero mai applicati)
+# ═══════════════════════════════════════════════════════════════════
+stray_sql() {
+  local stray
+  stray="$(find db -maxdepth 1 -name '*.sql' 2>/dev/null)"
+  [ -z "$stray" ] && return 1
+  warn "File SQL fuori da db/migrations/ (non verrebbero applicati):"
+  echo "$stray" | sed 's/^/        /'
+  warn "Spostarli in db/migrations/ col numero successivo (vedi db/README.md)."
+  return 0
+}
+
+# ═══════════════════════════════════════════════════════════════════
 # Funzione: applica le migrazioni (stack deve essere running)
 # ═══════════════════════════════════════════════════════════════════
 run_migrations() {
-  step "Applico le migrazioni al database..."
-
-  # Attendo che il DB sia pronto
-  timeout=60; elapsed=0
-  while ! docker compose exec db pg_isready -U "$DB_USER" -d "$DB_NAME" -q 2>/dev/null; do
-    sleep 2; elapsed=$((elapsed+2))
-    [ $elapsed -ge $timeout ] && error "Database non pronto dopo ${timeout}s."
-  done
-
-  MIGRATIONS=(
-    "db/migrate.sql"
-    "db/migrate-tickets.sql"
-    "db/migrate-auth.sql"
-    "db/migrate-tickets-user-profile.sql"
-    "db/migrate-tickets-approval.sql"
-    "db/migrate-tickets-category-edit.sql"
-    "db/migrate-tickets-created-by.sql"
-    "db/migrate-tickets-priority-backfill.sql"
-    "db/migrate-tickets-resolved-backfill.sql"
-    "db/migrate-tickets-reopen-backfill.sql"
-    "db/migrate-tickets-delete.sql"
-    "db/migrate-heatmap.sql"
-    "db/migrate-heatmap-hourly.sql"
-    "db/migrate-dashboards.sql"
-    "db/migrate-webthron-cache.sql"
-    "db/migrate-system-config.sql"
-    "db/migrate-impostazioni.sql"
-    "db/migrate-unified-sync.sql"
-    "db/migrate-alerts.sql"
-    "db/migrate-resumen.sql"
-    "db/migrate-spma.sql"
-    "db/migrate-spma-import-log.sql"
-    "db/migrate-spma-alerts.sql"
-    "db/migrate-spma-telegram.sql"
-    "db/migrate-spma-email.sql"
-    "db/migrate-spma-onedrive.sql"
-    "db/migrate-iknow-tracking.sql"
-    "db/migrate-lead-time.sql"
-    "db/migrate-recepciones.sql"
-    "db/migrate-edi.sql"
-    "db/migrate-edi-rename-supplier-code.sql"
-    "db/migrate-edi-establishment-generic.sql"
-    "db/migrate-edi-auto-generate.sql"
-    "db/migrate-audit-log.sql"
-    "db/migrate-monitor-stops.sql"
-    "db/migrate-edi-ferrari-delins.sql"
-    "db/migrate-edi-ferrari-delins-idx.sql"
-    "db/migrate-webddt.sql"
-    "db/migrate-qualita.sql"
-    "db/migrate-webddt-po-mapping.sql"
-    "db/migrate-spedizione-bucci.sql"
-    "db/migrate-programma-produzione.sql"
-    "db/migrate-device-auth.sql"
-    "db/migrate-force-password-change.sql"
-    "db/migrate-hr.sql"
-    "db/migrate-hr-tags.sql"
-    "db/migrate-hr-deadlines.sql"
-    "db/migrate-hr-deadlines-multi-societa.sql"
-    "db/migrate-hr-capo-pairs.sql"
-    "db/migrate-hr-documents.sql"
-    "db/migrate-hr-deadline-acks.sql"
-    "db/migrate-hr-photo.sql"
-  )
-  # Migrazioni obsolete, volutamente non eseguite (sostituite da altre / tabella non più usata)
-  IGNORED_MIGRATIONS=(
-    "db/migrate-hr-multi-capo.sql"
-  )
-
-  mig_problems=0
-  for f in "${MIGRATIONS[@]}"; do
-    if [ ! -f "$f" ]; then
-      warn "  ✗ $f nella lista ma NON trovato su disco (git pull incompleto?)"
-      mig_problems=1
-      continue
-    fi
-    docker compose cp "$f" "db:/tmp/$(basename "$f")"
-    # psql esce con 0 anche se una istruzione fallisce: leggo l'output per accorgermene.
-    mig_out="$(docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -q -f "/tmp/$(basename "$f")" 2>&1)" || true
-    if echo "$mig_out" | grep -q "ERROR:"; then
-      warn "  ✗ $(basename "$f") — errori durante l'esecuzione:"
-      echo "$mig_out" | grep "ERROR:" | head -5 | sed 's/^/      /'
-      mig_problems=1
-    else
-      info "  ✓ $(basename "$f")"
-    fi
-  done
-
-  # Migrazioni presenti in db/ ma dimenticate nella lista: non verrebbero mai eseguite.
-  for f in db/migrate-*.sql; do
-    [ -f "$f" ] || continue
-    case " ${MIGRATIONS[*]} ${IGNORED_MIGRATIONS[*]} " in
-      *" $f "*) ;;
-      *) warn "  ! $f NON è nella lista MIGRATIONS di deploy.sh (non viene eseguita)"; mig_problems=1 ;;
-    esac
-  done
-
-  if [ "$mig_problems" -eq 1 ]; then
-    warn "Migrazioni completate CON AVVISI: controlla le righe sopra prima di usare i nuovi moduli."
-  else
-    info "Migrazioni completate."
-  fi
+  stray_sql && error "Migrazioni non applicate: sistemare i file indicati sopra."
+  step "Applico le migrazioni al database (db/migrations, vedi db/README.md)..."
+  # Servizio one-shot "migrate": ogni file una sola volta, in transazione,
+  # si ferma al primo errore (prima gli errori venivano ignorati).
+  docker compose run --rm migrate \
+    || error "Migrazioni fallite: nessuna modifica parziale applicata. Lo stack attuale resta in funzione."
+  info "Migrazioni completate."
 }
 
 # ═══════════════════════════════════════════════════════════════════
@@ -206,35 +128,186 @@ if [ "$CMD" = "migrate" ]; then
 fi
 
 # ═══════════════════════════════════════════════════════════════════
-# update — zero-downtime: pull → migrate → build → swap
+# Funzioni di sicurezza per l'update / rollback
+# ═══════════════════════════════════════════════════════════════════
+# Il backend risponde /health con status "ok" entro 90 secondi?
+backend_healthy() {
+  local elapsed=0
+  while [ $elapsed -lt 90 ]; do
+    docker compose exec -T backend wget -qO- http://localhost:3001/health 2>/dev/null | grep -q '"status":"ok"' && return 0
+    sleep 3; elapsed=$((elapsed+3))
+  done
+  return 1
+}
+
+# Riporta il codice alla versione precedente (mantiene eventuali modifiche
+# locali non committate: --keep si rifiuta invece di sovrascriverle).
+revert_code() {
+  warn "Riporto il codice alla versione precedente ($(git rev-parse --short "$1"))..."
+  git reset --keep "$1" || warn "git reset non riuscito: eseguire a mano  git reset --keep $1"
+}
+
+# Immagini costruite da questo progetto (backend, frontend)
+built_images() { docker compose config --images 2>/dev/null | grep -E -- '-(backend|frontend)(:|$)' || true; }
+
+# Prima della build: conserva le immagini in funzione come ":previous",
+# così il ritorno indietro è immediato e identico (niente ricompilazione).
+save_images() {
+  local img
+  for img in $(built_images); do
+    docker image inspect "$img" >/dev/null 2>&1 && docker tag "$img" "${img%%:*}:previous"
+  done
+  return 0
+}
+
+# Rimette in uso le immagini ":previous" (false se mancano)
+restore_images() {
+  local img ok=0
+  for img in $(built_images); do
+    if docker image inspect "${img%%:*}:previous" >/dev/null 2>&1; then
+      docker tag "${img%%:*}:previous" "$img"
+    else
+      ok=1
+    fi
+  done
+  return $ok
+}
+
+# Torna alla versione precedente (codice + immagini) e verifica che risponda.
+# Il DB resta com'è: le migrazioni aggiungono, il codice vecchio le ignora
+# (migrate.sh accetta un DB "più avanti" del codice).
+go_back() {
+  revert_code "$1"
+  if restore_images; then
+    docker compose up -d --no-build || return 1
+  else
+    warn "Immagini precedenti non disponibili: ricompilo la versione precedente..."
+    docker compose build && docker compose up -d || return 1
+  fi
+  backend_healthy
+}
+
+# Backup pre-deploy. Se BACKUP_DIR (in .env) è una cartella dell'utente gira
+# direttamente; se è di root (es. /srv/lrc-backups) chiede sudo.
+pre_deploy_backup() {
+  local dir
+  dir="$(grep -E '^BACKUP_DIR=' .env | tail -n1 | cut -d= -f2- | tr -d '\r"')"
+  dir="${dir:-/srv/lrc-backups}"
+  if [ "$(id -u)" = 0 ] || [ -w "$dir" ] || { [ ! -e "$dir" ] && [ -w "$(dirname "$dir")" ]; }; then
+    BACKUP_KIND=pre-deploy bash scripts/backup/backup.sh
+  else
+    info "La cartella dei backup ($dir) richiede i permessi di root (sudo):"
+    sudo env BACKUP_KIND=pre-deploy bash scripts/backup/backup.sh
+  fi
+}
+
+# ═══════════════════════════════════════════════════════════════════
+# update — zero-downtime: backup → pull → migrate → controllo schema →
+#          build → swap → verifica
+# Se qualcosa fallisce, la versione in funzione resta (o torna) quella precedente.
 # ═══════════════════════════════════════════════════════════════════
 if [ "$CMD" = "update" ]; then
-  # git pull può riscrivere questo stesso file mentre bash lo sta eseguendo: la lista
-  # MIGRATIONS già caricata in memoria sarebbe quella VECCHIA e le migrazioni nuove
-  # verrebbero saltate. Dopo il pull rilancio lo script, così legge la versione aggiornata.
-  if [ -z "${LRC_PULLED:-}" ]; then
-    step "1/4  Git pull..."
-    git pull
-    export LRC_PULLED=1
-    exec bash "$0" update
+  [ "$(id -u)" = 0 ] && warn "Stai eseguendo deploy.sh come root: meglio come utente normale (proprietario del repository)."
+  # LRC_PULLED=1: il "git pull" è già stato fatto (dal vecchio deploy.sh, che dopo
+  # il pull rilancia questo script, oppure a mano). La versione precedente è ORIG_HEAD.
+  if [ "${LRC_PULLED:-0}" = 1 ]; then
+    PREV_COMMIT="$(git rev-parse ORIG_HEAD 2>/dev/null)" || error "LRC_PULLED=1 ma ORIG_HEAD non esiste: fare  git pull  e riprovare."
+    if [ "$PREV_COMMIT" = "$(git rev-parse HEAD)" ] \
+       || { [ -f .deploy-previous ] && [ "$(cat .deploy-previous)" = "$PREV_COMMIT" ]; }; then
+      info "Nessuna novità da aggiornare (questo aggiornamento è già stato fatto)."
+      exit 0
+    fi
+    info "Codice già aggiornato col git pull; versione precedente: $(git rev-parse --short "$PREV_COMMIT")"
+  else
+    PREV_COMMIT="$(git rev-parse HEAD)"
+    step "0/6  Controllo novità..."
+    git fetch || error "git fetch fallito: aggiornamento annullato (niente è stato modificato)."
+    UPSTREAM="$(git rev-parse '@{u}' 2>/dev/null)" || error "Il branch attuale non segue un branch remoto (git checkout <branch>)."
+    if [ "$UPSTREAM" = "$PREV_COMMIT" ]; then
+      info "Nessuna novità da aggiornare."
+      exit 0
+    fi
   fi
 
-  step "2/4  Migrazioni DB (stack in running — nessun downtime)..."
-  run_migrations
+  step "1/6  Backup di sicurezza pre-aggiornamento..."
+  if ! pre_deploy_backup; then
+    [ "${LRC_PULLED:-0}" = 1 ] && revert_code "$PREV_COMMIT"
+    error "Backup pre-aggiornamento fallito: aggiornamento annullato (niente è stato modificato)."
+  fi
 
-  step "3/4  Build nuove immagini in background (nessun downtime)..."
-  docker compose build --no-cache
+  if [ "${LRC_PULLED:-0}" != 1 ]; then
+    step "2/6  Git pull..."
+    git pull --ff-only || error "git pull fallito: aggiornamento annullato (niente è stato modificato)."
+  fi
 
-  step "4/4  Swap container (~5 secondi di interruzione)..."
-  docker compose up -d
-  fix_upload_perms
+  if stray_sql; then
+    revert_code "$PREV_COMMIT"
+    error "Aggiornamento annullato prima di toccare il database. Il programma continua a funzionare."
+  fi
 
-  info "Aggiornamento completato."
+  step "3/6  Migrazioni DB (stack in running — nessun downtime)..."
+  docker compose run --rm migrate --status || true
+  if ! docker compose run --rm migrate; then
+    revert_code "$PREV_COMMIT"
+    error "Migrazioni fallite (annullate, nessuna modifica parziale). Il programma continua a funzionare con la versione precedente."
+  fi
+
+  # Lo schema reale deve coincidere con quello delle migrazioni: protegge da
+  # modifiche fatte a mano e dal passaggio dal vecchio sistema (DB "legacy").
+  step "4/6  Controllo schema (produzione = migrazioni)..."
+  if ! bash db/check-drift.sh; then
+    revert_code "$PREV_COMMIT"
+    error "Lo schema del DB non coincide con le migrazioni (vedi drift-report-*.txt). Aggiornamento annullato prima dello swap: il programma continua a funzionare. Dopo aver verificato il report: LRC_ACCEPT_DRIFT=1 ./deploy.sh update"
+  fi
+
+  step "5/6  Build nuove immagini in background (nessun downtime)..."
+  save_images
+  if ! docker compose build --no-cache; then
+    revert_code "$PREV_COMMIT"
+    restore_images || true
+    error "Build fallita. Il programma continua a funzionare con la versione precedente."
+  fi
+
+  step "6/6  Swap container (~5 secondi di interruzione) e verifica..."
+  if docker compose up -d && backend_healthy; then
+    fix_upload_perms
+  else
+    warn "Il backend non risponde dopo l'aggiornamento: torno automaticamente alla versione precedente."
+    if go_back "$PREV_COMMIT"; then
+      error "Aggiornamento annullato: ripristinata la versione precedente, che funziona. Log: docker compose logs backend"
+    else
+      error "ATTENZIONE: anche la versione precedente non risponde. Vedi docs/DISASTER-RECOVERY.md (procedura B)."
+    fi
+  fi
+  echo "$PREV_COMMIT" > .deploy-previous
+
+  info "Aggiornamento completato e verificato."
   echo ""
   SERVER_IP_ECHO="$(grep -E '^SERVER_IP=' .env | cut -d= -f2-)"
   echo "  Frontend (ufficio)  →  http://${SERVER_IP_ECHO}:3000"
   echo "  Frontend (tablet)   →  https://${SERVER_IP_ECHO}:3443"
   echo "  Log live  →  ./deploy.sh logs"
+  echo "  Tornare indietro  →  ./deploy.sh rollback"
+  exit 0
+fi
+
+# ═══════════════════════════════════════════════════════════════════
+# rollback — torna alla versione prima dell'ultimo update riuscito
+# Il database resta com'è (le migrazioni aggiungono, il codice vecchio le
+# ignora). Per tornare anche ai dati di prima dell'update:
+#   sudo scripts/backup/restore.sh latest-pre-deploy
+# ═══════════════════════════════════════════════════════════════════
+if [ "$CMD" = "rollback" ]; then
+  [ -f .deploy-previous ] || error "Nessun update precedente registrato (.deploy-previous mancante)."
+  PREV_COMMIT="$(cat .deploy-previous)"
+  step "Torno alla versione $(git rev-parse --short "$PREV_COMMIT")..."
+  if go_back "$PREV_COMMIT"; then
+    rm -f .deploy-previous
+    info "Rollback completato, il backend risponde. Il DB non è stato modificato."
+    info "Se servono anche i dati di prima dell'update: sudo scripts/backup/restore.sh latest-pre-deploy"
+  else
+    error "Il backend non risponde dopo il rollback. Vedi docs/DISASTER-RECOVERY.md."
+  fi
   exit 0
 fi
 
@@ -242,9 +315,11 @@ fi
 # up — primo avvio o deploy completo
 # ═══════════════════════════════════════════════════════════════════
 step "Avvio stack LRC System..."
-docker compose up --build -d
+stray_sql && error "Avvio annullato: sistemare i file SQL indicati sopra."
+# Il servizio "migrate" gira automaticamente prima del backend (depends_on)
+docker compose up --build -d \
+  || error "Avvio fallito. Se il problema sono le migrazioni: docker compose logs migrate"
 
-run_migrations
 fix_upload_perms
 
 info "Stack avviato con successo!"
@@ -260,3 +335,5 @@ echo ""
 echo "  Log live  →  ./deploy.sh logs"
 echo "  Stop      →  ./deploy.sh stop"
 echo "  Update    →  ./deploy.sh update"
+exit 0
+}

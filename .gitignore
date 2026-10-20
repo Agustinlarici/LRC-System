@@ -46,3 +46,6 @@ certs/*.srl
 
 # TypeScript build cache
 *.tsbuildinfo
+drift-report-*.txt
+.deploy-previous
+.drift-accepted

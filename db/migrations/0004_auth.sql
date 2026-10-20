@@ -1,3 +1,4 @@
+-- migrate:no-transaction  (ALTER TYPE ... ADD VALUE: il nuovo valore non è usabile nella stessa transazione)
 -- ============================================================
 -- LRC-System — System-wide Auth Migration
 -- Run AFTER migrate-tickets.sql
@@ -20,9 +21,9 @@ END $$;
 -- Add 'spma' and 'dashboards' to the enum
 ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'spma';
 ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'dashboards';
-ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'monitor_resumen';
 ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'recepciones';
 ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'edi';
+ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'monitor_resumen';
 ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'monitor_parate';
 ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'monitor_motivi';
 

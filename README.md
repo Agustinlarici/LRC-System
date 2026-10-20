@@ -45,7 +45,8 @@ LRC-System/
 │   └── tailwind.config.ts
 │
 ├── db/
-│   ├── schema.sql            # PostgreSQL schema (complete)
+│   ├── migrations/           # Migrazioni numerate NNNN_*.sql (vedi db/README.md)
+│   ├── migrate.sh            # Esecutore migrazioni (servizio docker "migrate")
 │   ├── migrate.js            # MySQL → PostgreSQL migration script
 │   └── package.json
 │

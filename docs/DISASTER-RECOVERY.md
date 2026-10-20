@@ -1,0 +1,102 @@
+# LRC System — Backup e Disaster Recovery
+
+## Cosa viene salvato
+
+| Cosa | Dove nel backup |
+|---|---|
+| Database PostgreSQL completo (inclusi documenti HR in `bytea`) | `db.dump` |
+| Allegati ticket (`TICKETS_UPLOADS_HOST`) | `files.tar.gz` |
+| Certificati HTTPS (`certs/`) e configurazione `.env` | `files.tar.gz` |
+| Percorsi extra (`BACKUP_EXTRA_PATHS`) | `files.tar.gz` |
+
+Ogni backup ha `manifest.txt` (data, commit git, n° tabelle) e `SHA256SUMS`.
+
+## Pianificazione
+
+| Quando | Cosa | Conservazione |
+|---|---|---|
+| Ogni giorno 02:30 | `backup.sh` | 7 giornalieri, 4 settimanali (domenica), 12 mensili (giorno 1) |
+| Domenica 04:30 | `verify-restore.sh` — ripristino di prova in un container isolato | — |
+| Ogni `./deploy.sh update` con novità | backup `pre-deploy` (se fallisce, l'aggiornamento si ferma) | ultimi 10 |
+| Ogni ripristino | backup `pre-restore` dello stato attuale | ultimi 10 |
+
+Obiettivi: **RPO ≤ 24h** (al massimo si perde un giorno di dati), **RTO ≈ 30 min**.
+
+Se un backup o una verifica falliscono si apre un avviso critico nella pagina **Sistema**
+(`backup_failed` / `backup_verify_failed`), che si chiude da solo al successivo esito positivo.
+Stato rapido: `cat /srv/lrc-backups/last-backup.status /srv/lrc-backups/last-verify.status`.
+Log: `/srv/lrc-backups/logs/` (output del cron in `logs/cron.log`).
+
+## Installazione (una volta)
+
+```bash
+# 1. (consigliato) montare un secondo disco su /srv/lrc-backups
+# 2. impostare BACKUP_DIR in .env se diverso da /srv/lrc-backups
+scripts/backup/install-cron.sh                       # (sudo se BACKUP_DIR è di root)
+BACKUP_KIND=manual scripts/backup/backup.sh          # primo backup
+sudo scripts/backup/verify-restore.sh                # prova di ripristino
+```
+
+> ⚠️ I backup stanno sullo stesso server. Proteggono da errori umani, bug, migrazioni
+> sbagliate e corruzione del DB, ma **non** dalla rottura del server/disco. Per questo è
+> fortemente consigliato un disco dedicato per `/srv/lrc-backups`.
+
+## Procedure
+
+> **Chi esegue cosa**: tutto dall'utente che possiede il repository (gruppo docker).
+> `sudo` serve solo se `BACKUP_DIR` è una cartella di root (es. `/srv/lrc-backups`);
+> con `BACKUP_DIR=/home/<utente>/lrc-backups` nel `.env` togliere `sudo` dai comandi qui sotto.
+>
+> **Quale backup**: `latest` = ultimo giornaliero/manuale · `latest-pre-deploy` = quello fatto
+> prima dell'ultimo update · `latest-pre-restore` = stato salvato prima dell'ultimo ripristino
+> (mai scelto in automatico) · oppure il percorso di una cartella precisa.
+
+### A. Dati cancellati o corrotti (server funzionante)
+
+```bash
+sudo scripts/backup/restore.sh latest                # oppure una cartella precisa:
+sudo scripts/backup/restore.sh /srv/lrc-backups/daily/2026-10-07_023000
+# Solo DB:   aggiungere --db-only     Solo file: --files-only
+```
+Lo script mostra tipo e data del backup scelto, verifica i checksum, chiede di scrivere
+`RIPRISTINA`, salva lo stato attuale in `pre-restore/` e ripristina in un **database
+temporaneo**: la produzione viene sostituita solo se il ripristino è riuscito (altrimenti
+resta intatta e il backend riparte). Il database sostituito resta come
+`lrc_system_pre_restore` fino al ripristino successivo.
+Per annullare il ripristino: `sudo scripts/backup/restore.sh latest-pre-restore`.
+
+### B. Aggiornamento andato male
+
+`./deploy.sh update` si protegge da solo: backup prima; se migrazioni, controllo schema,
+build o avvio del backend falliscono, torna automaticamente alla versione precedente
+(codice **e** immagini Docker, senza ricompilare).
+Se il problema si scopre dopo (es. un errore funzionale):
+
+```bash
+./deploy.sh rollback                                 # codice e immagini precedenti, DB invariato
+# Se servono anche i dati di prima dell'update:
+sudo scripts/backup/restore.sh latest-pre-deploy
+```
+
+### C. Server nuovo (il vecchio è perso, il disco dei backup è salvo)
+
+```bash
+# 1. Installare Ubuntu + Docker, montare il disco dei backup su /srv/lrc-backups
+#    (la cartella del progetto può essere diversa da quella del vecchio server)
+git clone -b <branch di produzione> <repo> LRC-System && cd LRC-System
+#    git_commit in manifest.txt dice la versione che girava: se diversa dall'ultima,
+#    git reset --hard <git_commit>   (resta sul branch, i futuri update funzionano)
+docker volume create lrc-system-pgdata-prod
+# 2. Prima i file: riporta .env, certificati e allegati nella cartella del progetto
+sudo scripts/backup/restore.sh --no-safety --files-only latest
+# 3. Poi il database (avvia PostgreSQL e lo ripristina)
+sudo scripts/backup/restore.sh --no-safety --db-only latest
+# 4. Se cambia l'IP: aggiornare SERVER_IP / NEXT_PUBLIC_API_URL / CORS_ORIGINS in .env
+./deploy.sh
+sudo scripts/backup/install-cron.sh
+```
+
+## Controlli periodici (manuali)
+
+- **Ogni mese**: verificare che `last-verify.status` sia `OK` e recente.
+- **Ogni 6 mesi**: provare la procedura C su una macchina di test.

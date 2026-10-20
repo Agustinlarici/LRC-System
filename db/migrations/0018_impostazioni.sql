@@ -1,3 +1,4 @@
+-- migrate:no-transaction  (ALTER TYPE ... ADD VALUE: il nuovo valore non è usabile nella stessa transazione)
 -- ─── Add 'impostazioni' to module_key_enum ────────────────────────────────────
 ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'impostazioni';
 
