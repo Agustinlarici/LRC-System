@@ -62,7 +62,7 @@ spedizioneBucciRoutes.get('/shipments/:id', requireModule(MODULE), async (c) => 
   `;
   if (!shipment) throw new HTTPException(404, { message: 'Spedizione non trovata' });
   const items = await db`
-    SELECT id, scanned_code, seriale, componente, modello, commessa, tipo_lotto_primer, scanned_by_name, scanned_at
+    SELECT id, scanned_code, seriale, componente, modello, commessa, tipo_lotto_primer, conto_garanzia, scanned_by_name, scanned_at
     FROM bucci_shipment_item WHERE shipment_id = ${id}
     ORDER BY id ASC
   `;
@@ -198,7 +198,7 @@ spedizioneBucciRoutes.post('/shipments/:id/scan', requireModule(MODULE), async (
     FROM bucci_shipment s
     WHERE s.id = ${id} AND s.status = 'open'
     ON CONFLICT (shipment_id, seriale) DO NOTHING
-    RETURNING id, scanned_code, seriale, componente, modello, commessa, tipo_lotto_primer, scanned_by_name, scanned_at
+    RETURNING id, scanned_code, seriale, componente, modello, commessa, tipo_lotto_primer, conto_garanzia, scanned_by_name, scanned_at
   `;
   if (!item) {
     await requireOpenShipment(id);
@@ -215,6 +215,22 @@ spedizioneBucciRoutes.post('/shipments/:id/scan', requireModule(MODULE), async (
   `;
 
   return c.json({ status: 'added', item, also_in_shipment: other?.shipment_id ?? null, warning }, 201);
+});
+
+// PATCH /api/bucci/shipments/:id/items/:itemId — flag Conto Garanzia (solo spedizione aperta)
+spedizioneBucciRoutes.patch('/shipments/:id/items/:itemId', requireModule(MODULE), async (c) => {
+  const id     = parseId(c.req.param('id'));
+  const itemId = parseId(c.req.param('itemId'));
+  const body   = await parseBody(c, z.object({ conto_garanzia: z.boolean() }));
+  await requireOpenShipment(id);
+  const [row] = await db`
+    UPDATE bucci_shipment_item SET conto_garanzia = ${body.conto_garanzia}
+    WHERE id = ${itemId} AND shipment_id = ${id}
+    RETURNING id, conto_garanzia
+  `;
+  if (!row) throw new HTTPException(404, { message: 'Elemento non trovato' });
+  await touchShipment(id, c.get('user').display_name);
+  return c.json(row);
 });
 
 spedizioneBucciRoutes.delete('/shipments/:id/items/:itemId', requireModule(MODULE), async (c) => {

@@ -18,8 +18,7 @@ interface Item {
   modello:         string | null;
   commessa:        string | null;
   tipo_lotto_primer: string | null;
-  scanned_by_name: string;
-  scanned_at:      string;
+  conto_garanzia:  boolean;
 }
 
 interface Shipment {
@@ -110,12 +109,22 @@ export default function SpedizioneBucciDetailPage() {
     }
   }
 
+  async function toggleGaranzia(item: Item, value: boolean) {
+    const patch = (v: boolean) => setShipment(prev => prev
+      ? { ...prev, items: prev.items.map(i => i.id === item.id ? { ...i, conto_garanzia: v } : i) } : prev);
+    patch(value);
+    try {
+      await api.patch(`/api/bucci/shipments/${id}/items/${item.id}`, { conto_garanzia: value });
+    } catch (e) {
+      patch(!value);
+      toast.error(e instanceof Error ? e.message : 'Errore nel salvataggio');
+    }
+  }
+
   async function changeStatus(action: 'close' | 'reopen') {
     if (action === 'close') {
       const ok = await confirm({
-        title:        'Chiudere la spedizione?',
-        message:      `La spedizione #${id} contiene ${shipment?.items.length ?? 0} cofani. Dopo la chiusura non sarà più modificabile.`,
-        confirmLabel: 'Chiudi spedizione',
+        title: 'Chiudere la spedizione?',
       });
       if (!ok) return;
     }
@@ -151,7 +160,7 @@ export default function SpedizioneBucciDetailPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <Link href="/spedizione-bucci" className="btn-secondary inline-flex items-center gap-2 text-sm">
+          <Link href="/spedizione-bucci" className="btn-secondary print:hidden inline-flex items-center gap-2 text-sm">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
@@ -169,7 +178,8 @@ export default function SpedizioneBucciDetailPage() {
             </span>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 print:hidden">
+          <button className="btn-secondary" onClick={() => window.print()}>Stampa</button>
           {isOpen && <button className="btn-primary" onClick={() => changeStatus('close')}>Chiudi spedizione</button>}
           {!isOpen && canManage('spedizione_bucci') && (
             <button className="btn-secondary" onClick={() => changeStatus('reopen')}>Riapri</button>
@@ -181,7 +191,7 @@ export default function SpedizioneBucciDetailPage() {
       </div>
 
       {isOpen && (
-        <form onSubmit={onSubmit} className="card mb-4">
+        <form onSubmit={onSubmit} className="card mb-4 print:hidden">
           <label className="label" htmlFor="bucci-code">Scansiona seriale o commessa (BUCC…)</label>
           <div className="flex items-center gap-4">
             <input
@@ -207,8 +217,8 @@ export default function SpedizioneBucciDetailPage() {
         </form>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
-        <table className="w-full text-sm">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto print:overflow-visible print:border-0 print:shadow-none">
+        <table className="w-full text-sm print:text-xs [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap print:[&_th]:px-2 print:[&_td]:px-2">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50 text-gray-500">
               <th className="py-3 px-4 text-left font-medium">#</th>
@@ -217,8 +227,8 @@ export default function SpedizioneBucciDetailPage() {
               <th className="py-3 px-4 text-left font-medium">Modello</th>
               <th className="py-3 px-4 text-left font-medium">Commessa</th>
               <th className="py-3 px-4 text-left font-medium">Tipo Lotto Primer</th>
-              <th className="py-3 px-4 text-left font-medium">Scansionato</th>
-              {isOpen && <th className="py-3 px-4 text-center font-medium"></th>}
+              <th className="py-3 px-4 text-center font-medium">Conto Garanzia</th>
+              {isOpen && <th className="py-3 px-4 text-center font-medium print:hidden"></th>}
             </tr>
           </thead>
           <tbody>
@@ -232,9 +242,28 @@ export default function SpedizioneBucciDetailPage() {
                 <td className="py-2.5 px-4 text-gray-500">{it.modello || '–'}</td>
                 <td className="py-2.5 px-4 text-gray-500">{it.commessa || '–'}</td>
                 <td className="py-2.5 px-4 text-gray-500">{it.tipo_lotto_primer || '–'}</td>
-                <td className="py-2.5 px-4 text-gray-500">{fmtDatetime(it.scanned_at)} · {it.scanned_by_name}</td>
+                <td className="py-2.5 px-4 text-center">
+                  {isOpen ? (
+                    <>
+                    <span className="hidden print:inline text-xs font-medium">{it.conto_garanzia ? 'Sì' : 'No'}</span>
+                    <input
+                      type="checkbox"
+                      className="print:hidden w-4 h-4 accent-blue-600 cursor-pointer"
+                      checked={it.conto_garanzia}
+                      onChange={e => toggleGaranzia(it, e.target.checked)}
+                      aria-label={`Conto Garanzia ${it.seriale}`}
+                    />
+                    </>
+                  ) : (
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                      it.conto_garanzia ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      {it.conto_garanzia ? 'Sì' : 'No'}
+                    </span>
+                  )}
+                </td>
                 {isOpen && (
-                  <td className="py-2.5 px-4 text-center">
+                  <td className="py-2.5 px-4 text-center print:hidden">
                     <button onClick={() => removeItem(it)} className="text-red-500 hover:text-red-700" aria-label={`Rimuovi ${it.seriale}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="w-4 h-4" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
                   </td>
                 )}

@@ -37,3 +37,6 @@ CREATE INDEX IF NOT EXISTS idx_bucci_item_seriale ON bucci_shipment_item (serial
 -- Ultima modifica (riapertura, aggiunta/rimozione cofani)
 ALTER TABLE bucci_shipment ADD COLUMN IF NOT EXISTS modified_at TIMESTAMPTZ;
 ALTER TABLE bucci_shipment ADD COLUMN IF NOT EXISTS modified_by_name TEXT;
+
+-- Conto Garanzia: flag per cofano, impostato dall'operatore durante la spedizione
+ALTER TABLE bucci_shipment_item ADD COLUMN IF NOT EXISTS conto_garanzia BOOLEAN NOT NULL DEFAULT false;
