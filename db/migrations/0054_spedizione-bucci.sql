@@ -1,3 +1,4 @@
+-- migrate:no-transaction  (ALTER TYPE ... ADD VALUE: il nuovo valore non è usabile nella stessa transazione)
 -- Spedizione Bucci: spedizioni di cofani Bucci con seriali scansionati e risolti da iKnow (WebThron)
 ALTER TYPE module_key_enum ADD VALUE IF NOT EXISTS 'spedizione_bucci';
 
