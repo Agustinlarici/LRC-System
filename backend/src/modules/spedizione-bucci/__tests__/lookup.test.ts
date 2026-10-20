@@ -28,9 +28,9 @@ describe('parseScan', () => {
 describe('dedupeBySeriale', () => {
   it('mantiene la prima occorrenza di ogni seriale', () => {
     const rows = [
-      { seriale: 'A', componente: 'cofano', commessa: '1' },
-      { seriale: 'B', componente: 'cofano', commessa: '1' },
-      { seriale: 'A', componente: 'cofano', commessa: '2' },
+      { seriale: 'A', componente: 'cofano', commessa: '1', modello: null },
+      { seriale: 'B', componente: 'cofano', commessa: '1', modello: null },
+      { seriale: 'A', componente: 'cofano', commessa: '2', modello: null },
     ];
     expect(dedupeBySeriale(rows)).toEqual([rows[0], rows[1]]);
   });

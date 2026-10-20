@@ -29,4 +29,11 @@ CREATE TABLE IF NOT EXISTS bucci_shipment_item (
 -- Tipo Lotto Primer: campo iKnow 121 del documento di fase primer (tipdoc 0031)
 ALTER TABLE bucci_shipment_item ADD COLUMN IF NOT EXISTS tipo_lotto_primer TEXT;
 
+-- Modello: campo iKnow 43 (id → descrizione via ikExtraTab)
+ALTER TABLE bucci_shipment_item ADD COLUMN IF NOT EXISTS modello TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_bucci_item_seriale ON bucci_shipment_item (seriale);
+
+-- Ultima modifica (riapertura, aggiunta/rimozione cofani)
+ALTER TABLE bucci_shipment ADD COLUMN IF NOT EXISTS modified_at TIMESTAMPTZ;
+ALTER TABLE bucci_shipment ADD COLUMN IF NOT EXISTS modified_by_name TEXT;

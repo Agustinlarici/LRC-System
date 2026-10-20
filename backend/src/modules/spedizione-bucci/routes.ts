@@ -31,6 +31,10 @@ async function requireOpenShipment(id: number) {
   return s;
 }
 
+async function touchShipment(id: number, userName: string) {
+  await db`UPDATE bucci_shipment SET modified_at = now(), modified_by_name = ${userName} WHERE id = ${id}`;
+}
+
 // ─── Lista / dettaglio ────────────────────────────────────────────────────────
 
 // GET /api/bucci/shipments — storico spedizioni con numero di cofani
@@ -38,6 +42,7 @@ spedizioneBucciRoutes.get('/shipments', requireModule(MODULE), async (c) => {
   const limit = Math.min(Math.max(parseInt(c.req.query('limit') ?? '100', 10) || 100, 1), 500);
   const rows = await db`
     SELECT s.id, s.status, s.note, s.created_by_name, s.created_at, s.closed_at, s.closed_by_name,
+           s.modified_at, s.modified_by_name,
            COUNT(i.id)::int AS items
     FROM bucci_shipment s
     LEFT JOIN bucci_shipment_item i ON i.shipment_id = s.id
@@ -52,12 +57,12 @@ spedizioneBucciRoutes.get('/shipments', requireModule(MODULE), async (c) => {
 spedizioneBucciRoutes.get('/shipments/:id', requireModule(MODULE), async (c) => {
   const id = parseId(c.req.param('id'));
   const [shipment] = await db`
-    SELECT id, status, note, created_by_name, created_at, closed_at, closed_by_name
+    SELECT id, status, note, created_by_name, created_at, closed_at, closed_by_name, modified_at, modified_by_name
     FROM bucci_shipment WHERE id = ${id}
   `;
   if (!shipment) throw new HTTPException(404, { message: 'Spedizione non trovata' });
   const items = await db`
-    SELECT id, scanned_code, seriale, componente, commessa, tipo_lotto_primer, scanned_by_name, scanned_at
+    SELECT id, scanned_code, seriale, componente, modello, commessa, tipo_lotto_primer, scanned_by_name, scanned_at
     FROM bucci_shipment_item WHERE shipment_id = ${id}
     ORDER BY id ASC
   `;
@@ -100,7 +105,8 @@ spedizioneBucciRoutes.post('/shipments/:id/reopen', requireManage(MODULE), async
   const user = c.get('user');
   const [row] = await db`
     UPDATE bucci_shipment
-    SET status = 'open', closed_at = NULL, closed_by_name = NULL
+    SET status = 'open', closed_at = NULL, closed_by_name = NULL,
+        modified_at = now(), modified_by_name = ${user.display_name}
     WHERE id = ${id} AND status = 'closed'
     RETURNING id
   `;
@@ -187,17 +193,19 @@ spedizioneBucciRoutes.post('/shipments/:id/scan', requireModule(MODULE), async (
 
   // Inserimento atomico: fallisce se la spedizione nel frattempo è stata chiusa
   const [item] = await db`
-    INSERT INTO bucci_shipment_item (shipment_id, scanned_code, seriale, componente, commessa, tipo_lotto_primer, scanned_by_name)
-    SELECT s.id, ${body.code.trim()}, ${unit.seriale}, ${unit.componente}, ${unit.commessa}, ${tipoLotto}, ${user.display_name}
+    INSERT INTO bucci_shipment_item (shipment_id, scanned_code, seriale, componente, modello, commessa, tipo_lotto_primer, scanned_by_name)
+    SELECT s.id, ${body.code.trim()}, ${unit.seriale}, ${unit.componente}, ${unit.modello}, ${unit.commessa}, ${tipoLotto}, ${user.display_name}
     FROM bucci_shipment s
     WHERE s.id = ${id} AND s.status = 'open'
     ON CONFLICT (shipment_id, seriale) DO NOTHING
-    RETURNING id, scanned_code, seriale, componente, commessa, tipo_lotto_primer, scanned_by_name, scanned_at
+    RETURNING id, scanned_code, seriale, componente, modello, commessa, tipo_lotto_primer, scanned_by_name, scanned_at
   `;
   if (!item) {
     await requireOpenShipment(id);
     throw new HTTPException(409, { message: `${unit.seriale} già presente in questa spedizione` });
   }
+
+  await touchShipment(id, user.display_name);
 
   // Avviso (non bloccante): seriale già spedito in un'altra spedizione
   const [other] = await db`
@@ -215,5 +223,6 @@ spedizioneBucciRoutes.delete('/shipments/:id/items/:itemId', requireModule(MODUL
   await requireOpenShipment(id);
   const [row] = await db`DELETE FROM bucci_shipment_item WHERE id = ${itemId} AND shipment_id = ${id} RETURNING id`;
   if (!row) throw new HTTPException(404, { message: 'Elemento non trovato' });
+  await touchShipment(id, c.get('user').display_name);
   return c.json({ status: 'deleted' });
 });

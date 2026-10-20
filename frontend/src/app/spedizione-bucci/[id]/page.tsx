@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -15,6 +15,7 @@ interface Item {
   scanned_code:    string;
   seriale:         string;
   componente:      string | null;
+  modello:         string | null;
   commessa:        string | null;
   tipo_lotto_primer: string | null;
   scanned_by_name: string;
@@ -28,6 +29,8 @@ interface Shipment {
   created_at:      string;
   closed_at:       string | null;
   closed_by_name:  string | null;
+  modified_at:     string | null;
+  modified_by_name: string | null;
   items:           Item[];
   lookback_days:   number;
 }
@@ -40,6 +43,7 @@ type ScanResponse =
 
 export default function SpedizioneBucciDetailPage() {
   const { id }  = useParams<{ id: string }>();
+  const router  = useRouter();
   const toast   = useToast();
   const { canManage } = useAuth();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
@@ -124,6 +128,22 @@ export default function SpedizioneBucciDetailPage() {
     }
   }
 
+  async function deleteShipment() {
+    const ok = await confirm({
+      title:        'Eliminare la spedizione?',
+      message:      `La spedizione #${id} con ${shipment?.items.length ?? 0} cofani verrà eliminata definitivamente.`,
+      confirmLabel: 'Elimina',
+    });
+    if (!ok) return;
+    try {
+      await api.delete(`/api/bucci/shipments/${id}`);
+      toast.success('Spedizione eliminata');
+      router.push('/spedizione-bucci');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Errore nella eliminazione');
+    }
+  }
+
   if (loading) return <PageLoader />;
   if (!shipment) return <p className="text-gray-500">Spedizione non trovata.</p>;
 
@@ -143,11 +163,19 @@ export default function SpedizioneBucciDetailPage() {
               ? `Aperta da ${shipment.created_by_name} · ${fmtDatetime(shipment.created_at)}`
               : `Chiusa da ${shipment.closed_by_name ?? '–'} · ${shipment.closed_at ? fmtDatetime(shipment.closed_at) : ''}`}
           </p>
+          {shipment.modified_at && (
+            <span className="inline-block mt-2 text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+              Modificata il {fmtDatetime(shipment.modified_at)}{shipment.modified_by_name ? ` · ${shipment.modified_by_name}` : ''}
+            </span>
+          )}
         </div>
         <div className="flex gap-2">
           {isOpen && <button className="btn-primary" onClick={() => changeStatus('close')}>Chiudi spedizione</button>}
           {!isOpen && canManage('spedizione_bucci') && (
             <button className="btn-secondary" onClick={() => changeStatus('reopen')}>Riapri</button>
+          )}
+          {canManage('spedizione_bucci') && (
+            <button className="px-3 py-2 text-sm rounded-lg border border-red-200 text-red-600 hover:bg-red-50" onClick={deleteShipment}>Elimina</button>
           )}
         </div>
       </div>
@@ -186,6 +214,7 @@ export default function SpedizioneBucciDetailPage() {
               <th className="py-3 px-4 text-left font-medium">#</th>
               <th className="py-3 px-4 text-left font-medium">Seriale</th>
               <th className="py-3 px-4 text-left font-medium">Componente</th>
+              <th className="py-3 px-4 text-left font-medium">Modello</th>
               <th className="py-3 px-4 text-left font-medium">Commessa</th>
               <th className="py-3 px-4 text-left font-medium">Tipo Lotto Primer</th>
               <th className="py-3 px-4 text-left font-medium">Scansionato</th>
@@ -194,12 +223,13 @@ export default function SpedizioneBucciDetailPage() {
           </thead>
           <tbody>
             {shipment.items.length === 0 ? (
-              <tr><td colSpan={7} className="py-10 text-center text-gray-400">Nessun cofano scansionato</td></tr>
+              <tr><td colSpan={8} className="py-10 text-center text-gray-400">Nessun cofano scansionato</td></tr>
             ) : shipment.items.map((it, i) => (
               <tr key={it.id} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="py-2.5 px-4 text-gray-400">{i + 1}</td>
                 <td className="py-2.5 px-4 font-mono">{it.seriale}</td>
                 <td className="py-2.5 px-4 text-gray-500">{it.componente || '–'}</td>
+                <td className="py-2.5 px-4 text-gray-500">{it.modello || '–'}</td>
                 <td className="py-2.5 px-4 text-gray-500">{it.commessa || '–'}</td>
                 <td className="py-2.5 px-4 text-gray-500">{it.tipo_lotto_primer || '–'}</td>
                 <td className="py-2.5 px-4 text-gray-500">{fmtDatetime(it.scanned_at)} · {it.scanned_by_name}</td>

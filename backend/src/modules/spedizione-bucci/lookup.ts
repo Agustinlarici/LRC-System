@@ -14,6 +14,7 @@ export interface BucciUnit {
   seriale:    string;
   componente: string | null;
   commessa:   string | null;
+  modello:    string | null;
 }
 
 export type ParsedScan =
@@ -53,8 +54,13 @@ const SQL_BASE = `
   SELECT /*+ MAX_EXECUTION_TIME(5000) */
     Extra186.stringa     AS seriale,
     ikExtra45Tab.stringa AS componente,
-    Extra30.stringa      AS commessa
+    Extra30.stringa      AS commessa,
+    ikExtra43Tab.stringa AS modello
   FROM ubidocum ubi
+  LEFT JOIN ikExtra Extra43
+    ON ubi.iddocu = Extra43.iddocu  AND Extra43.idcampo  = 43  AND Extra43.idcomm  = 0 AND Extra43.seq  = 0
+  LEFT JOIN ikExtraTab ikExtra43Tab
+    ON ikExtra43Tab.id = Extra43.stringa
   LEFT JOIN ikExtra Extra186
     ON ubi.iddocu = Extra186.iddocu AND Extra186.idcampo = 186 AND Extra186.idcomm = 0 AND Extra186.seq = 0
   LEFT JOIN ikExtra Extra45
@@ -81,6 +87,7 @@ async function run(extraWhere: string, value: string, days: number): Promise<Buc
     seriale:    String(r.seriale),
     componente: (r.componente as string | null) ?? null,
     commessa:   (r.commessa   as string | null) ?? null,
+    modello:    (r.modello    as string | null) ?? null,
   })));
 }
 

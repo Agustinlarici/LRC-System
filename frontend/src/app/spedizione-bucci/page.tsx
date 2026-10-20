@@ -7,6 +7,8 @@ import { api } from '@/lib/api';
 import { fmtDatetime } from '@/lib/utils';
 import { useToast } from '@/components/ui/Toast';
 import { SkeletonTable } from '@/components/ui/Skeleton';
+import { useAuth } from '@/lib/auth';
+import { useConfirmDialog } from '@/components/ui/PromptDialog';
 
 interface Shipment {
   id:              number;
@@ -17,11 +19,16 @@ interface Shipment {
   closed_at:       string | null;
   closed_by_name:  string | null;
   items:           number;
+  modified_at:     string | null;
+  modified_by_name: string | null;
 }
 
 export default function SpedizioneBucciPage() {
   const router    = useRouter();
   const toast     = useToast();
+  const { canManage } = useAuth();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
+  const manage    = canManage('spedizione_bucci');
   const [rows,     setRows]     = useState<Shipment[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [creating, setCreating] = useState(false);
@@ -47,6 +54,31 @@ export default function SpedizioneBucciPage() {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Errore nella creazione');
       setCreating(false);
+    }
+  }
+
+  async function editShipment(s: Shipment) {
+    try {
+      if (s.status === 'closed') await api.post(`/api/bucci/shipments/${s.id}/reopen`);
+      router.push(`/spedizione-bucci/${s.id}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Errore nella riapertura');
+    }
+  }
+
+  async function deleteShipment(s: Shipment) {
+    const ok = await confirm({
+      title:        'Eliminare la spedizione?',
+      message:      `La spedizione #${s.id} con ${s.items} cofani verrà eliminata definitivamente.`,
+      confirmLabel: 'Elimina',
+    });
+    if (!ok) return;
+    try {
+      await api.delete(`/api/bucci/shipments/${s.id}`);
+      toast.success(`Spedizione #${s.id} eliminata`);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Errore nella eliminazione');
     }
   }
 
@@ -95,6 +127,12 @@ export default function SpedizioneBucciPage() {
                     }`}>
                       {s.status === 'open' ? 'Aperta' : 'Chiusa'}
                     </span>
+                    {s.modified_at && (
+                      <span className="ml-2 text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-700"
+                            title={s.modified_by_name ? `Modificata da ${s.modified_by_name}` : undefined}>
+                        Modificata il {fmtDatetime(s.modified_at)}
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 px-4 text-gray-500">{s.created_by_name}</td>
                   <td className="py-3 px-4 text-gray-500">{fmtDatetime(s.created_at)}</td>
@@ -104,6 +142,12 @@ export default function SpedizioneBucciPage() {
                       <Link href={`/spedizione-bucci/${s.id}`} className="btn-secondary text-xs px-3 py-1">
                         {s.status === 'open' ? 'Scansiona' : 'Apri'}
                       </Link>
+                      {manage && (
+                        <>
+                          <button onClick={() => editShipment(s)} className="btn-secondary text-xs px-3 py-1">Modifica</button>
+                          <button onClick={() => deleteShipment(s)} className="text-xs px-3 py-1 rounded-lg border border-red-200 text-red-600 hover:bg-red-50">Elimina</button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -112,6 +156,8 @@ export default function SpedizioneBucciPage() {
           </table>
         </div>
       )}
+
+      {confirmDialog}
     </div>
   );
 }
