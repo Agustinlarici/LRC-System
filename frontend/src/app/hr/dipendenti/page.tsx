@@ -52,6 +52,14 @@ const IMPORT_COLUMNS = [
 // Valori riconosciuti come "sì" nella colonna IN PROVA (case-insensitive)
 const IN_PROVA_TRUE = new Set(['si', 'sì', 'x', '1', 'true', 'yes']);
 
+// Fasce di matricola per plant, nell'ordine in cui vanno mostrate
+const MATRICOLA_BANDS = [
+  { label: 'STR1', from: 1,    to: 999 },
+  { label: 'STR2', from: 1000, to: 1999 },
+  { label: 'STR3', from: 3000, to: 3999 },
+  { label: 'STR5', from: 2000, to: 2999 },
+];
+
 // gg/mm/aa o gg/mm/aaaa → YYYY-MM-DD (formato date usato nell'Excel STR)
 function parseItalianDate(s: string | undefined): string | null {
   if (!s) return null;
@@ -95,36 +103,29 @@ export default function DipendentiPage() {
   const [tagMenuFor,    setTagMenuFor]    = useState<number | null>(null);
   const [tagMenuPos,    setTagMenuPos]    = useState<{ top: number; left: number } | null>(null);
   const [showMatricole, setShowMatricole] = useState(false);
-  const [matricoleBands, setMatricoleBands] = useState<{ from: number; to: number; last: number | null; next: number | null; count: number }[] | null>(null);
+  const [matricoleBands, setMatricoleBands] = useState<{ label: string; from: number; to: number; last: number | null; next: number | null; count: number }[] | null>(null);
 
-  // Prossima matricola per ogni migliaio (0-999, 1000-1999, …): ultima usata + 1.
+  // Prossima matricola per ogni fascia di plant (MATRICOLA_BANDS): ultima usata + 1.
   // Considera tutti i dipendenti, anche cessati, perché una matricola non va riassegnata.
   async function openMatricole() {
     setShowMatricole(true);
     setMatricoleBands(null);
     const res = await fetch(`${BACKEND}/api/hr/employees`, { credentials: 'include' });
     const all: HrEmployee[] = res.ok ? await res.json() : [];
-    const lastByBand = new Map<number, number>();
-    const countByBand = new Map<number, number>();
-    for (const e of all) {
-      const m = e.matricola?.trim();
-      if (!m || !/^\d+$/.test(m)) continue;
-      const n = parseInt(m, 10);
-      const band = Math.floor(n / 1000);
-      countByBand.set(band, (countByBand.get(band) ?? 0) + 1);
-      if (n > (lastByBand.get(band) ?? -1)) lastByBand.set(band, n);
-    }
-    const maxBand = Math.max(0, ...lastByBand.keys());
-    const bands = [];
-    for (let b = 0; b <= maxBand; b++) {
-      const last = lastByBand.get(b) ?? null;
-      const candidate = last === null ? b * 1000 : last + 1;
-      bands.push({
-        from: b * 1000, to: b * 1000 + 999, last,
-        next: candidate <= b * 1000 + 999 ? candidate : null,
-        count: countByBand.get(b) ?? 0,
-      });
-    }
+    const bands = MATRICOLA_BANDS.map(b => {
+      let last: number | null = null;
+      let count = 0;
+      for (const e of all) {
+        const m = e.matricola?.trim();
+        if (!m || !/^\d+$/.test(m)) continue;
+        const n = parseInt(m, 10);
+        if (n < b.from || n > b.to) continue;
+        count++;
+        if (last === null || n > last) last = n;
+      }
+      const candidate = last === null ? b.from : last + 1;
+      return { ...b, last, next: candidate <= b.to ? candidate : null, count };
+    });
     setMatricoleBands(bands);
   }
 
@@ -798,8 +799,8 @@ export default function DipendentiPage() {
                   </thead>
                   <tbody>
                     {matricoleBands.map(b => (
-                      <tr key={b.from} className="border-t border-gray-50">
-                        <td className="py-2 text-gray-600">{b.from} – {b.to}</td>
+                      <tr key={b.label} className="border-t border-gray-50">
+                        <td className="py-2 text-gray-600"><span className="font-medium text-gray-800">{b.label}</span> <span className="text-gray-400">{b.from} – {b.to}</span></td>
                         <td className="py-2 text-gray-600">{b.last ?? '—'}</td>
                         <td className="py-2">
                           {b.next === null
@@ -811,7 +812,7 @@ export default function DipendentiPage() {
                   </tbody>
                 </table>
               )}
-              <p className="text-xs text-gray-400 mt-3">Calcolata sull&apos;ultima matricola numerica di ogni fascia, includendo i dipendenti cessati.</p>
+              <p className="text-xs text-gray-400 mt-3">Calcolata sull&apos;ultima matricola numerica di ogni plant, includendo i dipendenti cessati.</p>
             </div>
           </div>
         </div>
