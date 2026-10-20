@@ -32,8 +32,8 @@ Log: `/srv/lrc-backups/logs/` (output del cron in `logs/cron.log`).
 ```bash
 # 1. (consigliato) montare un secondo disco su /srv/lrc-backups
 # 2. impostare BACKUP_DIR in .env se diverso da /srv/lrc-backups
-sudo scripts/backup/install-cron.sh
-sudo BACKUP_KIND=manual scripts/backup/backup.sh     # primo backup
+scripts/backup/install-cron.sh                       # (sudo se BACKUP_DIR è di root)
+BACKUP_KIND=manual scripts/backup/backup.sh          # primo backup
 sudo scripts/backup/verify-restore.sh                # prova di ripristino
 ```
 
@@ -43,8 +43,9 @@ sudo scripts/backup/verify-restore.sh                # prova di ripristino
 
 ## Procedure
 
-> **Chi esegue cosa**: i comandi con `sudo` vanno lanciati da root; `./deploy.sh` dall'utente
-> normale che possiede il repository (il backup pre-deploy chiede `sudo` da solo).
+> **Chi esegue cosa**: tutto dall'utente che possiede il repository (gruppo docker).
+> `sudo` serve solo se `BACKUP_DIR` è una cartella di root (es. `/srv/lrc-backups`);
+> con `BACKUP_DIR=/home/<utente>/lrc-backups` nel `.env` togliere `sudo` dai comandi qui sotto.
 >
 > **Quale backup**: `latest` = ultimo giornaliero/manuale · `latest-pre-deploy` = quello fatto
 > prima dell'ultimo update · `latest-pre-restore` = stato salvato prima dell'ultimo ripristino

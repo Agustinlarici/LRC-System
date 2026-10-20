@@ -187,13 +187,16 @@ go_back() {
   backend_healthy
 }
 
-# Backup pre-deploy: la cartella dei backup è di root, il resto del deploy no
-# (git deve girare con l'utente che possiede il repository).
+# Backup pre-deploy. Se BACKUP_DIR (in .env) è una cartella dell'utente gira
+# direttamente; se è di root (es. /srv/lrc-backups) chiede sudo.
 pre_deploy_backup() {
-  if [ "$(id -u)" = 0 ]; then
+  local dir
+  dir="$(grep -E '^BACKUP_DIR=' .env | tail -n1 | cut -d= -f2- | tr -d '\r"')"
+  dir="${dir:-/srv/lrc-backups}"
+  if [ "$(id -u)" = 0 ] || [ -w "$dir" ] || { [ ! -e "$dir" ] && [ -w "$(dirname "$dir")" ]; }; then
     BACKUP_KIND=pre-deploy bash scripts/backup/backup.sh
   else
-    info "Il backup richiede i permessi di root (sudo):"
+    info "La cartella dei backup ($dir) richiede i permessi di root (sudo):"
     sudo env BACKUP_KIND=pre-deploy bash scripts/backup/backup.sh
   fi
 }
@@ -204,7 +207,7 @@ pre_deploy_backup() {
 # Se qualcosa fallisce, la versione in funzione resta (o torna) quella precedente.
 # ═══════════════════════════════════════════════════════════════════
 if [ "$CMD" = "update" ]; then
-  [ "$(id -u)" = 0 ] && warn "Stai eseguendo deploy.sh come root: meglio come utente normale (il backup chiede sudo da solo)."
+  [ "$(id -u)" = 0 ] && warn "Stai eseguendo deploy.sh come root: meglio come utente normale (proprietario del repository)."
   # LRC_PULLED=1: il "git pull" è già stato fatto (dal vecchio deploy.sh, che dopo
   # il pull rilancia questo script, oppure a mano). La versione precedente è ORIG_HEAD.
   if [ "${LRC_PULLED:-0}" = 1 ]; then
