@@ -183,6 +183,39 @@ function sortByInsertionTs(rows: UnifiedOrderRow[]): UnifiedOrderRow[] {
   });
 }
 
+// ─── Ultima fase WebThron (stessa logica di Avanzamento Prod) ────────────────
+// Per ogni riga: categoria dell'articolo → componenti iKnow che la elencano in
+// spma_componente_map.prod_categorie → ultimo evento (data_inserimento) di
+// quella commessa in webthron_events_history. Chiave: codice_articolo\u0000commessa.
+
+async function loadUltimaFaseMap(pageRows: UnifiedOrderRow[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const codes    = [...new Set(pageRows.map(r => r.codice_articolo))];
+  const commesse = [...new Set(pageRows.map(r => r.commessa))];
+  const categoryMap = await loadCategoryMap(codes);
+  const cats = [...new Set(categoryMap.values())];
+  if (cats.length === 0) return result;
+
+  const faseRows = await db<{ commessa: string; categoria: string; fase: string }[]>`
+    SELECT DISTINCT ON (weh.commessa, cat.categoria)
+      weh.commessa, cat.categoria, weh.fase
+    FROM webthron_events_history weh
+    JOIN spma_componente_map m
+      ON m.componente_iknow = weh.componente AND m.active = TRUE
+    CROSS JOIN LATERAL unnest(m.prod_categorie) AS cat(categoria)
+    WHERE weh.commessa = ANY(${commesse})
+      AND cat.categoria = ANY(${cats})
+    ORDER BY weh.commessa, cat.categoria, weh.data_inserimento DESC, weh.id DESC
+  `;
+  const faseByKey = new Map(faseRows.map(f => [f.commessa + '\u0000' + f.categoria, f.fase]));
+  for (const r of pageRows) {
+    const cat = categoryMap.get(r.codice_articolo);
+    const fase = cat ? faseByKey.get(r.commessa + '\u0000' + cat) : undefined;
+    if (fase) result.set(r.codice_articolo + '\u0000' + r.commessa, fase);
+  }
+  return result;
+}
+
 // ─── Query base condivisa ──────────────────────────────────────────────────────
 
 // Ordini Confermato chiusi/spediti in BC (present_now = FALSE) — non
@@ -368,8 +401,9 @@ export async function buildFoglio(
   const codes    = [...new Set(pageRows.map(r => r.codice_articolo))];
   const commesse = [...new Set(pageRows.map(r => r.commessa))];
 
-  const [categoryOrderMap, manualRows, autoRows, attrRows] = await Promise.all([
+  const [categoryOrderMap, ultimaFaseMap, manualRows, autoRows, attrRows] = await Promise.all([
     loadCategoryOrderMap(),
+    loadUltimaFaseMap(pageRows),
     db<ManualInfoRow[]>`
       SELECT codice_articolo, categoria, caratteristiche_manuali
       FROM prod_article_info
@@ -484,6 +518,7 @@ export async function buildFoglio(
       insertion_schedulato: r.insertion_schedulato,
       chiuso:            r.chiuso,
       colore:            r.colore,
+      ultima_fase:       ultimaFaseMap.get(r.codice_articolo + '\u0000' + r.commessa) ?? null,
       categorie:         categorieOut,
     };
   });

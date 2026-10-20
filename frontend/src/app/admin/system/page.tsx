@@ -12,7 +12,7 @@ type User = {
   phone: string | null; department_id: number | null; department_name: string | null;
   role: 'guest' | 'operator' | 'it' | 'admin'; is_active: boolean;
 };
-type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'programma_produzione' | 'hr' | 'hr_salary';
+type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci' | 'programma_produzione' | 'hr' | 'hr_salary';
 type Permission = { module_key: ModuleKey; can_view: boolean; can_manage: boolean };
 
 const MODULE_CATEGORIES = ['Logistica', 'Produzione', 'Dashboard', 'IT', 'Qualità', 'HR'] as const;
@@ -26,6 +26,7 @@ const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATE
   { key: 'recepciones',          label: 'Ricezione DDT',        category: 'Logistica' },
   { key: 'edi',                  label: 'EDI',                  category: 'Logistica' },
   { key: 'webddt',               label: 'WebDDT',                category: 'Logistica' },
+  { key: 'spedizione_bucci',     label: 'Spedizione Bucci',      category: 'Logistica' },
 
   // ── Produzione ─────────────────────────────────────────────────────────────
   { key: 'monitor',         label: 'Andon',           category: 'Produzione' },

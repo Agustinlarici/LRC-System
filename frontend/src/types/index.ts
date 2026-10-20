@@ -3,7 +3,7 @@
 export type ModuleKey =
   | 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer'
   | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
-  | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita'
+  | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci'
   | 'programma_produzione' | 'hr' | 'hr_salary';
 
 export interface ModulePermission {
@@ -353,6 +353,7 @@ export interface EdiClient {
 export interface EdiShipment {
   shipment_id:      string;
   shipment_date:    string;
+  shipment_time?:   string | null;
   customer_account: string;
   document_number:  string;
   document_date:    string;
@@ -556,6 +557,9 @@ export interface ProdSheetRow {
   insertion_schedulato: boolean;
   chiuso:            boolean;
   colore:            string | null;
+  // Ultima fase registrata in WebThron (come in Avanzamento Prod), cercata per
+  // commessa tra i componenti iKnow mappati alla categoria dell'articolo.
+  ultima_fase:       string | null;
   categorie:         ProdSheetCategoria[];
 }
 
@@ -758,6 +762,7 @@ export interface HrEmployee {
   anzianita_anni:           number;
   eta:                      number | null;
   n_riporti:                number;
+  photo_version:            number | null;
   created_at:               string;
   updated_at:               string;
 }
@@ -794,6 +799,7 @@ export interface HrOrgNode {
   stato:        HrEmployeeStatus;
   capo_id:      number | null;
   n_riporti:    number;
+  photo_version: number | null;
 }
 
 export interface HrAnalyticsSummary {

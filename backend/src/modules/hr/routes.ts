@@ -281,6 +281,7 @@ const employeeSelect = db`
     e.user_id, e.data_assunzione, e.data_cessazione, e.stato, e.note,
     e.tag_id, tg.name AS tag_name, tg.color AS tag_color,
     e.in_prova, e.import_warning,
+    (SELECT EXTRACT(EPOCH FROM ph.updated_at)::bigint FROM hr_employee_photo ph WHERE ph.employee_id = e.id) AS photo_version,
     e.created_at, e.updated_at,
     ROUND(EXTRACT(EPOCH FROM AGE(COALESCE(e.data_cessazione, now()), e.data_assunzione)) / (365.25*86400))::int AS anzianita_anni,
     CASE WHEN e.data_nascita IS NOT NULL
@@ -319,6 +320,50 @@ hrRoutes.get('/employees/:id', requireModule('hr'), async (c) => {
   const [employee] = await db`${employeeSelect} WHERE e.id = ${id}`;
   if (!employee) throw new HTTPException(404, { message: 'Dipendente non trovato' });
   return c.json(employee);
+});
+
+// ─── Foto dipendente ──────────────────────────────────────────────────────────
+
+const PHOTO_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
+
+hrRoutes.get('/employees/:id/photo', requireModule('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const [photo] = await db`SELECT mime, data FROM hr_employee_photo WHERE employee_id = ${id}`;
+  if (!photo) throw new HTTPException(404, { message: 'Nessuna foto' });
+  c.header('Content-Type', photo.mime);
+  c.header('Cache-Control', 'private, max-age=86400');
+  return c.body(photo.data as any);
+});
+
+hrRoutes.put('/employees/:id/photo', requireManage('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const [emp] = await db`SELECT id FROM hr_employee WHERE id = ${id}`;
+  if (!emp) throw new HTTPException(404, { message: 'Dipendente non trovato' });
+
+  let form: FormData;
+  try { form = await c.req.formData(); }
+  catch { throw new HTTPException(400, { message: 'Richiesta non valida: atteso un file' }); }
+  const file = form.get('file');
+  if (!(file instanceof File) || file.size === 0) throw new HTTPException(400, { message: 'Nessun file ricevuto' });
+  if (file.size > MAX_PHOTO_BYTES) throw new HTTPException(413, { message: 'Foto troppo grande (massimo 3 MB)' });
+  if (!PHOTO_MIME.has(file.type)) throw new HTTPException(400, { message: 'Formato non supportato: usa JPG, PNG o WebP' });
+
+  const data = Buffer.from(await file.arrayBuffer());
+  await db`
+    INSERT INTO hr_employee_photo (employee_id, mime, data, updated_at) VALUES (${id}, ${file.type}, ${data}, now())
+    ON CONFLICT (employee_id) DO UPDATE SET mime = EXCLUDED.mime, data = EXCLUDED.data, updated_at = now()
+  `;
+  return c.json({ ok: true });
+});
+
+hrRoutes.delete('/employees/:id/photo', requireManage('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  await db`DELETE FROM hr_employee_photo WHERE employee_id = ${id}`;
+  return c.json({ ok: true });
 });
 
 // Nomi e cognomi sempre con l'iniziale maiuscola e il resto minuscolo ("DE LUCA" → "De Luca", "D'ANGELO" → "D'Angelo")
@@ -623,6 +668,7 @@ hrRoutes.get('/org-chart', requireModule('hr'), async (c) => {
   const rows = await db`
     SELECT
       e.id, e.nome, e.cognome, e.mansione, NULLIF(TRIM(e.funzione_aziendale), '') AS funzione_aziendale, e.stato, e.capo_id,
+      (SELECT EXTRACT(EPOCH FROM ph.updated_at)::bigint FROM hr_employee_photo ph WHERE ph.employee_id = e.id) AS photo_version,
       (SELECT COUNT(*)::int FROM hr_employee r WHERE r.capo_id = e.id AND r.stato != 'cessato') AS n_riporti
     FROM hr_employee e
     WHERE e.stato != 'cessato'

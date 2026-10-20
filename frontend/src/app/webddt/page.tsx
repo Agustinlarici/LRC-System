@@ -298,7 +298,14 @@ export default function WebDdtPage() {
                     </td>
                     <td className="px-4 py-3 font-mono text-gray-900">{s.document_number}</td>
                     <td className="px-4 py-3"><ClientBadge account={s.customer_account} /></td>
-                    <td className="px-4 py-3 text-gray-600">{fmtDate(s.shipment_date)}</td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {fmtDate(s.shipment_date)}
+                      {s.shipment_time && (
+                        <span className="ml-1 text-gray-400">
+                          {new Date(s.shipment_time).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right text-gray-600">{s.line_count}</td>
                     <td className="px-4 py-3 text-center">
                       {s.downloaded_at ? (

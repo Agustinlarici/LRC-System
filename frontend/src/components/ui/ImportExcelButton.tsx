@@ -10,6 +10,7 @@ interface Props {
   processRows: ImportProcessFn;
   onDone?: () => void;
   label?: string;
+  iconOnly?: boolean;
 }
 
 function parseCSV(text: string): Record<string, string>[] {
@@ -24,7 +25,7 @@ function parseCSV(text: string): Record<string, string>[] {
   }).filter(r => Object.values(r).some(v => v !== ''));
 }
 
-export function ImportExcelButton({ columns, processRows, onDone, label = 'Importa CSV' }: Props) {
+export function ImportExcelButton({ columns, processRows, onDone, label = 'Importa CSV', iconOnly = false }: Props) {
   const fileRef  = useRef<HTMLInputElement>(null);
   const [running, setRunning] = useState(false);
   const [result,  setResult]  = useState<ImportResult | null>(null);
@@ -62,19 +63,30 @@ export function ImportExcelButton({ columns, processRows, onDone, label = 'Impor
           type="button"
           className="btn btn-secondary text-sm"
           disabled={running}
-          title={`Colonne attese: ${columns.join(', ')}`}
+          title={iconOnly
+            ? `${label} — da Excel: File → Salva con nome → CSV UTF-8. Colonne attese: ${columns.join(', ')}`
+            : `Colonne attese: ${columns.join(', ')}`}
+          aria-label={label}
           onClick={() => { setResult(null); fileRef.current?.click(); }}
         >
-          {running ? 'Importazione...' : label}
+          {iconOnly ? (
+            running ? '…' : (
+              <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10 3v10M6 9l4 4 4-4M4 16h12" />
+              </svg>
+            )
+          ) : (running ? 'Importazione...' : label)}
         </button>
-        <button
-          type="button"
-          className="text-gray-400 hover:text-gray-600 text-sm leading-none"
-          title="Come esportare da Excel"
-          onClick={() => setHint(h => !h)}
-        >
-          ?
-        </button>
+        {!iconOnly && (
+          <button
+            type="button"
+            className="text-gray-400 hover:text-gray-600 text-sm leading-none"
+            title="Come esportare da Excel"
+            onClick={() => setHint(h => !h)}
+          >
+            ?
+          </button>
+        )}
       </div>
 
       {hint && (

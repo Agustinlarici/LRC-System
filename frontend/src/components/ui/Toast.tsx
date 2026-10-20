@@ -6,6 +6,7 @@ import {
   useState,
   useCallback,
   useRef,
+  useMemo,
 } from 'react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -54,11 +55,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
-  const ctx: ToastContextValue = {
+  // Riferimento stabile: i consumer lo usano nelle deps di useCallback/useEffect
+  const ctx = useMemo<ToastContextValue>(() => ({
     success: (msg) => add('success', msg),
     error:   (msg) => add('error',   msg),
     info:    (msg) => add('info',    msg),
-  };
+  }), [add]);
 
   return (
     <ToastContext.Provider value={ctx}>

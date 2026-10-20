@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
+import { EmployeeAvatar } from '@/components/hr/EmployeeAvatar';
 import type { HrOrgNode, HrCapoPair } from '@/types';
 
 const BACKEND = typeof window !== 'undefined'
@@ -138,12 +139,7 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
                 title={p.mansione ?? undefined}
                 className={`flex flex-col items-center gap-0.5 px-1 py-1.5 cursor-pointer bg-white hover:bg-gray-50 ${isSelected ? 'ring-2 ring-inset ring-blue-300' : ''}`}
               >
-                <div
-                  className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-semibold shrink-0"
-                  style={{ background: colorFor(p), outline: isSelected ? '2px solid #3b82f6' : isMatch ? '2px solid #f59e0b' : undefined }}
-                >
-                  {initials(p.nome, p.cognome)}
-                </div>
+                <EmployeeAvatar id={p.id} nome={p.nome} cognome={p.cognome} photoVersion={p.photo_version} className="w-7 h-7 text-[10px]" background={colorFor(p)} outline={isSelected ? '2px solid #3b82f6' : isMatch ? '2px solid #f59e0b' : undefined} />
                 <div className="text-center leading-tight w-full">
                   <p className={`text-[11px] font-medium break-words ${isMatch ? 'text-amber-700' : 'text-gray-800'}`}>{p.cognome}</p>
                   <p className="text-[10px] text-gray-500 break-words">{p.nome}</p>
@@ -210,12 +206,7 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
                   ${isCluster ? `px-1 py-1.5 w-[78px] ${i > 0 ? 'border-l border-gray-200' : ''}` : ''}
                   ${isSelected ? 'ring-2 ring-blue-200' : ''}`}
               >
-                <div
-                  className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-semibold shrink-0"
-                  style={{ background: colorFor(p), outline: isSelected ? '2px solid #3b82f6' : isMatch ? '2px solid #f59e0b' : undefined }}
-                >
-                  {initials(p.nome, p.cognome)}
-                </div>
+                <EmployeeAvatar id={p.id} nome={p.nome} cognome={p.cognome} photoVersion={p.photo_version} className="w-7 h-7 text-[10px]" background={colorFor(p)} outline={isSelected ? '2px solid #3b82f6' : isMatch ? '2px solid #f59e0b' : undefined} />
                 <div className="text-center leading-tight w-full">
                   <p className={`text-[11px] font-medium break-words ${isMatch ? 'text-amber-700' : 'text-gray-800'}`}>{p.cognome}</p>
                   <p className="text-[10px] text-gray-500 break-words">{p.nome}</p>
@@ -352,14 +343,14 @@ export default function OrganigrammaPage() {
   }, [tree]);
   const maxLevel = useMemo(() => Math.max(1, ...[...depthOf.values()].map(d => d + 1)), [depthOf]);
 
-  // Livelli: livello N = si vedono le prime N righe dell'albero (99 = tutto). Con una ricerca
-  // attiva si mostra tutta la catena trovata.
+  // Livelli: livello N = si vedono le prime N righe dell'albero (99 = tutto). Cambiando la
+  // ricerca si riparte con tutto espanso; poi i pulsanti livello funzionano anche con la ricerca.
   const [level, setLevel] = useState(99); // all'apertura è tutto espanso
   const shownLevel = Math.min(level, maxLevel);
+  useEffect(() => { setLevel(99); }, [search]);
   useEffect(() => {
-    const all = !!search.trim();
-    setExpanded(new Set(viewNodes.filter(n => all || (depthOf.get(n.id) ?? 0) + 1 < level).map(n => n.id)));
-  }, [viewNodes, depthOf, level, search]);
+    setExpanded(new Set(viewNodes.filter(n => (depthOf.get(n.id) ?? 0) + 1 < level).map(n => n.id)));
+  }, [viewNodes, depthOf, level]);
 
   // Stampa solo l'albero attualmente visibile, in orizzontale: lo scala per farlo stare in una pagina A4.
   const treeRef = useRef<HTMLUListElement>(null);
@@ -478,9 +469,7 @@ export default function OrganigrammaPage() {
             </div>
             <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0" style={{ background: colorFor(selected) }}>
-                  {initials(selected.nome, selected.cognome)}
-                </div>
+                <EmployeeAvatar id={selected.id} nome={selected.nome} cognome={selected.cognome} photoVersion={selected.photo_version} className="w-14 h-14 text-base" background={colorFor(selected)} />
                 <div>
                   <p className="text-base font-medium text-gray-900">{selected.cognome} {selected.nome}</p>
                   <p className="text-xs text-gray-400">{selected.mansione ?? 'Mansione non specificata'} {selected.funzione_aziendale ? `· ${selected.funzione_aziendale}` : ''}</p>

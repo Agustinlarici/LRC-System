@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
+import * as XLSX from 'xlsx';
 import { useAuth } from '@/lib/auth';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
 import { ImportExcelButton, type ImportResult } from '@/components/ui/ImportExcelButton';
@@ -51,6 +52,14 @@ const IMPORT_COLUMNS = [
 // Valori riconosciuti come "sì" nella colonna IN PROVA (case-insensitive)
 const IN_PROVA_TRUE = new Set(['si', 'sì', 'x', '1', 'true', 'yes']);
 
+// Fasce di matricola per plant, nell'ordine in cui vanno mostrate
+const MATRICOLA_BANDS = [
+  { label: 'STR1', from: 1,    to: 999 },
+  { label: 'STR2', from: 1000, to: 1999 },
+  { label: 'STR3', from: 3000, to: 3999 },
+  { label: 'STR5', from: 2000, to: 2999 },
+];
+
 // gg/mm/aa o gg/mm/aaaa → YYYY-MM-DD (formato date usato nell'Excel STR)
 function parseItalianDate(s: string | undefined): string | null {
   if (!s) return null;
@@ -94,36 +103,29 @@ export default function DipendentiPage() {
   const [tagMenuFor,    setTagMenuFor]    = useState<number | null>(null);
   const [tagMenuPos,    setTagMenuPos]    = useState<{ top: number; left: number } | null>(null);
   const [showMatricole, setShowMatricole] = useState(false);
-  const [matricoleBands, setMatricoleBands] = useState<{ from: number; to: number; last: number | null; next: number | null; count: number }[] | null>(null);
+  const [matricoleBands, setMatricoleBands] = useState<{ label: string; from: number; to: number; last: number | null; next: number | null; count: number }[] | null>(null);
 
-  // Prossima matricola per ogni migliaio (0-999, 1000-1999, …): ultima usata + 1.
+  // Prossima matricola per ogni fascia di plant (MATRICOLA_BANDS): ultima usata + 1.
   // Considera tutti i dipendenti, anche cessati, perché una matricola non va riassegnata.
   async function openMatricole() {
     setShowMatricole(true);
     setMatricoleBands(null);
     const res = await fetch(`${BACKEND}/api/hr/employees`, { credentials: 'include' });
     const all: HrEmployee[] = res.ok ? await res.json() : [];
-    const lastByBand = new Map<number, number>();
-    const countByBand = new Map<number, number>();
-    for (const e of all) {
-      const m = e.matricola?.trim();
-      if (!m || !/^\d+$/.test(m)) continue;
-      const n = parseInt(m, 10);
-      const band = Math.floor(n / 1000);
-      countByBand.set(band, (countByBand.get(band) ?? 0) + 1);
-      if (n > (lastByBand.get(band) ?? -1)) lastByBand.set(band, n);
-    }
-    const maxBand = Math.max(0, ...lastByBand.keys());
-    const bands = [];
-    for (let b = 0; b <= maxBand; b++) {
-      const last = lastByBand.get(b) ?? null;
-      const candidate = last === null ? b * 1000 : last + 1;
-      bands.push({
-        from: b * 1000, to: b * 1000 + 999, last,
-        next: candidate <= b * 1000 + 999 ? candidate : null,
-        count: countByBand.get(b) ?? 0,
-      });
-    }
+    const bands = MATRICOLA_BANDS.map(b => {
+      let last: number | null = null;
+      let count = 0;
+      for (const e of all) {
+        const m = e.matricola?.trim();
+        if (!m || !/^\d+$/.test(m)) continue;
+        const n = parseInt(m, 10);
+        if (n < b.from || n > b.to) continue;
+        count++;
+        if (last === null || n > last) last = n;
+      }
+      const candidate = last === null ? b.from : last + 1;
+      return { ...b, last, next: candidate <= b.to ? candidate : null, count };
+    });
     setMatricoleBands(bands);
   }
 
@@ -148,7 +150,7 @@ export default function DipendentiPage() {
     recompute();
     window.addEventListener('resize', recompute);
     return () => window.removeEventListener('resize', recompute);
-  }, []);
+  }, [showFilters]);
   function syncHeaderScroll() {
     if (headerScrollRef.current && bodyScrollRef.current) {
       headerScrollRef.current.scrollLeft = bodyScrollRef.current.scrollLeft;
@@ -205,7 +207,7 @@ export default function DipendentiPage() {
   const livelli = distinctOf(employees.map(e => e.livello));
   const responsabili = distinctOf(employees.map(e => e.capo_nome));
   const tipiContratto = Array.from(new Set(employees.map(e => e.tipo_contratto).filter((f): f is string => !!f))).sort((a, b) => a.localeCompare(b));
-  const visible = employees.filter(e => {
+  const matches = (e: HrEmployee, skipSocieta = false) => {
     const has = (v: string | null | undefined, q: string) => !q.trim() || (v ?? '').toLowerCase().includes(q.trim().toLowerCase());
     // Nome e cognome in un solo filtro: ogni parola digitata deve comparire, in qualunque ordine
     const fullName = `${e.cognome} ${e.nome}`.toLowerCase();
@@ -217,11 +219,31 @@ export default function DipendentiPage() {
       && (!fCategoria || e.categoria === fCategoria)
       && (!fTipoContratto || e.tipo_contratto === fTipoContratto)
       && (!plantFilter || (e.plant_ids ?? []).includes(Number(plantFilter)))
-      && (!societaFilter || e.contract_company_id === Number(societaFilter))
+      && (skipSocieta || !societaFilter || e.contract_company_id === Number(societaFilter))
       && (!tagFilter || e.tag_id === Number(tagFilter))
       && (!inProvaFilter || (inProvaFilter === 'si' ? e.in_prova : !e.in_prova))
       && (!funzioneFilter || (e.funzione_aziendale ?? '') === funzioneFilter);
-  });
+  };
+  const visible = employees.filter(e => matches(e));
+  // Società offerte nel filtro: solo quelle con almeno un dipendente tra gli altri filtri attivi
+  const societaDisponibili = new Set(employees.filter(e => matches(e, true)).map(e => e.contract_company_id));
+  const companiesShown = companies.filter(c => societaDisponibili.has(c.id) || c.id === Number(societaFilter));
+
+  function exportExcel() {
+    const rows = visible.map(e => ({
+      Cognome: e.cognome, Nome: e.nome, Matricola: e.matricola ?? '', Sesso: e.sesso ?? '',
+      Categoria: e.categoria ?? '', Società: e.contract_company_name ?? '', Nazionalità: e.nazionalita ?? '',
+      Funzione: e.funzione_aziendale ?? '', Reparto: e.reparto_name ?? '', Plant: e.plant_name ?? '',
+      Mansione: e.mansione ?? '', Livello: e.livello ?? '', Responsabile: e.capo_nome ?? '',
+      'Tipo contratto': e.tipo_contratto ?? '', Assunzione: e.data_assunzione?.slice(0, 10) ?? '',
+      Cessazione: e.data_cessazione?.slice(0, 10) ?? '', 'In prova': e.in_prova ? 'Sì' : '',
+      Stato: STATO_LABEL[e.stato] ?? e.stato,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Dipendenti');
+    XLSX.writeFile(wb, `dipendenti-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
 
   async function setEmployeeTag(employeeId: number, tagId: number | null) {
     setTagMenuFor(null);
@@ -554,17 +576,25 @@ export default function DipendentiPage() {
   return (
     <div className="space-y-4" onClick={() => { if (tagMenuFor !== null) setTagMenuFor(null); }}>
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
+        <div className="flex items-center gap-3">
           <h1 className="text-lg font-medium text-gray-900">Dipendenti</h1>
+          {!loading && (
+            <span className="text-sm font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-3 py-1">
+              {visible.length} {visible.length === 1 ? 'dipendente selezionato' : 'dipendenti selezionati'}
+            </span>
+          )}
         </div>
+        <div className="flex items-center gap-2">
+          <button onClick={exportExcel} disabled={loading || visible.length === 0} className="btn-secondary text-sm">Esporta Excel</button>
         {manage && (
-          <div className="flex items-center gap-2">
-            <ImportExcelButton columns={IMPORT_COLUMNS} processRows={importRows} onDone={load} label="Importa da Excel" />
+          <>
+            <ImportExcelButton columns={IMPORT_COLUMNS} processRows={importRows} onDone={load} label="Importa da Excel" iconOnly />
             <button onClick={openMatricole} className="btn-secondary text-sm">Prossima matricola</button>
             <button onClick={() => setShowTags(true)} className="btn-secondary text-sm">Etichette</button>
             <button onClick={() => setShowNew(true)} className="btn-primary text-sm">+ Nuovo dipendente</button>
-          </div>
+          </>
         )}
+        </div>
       </div>
 
       <div className="card p-0 overflow-hidden">
@@ -595,7 +625,7 @@ export default function DipendentiPage() {
           </select>
           <select value={societaFilter} onChange={e => setSocietaFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${societaFilter ? '' : 'text-gray-400'}`}>
             <option value="">Società contratto</option>
-            {companies.map(c => <option key={c.id} value={c.id} className="text-gray-900">{c.name}</option>)}
+            {companiesShown.map(c => <option key={c.id} value={c.id} className="text-gray-900">{c.name}</option>)}
           </select>
           <select value={fNazionalita} onChange={e => setFNazionalita(e.target.value)} className={`input text-sm min-w-0 ${fNazionalita ? '' : 'text-gray-400'}`}>
             <option value="">Nazionalità</option>
@@ -769,8 +799,8 @@ export default function DipendentiPage() {
                   </thead>
                   <tbody>
                     {matricoleBands.map(b => (
-                      <tr key={b.from} className="border-t border-gray-50">
-                        <td className="py-2 text-gray-600">{b.from} – {b.to}</td>
+                      <tr key={b.label} className="border-t border-gray-50">
+                        <td className="py-2 text-gray-600"><span className="font-medium text-gray-800">{b.label}</span> <span className="text-gray-400">{b.from} – {b.to}</span></td>
                         <td className="py-2 text-gray-600">{b.last ?? '—'}</td>
                         <td className="py-2">
                           {b.next === null
@@ -782,7 +812,7 @@ export default function DipendentiPage() {
                   </tbody>
                 </table>
               )}
-              <p className="text-xs text-gray-400 mt-3">Calcolata sull&apos;ultima matricola numerica di ogni fascia, includendo i dipendenti cessati.</p>
+              <p className="text-xs text-gray-400 mt-3">Calcolata sull&apos;ultima matricola numerica di ogni plant, includendo i dipendenti cessati.</p>
             </div>
           </div>
         </div>

@@ -111,3 +111,52 @@ export function useChoiceDialog() {
 
   return { choose, dialog };
 }
+
+interface ConfirmOptions {
+  title: string;
+  message?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+}
+
+// Sostituisce window.confirm con una finestra del programma. Uso:
+//   const { confirm, dialog } = useConfirmDialog();
+//   if (!(await confirm({ title: '…', message: '…' }))) return;   // false = annullato
+//   … return (<>{…}{dialog}</>)
+export function useConfirmDialog() {
+  const [opts, setOpts] = useState<ConfirmOptions | null>(null);
+  const resolver = useRef<((r: boolean) => void) | null>(null);
+
+  const confirm = useCallback((o: ConfirmOptions) => new Promise<boolean>(resolve => {
+    resolver.current = resolve;
+    setOpts(o);
+  }), []);
+
+  function close(result: boolean) {
+    setOpts(null);
+    resolver.current?.(result);
+    resolver.current = null;
+  }
+
+  const dialog = opts && (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] p-4" onClick={() => close(false)}>
+      <form
+        role="dialog"
+        aria-modal="true"
+        className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4"
+        onClick={e => e.stopPropagation()}
+        onSubmit={e => { e.preventDefault(); close(true); }}
+        onKeyDown={e => { if (e.key === 'Escape') close(false); }}
+      >
+        <h2 className="text-base font-medium text-gray-900">{opts.title}</h2>
+        {opts.message && <p className="text-sm text-gray-500">{opts.message}</p>}
+        <div className="flex items-center justify-end gap-2">
+          <button type="button" onClick={() => close(false)} className="btn-secondary text-sm">{opts.cancelLabel ?? 'Annulla'}</button>
+          <button type="submit" autoFocus className="btn-primary text-sm">{opts.confirmLabel ?? 'Conferma'}</button>
+        </div>
+      </form>
+    </div>
+  );
+
+  return { confirm, dialog };
+}
