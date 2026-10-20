@@ -205,21 +205,37 @@ pre_deploy_backup() {
 # ═══════════════════════════════════════════════════════════════════
 if [ "$CMD" = "update" ]; then
   [ "$(id -u)" = 0 ] && warn "Stai eseguendo deploy.sh come root: meglio come utente normale (il backup chiede sudo da solo)."
-  PREV_COMMIT="$(git rev-parse HEAD)"
-
-  step "0/6  Controllo novità..."
-  git fetch || error "git fetch fallito: aggiornamento annullato (niente è stato modificato)."
-  UPSTREAM="$(git rev-parse '@{u}' 2>/dev/null)" || error "Il branch attuale non segue un branch remoto (git checkout <branch>)."
-  if [ "$UPSTREAM" = "$PREV_COMMIT" ]; then
-    info "Nessuna novità da aggiornare."
-    exit 0
+  # LRC_PULLED=1: il "git pull" è già stato fatto (dal vecchio deploy.sh, che dopo
+  # il pull rilancia questo script, oppure a mano). La versione precedente è ORIG_HEAD.
+  if [ "${LRC_PULLED:-0}" = 1 ]; then
+    PREV_COMMIT="$(git rev-parse ORIG_HEAD 2>/dev/null)" || error "LRC_PULLED=1 ma ORIG_HEAD non esiste: fare  git pull  e riprovare."
+    if [ "$PREV_COMMIT" = "$(git rev-parse HEAD)" ] \
+       || { [ -f .deploy-previous ] && [ "$(cat .deploy-previous)" = "$PREV_COMMIT" ]; }; then
+      info "Nessuna novità da aggiornare (questo aggiornamento è già stato fatto)."
+      exit 0
+    fi
+    info "Codice già aggiornato col git pull; versione precedente: $(git rev-parse --short "$PREV_COMMIT")"
+  else
+    PREV_COMMIT="$(git rev-parse HEAD)"
+    step "0/6  Controllo novità..."
+    git fetch || error "git fetch fallito: aggiornamento annullato (niente è stato modificato)."
+    UPSTREAM="$(git rev-parse '@{u}' 2>/dev/null)" || error "Il branch attuale non segue un branch remoto (git checkout <branch>)."
+    if [ "$UPSTREAM" = "$PREV_COMMIT" ]; then
+      info "Nessuna novità da aggiornare."
+      exit 0
+    fi
   fi
 
   step "1/6  Backup di sicurezza pre-aggiornamento..."
-  pre_deploy_backup || error "Backup pre-aggiornamento fallito: aggiornamento annullato (niente è stato modificato)."
+  if ! pre_deploy_backup; then
+    [ "${LRC_PULLED:-0}" = 1 ] && revert_code "$PREV_COMMIT"
+    error "Backup pre-aggiornamento fallito: aggiornamento annullato (niente è stato modificato)."
+  fi
 
-  step "2/6  Git pull..."
-  git pull --ff-only || error "git pull fallito: aggiornamento annullato (niente è stato modificato)."
+  if [ "${LRC_PULLED:-0}" != 1 ]; then
+    step "2/6  Git pull..."
+    git pull --ff-only || error "git pull fallito: aggiornamento annullato (niente è stato modificato)."
+  fi
 
   if stray_sql; then
     revert_code "$PREV_COMMIT"
