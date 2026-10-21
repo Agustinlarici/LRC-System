@@ -201,12 +201,30 @@ pre_deploy_backup() {
   fi
 }
 
+# Ctrl+C (o chiusura del terminale) durante l'update: invece di lasciare il
+# sistema a metà, riporta codice e immagini alla versione precedente.
+# DEPLOY_STAGE dice fin dove si era arrivati.
+DEPLOY_STAGE=""
+on_interrupt() {
+  trap '' INT TERM HUP          # un secondo Ctrl+C non deve interrompere il ripristino
+  echo
+  warn "Aggiornamento INTERROTTO durante: ${DEPLOY_STAGE:-avvio}. Rimetto tutto come prima: NON chiudere il terminale..."
+  case "$DEPLOY_STAGE" in
+    ""|check|backup) ;;                                   # niente è cambiato
+    pull|migrate|drift) revert_code "$PREV_COMMIT" ;;     # solo il codice è cambiato (le migrazioni sono atomiche)
+    build) revert_code "$PREV_COMMIT"; restore_images || true ;;
+    swap)  go_back "$PREV_COMMIT" || warn "Il backend non risponde: vedi docs/DISASTER-RECOVERY.md (procedura B)" ;;
+  esac
+  error "Aggiornamento annullato dall'utente: il programma funziona con la versione precedente."
+}
+
 # ═══════════════════════════════════════════════════════════════════
 # update — zero-downtime: backup → pull → migrate → controllo schema →
 #          build → swap → verifica
 # Se qualcosa fallisce, la versione in funzione resta (o torna) quella precedente.
 # ═══════════════════════════════════════════════════════════════════
 if [ "$CMD" = "update" ]; then
+  trap on_interrupt INT TERM HUP
   [ "$(id -u)" = 0 ] && warn "Stai eseguendo deploy.sh come root: meglio come utente normale (proprietario del repository)."
   # LRC_PULLED=1: il "git pull" è già stato fatto (dal vecchio deploy.sh, che dopo
   # il pull rilancia questo script, oppure a mano). La versione precedente è ORIG_HEAD.
@@ -220,6 +238,7 @@ if [ "$CMD" = "update" ]; then
     info "Codice già aggiornato col git pull; versione precedente: $(git rev-parse --short "$PREV_COMMIT")"
   else
     PREV_COMMIT="$(git rev-parse HEAD)"
+    DEPLOY_STAGE=check
     step "0/6  Controllo novità..."
     git fetch || error "git fetch fallito: aggiornamento annullato (niente è stato modificato)."
     UPSTREAM="$(git rev-parse '@{u}' 2>/dev/null)" || error "Il branch attuale non segue un branch remoto (git checkout <branch>)."
@@ -229,6 +248,7 @@ if [ "$CMD" = "update" ]; then
     fi
   fi
 
+  DEPLOY_STAGE=backup
   step "1/6  Backup di sicurezza pre-aggiornamento..."
   if ! pre_deploy_backup; then
     [ "${LRC_PULLED:-0}" = 1 ] && revert_code "$PREV_COMMIT"
@@ -236,6 +256,7 @@ if [ "$CMD" = "update" ]; then
   fi
 
   if [ "${LRC_PULLED:-0}" != 1 ]; then
+    DEPLOY_STAGE=pull
     step "2/6  Git pull..."
     git pull --ff-only || error "git pull fallito: aggiornamento annullato (niente è stato modificato)."
   fi
@@ -245,6 +266,7 @@ if [ "$CMD" = "update" ]; then
     error "Aggiornamento annullato prima di toccare il database. Il programma continua a funzionare."
   fi
 
+  DEPLOY_STAGE=migrate
   step "3/6  Migrazioni DB (stack in running — nessun downtime)..."
   docker compose run --rm migrate --status || true
   if ! docker compose run --rm migrate; then
@@ -254,13 +276,15 @@ if [ "$CMD" = "update" ]; then
 
   # Lo schema reale deve coincidere con quello delle migrazioni: protegge da
   # modifiche fatte a mano e dal passaggio dal vecchio sistema (DB "legacy").
+  DEPLOY_STAGE=drift
   step "4/6  Controllo schema (produzione = migrazioni)..."
   if ! bash db/check-drift.sh; then
     revert_code "$PREV_COMMIT"
     error "Lo schema del DB non coincide con le migrazioni (vedi drift-report-*.txt). Aggiornamento annullato prima dello swap: il programma continua a funzionare. Dopo aver verificato il report: LRC_ACCEPT_DRIFT=1 ./deploy.sh update"
   fi
 
-  step "5/6  Build nuove immagini in background (nessun downtime)..."
+  DEPLOY_STAGE=build
+  step "5/6  Build nuove immagini in background (nessun downtime, 3-5 minuti senza messaggi: è normale)..."
   save_images
   if ! docker compose build --no-cache; then
     revert_code "$PREV_COMMIT"
@@ -268,6 +292,7 @@ if [ "$CMD" = "update" ]; then
     error "Build fallita. Il programma continua a funzionare con la versione precedente."
   fi
 
+  DEPLOY_STAGE=swap
   step "6/6  Swap container (~5 secondi di interruzione) e verifica..."
   if docker compose up -d && backend_healthy; then
     fix_upload_perms
@@ -279,6 +304,7 @@ if [ "$CMD" = "update" ]; then
       error "ATTENZIONE: anche la versione precedente non risponde. Vedi docs/DISASTER-RECOVERY.md (procedura B)."
     fi
   fi
+  trap - INT TERM HUP
   echo "$PREV_COMMIT" > .deploy-previous
 
   info "Aggiornamento completato e verificato."

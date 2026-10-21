@@ -1,5 +1,5 @@
 # ─── Stage 1: Builder ────────────────────────────────────────────────────────
-FROM node:20.20.2-alpine AS builder
+FROM node:24.20.0-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
@@ -12,7 +12,7 @@ COPY src ./src
 RUN npm run build
 
 # ─── Stage 2: Runtime ────────────────────────────────────────────────────────
-FROM node:20.20.2-alpine AS runtime
+FROM node:24.20.0-alpine AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
