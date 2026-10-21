@@ -73,7 +73,8 @@ latest_backup() {
   local kinds=("$@") dirs=()
   [ "$#" -eq 0 ] && kinds=(daily manual)
   for k in "${kinds[@]}"; do dirs+=("$BACKUP_DIR/$k"); done
-  find "${dirs[@]}" -mindepth 1 -maxdepth 1 -type d -name '20*' 2>/dev/null \
+  # "|| true": una cartella mancante (es. server nuovo) non deve far uscire lo script
+  { find "${dirs[@]}" -mindepth 1 -maxdepth 1 -type d -name '20*' 2>/dev/null || true; } \
     | awk -F/ '{print $NF"\t"$0}' | sort | tail -n1 | cut -f2
 }
 

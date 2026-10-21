@@ -19,6 +19,7 @@ Ogni backup ha `manifest.txt` (data, commit git, n° tabelle) e `SHA256SUMS`.
 | Domenica 04:30 | `verify-restore.sh` — ripristino di prova in un container isolato | — |
 | Ogni `./deploy.sh update` con novità | backup `pre-deploy` (se fallisce, l'aggiornamento si ferma) | ultimi 10 |
 | Ogni ripristino | backup `pre-restore` dello stato attuale | ultimi 10 |
+| Dopo ogni backup giornaliero/manuale | copia **cifrata** in rete (`offsite.sh`, se `BACKUP_OFFSITE_SMB` è impostato) | ultime 30 in rete |
 
 Obiettivi: **RPO ≤ 24h** (al massimo si perde un giorno di dati), **RTO ≈ 30 min**.
 
@@ -37,9 +38,15 @@ BACKUP_KIND=manual scripts/backup/backup.sh          # primo backup
 sudo scripts/backup/verify-restore.sh                # prova di ripristino
 ```
 
-> ⚠️ I backup stanno sullo stesso server. Proteggono da errori umani, bug, migrazioni
-> sbagliate e corruzione del DB, ma **non** dalla rottura del server/disco. Per questo è
-> fortemente consigliato un disco dedicato per `/srv/lrc-backups`.
+> ⚠️ I backup locali stanno sullo stesso server: per la rottura del server/disco serve la
+> **copia in rete**. Attivazione (una volta):
+> ```bash
+> # in .env: BACKUP_OFFSITE_SMB=\\server\share\percorso   (credenziali SMB_* già presenti)
+> scripts/backup/offsite.sh --init     # genera la chiave e prova la scrittura
+> ```
+> La chiave `BACKUP_ENCRYPTION_KEY` va **conservata anche fuori dal server** (gestore
+> password, busta in cassaforte): se il server è perso, senza chiave le copie non si aprono.
+> Stato: `cat <BACKUP_DIR>/last-offsite.status`; errore → avviso `backup_offsite_failed`.
 
 ## Procedure
 
@@ -87,6 +94,10 @@ git clone -b <branch di produzione> <repo> LRC-System && cd LRC-System
 #    git_commit in manifest.txt dice la versione che girava: se diversa dall'ultima,
 #    git reset --hard <git_commit>   (resta sul branch, i futuri update funzionano)
 docker volume create lrc-system-pgdata-prod
+#    Se il disco dei backup è perso: recuperare l'ultima copia dalla rete
+#    (serve un .env minimo con BACKUP_DIR, BACKUP_OFFSITE_SMB, SMB_USER/PASS/DOMAIN,
+#     BACKUP_ENCRYPTION_KEY e l'immagine con smbclient: BACKUP_OFFSITE_IMAGE=dperson/samba)
+#    scripts/backup/offsite.sh --fetch latest
 # 2. Prima i file: riporta .env, certificati e allegati nella cartella del progetto
 sudo scripts/backup/restore.sh --no-safety --files-only latest
 # 3. Poi il database (avvia PostgreSQL e lo ripristina)
@@ -98,5 +109,6 @@ sudo scripts/backup/install-cron.sh
 
 ## Controlli periodici (manuali)
 
-- **Ogni mese**: verificare che `last-verify.status` sia `OK` e recente.
+- **Ogni mese**: verificare che `last-verify.status` e `last-offsite.status` siano `OK` e recenti.
+- **Ogni 3 mesi**: provare `offsite.sh --fetch latest` + `verify-restore.sh latest` (la copia in rete si apre).
 - **Ogni 6 mesi**: provare la procedura C su una macchina di test.
