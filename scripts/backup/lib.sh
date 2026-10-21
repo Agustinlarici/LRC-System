@@ -53,9 +53,9 @@ wait_db() {
 # Apre/chiude un avviso in system_alerts (visibile nella pagina Sistema).
 # Non deve mai far fallire lo script chiamante.
 raise_alert() {
-  local key="$1" title="$2" msg="${3//\'/\'\'}"
+  local key="$1" title="$2" msg="${3//\'/\'\'}" sev="${4:-critical}"
   psql_db -c "INSERT INTO system_alerts (alert_key, severity, title, message)
-              SELECT '$key', 'critical', '$title', '$msg'
+              SELECT '$key', '$sev', '$title', '$msg'
               WHERE NOT EXISTS (SELECT 1 FROM system_alerts WHERE alert_key='$key' AND resolved_at IS NULL);" \
     >/dev/null 2>&1 || log "ATTENZIONE: impossibile registrare l'avviso nel DB"
 }

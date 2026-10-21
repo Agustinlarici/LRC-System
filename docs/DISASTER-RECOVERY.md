@@ -19,6 +19,7 @@ Ogni backup ha `manifest.txt` (data, commit git, n° tabelle) e `SHA256SUMS`.
 | Domenica 04:30 | `verify-restore.sh` — ripristino di prova in un container isolato | — |
 | Ogni `./deploy.sh update` con novità | backup `pre-deploy` (se fallisce, l'aggiornamento si ferma) | ultimi 10 |
 | Ogni ripristino | backup `pre-restore` dello stato attuale | ultimi 10 |
+| Ogni 15 minuti | `monitor/health-check.sh`: backup > 26h, copia in rete > 26h, test di ripristino > 8 giorni, disco > 85/95%, container fermi, `/health` | avvisi in pagina **Sistema** (chiusi da soli) |
 | Dopo ogni backup giornaliero/manuale | copia **cifrata** in rete (`offsite.sh`, se `BACKUP_OFFSITE_SMB` è impostato) | ultime 30 in rete |
 
 Obiettivi: **RPO ≤ 24h** (al massimo si perde un giorno di dati), **RTO ≈ 30 min**.

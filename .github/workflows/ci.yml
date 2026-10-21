@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: shellcheck -S warning scripts/backup/*.sh deploy.sh
+      - run: shellcheck -S warning scripts/backup/*.sh scripts/monitor/*.sh deploy.sh
       - name: docker compose config
         run: |
           touch .env.dev
