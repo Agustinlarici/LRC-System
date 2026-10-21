@@ -178,5 +178,12 @@ rotate "$BACKUP_DIR/monthly" "$KEEP_MONTHLY"
 for k in manual pre-deploy pre-restore; do rotate "$BACKUP_DIR/$k" "$KEEP_OTHER"; done
 
 echo "OK $(date -Iseconds) $KIND $DEST" > "$STATUS_FILE"
+
+# Copia cifrata in rete (se configurata). Un errore qui non annulla il backup
+# locale: apre un avviso a parte (backup_offsite_failed).
+if [ -n "$(env_get BACKUP_OFFSITE_SMB "")" ] && { [ "$KIND" = daily ] || [ "$KIND" = manual ]; }; then
+  bash "$(dirname "${BASH_SOURCE[0]}")/offsite.sh" "$DEST" \
+    || log "ATTENZIONE: copia in rete non riuscita (il backup locale è comunque OK)"
+fi
 resolve_alert "backup_failed" "Backup $KIND completato: $STAMP"
 log "═══ Backup completato: $DEST ($(du -sh "$DEST" | cut -f1))"
