@@ -56,11 +56,15 @@ umask 077
 printf 'username = %s\npassword = %s\n' "$O_USER" "$O_PASS" > "$WORK/auth"
 [ -n "$O_DOMAIN" ] && printf 'domain = %s\n' "$O_DOMAIN" >> "$WORK/auth"
 
+# smbclient gira con lo stesso utente di questo script: l'immagine del backend
+# usa l'utente "node", che non potrebbe leggere i file temporanei (permessi 600)
+RUN_AS="$(id -u):$(id -g)"
+
 # smbclient nella cartella di destinazione; i file locali stanno in /x
 smb() {
   local cmd="$1" cd_cmd=""
   [ -n "$SUBDIR" ] && cd_cmd="cd \"$SUBDIR\"; "
-  docker run --rm --network host --entrypoint smbclient -v "$WORK:/x" "$SMB_IMAGE" \
+  docker run --rm --network host --user "$RUN_AS" -e HOME=/tmp --entrypoint smbclient -v "$WORK:/x" "$SMB_IMAGE" \
     "$SHARE" -A /x/auth -c "${cd_cmd}${cmd}" 2>&1
 }
 
@@ -71,7 +75,7 @@ smb_mkdirs() {
   for part in "${parts[@]}"; do
     [ -z "$part" ] && continue
     path="${path:+$path/}$part"
-    docker run --rm --network host --entrypoint smbclient -v "$WORK:/x" "$SMB_IMAGE" \
+    docker run --rm --network host --user "$RUN_AS" -e HOME=/tmp --entrypoint smbclient -v "$WORK:/x" "$SMB_IMAGE" \
       "$SHARE" -A /x/auth -c "mkdir \"$path\"" >/dev/null 2>&1 || true
   done
 }
