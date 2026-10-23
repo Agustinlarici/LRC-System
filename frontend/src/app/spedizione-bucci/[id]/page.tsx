@@ -40,6 +40,9 @@ type ScanResponse =
   | { status: 'added';     item: Item; also_in_shipment: number | null; warning: string | null }
   | { status: 'ambiguous'; candidates: Candidate[] };
 
+// Il server può impiegare fino a ~16 s (due query iKnow da 8 s): il browser deve aspettare di più
+const SCAN_TIMEOUT_MS = 25_000;
+
 export default function SpedizioneBucciDetailPage() {
   const { id }  = useParams<{ id: string }>();
   const router  = useRouter();
@@ -74,7 +77,7 @@ export default function SpedizioneBucciDetailPage() {
     setBusy(true);
     setLastError('');
     try {
-      const res = await api.post<ScanResponse>(`/api/bucci/shipments/${id}/scan`, { code: scanned, seriale });
+      const res = await api.post<ScanResponse>(`/api/bucci/shipments/${id}/scan`, { code: scanned, seriale }, SCAN_TIMEOUT_MS);
       if (res.status === 'ambiguous') {
         setPending({ code: scanned, candidates: res.candidates });
         return;
@@ -86,9 +89,27 @@ export default function SpedizioneBucciDetailPage() {
         toast.info(`${res.item.seriale} era già nella spedizione #${res.also_in_shipment}`);
       }
     } catch (e) {
-      setLastError(e instanceof Error ? e.message : 'Errore');
+      if (e instanceof Error && e.name === 'TimeoutError') {
+        await recoverFromTimeout(scanned);
+      } else {
+        setLastError(e instanceof Error ? e.message : 'Errore');
+      }
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Il browser si è stancato di aspettare ma il server può aver salvato il cofano: rilegge la lista
+  async function recoverFromTimeout(scanned: string) {
+    try {
+      const fresh = await api.get<Shipment>(`/api/bucci/shipments/${id}`);
+      setShipment(fresh);
+      const saved = fresh.items.some(i => i.scanned_code === scanned.trim());
+      setLastError(saved
+        ? 'Tempo scaduto (iKnow lento), ma il cofano è stato salvato: controlla la lista'
+        : 'Tempo scaduto (iKnow lento): cofano non salvato, riprova');
+    } catch {
+      setLastError('Tempo scaduto (iKnow lento): ricarica la pagina e controlla la lista prima di riprovare');
     }
   }
 
