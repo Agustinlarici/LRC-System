@@ -4,7 +4,7 @@ import { getWebthronPool } from '../monitor/mysql-client.js';
 const BUCCI_TIPDOC     = '0330';
 const BUCCI_COMPONENTE = 'cofano';
 
-const QUERY_TIMEOUT_MS = 8_000;
+const QUERY_TIMEOUT_MS = 30_000;
 const MAX_ROWS         = 100;
 const MAX_BATCH_ROWS   = 2000;
 
@@ -52,7 +52,7 @@ export function dedupeBySeriale(rows: BucciUnit[]): BucciUnit[] {
 }
 
 const SQL_BASE = `
-  SELECT /*+ MAX_EXECUTION_TIME(5000) */
+  SELECT /*+ MAX_EXECUTION_TIME(30000) */
     Extra186.stringa     AS seriale,
     ikExtra45Tab.stringa AS componente,
     Extra30.stringa      AS commessa,
@@ -107,7 +107,7 @@ const PRIMER_TIPDOC    = '0031';
 const PRIMER_FASE_LIKE = '%461%';
 
 const SQL_PRIMER = `
-  SELECT /*+ MAX_EXECUTION_TIME(5000) */
+  SELECT /*+ MAX_EXECUTION_TIME(30000) */
     Extra186.stringa AS seriale,
     COALESCE(ikExtra121Tab.stringa, Extra121.stringa) AS tipo_lotto_primer
   FROM ubidocum ubi

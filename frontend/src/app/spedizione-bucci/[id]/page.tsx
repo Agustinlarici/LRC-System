@@ -54,8 +54,8 @@ interface VerifyResponse {
 
 // Ogni quanti cofani non ancora verificati parte la verifica in background
 const VERIFY_BATCH = 5;
-// La verifica fa query in blocco su iKnow (fino a ~8 s ciascuna): più larga del timeout standard
-const VERIFY_TIMEOUT_MS = 60_000;
+// La verifica fa query in blocco su iKnow (fino a 30 s ciascuna, due in sequenza al massimo): più larga del timeout standard
+const VERIFY_TIMEOUT_MS = 90_000;
 
 function problemText(p: Problem): string {
   if (p.kind === 'not_found') return 'Non trovato in iKnow';
