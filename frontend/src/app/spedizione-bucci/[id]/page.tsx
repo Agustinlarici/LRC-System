@@ -13,7 +13,7 @@ import { useConfirmDialog } from '@/components/ui/PromptDialog';
 interface Item {
   id:              number;
   scanned_code:    string;
-  seriale:         string;
+  seriale:         string | null;   // null = non ancora verificato in iKnow
   componente:      string | null;
   modello:         string | null;
   commessa:        string | null;
@@ -36,12 +36,36 @@ interface Shipment {
 
 interface Candidate { seriale: string; componente: string | null; commessa: string | null }
 
-type ScanResponse =
-  | { status: 'added';     item: Item; also_in_shipment: number | null; warning: string | null }
-  | { status: 'ambiguous'; candidates: Candidate[] };
+type Problem =
+  | { item_id: number; scanned_code: string; kind: 'not_found' }
+  | { item_id: number; scanned_code: string; kind: 'duplicate'; seriale: string }
+  | { item_id: number; scanned_code: string; kind: 'ambiguous'; candidates: Candidate[] };
 
-// Il server può impiegare fino a ~16 s (due query iKnow da 8 s): il browser deve aspettare di più
-const SCAN_TIMEOUT_MS = 25_000;
+interface Warning { item_id: number; kind: 'no_primer' | 'in_other_shipment'; shipment_id?: number }
+
+interface VerifyResponse {
+  items:              Item[];
+  problems:           Problem[];
+  warnings:           Warning[];
+  iknow_error:        boolean;
+  primer_unavailable: boolean;
+  unresolved:         number;
+}
+
+// Ogni quanti cofani non ancora verificati parte la verifica in background
+const VERIFY_BATCH = 5;
+// La verifica fa query in blocco su iKnow (fino a ~8 s ciascuna): più larga del timeout standard
+const VERIFY_TIMEOUT_MS = 60_000;
+
+function problemText(p: Problem): string {
+  if (p.kind === 'not_found') return 'Non trovato in iKnow';
+  if (p.kind === 'duplicate') return `Doppio: ${p.seriale} è già nella spedizione`;
+  return 'La commessa ha più seriali: scegli quello giusto';
+}
+
+function warningText(w: Warning): string {
+  return w.kind === 'no_primer' ? 'Tipo Lotto Primer non trovato' : `Già in spedizione #${w.shipment_id}`;
+}
 
 export default function SpedizioneBucciDetailPage() {
   const { id }  = useParams<{ id: string }>();
@@ -54,11 +78,17 @@ export default function SpedizioneBucciDetailPage() {
   const [loading,    setLoading]    = useState(true);
   const [code,       setCode]       = useState('');
   const [busy,       setBusy]       = useState(false);
-  const [pending,    setPending]    = useState<{ code: string; candidates: Candidate[] } | null>(null);
   const [lastError,  setLastError]  = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [problems,   setProblems]   = useState<Problem[]>([]);
+  const [warnings,   setWarnings]   = useState<Warning[]>([]);
+  const [review,     setReview]     = useState<VerifyResponse | null>(null);
+  const [verifying,  setVerifying]  = useState(false);
+  const inputRef  = useRef<HTMLInputElement>(null);
+  const itemsRef  = useRef<Item[]>([]);
+  const verifyRef = useRef(false);
 
   const isOpen = shipment?.status === 'open';
+  itemsRef.current = shipment?.items ?? [];
 
   const load = useCallback(async () => {
     try {
@@ -71,45 +101,48 @@ export default function SpedizioneBucciDetailPage() {
   }, [id, toast]);
 
   useEffect(() => { document.title = `Spedizione Bucci #${id} — STR`; load(); }, [id, load]);
-  useEffect(() => { if (isOpen && !pending) inputRef.current?.focus(); }, [isOpen, pending, busy]);
+  useEffect(() => { if (isOpen && !review) inputRef.current?.focus(); }, [isOpen, review, busy, verifying]);
 
-  async function submitScan(scanned: string, seriale?: string) {
-    setBusy(true);
-    setLastError('');
+  // Aggiorna le righe con i dati risolti dal server senza perdere i cofani scansionati nel frattempo
+  function applyVerify(res: VerifyResponse) {
+    const byId = new Map(res.items.map(i => [i.id, i]));
+    setShipment(prev => prev ? { ...prev, items: prev.items.map(i => byId.get(i.id) ?? i) } : prev);
+    setProblems(res.problems);
+    setWarnings(res.warnings);
+  }
+
+  // Una verifica alla volta; silent = in background durante la scansione (errori ignorati, si riprova alla prossima)
+  async function runVerify(silent: boolean): Promise<VerifyResponse | null> {
+    if (verifyRef.current) return null;
+    verifyRef.current = true;
+    setVerifying(true);
     try {
-      const res = await api.post<ScanResponse>(`/api/bucci/shipments/${id}/scan`, { code: scanned, seriale }, SCAN_TIMEOUT_MS);
-      if (res.status === 'ambiguous') {
-        setPending({ code: scanned, candidates: res.candidates });
-        return;
-      }
-      setPending(null);
-      setShipment(prev => prev ? { ...prev, items: [...prev.items, res.item] } : prev);
-      if (res.warning) toast.info(res.warning);
-      if (res.also_in_shipment) {
-        toast.info(`${res.item.seriale} era già nella spedizione #${res.also_in_shipment}`);
-      }
+      const res = await api.post<VerifyResponse>(`/api/bucci/shipments/${id}/verify`, undefined, VERIFY_TIMEOUT_MS);
+      applyVerify(res);
+      return res;
     } catch (e) {
-      if (e instanceof Error && e.name === 'TimeoutError') {
-        await recoverFromTimeout(scanned);
-      } else {
-        setLastError(e instanceof Error ? e.message : 'Errore');
-      }
+      if (!silent) setLastError(e instanceof Error && e.name !== 'TimeoutError' ? e.message : 'iKnow lento o non raggiungibile, riprova');
+      return null;
     } finally {
-      setBusy(false);
+      verifyRef.current = false;
+      setVerifying(false);
     }
   }
 
-  // Il browser si è stancato di aspettare ma il server può aver salvato il cofano: rilegge la lista
-  async function recoverFromTimeout(scanned: string) {
+  async function submitScan(scanned: string) {
+    setBusy(true);
+    setLastError('');
     try {
-      const fresh = await api.get<Shipment>(`/api/bucci/shipments/${id}`);
-      setShipment(fresh);
-      const saved = fresh.items.some(i => i.scanned_code === scanned.trim());
-      setLastError(saved
-        ? 'Tempo scaduto (iKnow lento), ma il cofano è stato salvato: controlla la lista'
-        : 'Tempo scaduto (iKnow lento): cofano non salvato, riprova');
-    } catch {
-      setLastError('Tempo scaduto (iKnow lento): ricarica la pagina e controlla la lista prima di riprovare');
+      const res = await api.post<{ status: 'added'; item: Item }>(`/api/bucci/shipments/${id}/scan`, { code: scanned });
+      const items = [...itemsRef.current, res.item];
+      setShipment(prev => prev ? { ...prev, items } : prev);
+      const flagged = new Set(problems.map(p => p.item_id));
+      const toVerify = items.filter(i => !i.seriale && !flagged.has(i.id)).length;
+      if (toVerify >= VERIFY_BATCH) void runVerify(true);
+    } catch (e) {
+      setLastError(e instanceof Error && e.name !== 'TimeoutError' ? e.message : 'Tempo scaduto: ricarica la pagina e controlla la lista prima di riprovare');
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -125,8 +158,30 @@ export default function SpedizioneBucciDetailPage() {
     try {
       await api.delete(`/api/bucci/shipments/${id}/items/${item.id}`);
       setShipment(prev => prev ? { ...prev, items: prev.items.filter(i => i.id !== item.id) } : prev);
+      setProblems(prev => prev.filter(p => p.item_id !== item.id));
+      setWarnings(prev => prev.filter(w => w.item_id !== item.id));
+      setReview(prev => {
+        if (!prev) return prev;
+        const items = prev.items.filter(i => i.id !== item.id);
+        return {
+          ...prev,
+          items,
+          problems:   prev.problems.filter(p => p.item_id !== item.id),
+          warnings:   prev.warnings.filter(w => w.item_id !== item.id),
+          unresolved: items.filter(i => !i.seriale).length,
+        };
+      });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Errore nella rimozione');
+    }
+  }
+
+  async function pickSeriale(itemId: number, seriale: string) {
+    try {
+      await api.post(`/api/bucci/shipments/${id}/items/${itemId}/resolve`, { seriale });
+      await reverify();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Errore');
     }
   }
 
@@ -142,16 +197,35 @@ export default function SpedizioneBucciDetailPage() {
     }
   }
 
-  async function changeStatus(action: 'close' | 'reopen') {
-    if (action === 'close') {
-      const ok = await confirm({
-        title: 'Chiudere la spedizione?',
-      });
-      if (!ok) return;
-    }
+  // Chiudi: prima verifica tutto, poi mostra l'esito e chiede conferma
+  async function startClose() {
+    setLastError('');
+    const res = await runVerify(false);
+    if (res) setReview(res);
+  }
+
+  async function reverify() {
+    const res = await runVerify(false);
+    if (res) setReview(res);
+  }
+
+  async function confirmClose() {
     try {
-      await api.post(`/api/bucci/shipments/${id}/${action}`);
-      toast.success(action === 'close' ? 'Spedizione chiusa' : 'Spedizione riaperta');
+      await api.post(`/api/bucci/shipments/${id}/close`);
+      toast.success(`Spedizione chiusa: ${review?.items.length ?? 0} cofani verificati`);
+      setReview(null);
+      setProblems([]);
+      setWarnings([]);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Errore');
+    }
+  }
+
+  async function reopen() {
+    try {
+      await api.post(`/api/bucci/shipments/${id}/reopen`);
+      toast.success('Spedizione riaperta');
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Errore');
@@ -177,6 +251,10 @@ export default function SpedizioneBucciDetailPage() {
   if (loading) return <PageLoader />;
   if (!shipment) return <p className="text-gray-500">Spedizione non trovata.</p>;
 
+  const problemOf = (itemId: number) => problems.find(p => p.item_id === itemId);
+  const warningsOf = (itemId: number) => warnings.filter(w => w.item_id === itemId);
+  const reviewBlocked = !!review && (review.problems.length > 0 || review.unresolved > 0 || review.iknow_error);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -201,9 +279,13 @@ export default function SpedizioneBucciDetailPage() {
         </div>
         <div className="flex gap-2 print:hidden">
           <button className="btn-secondary" onClick={() => window.print()}>Stampa</button>
-          {isOpen && <button className="btn-primary" onClick={() => changeStatus('close')}>Chiudi spedizione</button>}
+          {isOpen && (
+            <button className="btn-primary disabled:opacity-60" onClick={startClose} disabled={verifying}>
+              {verifying ? 'Verifica in corso…' : 'Chiudi spedizione'}
+            </button>
+          )}
           {!isOpen && canManage('spedizione_bucci') && (
-            <button className="btn-secondary" onClick={() => changeStatus('reopen')}>Riapri</button>
+            <button className="btn-secondary" onClick={reopen}>Riapri</button>
           )}
           {canManage('spedizione_bucci') && (
             <button className="px-3 py-2 text-sm rounded-lg border border-red-200 text-red-600 hover:bg-red-50" onClick={deleteShipment}>Elimina</button>
@@ -234,7 +316,9 @@ export default function SpedizioneBucciDetailPage() {
               {lastError}
             </p>
           )}
-          <p className="mt-2 text-xs text-gray-400">Ricerca in iKnow negli ultimi {shipment.lookback_days} giorni.</p>
+          <p className="mt-2 text-xs text-gray-400">
+            Seriali, modello e lotto si leggono da iKnow (ultimi {shipment.lookback_days} giorni) ogni {VERIFY_BATCH} scansioni e alla chiusura.
+          </p>
         </form>
       )}
 
@@ -255,10 +339,28 @@ export default function SpedizioneBucciDetailPage() {
           <tbody>
             {shipment.items.length === 0 ? (
               <tr><td colSpan={8} className="py-10 text-center text-gray-400">Nessun cofano scansionato</td></tr>
-            ) : shipment.items.map((it, i) => (
+            ) : shipment.items.map((it, i) => {
+              const problem = problemOf(it.id);
+              return (
               <tr key={it.id} className="border-b border-gray-100 hover:bg-gray-50">
                 <td className="py-2.5 px-4 text-gray-400">{i + 1}</td>
-                <td className="py-2.5 px-4 font-mono">{it.seriale}</td>
+                <td className="py-2.5 px-4 font-mono">
+                  {it.seriale ?? (
+                    <span className="text-gray-400">{it.scanned_code}</span>
+                  )}
+                  {!it.seriale && (
+                    <span className={`ml-2 font-sans text-xs font-medium px-2 py-0.5 rounded-full ${
+                      problem ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {problem ? problemText(problem) : 'da verificare'}
+                    </span>
+                  )}
+                  {warningsOf(it.id).map(w => (
+                    <span key={w.kind} className="ml-2 font-sans text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                      {warningText(w)}
+                    </span>
+                  ))}
+                </td>
                 <td className="py-2.5 px-4 text-gray-500">{it.componente || '–'}</td>
                 <td className="py-2.5 px-4 text-gray-500">{it.modello || '–'}</td>
                 <td className="py-2.5 px-4 text-gray-500">{it.commessa || '–'}</td>
@@ -272,7 +374,7 @@ export default function SpedizioneBucciDetailPage() {
                       className="print:hidden w-4 h-4 accent-blue-600 cursor-pointer"
                       checked={it.conto_garanzia}
                       onChange={e => toggleGaranzia(it, e.target.checked)}
-                      aria-label={`Conto Garanzia ${it.seriale}`}
+                      aria-label={`Conto Garanzia ${it.seriale ?? it.scanned_code}`}
                     />
                     </>
                   ) : (
@@ -285,42 +387,103 @@ export default function SpedizioneBucciDetailPage() {
                 </td>
                 {isOpen && (
                   <td className="py-2.5 px-4 text-center print:hidden">
-                    <button onClick={() => removeItem(it)} className="text-red-500 hover:text-red-700" aria-label={`Rimuovi ${it.seriale}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="w-4 h-4" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                    <button onClick={() => removeItem(it)} className="text-red-500 hover:text-red-700" aria-label={`Rimuovi ${it.seriale ?? it.scanned_code}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="w-4 h-4" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
                   </td>
                 )}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       {confirmDialog}
 
-      {pending && (
+      {review && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
             <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="font-semibold text-gray-900 text-lg">Seleziona il seriale</h3>
+              <h3 className="font-semibold text-gray-900 text-lg">
+                {reviewBlocked ? 'Controlla prima di chiudere' : 'Tutto verificato'}
+              </h3>
               <p className="text-sm text-gray-500 mt-1">
-                La commessa {pending.candidates[0]?.commessa ?? pending.code} ha più seriali associati.
+                {reviewBlocked
+                  ? 'Risolvi i punti qui sotto: la spedizione non si può chiudere finché restano.'
+                  : `${review.items.length} cofani verificati in iKnow. Chiudere la spedizione?`}
               </p>
             </div>
-            <ul className="px-6 py-4 max-h-80 overflow-y-auto space-y-2">
-              {pending.candidates.map(c => (
-                <li key={c.seriale}>
-                  <button
-                    className="w-full text-left border border-gray-200 rounded-lg px-3 py-2 hover:bg-blue-50 hover:border-blue-300 transition-colors disabled:opacity-50"
-                    disabled={busy}
-                    onClick={() => submitScan(pending.code, c.seriale)}
-                  >
-                    <span className="font-mono font-medium">{c.seriale}</span>
-                    <span className="text-xs text-gray-500 ml-2">{c.componente} · commessa {c.commessa}</span>
-                  </button>
-                </li>
+
+            <div className="px-6 py-4 overflow-y-auto space-y-3">
+              {review.iknow_error && (
+                <p role="alert" className="text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  iKnow non ha risposto: i cofani sono salvati ma non verificati. Riprova.
+                </p>
+              )}
+              {review.primer_unavailable && (
+                <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  Tipo Lotto Primer non letto (iKnow lento): puoi chiudere comunque o riprovare.
+                </p>
+              )}
+
+              {review.problems.map(p => (
+                <div key={p.item_id} className="border border-red-200 bg-red-50 rounded-lg px-3 py-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <span className="font-mono font-medium">{p.scanned_code}</span>
+                      <span className="text-sm text-red-700 ml-2">{problemText(p)}</span>
+                    </div>
+                    <button
+                      className="text-sm text-red-600 hover:text-red-800 underline"
+                      onClick={() => {
+                        const item = review.items.find(i => i.id === p.item_id);
+                        if (item) removeItem(item);
+                      }}
+                    >Rimuovi</button>
+                  </div>
+                  {p.kind === 'ambiguous' && (
+                    <ul className="mt-2 space-y-1">
+                      {p.candidates.map(c => (
+                        <li key={c.seriale}>
+                          <button
+                            className="w-full text-left border border-gray-200 bg-white rounded-lg px-3 py-1.5 hover:bg-blue-50 hover:border-blue-300 transition-colors"
+                            onClick={() => pickSeriale(p.item_id, c.seriale)}
+                          >
+                            <span className="font-mono font-medium">{c.seriale}</span>
+                            <span className="text-xs text-gray-500 ml-2">{c.componente} · commessa {c.commessa}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               ))}
-            </ul>
-            <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
-              <button className="btn-secondary" onClick={() => setPending(null)}>Annulla</button>
+
+              {review.warnings.length > 0 && (
+                <div className="border border-amber-200 bg-amber-50 rounded-lg px-3 py-2">
+                  <p className="text-sm font-medium text-amber-800 mb-1">Avvisi (non bloccano la chiusura)</p>
+                  <ul className="text-sm text-amber-800 space-y-0.5">
+                    {review.warnings.map(w => {
+                      const item = review.items.find(i => i.id === w.item_id);
+                      return (
+                        <li key={`${w.item_id}-${w.kind}`}>
+                          <span className="font-mono">{item?.seriale ?? item?.scanned_code}</span> · {warningText(w)}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+              <button className="btn-secondary" onClick={() => setReview(null)}>Torna alla lista</button>
+              {reviewBlocked ? (
+                <button className="btn-primary disabled:opacity-60" onClick={reverify} disabled={verifying}>
+                  {verifying ? 'Verifica in corso…' : 'Verifica di nuovo'}
+                </button>
+              ) : (
+                <button className="btn-primary" onClick={confirmClose}>Conferma e chiudi</button>
+              )}
             </div>
           </div>
         </div>
