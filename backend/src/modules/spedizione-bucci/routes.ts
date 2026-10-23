@@ -7,7 +7,8 @@ import { requireModule, requireManage } from '../../lib/auth.js';
 import { auditLog } from '../../lib/audit.js';
 import { getIKnowFlags } from '../../lib/system-flags.js';
 import { logger } from '../../lib/logger.js';
-import { parseScan, findBySeriale, findByCommessa, findTipoLottoPrimer, lookbackDays, type BucciUnit } from './lookup.js';
+import { parseScan, findBySerialiMany, findByCommesseMany, findByCommessa, findTipoLottoPrimerMany, lookbackDays } from './lookup.js';
+import { planResolution, type Problem } from './verify.js';
 
 export const spedizioneBucciRoutes = new Hono();
 
@@ -33,6 +34,13 @@ async function requireOpenShipment(id: number) {
 
 async function touchShipment(id: number, userName: string) {
   await db`UPDATE bucci_shipment SET modified_at = now(), modified_by_name = ${userName} WHERE id = ${id} AND was_closed`;
+}
+
+async function requireIKnow() {
+  const flags = await getIKnowFlags();
+  if (!flags.iknow_enabled) {
+    throw new HTTPException(503, { message: 'Connessione iKnow disabilitata dall\'amministratore' });
+  }
 }
 
 // ─── Lista / dettaglio ────────────────────────────────────────────────────────
@@ -83,6 +91,7 @@ spedizioneBucciRoutes.post('/shipments', requireModule(MODULE), async (c) => {
   return c.json({ id: row.id }, 201);
 });
 
+// Non si chiude con cofani non ancora risolti (seriale NULL): prima /verify
 spedizioneBucciRoutes.post('/shipments/:id/close', requireModule(MODULE), async (c) => {
   const id   = parseId(c.req.param('id'));
   const user = c.get('user');
@@ -90,10 +99,14 @@ spedizioneBucciRoutes.post('/shipments/:id/close', requireModule(MODULE), async 
     UPDATE bucci_shipment
     SET status = 'closed', was_closed = true, closed_at = now(), closed_by_name = ${user.display_name}
     WHERE id = ${id} AND status = 'open'
+      AND NOT EXISTS (SELECT 1 FROM bucci_shipment_item i WHERE i.shipment_id = ${id} AND i.seriale IS NULL)
     RETURNING id
   `;
   if (!row) {
-    await requireShipment(id);
+    const s = await requireShipment(id);
+    if (s.status === 'open') {
+      throw new HTTPException(409, { message: 'Ci sono cofani non ancora verificati: verifica la spedizione prima di chiuderla' });
+    }
     throw new HTTPException(409, { message: 'Spedizione già chiusa' });
   }
   await auditLog({ userId: user.id, username: user.username, action: 'bucci_shipment_close', entity: 'bucci_shipment', entityId: id });
@@ -129,30 +142,13 @@ spedizioneBucciRoutes.delete('/shipments/:id', requireManage(MODULE), async (c) 
 // ─── Scansione ────────────────────────────────────────────────────────────────
 
 const ScanSchema = z.object({
-  code:    z.string().min(1).max(64),
-  // Usato solo per scegliere tra più seriali della stessa commessa (BUCCxxxx)
-  seriale: z.string().min(1).max(64).optional(),
+  code: z.string().min(1).max(64),
 });
 
-async function lookup(parsed: NonNullable<ReturnType<typeof parseScan>>): Promise<BucciUnit[]> {
-  const flags = await getIKnowFlags();
-  if (!flags.iknow_enabled) {
-    throw new HTTPException(503, { message: 'Connessione iKnow disabilitata dall\'amministratore' });
-  }
-  try {
-    return parsed.kind === 'seriale'
-      ? await findBySeriale(parsed.seriale)
-      : await findByCommessa(parsed.commessa);
-  } catch (err) {
-    logger.error({ err }, 'spedizione-bucci: query iKnow fallita');
-    throw new HTTPException(502, { message: 'iKnow non raggiungibile o troppo lento, riprovare' });
-  }
-}
-
 // POST /api/bucci/shipments/:id/scan
-//  → 201 { status:'added', item, also_in_shipment, warning }  cofano salvato
-//  → 200 { status:'ambiguous', candidates }              commessa con più seriali: richiamare con `seriale`
-//  → 404 non trovato nella finestra di ricerca · 409 già presente / spedizione chiusa
+//  → 201 { status:'added', item }   codice salvato con seriale NULL: lo risolve /verify, qui niente iKnow
+//  → 409 già presente / spedizione chiusa
+// Controllo doppi immediato: per BUCC… valgono le ultime 4 cifre, per gli altri codici il codice intero.
 spedizioneBucciRoutes.post('/shipments/:id/scan', requireModule(MODULE), async (c) => {
   const id   = parseId(c.req.param('id'));
   const body = await parseBody(c, ScanSchema);
@@ -162,58 +158,171 @@ spedizioneBucciRoutes.post('/shipments/:id/scan', requireModule(MODULE), async (
 
   const parsed = parseScan(body.code);
   if (!parsed) throw new HTTPException(400, { message: 'Codice non valido' });
+  const code = body.code.trim();
 
-  const units = await lookup(parsed);
-  if (units.length === 0) {
-    const label = parsed.kind === 'seriale' ? parsed.seriale : `commessa ${parsed.commessa}`;
-    throw new HTTPException(404, {
-      message: `${label} non trovato in iKnow (ultimi ${lookbackDays()} giorni)`,
-    });
-  }
-
-  let unit: BucciUnit;
-  if (units.length === 1) {
-    unit = units[0];
-  } else {
-    const picked = body.seriale ? units.find(u => u.seriale === body.seriale) : undefined;
-    if (!picked) return c.json({ status: 'ambiguous', candidates: units });
-    unit = picked;
-  }
-
-  // Seconda query, solo per il cofano scelto. Se iKnow non risponde il cofano si salva comunque.
-  let tipoLotto: string | null = null;
-  let warning: string | null = null;
-  try {
-    tipoLotto = await findTipoLottoPrimer(unit.seriale);
-  } catch (err) {
-    logger.warn({ err }, 'spedizione-bucci: tipo lotto primer non letto');
-    warning = 'Tipo Lotto Primer non letto (iKnow lento o non raggiungibile)';
-  }
+  const [dup] = parsed.kind === 'commessa'
+    ? await db`
+        SELECT scanned_code FROM bucci_shipment_item
+        WHERE shipment_id = ${id}
+          AND ((upper(scanned_code) LIKE 'BUCC%' AND right(trim(scanned_code), 4) = ${parsed.commessa})
+               OR commessa = ${parsed.commessa})
+        LIMIT 1`
+    : await db`
+        SELECT scanned_code FROM bucci_shipment_item
+        WHERE shipment_id = ${id}
+          AND (upper(scanned_code) = upper(${code}) OR upper(seriale) = upper(${code}))
+        LIMIT 1`;
+  if (dup) throw new HTTPException(409, { message: `${code} già presente in questa spedizione` });
 
   // Inserimento atomico: fallisce se la spedizione nel frattempo è stata chiusa
   const [item] = await db`
-    INSERT INTO bucci_shipment_item (shipment_id, scanned_code, seriale, componente, modello, commessa, tipo_lotto_primer, scanned_by_name)
-    SELECT s.id, ${body.code.trim()}, ${unit.seriale}, ${unit.componente}, ${unit.modello}, ${unit.commessa}, ${tipoLotto}, ${user.display_name}
+    INSERT INTO bucci_shipment_item (shipment_id, scanned_code, scanned_by_name)
+    SELECT s.id, ${code}, ${user.display_name}
     FROM bucci_shipment s
     WHERE s.id = ${id} AND s.status = 'open'
-    ON CONFLICT (shipment_id, seriale) DO NOTHING
     RETURNING id, scanned_code, seriale, componente, modello, commessa, tipo_lotto_primer, conto_garanzia, scanned_by_name, scanned_at
   `;
   if (!item) {
     await requireOpenShipment(id);
-    throw new HTTPException(409, { message: `${unit.seriale} già presente in questa spedizione` });
+    throw new HTTPException(409, { message: 'Spedizione non modificabile' });
   }
 
   await touchShipment(id, user.display_name);
+  return c.json({ status: 'added', item }, 201);
+});
 
-  // Avviso (non bloccante): seriale già spedito in un'altra spedizione
-  const [other] = await db`
-    SELECT shipment_id FROM bucci_shipment_item
-    WHERE seriale = ${unit.seriale} AND shipment_id <> ${id}
-    ORDER BY shipment_id DESC LIMIT 1
-  `;
+// POST /api/bucci/shipments/:id/verify
+// Risolve in iKnow, con query in blocco, i codici non ancora risolti (seriale NULL), completa il Tipo Lotto Primer
+// mancante e segnala i problemi. Idempotente: il frontend lo richiama ogni qualche scansione e prima di chiudere.
+spedizioneBucciRoutes.post('/shipments/:id/verify', requireModule(MODULE), async (c) => {
+  const id = parseId(c.req.param('id'));
+  await requireOpenShipment(id);
+  await requireIKnow();
 
-  return c.json({ status: 'added', item, also_in_shipment: other?.shipment_id ?? null, warning }, 201);
+  const before = await db`
+    SELECT id, scanned_code, seriale FROM bucci_shipment_item WHERE shipment_id = ${id} ORDER BY id
+  ` as unknown as Array<{ id: number; scanned_code: string; seriale: string | null }>;
+
+  const pending = before.filter(i => i.seriale === null);
+  const taken   = new Set(before.flatMap(i => i.seriale ? [i.seriale.toUpperCase()] : []));
+  let problems: Problem[] = [];
+  let iknowError = false;
+
+  if (pending.length > 0) {
+    const parsed   = pending.map(p => parseScan(p.scanned_code));
+    const seriali  = parsed.flatMap(p => p?.kind === 'seriale' ? [p.seriale] : []);
+    const commesse = [...new Set(parsed.flatMap(p => p?.kind === 'commessa' ? [p.commessa] : []))];
+    try {
+      const [bySeriale, byCommessa] = await Promise.all([findBySerialiMany(seriali), findByCommesseMany(commesse)]);
+      const plan = planResolution(pending, taken, bySeriale, byCommessa);
+      problems = plan.problems;
+      for (const r of plan.resolved) {
+        try {
+          await db`
+            UPDATE bucci_shipment_item
+            SET seriale = ${r.unit.seriale}, componente = ${r.unit.componente}, modello = ${r.unit.modello}, commessa = ${r.unit.commessa}
+            WHERE id = ${r.item_id} AND shipment_id = ${id} AND seriale IS NULL
+          `;
+        } catch (err) {
+          if ((err as { code?: string }).code !== '23505') throw err;
+          const item = pending.find(p => p.id === r.item_id)!;
+          problems.push({ item_id: item.id, scanned_code: item.scanned_code, kind: 'duplicate', seriale: r.unit.seriale });
+        }
+      }
+    } catch (err) {
+      logger.error({ err }, 'spedizione-bucci: query iKnow fallita');
+      iknowError = true;
+    }
+  }
+
+  // Tipo Lotto Primer mancante (anche per cofani risolti prima); se iKnow non risponde i cofani restano salvati
+  let primerUnavailable = false;
+  const missing = (await db`
+    SELECT id, seriale FROM bucci_shipment_item
+    WHERE shipment_id = ${id} AND seriale IS NOT NULL AND tipo_lotto_primer IS NULL
+  `) as unknown as Array<{ id: number; seriale: string }>;
+  if (missing.length > 0 && !iknowError) {
+    try {
+      const primer = await findTipoLottoPrimerMany(missing.map(m => m.seriale));
+      for (const m of missing) {
+        const value = primer.get(m.seriale.toUpperCase());
+        if (value) await db`UPDATE bucci_shipment_item SET tipo_lotto_primer = ${value} WHERE id = ${m.id} AND shipment_id = ${id}`;
+      }
+    } catch (err) {
+      logger.warn({ err }, 'spedizione-bucci: tipo lotto primer non letto');
+      primerUnavailable = true;
+    }
+  }
+
+  const items = (await db`
+    SELECT id, scanned_code, seriale, componente, modello, commessa, tipo_lotto_primer, conto_garanzia, scanned_by_name, scanned_at
+    FROM bucci_shipment_item WHERE shipment_id = ${id} ORDER BY id
+  `) as unknown as Array<{ id: number; seriale: string | null; tipo_lotto_primer: string | null }>;
+
+  const resolvedSeriali = items.flatMap(i => i.seriale ? [i.seriale] : []);
+  const others = resolvedSeriali.length === 0 ? [] : (await db`
+    SELECT DISTINCT ON (seriale) seriale, shipment_id FROM bucci_shipment_item
+    WHERE seriale = ANY(${resolvedSeriali}) AND shipment_id <> ${id}
+    ORDER BY seriale, shipment_id DESC
+  `) as unknown as Array<{ seriale: string; shipment_id: number }>;
+  const otherBySeriale = new Map(others.map(o => [o.seriale, o.shipment_id]));
+
+  const warnings = items.flatMap(i => {
+    const out: Array<{ item_id: number; kind: 'no_primer' | 'in_other_shipment'; shipment_id?: number }> = [];
+    if (i.seriale && !i.tipo_lotto_primer) out.push({ item_id: i.id, kind: 'no_primer' });
+    const other = i.seriale ? otherBySeriale.get(i.seriale) : undefined;
+    if (other) out.push({ item_id: i.id, kind: 'in_other_shipment', shipment_id: other });
+    return out;
+  });
+
+  return c.json({
+    items,
+    problems,
+    warnings,
+    iknow_error: iknowError,
+    primer_unavailable: primerUnavailable,
+    unresolved: items.filter(i => !i.seriale).length,
+  });
+});
+
+// POST /api/bucci/shipments/:id/items/:itemId/resolve — l'operatore sceglie il seriale di una commessa con più candidati
+spedizioneBucciRoutes.post('/shipments/:id/items/:itemId/resolve', requireModule(MODULE), async (c) => {
+  const id     = parseId(c.req.param('id'));
+  const itemId = parseId(c.req.param('itemId'));
+  const body   = await parseBody(c, z.object({ seriale: z.string().min(1).max(64) }));
+  await requireOpenShipment(id);
+  await requireIKnow();
+
+  const [item] = await db`SELECT scanned_code, seriale FROM bucci_shipment_item WHERE id = ${itemId} AND shipment_id = ${id}`;
+  if (!item) throw new HTTPException(404, { message: 'Elemento non trovato' });
+  if (item.seriale) throw new HTTPException(409, { message: 'Cofano già verificato' });
+  const parsed = parseScan(item.scanned_code);
+  if (parsed?.kind !== 'commessa') throw new HTTPException(400, { message: 'Il codice non è una commessa' });
+
+  let units;
+  try {
+    units = await findByCommessa(parsed.commessa);
+  } catch (err) {
+    logger.error({ err }, 'spedizione-bucci: query iKnow fallita');
+    throw new HTTPException(502, { message: 'iKnow non raggiungibile o troppo lento, riprovare' });
+  }
+  const unit = units.find(u => u.seriale.toUpperCase() === body.seriale.toUpperCase());
+  if (!unit) throw new HTTPException(404, { message: `${body.seriale} non appartiene alla commessa ${parsed.commessa}` });
+
+  try {
+    await db`
+      UPDATE bucci_shipment_item
+      SET seriale = ${unit.seriale}, componente = ${unit.componente}, modello = ${unit.modello}, commessa = ${unit.commessa}
+      WHERE id = ${itemId} AND shipment_id = ${id} AND seriale IS NULL
+    `;
+  } catch (err) {
+    if ((err as { code?: string }).code === '23505') {
+      throw new HTTPException(409, { message: `${unit.seriale} già presente in questa spedizione` });
+    }
+    throw err;
+  }
+  await touchShipment(id, c.get('user').display_name);
+  return c.json({ status: 'resolved' });
 });
 
 // PATCH /api/bucci/shipments/:id/items/:itemId — flag Conto Garanzia (solo spedizione aperta)

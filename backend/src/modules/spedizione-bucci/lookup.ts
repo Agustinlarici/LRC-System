@@ -4,8 +4,9 @@ import { getWebthronPool } from '../monitor/mysql-client.js';
 const BUCCI_TIPDOC     = '0330';
 const BUCCI_COMPONENTE = 'cofano';
 
-const QUERY_TIMEOUT_MS = 8_000;
+const QUERY_TIMEOUT_MS = 30_000;
 const MAX_ROWS         = 100;
+const MAX_BATCH_ROWS   = 2000;
 
 const DEFAULT_LOOKBACK_DAYS = 90;
 const MAX_LOOKBACK_DAYS     = 365;
@@ -51,7 +52,7 @@ export function dedupeBySeriale(rows: BucciUnit[]): BucciUnit[] {
 }
 
 const SQL_BASE = `
-  SELECT /*+ MAX_EXECUTION_TIME(5000) */
+  SELECT /*+ MAX_EXECUTION_TIME(30000) */
     Extra186.stringa     AS seriale,
     ikExtra45Tab.stringa AS componente,
     Extra30.stringa      AS commessa,
@@ -75,13 +76,15 @@ const SQL_BASE = `
     AND Extra186.stringa IS NOT NULL
 `;
 
-async function run(extraWhere: string, value: string, days: number): Promise<BucciUnit[]> {
+async function run(column: string, values: string[], days: number, maxRows = MAX_ROWS): Promise<BucciUnit[]> {
+  if (values.length === 0) return [];
   const since = new Date(Date.now() - days * 86_400_000);
-  const sql   = `${SQL_BASE} AND ${extraWhere} ORDER BY ubi.datain DESC LIMIT ${MAX_ROWS}`;
+  const marks = values.map(() => '?').join(',');
+  const sql   = `${SQL_BASE} AND ${column} IN (${marks}) ORDER BY ubi.datain DESC LIMIT ${maxRows}`;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [rows] = await (getWebthronPool() as any).execute(
     { sql, timeout: QUERY_TIMEOUT_MS },
-    [BUCCI_TIPDOC, since, BUCCI_COMPONENTE, value],
+    [BUCCI_TIPDOC, since, BUCCI_COMPONENTE, ...values],
   );
   return dedupeBySeriale((rows as Array<Record<string, unknown>>).map(r => ({
     seriale:    String(r.seriale),
@@ -91,8 +94,12 @@ async function run(extraWhere: string, value: string, days: number): Promise<Buc
   })));
 }
 
-export const findBySeriale  = (seriale: string,  days = lookbackDays()) => run('Extra186.stringa = ?', seriale,  days);
-export const findByCommessa = (commessa: string, days = lookbackDays()) => run('Extra30.stringa = ?',  commessa, days);
+export const findBySeriale  = (seriale: string,  days = lookbackDays()) => run('Extra186.stringa', [seriale],  days);
+export const findByCommessa = (commessa: string, days = lookbackDays()) => run('Extra30.stringa',  [commessa], days);
+
+// Versioni "in blocco" per la verifica alla chiusura: una sola query per tutti i codici della spedizione
+export const findBySerialiMany  = (seriali: string[],   days = lookbackDays()) => run('Extra186.stringa', seriali,   days, MAX_BATCH_ROWS);
+export const findByCommesseMany = (commesse: string[],  days = lookbackDays()) => run('Extra30.stringa',  commesse,  days, MAX_BATCH_ROWS);
 
 // "Tipo Lotto Primer": campo 121 (id → descrizione via ikExtraTab, come gli altri campi lista) del documento di fase primer (tipdoc 0031, fase *461*),
 // collegato al cofano tramite il seriale (campo 186). Una sola riga, solo per il seriale salvato.
@@ -100,7 +107,8 @@ const PRIMER_TIPDOC    = '0031';
 const PRIMER_FASE_LIKE = '%461%';
 
 const SQL_PRIMER = `
-  SELECT /*+ MAX_EXECUTION_TIME(5000) */
+  SELECT /*+ MAX_EXECUTION_TIME(30000) */
+    Extra186.stringa AS seriale,
     COALESCE(ikExtra121Tab.stringa, Extra121.stringa) AS tipo_lotto_primer
   FROM ubidocum ubi
   JOIN ikExtra Extra186
@@ -113,20 +121,28 @@ const SQL_PRIMER = `
     ON ikExtra121Tab.id = Extra121.stringa
   WHERE ubi.tipdoc = ?
     AND ubi.datain >= ?
-    AND Extra186.stringa = ?
     AND Extra62.stringa LIKE ?
     AND Extra121.stringa IS NOT NULL AND Extra121.stringa <> ''
+    AND Extra186.stringa IN (%MARKS%)
   ORDER BY ubi.datain DESC
-  LIMIT 1
+  LIMIT ${MAX_BATCH_ROWS}
 `;
 
-export async function findTipoLottoPrimer(seriale: string, days = lookbackDays()): Promise<string | null> {
+/** Tipo Lotto Primer per più seriali con una sola query. Chiave della mappa: seriale in maiuscolo. */
+export async function findTipoLottoPrimerMany(seriali: string[], days = lookbackDays()): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (seriali.length === 0) return out;
   const since = new Date(Date.now() - days * 86_400_000);
+  const sql   = SQL_PRIMER.replace('%MARKS%', seriali.map(() => '?').join(','));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [rows] = await (getWebthronPool() as any).execute(
-    { sql: SQL_PRIMER, timeout: QUERY_TIMEOUT_MS },
-    [PRIMER_TIPDOC, since, seriale, PRIMER_FASE_LIKE],
+    { sql, timeout: QUERY_TIMEOUT_MS },
+    [PRIMER_TIPDOC, since, PRIMER_FASE_LIKE, ...seriali],
   );
-  const first = (rows as Array<Record<string, unknown>>)[0];
-  return first ? String(first.tipo_lotto_primer) : null;
+  // righe già ordinate dalla più recente: vale la prima di ogni seriale
+  for (const r of rows as Array<Record<string, unknown>>) {
+    const key = String(r.seriale).toUpperCase();
+    if (!out.has(key)) out.set(key, String(r.tipo_lotto_primer));
+  }
+  return out;
 }
