@@ -206,11 +206,13 @@ spmaRoutes.post('/rebuild', requireManage(MODULE), async (c) => {
 
 spmaRoutes.get('/overview', requireModule(MODULE), async (c) => {
   const lineId    = c.req.query('line_id') ? parseInt(c.req.query('line_id')!, 10) : null;
+  // `date` = dal giorno (incluso) in poi; `date_to` (opzionale) = fino al giorno incluso
   const date      = c.req.query('date') ?? null;
+  const dateTo    = c.req.query('date_to') ?? null;
   const modelCode = c.req.query('model_code') ?? null;
 
   // Require at least one filter to avoid loading hundreds of rows at once
-  if (lineId == null && date == null && modelCode == null) {
+  if (lineId == null && date == null && dateTo == null && modelCode == null) {
     return c.json({ categories: [], rows: [], warning: 'Seleziona almeno una linea o una data' });
   }
 
@@ -220,7 +222,8 @@ spmaRoutes.get('/overview', requireModule(MODULE), async (c) => {
     FROM spma_commessa c
     WHERE TRUE
       ${lineId    != null ? db`AND c.line_id = ${lineId}`        : db``}
-      ${date      != null ? db`AND DATE(c.line_entry_ts AT TIME ZONE 'Europe/Rome') = ${date}` : db``}
+      ${date      != null ? db`AND DATE(c.line_entry_ts AT TIME ZONE 'Europe/Rome') >= ${date}` : db``}
+      ${dateTo    != null ? db`AND DATE(c.line_entry_ts AT TIME ZONE 'Europe/Rome') <= ${dateTo}` : db``}
       ${modelCode != null ? db`AND c.model_code = ${modelCode}`  : db``}
     ORDER BY c.line_entry_ts ASC NULLS LAST, c.id ASC
     LIMIT 500
@@ -250,11 +253,7 @@ spmaRoutes.get('/overview', requireModule(MODULE), async (c) => {
   const planRows = await db`
     SELECT p.commessa_id, p.component_category_id, p.planned_ts, p.status
     FROM spma_plan p
-    JOIN spma_commessa c ON c.id = p.commessa_id
-    WHERE TRUE
-      ${lineId    != null ? db`AND p.line_id = ${lineId}`           : db``}
-      ${date      != null ? db`AND DATE(c.line_entry_ts) = ${date}` : db``}
-      ${modelCode != null ? db`AND p.model_code = ${modelCode}`     : db``}
+    WHERE p.commessa_id = ANY(${commesse.map(cm => Number(cm.id))})
   `;
   const planMap = new Map<string, { planned_ts: unknown; status: string }>();
   for (const p of planRows) {

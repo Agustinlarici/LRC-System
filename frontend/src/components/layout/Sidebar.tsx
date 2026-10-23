@@ -75,6 +75,8 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/produzione':              'programma_produzione',
   '/hr':                      'hr',
   '/hr/dipendenti':           'hr',
+  '/hr/scadenze':             'hr',
+  '/hr/documenti':            'hr',
   '/hr/organigramma':         'hr',
   '/hr/analisi':              'hr',
   '/hr/evoluzione':           'hr',

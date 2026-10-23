@@ -131,6 +131,7 @@ export default function SpmaPage() {
   const [loading,    setLoading]    = useState(false);
   const [lineId,     setLineId]     = useState('');
   const [date,       setDate]       = useState(() => new Date().toISOString().slice(0, 10));
+  const [dateTo,     setDateTo]     = useState('');
   const [error,      setError]      = useState<string | null>(null);
 
   useEffect(() => {
@@ -143,6 +144,7 @@ export default function SpmaPage() {
       const params = new URLSearchParams();
       if (lineId) params.set('line_id', lineId);
       if (date)   params.set('date', date);
+      if (dateTo) params.set('date_to', dateTo);
       const data = await api.get<{ categories: SpmaCategory[]; rows: SpmaOverviewRow[] }>(
         `/api/spma/overview?${params}`
       );
@@ -153,7 +155,7 @@ export default function SpmaPage() {
     } finally {
       setLoading(false);
     }
-  }, [lineId, date]);
+  }, [lineId, date, dateTo]);
 
   // Auto-load when filters change
   useEffect(() => { load(); }, [load]);
@@ -198,6 +200,14 @@ export default function SpmaPage() {
           type="date"
           value={date}
           onChange={e => setDate(e.target.value)}
+          title="Dal giorno (incluso)"
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <input
+          type="date"
+          value={dateTo}
+          onChange={e => setDateTo(e.target.value)}
+          title="Fino al giorno (incluso) — vuoto = nessun limite"
           className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <button onClick={load}
