@@ -83,6 +83,7 @@ export default function EmployeeDetailPage() {
   const [notFound, setNotFound] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState('');
+  const [photoZoom, setPhotoZoom] = useState(false);
 
   const isDirectCapo = employee != null && user != null &&
     allEmployees.some(e => e.id === employee.capo_id && e.user_id === user.id);
@@ -142,6 +143,19 @@ export default function EmployeeDetailPage() {
 
   return (
     <div className="space-y-5">
+      {photoZoom && employee.photo_version && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 cursor-zoom-out" onClick={() => setPhotoZoom(false)}>
+          <button type="button" onClick={() => setPhotoZoom(false)} aria-label="Chiudi"
+            className="absolute top-4 right-4 text-white/80 hover:text-white text-3xl leading-none w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10">×</button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`${BACKEND}/api/hr/employees/${employee.id}/photo?v=${employee.photo_version}`}
+            alt={`${employee.cognome} ${employee.nome}`}
+            className="max-w-full max-h-full rounded-lg shadow-2xl object-contain"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <Link href="/hr/dipendenti" className="btn-secondary text-sm">← Torna alla lista</Link>
         {canEditLimited && <button onClick={() => setShowEdit(true)} className="btn-primary text-sm">Modifica</button>}
@@ -149,8 +163,15 @@ export default function EmployeeDetailPage() {
 
       <div className="flex items-center gap-4 flex-wrap">
         <div className="flex flex-col items-center gap-1">
-          <EmployeeAvatar id={employee.id} nome={employee.nome} cognome={employee.cognome} photoVersion={employee.photo_version}
-            className="w-24 h-24 text-2xl" background="#9ca3af" />
+          {employee.photo_version ? (
+            <button type="button" onClick={() => setPhotoZoom(true)} title="Ingrandisci foto" className="rounded-full cursor-zoom-in">
+              <EmployeeAvatar id={employee.id} nome={employee.nome} cognome={employee.cognome} photoVersion={employee.photo_version}
+                className="w-24 h-24 text-2xl" background="#9ca3af" />
+            </button>
+          ) : (
+            <EmployeeAvatar id={employee.id} nome={employee.nome} cognome={employee.cognome} photoVersion={employee.photo_version}
+              className="w-24 h-24 text-2xl" background="#9ca3af" />
+          )}
           {manage && (
             <div className="flex items-center gap-2 text-xs">
               <label className={`text-blue-600 hover:underline cursor-pointer ${photoBusy ? 'opacity-50 pointer-events-none' : ''}`}>

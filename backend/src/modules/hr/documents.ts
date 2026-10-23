@@ -80,6 +80,17 @@ const PLACEHOLDER_KEYS = new Set(PLACEHOLDERS.map(p => p.key));
 const SALARY_KEYS = new Set(PLACEHOLDERS.filter(p => p.group === 'retribuzione').map(p => p.key));
 const EVENT_KEYS = PLACEHOLDERS.filter(p => p.group === 'evento').map(p => p.key);
 
+// Segnaposto presenti nel modello ma fuori catalogo (es. {comune_residenza}): non hanno
+// una fonte nel sistema, quindi si chiedono all'utente al momento di generare.
+function customKeys(docPlaceholders: string[]): string[] {
+  return docPlaceholders.filter(p => !PLACEHOLDER_KEYS.has(p));
+}
+
+function humanizeKey(key: string): string {
+  const t = key.replace(/_/g, ' ').trim();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 // Coppia (precedente, nuovo) → tipo evento della timeline da cui precompilarla
 const EVENT_PAIRS: { type: string; from: string; to: string }[] = [
   { type: 'cambio_mansione', from: 'mansione_precedente', to: 'mansione_nuova' },
@@ -419,7 +430,10 @@ hrDocumentRoutes.get('/:id/preview/:employeeId', requireManage('hr'), async (c) 
   const { values } = await buildValues(employeeId, eventId, c.get('user'), needsSalary);
   const editable = EVENT_KEYS.filter(k => doc.placeholders.includes(k));
   return c.json({
-    editable: editable.map(k => ({ key: k, label: PLACEHOLDERS.find(p => p.key === k)!.label, value: values[k] ?? '' })),
+    editable: [
+      ...editable.map(k => ({ key: k, label: PLACEHOLDERS.find(p => p.key === k)!.label, value: values[k] ?? '' })),
+      ...customKeys(doc.placeholders).map(k => ({ key: k, label: humanizeKey(k), value: '' })),
+    ],
   });
 });
 
@@ -432,8 +446,9 @@ hrDocumentRoutes.post('/:id/generate', requireManage('hr'), async (c) => {
   const needsSalary = doc.placeholders.some(p => SALARY_KEYS.has(p));
   const { values, employee } = await buildValues(body.employee_id, body.event_id, user, needsSalary);
 
+  const custom = new Set(customKeys(doc.placeholders));
   for (const [k, val] of Object.entries(body.values ?? {})) {
-    if (EVENT_KEYS.includes(k)) values[k] = val.trim();
+    if (EVENT_KEYS.includes(k) || custom.has(k)) values[k] = val.trim();
   }
   // Un valore vuoto resta una riga ________ da compilare a mano, mai un buco muto nel testo
   const data = Object.fromEntries(Object.entries(values).map(([k, val]) => [k, val || BLANK]));

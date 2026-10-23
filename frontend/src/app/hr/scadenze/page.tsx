@@ -215,32 +215,34 @@ export default function ScadenzePage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-lg font-medium text-gray-900">Scadenze</h1>        </div>
+          <h1 className="text-lg font-medium text-gray-900">Scadenze</h1>
+          <p className="text-xs text-gray-400 mt-0.5">Contratti in scadenza: chi è in avviso o già scaduto, per regola</p>
+        </div>
         {manage && <button onClick={() => setShowRules(true)} className="btn-secondary text-sm">Gestisci regole di avviso</button>}
       </div>
 
-      <div className="flex flex-wrap items-stretch gap-2">
-        <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5">
-          <span className="text-xs font-medium text-amber-700">In avviso</span>
-          <span className="text-base font-semibold text-amber-700">{counts.avviso}</span>
+      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-amber-700">In avviso</p>
+          <p className="text-3xl font-semibold text-amber-700 leading-tight mt-1">{counts.avviso}</p>
         </div>
-        <div className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5">
-          <span className="text-xs font-medium text-red-700">Scadute</span>
-          <span className="text-base font-semibold text-red-700">{counts.scadute}</span>
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-red-700">Scadute</p>
+          <p className="text-3xl font-semibold text-red-700 leading-tight mt-1">{counts.scadute}</p>
         </div>
         {ruleCards.map(({ rule, avviso, scadute }) => (
           <div
             key={rule.id}
-            className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-1.5"
+            className="rounded-xl border border-gray-200 bg-white px-4 py-3 col-span-2 lg:col-span-1"
             title={`${ruleDescription(rule)} · avviso a ${rule.giorni_avviso} giorni`}
           >
-            <div>
-              <p className="text-xs font-medium text-gray-700 whitespace-nowrap">{rule.label || ruleDescription(rule)}</p>
-              <p className="text-[10px] text-gray-400">{rule.giorni_avviso} giorni</p>
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="text-sm font-medium text-gray-800 truncate">{rule.label || ruleDescription(rule)}</p>
+              <p className="text-[11px] text-gray-400 whitespace-nowrap">{rule.giorni_avviso} giorni</p>
             </div>
-            <div className="flex items-center gap-1">
-              <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 whitespace-nowrap">{avviso} <span className="font-normal">in avviso</span></span>
-              <span className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 whitespace-nowrap">{scadute} <span className="font-normal">scadute</span></span>
+            <div className="mt-2 space-y-1 text-xs text-gray-600">
+              <p className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-amber-400" /><b className="font-semibold text-gray-800">{avviso}</b> in avviso</p>
+              <p className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-500" /><b className="font-semibold text-gray-800">{scadute}</b> scadute</p>
             </div>
           </div>
         ))}
