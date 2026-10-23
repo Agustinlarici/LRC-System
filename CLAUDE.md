@@ -12,7 +12,9 @@ L'utente scrive in spagnolo: rispondere in spagnolo, in modo breve e concreto.
 2. Lavorare su un **branch nuovo** (mai commit diretti su `dev`).
 3. Prima di proporre il commit, eseguire i controlli (sezione sotto) e dire all'utente l'esito.
 4. Commit + push del branch + **PR verso `dev`**. La CI deve essere verde prima del merge.
-5. Il merge lo fa l'utente. Il deploy lo fa l'utente sul server con `./deploy.sh update`.
+5. Merge: solo quando l'utente lo chiede esplicitamente (es. "mergealo") **e** tutti i
+   controlli della CI sono verdi; se uno è rosso, non fare il merge e spiegare cosa fallisce.
+   Il deploy lo fa sempre l'utente sul server con `./deploy.sh update`.
 
 Non eseguire mai comandi contro il server di produzione e non suggerire `git pull` o
 `docker compose up` a mano sul server: solo `./deploy.sh update` / `./deploy.sh rollback`.
