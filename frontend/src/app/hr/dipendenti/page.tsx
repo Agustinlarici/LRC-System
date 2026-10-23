@@ -161,20 +161,14 @@ export default function DipendentiPage() {
   // Ricarica leggera: solo l'elenco dipendenti, senza far sparire la tabella dietro
   // "Caricamento…" — usata dopo azioni rapide (etichetta, avviso) che non toccano i cataloghi.
   const refreshEmployees = useCallback(async () => {
-    const params = new URLSearchParams();
-    if (repartoFilter) params.set('reparto_id', String(repartoFilter));
-    if (statoFilter) params.set('stato', statoFilter);
-    const res = await fetch(`${BACKEND}/api/hr/employees?${params}`, { credentials: 'include' });
+    const res = await fetch(`${BACKEND}/api/hr/employees`, { credentials: 'include' });
     if (res.ok) setEmployees(await res.json());
-  }, [repartoFilter, statoFilter]);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams();
-    if (repartoFilter) params.set('reparto_id', String(repartoFilter));
-    if (statoFilter) params.set('stato', statoFilter);
     const [empRes, depRes, plantRes, coRes, tagRes] = await Promise.all([
-      fetch(`${BACKEND}/api/hr/employees?${params}`, { credentials: 'include' }),
+      fetch(`${BACKEND}/api/hr/employees`, { credentials: 'include' }),
       fetch(`${BACKEND}/api/hr/departments`, { credentials: 'include' }),
       fetch(`${BACKEND}/api/hr/plants`, { credentials: 'include' }),
       fetch(`${BACKEND}/api/hr/contract-companies`, { credentials: 'include' }),
@@ -186,7 +180,7 @@ export default function DipendentiPage() {
     if (coRes.ok) setCompanies(await coRes.json());
     if (tagRes.ok) setTags(await tagRes.json());
     setLoading(false);
-  }, [repartoFilter, statoFilter]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -199,35 +193,57 @@ export default function DipendentiPage() {
     setFunzioneFilter(''); setRepartoFilter(''); setPlantFilter(''); setSocietaFilter('');
     setTagFilter(''); setInProvaFilter(''); setStatoFilter('attivo');
   }
-  const funzioni = Array.from(new Set(employees.map(e => e.funzione_aziendale).filter((f): f is string => !!f))).sort((a, b) => a.localeCompare(b));
-  const categorie = Array.from(new Set(employees.map(e => e.categoria).filter((f): f is string => !!f))).sort((a, b) => a.localeCompare(b));
-  const distinctOf = (vals: (string | null)[]) => Array.from(new Set(vals.filter((v): v is string => !!v))).sort((a, b) => a.localeCompare(b));
-  const nazionalita = distinctOf(employees.map(e => e.nazionalita));
-  const mansioni = distinctOf(employees.map(e => e.mansione));
-  const livelli = distinctOf(employees.map(e => e.livello));
-  const responsabili = distinctOf(employees.map(e => e.capo_nome));
-  const tipiContratto = Array.from(new Set(employees.map(e => e.tipo_contratto).filter((f): f is string => !!f))).sort((a, b) => a.localeCompare(b));
-  const matches = (e: HrEmployee, skipSocieta = false) => {
+  // `skip` esclude un filtro dal confronto: serve a calcolare le opzioni di quel menu
+  // in base a tutti gli ALTRI filtri attivi.
+  type FilterKey = 'sesso' | 'categoria' | 'societa' | 'nazionalita' | 'funzione' | 'reparto' | 'plant'
+    | 'mansione' | 'livello' | 'resp' | 'tipoContratto' | 'tag' | 'inProva' | 'stato';
+  const matches = (e: HrEmployee, skip?: FilterKey) => {
     const has = (v: string | null | undefined, q: string) => !q.trim() || (v ?? '').toLowerCase().includes(q.trim().toLowerCase());
     // Nome e cognome in un solo filtro: ogni parola digitata deve comparire, in qualunque ordine
     const fullName = `${e.cognome} ${e.nome}`.toLowerCase();
     return fNominativo.trim().toLowerCase().split(/\s+/).filter(Boolean).every(w => fullName.includes(w))
       && has(e.matricola, fMatricola)
-      && (!fMansione || e.mansione === fMansione) && (!fResp || e.capo_nome === fResp)
-      && (!fNazionalita || e.nazionalita === fNazionalita) && (!fLivello || e.livello === fLivello)
-      && (!fSesso || e.sesso === fSesso)
-      && (!fCategoria || e.categoria === fCategoria)
-      && (!fTipoContratto || e.tipo_contratto === fTipoContratto)
-      && (!plantFilter || (e.plant_ids ?? []).includes(Number(plantFilter)))
-      && (skipSocieta || !societaFilter || e.contract_company_id === Number(societaFilter))
-      && (!tagFilter || e.tag_id === Number(tagFilter))
-      && (!inProvaFilter || (inProvaFilter === 'si' ? e.in_prova : !e.in_prova))
-      && (!funzioneFilter || (e.funzione_aziendale ?? '') === funzioneFilter);
+      && (skip === 'mansione' || !fMansione || e.mansione === fMansione)
+      && (skip === 'resp' || !fResp || e.capo_nome === fResp)
+      && (skip === 'nazionalita' || !fNazionalita || e.nazionalita === fNazionalita)
+      && (skip === 'livello' || !fLivello || e.livello === fLivello)
+      && (skip === 'sesso' || !fSesso || e.sesso === fSesso)
+      && (skip === 'categoria' || !fCategoria || e.categoria === fCategoria)
+      && (skip === 'tipoContratto' || !fTipoContratto || e.tipo_contratto === fTipoContratto)
+      && (skip === 'plant' || !plantFilter || (e.plant_ids ?? []).includes(Number(plantFilter)))
+      && (skip === 'societa' || !societaFilter || e.contract_company_id === Number(societaFilter))
+      && (skip === 'tag' || !tagFilter || e.tag_id === Number(tagFilter))
+      && (skip === 'inProva' || !inProvaFilter || (inProvaFilter === 'si' ? e.in_prova : !e.in_prova))
+      && (skip === 'funzione' || !funzioneFilter || (e.funzione_aziendale ?? '') === funzioneFilter)
+      && (skip === 'reparto' || !repartoFilter || e.reparto_id === Number(repartoFilter))
+      && (skip === 'stato' || !statoFilter || e.stato === statoFilter);
   };
   const visible = employees.filter(e => matches(e));
-  // Società offerte nel filtro: solo quelle con almeno un dipendente tra gli altri filtri attivi
-  const societaDisponibili = new Set(employees.filter(e => matches(e, true)).map(e => e.contract_company_id));
+  // Opzioni di ogni menu: solo quelle con almeno un dipendente tra gli altri filtri attivi
+  // (il valore già selezionato resta sempre, così si può togliere).
+  const pool = (skip: FilterKey) => employees.filter(e => matches(e, skip));
+  const distinctOf = (list: HrEmployee[], pick: (e: HrEmployee) => string | null | undefined, selected: string) =>
+    Array.from(new Set([...list.map(pick).filter((v): v is string => !!v), ...(selected ? [selected] : [])])).sort((a, b) => a.localeCompare(b));
+  const categorie = distinctOf(pool('categoria'), e => e.categoria, fCategoria);
+  const nazionalita = distinctOf(pool('nazionalita'), e => e.nazionalita, fNazionalita);
+  const funzioni = distinctOf(pool('funzione'), e => e.funzione_aziendale, funzioneFilter);
+  const mansioni = distinctOf(pool('mansione'), e => e.mansione, fMansione);
+  const livelli = distinctOf(pool('livello'), e => e.livello, fLivello);
+  const responsabili = distinctOf(pool('resp'), e => e.capo_nome, fResp);
+  const tipiContratto = distinctOf(pool('tipoContratto'), e => e.tipo_contratto, fTipoContratto);
+  const sessoDisponibili = new Set(pool('sesso').map(e => e.sesso));
+  const societaDisponibili = new Set(pool('societa').map(e => e.contract_company_id));
   const companiesShown = companies.filter(c => societaDisponibili.has(c.id) || c.id === Number(societaFilter));
+  const repartiDisponibili = new Set(pool('reparto').map(e => e.reparto_id));
+  const departmentsShown = departments.filter(d => repartiDisponibili.has(d.id) || d.id === Number(repartoFilter));
+  const plantDisponibili = new Set(pool('plant').flatMap(e => e.plant_ids ?? []));
+  const plantsShown = plants.filter(p => plantDisponibili.has(p.id) || p.id === Number(plantFilter));
+  const tagDisponibili = new Set(pool('tag').map(e => e.tag_id));
+  const tagsShown = tags.filter(t => tagDisponibili.has(t.id) || t.id === Number(tagFilter));
+  const provaPool = pool('inProva');
+  const provaSi = provaPool.some(e => e.in_prova), provaNo = provaPool.some(e => !e.in_prova);
+  const statiDisponibili = new Set(pool('stato').map(e => e.stato));
+  const statiShown = STATO_FILTER_OPTIONS.filter(o => statiDisponibili.has(o.value as HrEmployee['stato']) || o.value === statoFilter);
 
   function exportExcel() {
     const rows = visible.map(e => ({
@@ -616,8 +632,8 @@ export default function DipendentiPage() {
           <input value={fMatricola} onChange={e => setFMatricola(e.target.value)} placeholder="Matricola" className="input text-sm min-w-0" />
           <select value={fSesso} onChange={e => setFSesso(e.target.value)} className={`input text-sm min-w-0 ${fSesso ? '' : 'text-gray-400'}`}>
             <option value="">Sesso</option>
-            <option value="M" className="text-gray-900">M</option>
-            <option value="F" className="text-gray-900">F</option>
+            {(sessoDisponibili.has('M') || fSesso === 'M') && <option value="M" className="text-gray-900">M</option>}
+            {(sessoDisponibili.has('F') || fSesso === 'F') && <option value="F" className="text-gray-900">F</option>}
           </select>
           <select value={fCategoria} onChange={e => setFCategoria(e.target.value)} className={`input text-sm min-w-0 ${fCategoria ? '' : 'text-gray-400'}`}>
             <option value="">Categoria</option>
@@ -637,11 +653,11 @@ export default function DipendentiPage() {
           </select>
           <select value={repartoFilter} onChange={e => setRepartoFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${repartoFilter ? '' : 'text-gray-400'}`}>
             <option value="">Reparto</option>
-            {departments.map(d => <option key={d.id} value={d.id} className="text-gray-900">{d.name}</option>)}
+            {departmentsShown.map(d => <option key={d.id} value={d.id} className="text-gray-900">{d.name}</option>)}
           </select>
           <select value={plantFilter} onChange={e => setPlantFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${plantFilter ? '' : 'text-gray-400'}`}>
             <option value="">Plant</option>
-            {plants.map(p => <option key={p.id} value={p.id} className="text-gray-900">{p.name}</option>)}
+            {plantsShown.map(p => <option key={p.id} value={p.id} className="text-gray-900">{p.name}</option>)}
           </select>
           <select value={fMansione} onChange={e => setFMansione(e.target.value)} className={`input text-sm min-w-0 ${fMansione ? '' : 'text-gray-400'}`}>
             <option value="">Mansione</option>
@@ -661,16 +677,16 @@ export default function DipendentiPage() {
           </select>
           <select value={tagFilter} onChange={e => setTagFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${tagFilter ? '' : 'text-gray-400'}`}>
             <option value="">Etichetta</option>
-            {tags.map(t => <option key={t.id} value={t.id} className="text-gray-900">{t.name}</option>)}
+            {tagsShown.map(t => <option key={t.id} value={t.id} className="text-gray-900">{t.name}</option>)}
           </select>
           <select value={inProvaFilter} onChange={e => setInProvaFilter(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${inProvaFilter ? '' : 'text-gray-400'}`}>
             <option value="">In prova</option>
-            <option value="si" className="text-gray-900">Sì</option>
-            <option value="no" className="text-gray-900">No</option>
+            {(provaSi || inProvaFilter === 'si') && <option value="si" className="text-gray-900">Sì</option>}
+            {(provaNo || inProvaFilter === 'no') && <option value="no" className="text-gray-900">No</option>}
           </select>
           <select value={statoFilter} onChange={e => setStatoFilter(e.target.value)} className={`input text-sm min-w-0 ${statoFilter ? '' : 'text-gray-400'}`}>
             <option value="">Stato</option>
-            {STATO_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value} className="text-gray-900">{o.label}</option>)}
+            {statiShown.map(o => <option key={o.value} value={o.value} className="text-gray-900">{o.label}</option>)}
           </select>
         </div>
         )}
