@@ -240,9 +240,15 @@ export default function ScadenzePage() {
               <p className="text-sm font-medium text-gray-800 truncate">{rule.label || ruleDescription(rule)}</p>
               <p className="text-[11px] text-gray-400 whitespace-nowrap">{rule.giorni_avviso} giorni</p>
             </div>
-            <div className="mt-2 space-y-1 text-xs text-gray-600">
-              <p className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-amber-400" /><b className="font-semibold text-gray-800">{avviso}</b> in avviso</p>
-              <p className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-500" /><b className="font-semibold text-gray-800">{scadute}</b> scadute</p>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-3xl font-semibold leading-none text-amber-600">{avviso}</p>
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-gray-500"><span className="w-2 h-2 rounded-full bg-amber-400" />in avviso</p>
+              </div>
+              <div>
+                <p className="text-3xl font-semibold leading-none text-red-600">{scadute}</p>
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-gray-500"><span className="w-2 h-2 rounded-full bg-red-500" />scadute</p>
+              </div>
             </div>
           </div>
         ))}
