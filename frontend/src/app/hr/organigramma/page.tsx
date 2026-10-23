@@ -246,6 +246,7 @@ export default function OrganigrammaPage() {
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [photoZoom, setPhotoZoom] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pairs, setPairs] = useState<HrCapoPair[]>([]);
 
@@ -392,6 +393,19 @@ export default function OrganigrammaPage() {
   return (
     <div className="space-y-4">
       <style>{`@media print { @page { size: A4 landscape; margin: 8mm; } }`}</style>
+      {photoZoom && selected?.photo_version && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 cursor-zoom-out d-print-none" onClick={() => setPhotoZoom(false)}>
+          <button type="button" onClick={() => setPhotoZoom(false)} aria-label="Chiudi"
+            className="absolute top-4 right-4 text-white/80 hover:text-white text-3xl leading-none w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/10">×</button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`${BACKEND}/api/hr/employees/${selected.id}/photo?v=${selected.photo_version}`}
+            alt={`${selected.cognome} ${selected.nome}`}
+            className="max-w-full max-h-full rounded-lg shadow-2xl object-contain"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
       <div className="d-print-none flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-lg font-medium text-gray-900">Organigramma</h1>
@@ -469,7 +483,13 @@ export default function OrganigrammaPage() {
             </div>
             <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <EmployeeAvatar id={selected.id} nome={selected.nome} cognome={selected.cognome} photoVersion={selected.photo_version} className="w-14 h-14 text-base" background={colorFor(selected)} />
+                {selected.photo_version ? (
+                  <button type="button" onClick={() => setPhotoZoom(true)} title="Ingrandisci foto" className="rounded-full cursor-zoom-in shrink-0">
+                    <EmployeeAvatar id={selected.id} nome={selected.nome} cognome={selected.cognome} photoVersion={selected.photo_version} className="w-14 h-14 text-base" background={colorFor(selected)} />
+                  </button>
+                ) : (
+                  <EmployeeAvatar id={selected.id} nome={selected.nome} cognome={selected.cognome} photoVersion={selected.photo_version} className="w-14 h-14 text-base" background={colorFor(selected)} />
+                )}
                 <div>
                   <p className="text-base font-medium text-gray-900">{selected.cognome} {selected.nome}</p>
                   <p className="text-xs text-gray-400">{selected.mansione ?? 'Mansione non specificata'} {selected.funzione_aziendale ? `· ${selected.funzione_aziendale}` : ''}</p>
