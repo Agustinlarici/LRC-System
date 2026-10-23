@@ -239,7 +239,7 @@ function ConfigModal({ docs, onChanged, onClose }: { docs: HrDocument[]; onChang
     if (!res.ok) { toast.error(await errorMessage(res, 'Errore durante il caricamento')); return; }
     const out = await res.json();
     if (out.unknown_placeholders?.length) {
-      toast.error(`Segnaposto non riconosciuti: ${out.unknown_placeholders.map((p: string) => `{${p}}`).join(', ')} — verranno lasciati vuoti`);
+      toast.success(`File caricato. Segnaposto personalizzati: ${out.unknown_placeholders.map((p: string) => `{${p}}`).join(', ')} — verranno chiesti quando generi il documento`);
     } else {
       toast.success('File caricato');
     }
@@ -419,7 +419,7 @@ function GenerateModal({ doc, onClose }: { doc: HrDocument; onClose: () => void 
       <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto space-y-3" onClick={e => e.stopPropagation()}>
         <div>
           <p className="text-sm font-semibold text-gray-700">Genera: {doc.name}</p>
-          <p className="text-xs text-gray-400 mt-0.5">Scegli il dipendente. I campi vuoti restano come riga ________ da riempire a mano.</p>
+          <p className="text-xs text-gray-400 mt-0.5">Scegli il dipendente. Puoi completare i campi qui sotto; quelli lasciati vuoti restano come riga ________ da riempire a mano.</p>
         </div>
 
         <div>
