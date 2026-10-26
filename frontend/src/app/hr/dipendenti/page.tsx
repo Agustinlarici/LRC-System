@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import * as XLSX from 'xlsx';
 import { useAuth } from '@/lib/auth';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
-import { ImportExcelButton, type ImportResult } from '@/components/ui/ImportExcelButton';
+import { ImportExcelButton, type ImportExcelHandle, type ImportResult } from '@/components/ui/ImportExcelButton';
 import { NewEmployeeModal } from './NewEmployeeModal';
 import { TagsSettingsModal } from './TagsSettingsModal';
 import { usePromptDialog, useChoiceDialog, SKIP_ALL } from '@/components/ui/PromptDialog';
@@ -37,9 +37,14 @@ const STATO_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'cessato', label: 'Cessato' },
 ];
 
+// Colonna ⚠ (avvisi dell'import) in testa, solo se almeno una riga in elenco ne ha uno
+const gridCols = (warn: boolean) => (warn ? '24px ' : '') + GRID_COLS;
+// Larghezza minima della tabella: somma delle colonne, così righe e intestazione hanno lo stesso sfondo
+const TABLE_MIN_WIDTH = 3100;
 const GRID_COLS = '28px minmax(130px,1fr) minmax(110px,1fr) 90px 56px minmax(100px,1fr) minmax(120px,1fr) '
-  + 'minmax(100px,1fr) minmax(120px,1fr) minmax(110px,1fr) minmax(110px,1fr) minmax(120px,1fr) 80px '
-  + 'minmax(120px,1fr) minmax(110px,1fr) 100px 100px 68px 118px 32px';
+  + 'minmax(100px,1fr) 92px minmax(170px,1.2fr) minmax(170px,1.2fr) minmax(110px,1fr) 60px 64px '
+  + 'minmax(120px,1fr) minmax(110px,1fr) minmax(110px,1fr) minmax(120px,1fr) 80px '
+  + 'minmax(120px,1fr) minmax(110px,1fr) minmax(120px,1fr) 100px 100px 68px 118px';
 
 // Intestazioni esattamente come nell'Excel STR — il parser CSV le trasforma in
 // minuscolo con underscore al posto degli spazi (mantiene apostrofi).
@@ -47,6 +52,8 @@ const IMPORT_COLUMNS = [
   'COGNOME E NOME', 'MATRICOLA', 'CODICE FISCALE', 'SESSO', 'CATEGORIA', "SOCIETA' CONTRATTO", "NAZIONALITA'",
   'MANSIONE (MICRO)', 'LIVELLO', 'REPARTO', 'PLANT', 'RESPONSABILE', 'MANAGER', 'FUNZIONE AZIENDALE',
   'DATA ASSUNZIONE', 'DATA CESSAZIONE', 'TIPOLOGIA CONTRATTO', "MATERNITA'", 'IN PROVA',
+  // facoltative: se mancano o sono vuote non cancellano quanto già inserito nella scheda
+  'DATA NASCITA', 'EMAIL', 'INDIRIZZO', 'CITTA', 'PROVINCIA', 'CAP', 'GRUPPO ORARIO',
 ];
 
 // Valori riconosciuti come "sì" nella colonna IN PROVA (case-insensitive)
@@ -101,6 +108,8 @@ export default function DipendentiPage() {
   const [showNew,       setShowNew]       = useState(false);
   const [showTags,      setShowTags]      = useState(false);
   const [tagMenuFor,    setTagMenuFor]    = useState<number | null>(null);
+  const [showMore,      setShowMore]      = useState(false);
+  const importRef = useRef<ImportExcelHandle>(null);
   const [tagMenuPos,    setTagMenuPos]    = useState<{ top: number; left: number } | null>(null);
   const [showMatricole, setShowMatricole] = useState(false);
   const [matricoleBands, setMatricoleBands] = useState<{ label: string; from: number; to: number; last: number | null; next: number | null; count: number }[] | null>(null);
@@ -219,6 +228,7 @@ export default function DipendentiPage() {
       && (skip === 'stato' || !statoFilter || e.stato === statoFilter);
   };
   const visible = employees.filter(e => matches(e));
+  const showWarnCol = visible.some(e => e.import_warning);
   // Opzioni di ogni menu: solo quelle con almeno un dipendente tra gli altri filtri attivi
   // (il valore già selezionato resta sempre, così si può togliere).
   const pool = (skip: FilterKey) => employees.filter(e => matches(e, skip));
@@ -249,9 +259,11 @@ export default function DipendentiPage() {
     const rows = visible.map(e => ({
       Cognome: e.cognome, Nome: e.nome, Matricola: e.matricola ?? '', Sesso: e.sesso ?? '',
       Categoria: e.categoria ?? '', Società: e.contract_company_name ?? '', Nazionalità: e.nazionalita ?? '',
+      'Data nascita': e.data_nascita?.slice(0, 10) ?? '', Email: e.email ?? '', Indirizzo: e.indirizzo ?? '',
+      Città: e.citta ?? '', Provincia: e.provincia ?? '', CAP: e.cap ?? '',
       Funzione: e.funzione_aziendale ?? '', Reparto: e.reparto_name ?? '', Plant: e.plant_name ?? '',
       Mansione: e.mansione ?? '', Livello: e.livello ?? '', Responsabile: e.capo_nome ?? '',
-      'Tipo contratto': e.tipo_contratto ?? '', Assunzione: e.data_assunzione?.slice(0, 10) ?? '',
+      'Tipo contratto': e.tipo_contratto ?? '', 'Gruppo orario': e.gruppo_orario ?? '', Assunzione: e.data_assunzione?.slice(0, 10) ?? '',
       Cessazione: e.data_cessazione?.slice(0, 10) ?? '', 'In prova': e.in_prova ? 'Sì' : '',
       Stato: STATO_LABEL[e.stato] ?? e.stato,
     }));
@@ -278,7 +290,10 @@ export default function DipendentiPage() {
     if (res.ok) refreshEmployees();
   }
 
-  async function importRows(rows: Record<string, string>[]): Promise<ImportResult> {
+  async function importRows(rows: Record<string, string>[], variant?: string): Promise<ImportResult> {
+    // 'storico': i cambiamenti compaiono nella timeline con la data di oggi.
+    // 'sostituisci': i dati si aggiornano senza lasciare eventi, come se fossero sempre stati così.
+    const historyQuery = variant === 'sostituisci' ? '?storico=0' : '';
     let inserted = 0, updated = 0, skipped = 0, errors = 0, warnings = 0;
     const skippedRows: string[] = [];
     const today = new Date().toISOString().slice(0, 10);
@@ -325,7 +340,7 @@ export default function DipendentiPage() {
     }
 
     async function patch(id: number, body: Record<string, unknown>) {
-      return fetch(`${BACKEND}/api/hr/employees/${id}`, {
+      return fetch(`${BACKEND}/api/hr/employees/${id}${historyQuery}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify(body),
       });
@@ -388,9 +403,23 @@ export default function DipendentiPage() {
       // vuota) non cancella un valore già inserito a mano nella scheda.
       const cf = (row['codice_fiscale'] ?? '').replace(/\s+/g, '').toUpperCase();
 
+      // Anagrafica facoltativa: solo se presente nella riga (stesso criterio del codice fiscale)
+      const optional = (v: string | undefined) => (v ?? '').trim();
+      const dataNascita = parseItalianDate(row['data_nascita']);
+      const email = optional(row['email']);
+      const extra: Record<string, string> = {};
+      for (const [field, value] of [
+        ['indirizzo', optional(row['indirizzo'])], ['citta', optional(row['citta'] ?? row["citta'"])],
+        ['provincia', optional(row['provincia']).toUpperCase()], ['cap', optional(row['cap'])],
+        ['gruppo_orario', optional(row['gruppo_orario'])],
+        ...(dataNascita ? [['data_nascita', dataNascita]] : []),
+        ...(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? [['email', email]] : []),
+      ] as [string, string][]) if (value) extra[field] = value;
+
       const fields = {
         matricola, nome, cognome,
         ...(cf ? { codice_fiscale: cf } : {}),
+        ...extra,
         sesso: row['sesso'] || null,
         categoria: row['categoria'] || null,
         nazionalita: row["nazionalita'"] || null,
@@ -590,7 +619,7 @@ export default function DipendentiPage() {
   }
 
   return (
-    <div className="space-y-4" onClick={() => { if (tagMenuFor !== null) setTagMenuFor(null); }}>
+    <div className="space-y-4" onClick={() => { if (tagMenuFor !== null) setTagMenuFor(null); if (showMore) setShowMore(false); }}>
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-medium text-gray-900">Dipendenti</h1>
@@ -601,17 +630,53 @@ export default function DipendentiPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={exportExcel} disabled={loading || visible.length === 0} className="btn-secondary text-sm">Esporta Excel</button>
         {manage && (
           <>
-            <ImportExcelButton columns={IMPORT_COLUMNS} processRows={importRows} onDone={load} label="Importa da Excel" iconOnly />
             <button onClick={openMatricole} className="btn-secondary text-sm">Prossima matricola</button>
             <button onClick={() => setShowTags(true)} className="btn-secondary text-sm">Etichette</button>
             <button onClick={() => setShowNew(true)} className="btn-primary text-sm">+ Nuovo dipendente</button>
           </>
         )}
+          <div className="relative">
+            <button
+              type="button" aria-haspopup="menu" aria-expanded={showMore} title="Altre azioni"
+              onClick={ev => { ev.stopPropagation(); setShowMore(v => !v); }}
+              className="btn-secondary text-sm flex items-center gap-1"
+            >
+              Altro
+              <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" /></svg>
+            </button>
+            {showMore && (
+              <div role="menu" className="absolute right-0 top-full mt-1 z-30 w-72 bg-white border border-gray-200 rounded-lg shadow-lg py-1 text-sm">
+                <button type="button" role="menuitem" disabled={loading || visible.length === 0}
+                  onClick={() => { setShowMore(false); exportExcel(); }}
+                  className="w-full text-left px-3 py-1.5 hover:bg-gray-50 disabled:text-gray-300 disabled:hover:bg-transparent">Esporta Excel</button>
+                {manage && (
+                  <>
+                    <button type="button" role="menuitem"
+                      title={`Da Excel: File → Salva con nome → CSV UTF-8. Colonne attese: ${IMPORT_COLUMNS.join(', ')}`}
+                      onClick={() => { setShowMore(false); importRef.current?.open('storico'); }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-gray-50">
+                      Importa da Excel — registra i cambiamenti
+                    </button>
+                    <button type="button" role="menuitem"
+                      title={`Da Excel: File → Salva con nome → CSV UTF-8. Colonne attese: ${IMPORT_COLUMNS.join(', ')}`}
+                      onClick={() => { setShowMore(false); importRef.current?.open('sostituisci'); }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-gray-50">
+                      Importa da Excel — sostituisci tutto
+                    </button>
+                    <button type="button" role="menuitem"
+                      onClick={() => { setShowMore(false); router.push('/hr/dipendenti/foto-massiva'); }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-gray-50">Carica foto</button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {manage && <ImportExcelButton ref={importRef} hideButton columns={IMPORT_COLUMNS} processRows={importRows} onDone={load} />}
 
       <div className="card p-0 overflow-hidden">
         <div className={`flex items-center justify-between px-4 py-2.5 bg-gray-50 ${showFilters ? 'border-b border-gray-100' : ''}`}>
@@ -695,17 +760,20 @@ export default function DipendentiPage() {
       <div ref={tableRef} className="card p-0 overflow-hidden">
         <div ref={headerScrollRef} className="overflow-x-hidden">
           <div className="grid gap-x-3 px-4 py-2.5 bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-400 uppercase tracking-wide"
-            style={{ gridTemplateColumns: GRID_COLS, minWidth: 1700 }}>
+            style={{ gridTemplateColumns: gridCols(showWarnCol), minWidth: TABLE_MIN_WIDTH }}>
+            {showWarnCol && <div />}
             <div />
             <div>Cognome</div><div>Nome</div><div>Matricola</div><div>Sesso</div><div>Categoria</div>
-            <div>Società</div><div>Nazionalità</div><div>Funzione</div><div>Reparto</div><div>Plant</div>
-            <div>Mansione</div><div>Livello</div><div>Responsabile</div><div>Tipo contratto</div>
+            <div>Società</div><div>Nazionalità</div>
+            <div>Data nascita</div><div>Email</div><div>Indirizzo</div><div>Città</div><div>Prov.</div><div>CAP</div>
+            <div>Funzione</div><div>Reparto</div><div>Plant</div>
+            <div>Mansione</div><div>Livello</div><div>Responsabile</div><div>Tipo contratto</div><div>Gruppo orario</div>
             <div>Assunzione</div><div>Cessazione</div><div className="text-center">Prova</div>
-            <div className="text-center">Stato</div><div />
+            <div className="text-center">Stato</div>
           </div>
         </div>
         <div ref={bodyScrollRef} onScroll={syncHeaderScroll} className="hr-table-scroll overflow-auto" style={{ maxHeight: bodyMaxHeight }}>
-        <div style={{ minWidth: 1700 }}>
+        <div style={{ minWidth: TABLE_MIN_WIDTH }}>
           {loading ? (
             <p className="text-sm text-gray-400 text-center py-12">Caricamento…</p>
           ) : visible.length === 0 ? (
@@ -721,8 +789,21 @@ export default function DipendentiPage() {
               }}
               onKeyDown={ev => { if (ev.key === 'Enter') router.push(`/hr/dipendenti/${e.id}`); }}
               className="relative z-0 grid gap-x-3 px-4 py-3 border-b border-gray-50 last:border-b-0 bg-white hover:bg-gray-50 transition-colors items-center cursor-pointer select-text"
-              style={{ gridTemplateColumns: GRID_COLS }}
+              style={{ gridTemplateColumns: gridCols(showWarnCol) }}
             >
+              {showWarnCol && (
+                <div className="text-center">
+                  {e.import_warning && (
+                    <button
+                      type="button" title={`${e.import_warning}${manage ? ' — clicca per segnare come risolto' : ''}`}
+                      onClick={ev => { if (!manage) return; ev.preventDefault(); ev.stopPropagation(); clearImportWarning(e.id); }}
+                      className="text-amber-500"
+                    >
+                      ⚠
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="relative">
                 <button
                   type="button"
@@ -761,6 +842,12 @@ export default function DipendentiPage() {
               <div className="text-sm text-gray-600 truncate">{e.categoria ?? '—'}</div>
               <div className="text-sm text-gray-600 truncate">{e.contract_company_name ?? '—'}</div>
               <div className="text-sm text-gray-600 truncate">{e.nazionalita ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.data_nascita?.slice(0, 10) ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate" title={e.email ?? undefined}>{e.email ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate" title={e.indirizzo ?? undefined}>{e.indirizzo ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.citta ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.provincia ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.cap ?? '—'}</div>
               <div className="text-sm text-gray-600 truncate">{e.funzione_aziendale ?? '—'}</div>
               <div className="text-sm text-gray-600 truncate">{e.reparto_name ?? '—'}</div>
               <div className="text-sm text-gray-600 truncate">{e.plant_name ?? '—'}</div>
@@ -768,22 +855,12 @@ export default function DipendentiPage() {
               <div className="text-sm text-gray-600 truncate">{e.livello ?? '—'}</div>
               <div className="text-sm text-gray-600 truncate">{e.capo_nome ?? '—'}</div>
               <div className="text-sm text-gray-600 truncate">{e.tipo_contratto ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate">{e.gruppo_orario ?? '—'}</div>
               <div className="text-sm text-gray-600 truncate">{e.data_assunzione?.slice(0, 10) ?? '—'}</div>
               <div className="text-sm text-gray-600 truncate">{e.data_cessazione?.slice(0, 10) ?? '—'}</div>
               <div className="text-center text-sm text-gray-600">{e.in_prova ? 'Sì' : '—'}</div>
               <div className="text-center">
                 <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${STATO_COLOR[e.stato]}`}>{STATO_LABEL[e.stato]}</span>
-              </div>
-              <div className="text-center">
-                {e.import_warning && (
-                  <button
-                    type="button" title={`${e.import_warning}${manage ? ' — clicca per segnare come risolto' : ''}`}
-                    onClick={ev => { if (!manage) return; ev.preventDefault(); ev.stopPropagation(); clearImportWarning(e.id); }}
-                    className="text-amber-500"
-                  >
-                    ⚠
-                  </button>
-                )}
               </div>
             </div>
           ))}

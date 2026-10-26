@@ -45,6 +45,8 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
     contract_company_id: employee.contract_company_id ? String(employee.contract_company_id) : '',
     capo_id: employee.capo_id ? String(employee.capo_id) : '',
     sesso: employee.sesso ?? '',
+    data_nascita: employee.data_nascita?.slice(0, 10) ?? '',
+    gruppo_orario: employee.gruppo_orario ?? '',
     nazionalita: employee.nazionalita ?? '',
     mansione: employee.mansione ?? '',
     livello: employee.livello ?? '',
@@ -59,6 +61,9 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
     telefono: employee.telefono ?? '',
     email: employee.email ?? '',
     indirizzo: employee.indirizzo ?? '',
+    citta: employee.citta ?? '',
+    provincia: employee.provincia ?? '',
+    cap: employee.cap ?? '',
     note: employee.note ?? '',
   });
   const [plantIds, setPlantIds] = useState<number[]>(employee.plant_ids ?? []);
@@ -106,7 +111,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
           capo_id: form.capo_id ? Number(form.capo_id) : null,
           data_cessazione: form.data_cessazione || null,
         }
-      : { telefono: form.telefono, email: form.email, indirizzo: form.indirizzo, note: form.note };
+      : { telefono: form.telefono, email: form.email, indirizzo: form.indirizzo, citta: form.citta, provincia: form.provincia, cap: form.cap, note: form.note };
 
     const res = await fetch(`${BACKEND}/api/hr/employees/${employee.id}`, {
       method: 'PATCH',
@@ -223,6 +228,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
                     <option value="F">F</option>
                   </select>
                 </div>
+                <div><label className="label">Data di nascita</label><input type="date" className="input" value={form.data_nascita} onChange={e => set('data_nascita', e.target.value)} /></div>
                 <div><label className="label">Nazionalità</label><input className="input" value={form.nazionalita} onChange={e => set('nazionalita', e.target.value)} /></div>
               </div>
             </div>
@@ -283,6 +289,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
                 </div>
                 <div><label className="label">Mansione</label><input className="input" value={form.mansione} onChange={e => set('mansione', e.target.value)} /></div>
                 <div><label className="label">Livello</label><input className="input" value={form.livello} onChange={e => set('livello', e.target.value)} /></div>
+                <div><label className="label">Gruppo orario</label><input className="input" value={form.gruppo_orario} onChange={e => set('gruppo_orario', e.target.value)} /></div>
                 <div><label className="label">Responsabile</label>
                   <select className="input" value={form.capo_id} onChange={e => set('capo_id', e.target.value)}>
                     <option value="">—</option>
@@ -307,7 +314,12 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
             <div className="grid grid-cols-2 gap-4">
               <div><label className="label">Telefono</label><input className="input" value={form.telefono} onChange={e => set('telefono', e.target.value)} /></div>
               <div><label className="label">Email</label><input type="email" className="input" value={form.email} onChange={e => set('email', e.target.value)} /></div>
-              <div className="col-span-2"><label className="label">Indirizzo</label><input className="input" value={form.indirizzo} onChange={e => set('indirizzo', e.target.value)} /></div>
+              <div className="col-span-2"><label className="label">Indirizzo (residenza)</label><input className="input" value={form.indirizzo} onChange={e => set('indirizzo', e.target.value)} /></div>
+              <div><label className="label">Città</label><input className="input" value={form.citta} onChange={e => set('citta', e.target.value)} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="label">Provincia</label><input className="input" maxLength={50} value={form.provincia} onChange={e => set('provincia', e.target.value.toUpperCase())} placeholder="es. MO" /></div>
+                <div><label className="label">CAP</label><input className="input" maxLength={10} value={form.cap} onChange={e => set('cap', e.target.value)} /></div>
+              </div>
               <div className="col-span-2"><label className="label">Note</label><textarea className="input" rows={2} value={form.note} onChange={e => set('note', e.target.value)} /></div>
             </div>
           </div>

@@ -734,6 +734,10 @@ export interface HrEmployee {
   email:                    string | null;
   telefono:                 string | null;
   indirizzo:                string | null;
+  citta:                    string | null;
+  provincia:                string | null;
+  cap:                      string | null;
+  gruppo_orario:            string | null;
   mansione:                 string | null;
   livello:                  string | null;
   categoria:                string | null;
