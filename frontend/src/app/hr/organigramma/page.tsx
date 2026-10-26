@@ -428,17 +428,17 @@ export default function OrganigrammaPage() {
       </div>
 
       <div className="flex items-center gap-2 flex-wrap d-print-none">
-        <input type="text" placeholder="Cerca una persona…" value={search} onChange={e => setSearch(e.target.value)} className="input text-sm w-64" />
-        <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className="input text-sm w-auto">
+        <input type="text" placeholder="Cerca una persona…" value={search} onChange={e => setSearch(e.target.value)} className="input text-sm w-64 h-9 py-0" />
+        <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className="input text-sm w-auto min-w-[11rem] h-9 py-0">
           <option value="">Tutte le funzioni</option>
           {funzioni.map(f => <option key={f} value={f}>{f}</option>)}
         </select>
-        <button onClick={() => setLevel(99)} className="btn-secondary text-xs">Espandi tutto</button>
-        <button onClick={() => setLevel(1)} className="btn-secondary text-xs">Comprimi tutto</button>
+        <button onClick={() => setLevel(99)} className="btn-secondary text-xs h-9 py-0">Espandi tutto</button>
+        <button onClick={() => setLevel(1)} className="btn-secondary text-xs h-9 py-0">Comprimi tutto</button>
         <div className="flex items-center gap-1">
-          <button onClick={() => setLevel(Math.max(1, shownLevel - 1))} disabled={shownLevel <= 1} title="Comprimi un livello" className="btn-secondary text-xs disabled:opacity-40">− Livello</button>
+          <button onClick={() => setLevel(Math.max(1, shownLevel - 1))} disabled={shownLevel <= 1} title="Comprimi un livello" className="btn-secondary text-xs h-9 py-0 disabled:opacity-40">− Livello</button>
           <span className="text-xs text-gray-500 tabular-nums px-1">{shownLevel} / {maxLevel}</span>
-          <button onClick={() => setLevel(Math.min(maxLevel, shownLevel + 1))} disabled={shownLevel >= maxLevel} title="Espandi un livello in più" className="btn-secondary text-xs disabled:opacity-40">+ Livello</button>
+          <button onClick={() => setLevel(Math.min(maxLevel, shownLevel + 1))} disabled={shownLevel >= maxLevel} title="Espandi un livello in più" className="btn-secondary text-xs h-9 py-0 disabled:opacity-40">+ Livello</button>
         </div>
 
         {funzioni.length > 0 && (

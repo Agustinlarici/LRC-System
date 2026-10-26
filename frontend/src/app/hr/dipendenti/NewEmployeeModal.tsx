@@ -27,7 +27,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
   const [funzioni, setFunzioni] = useState(initialFunzioni);
   const [form, setForm] = useState({
     matricola: '', nome: '', cognome: '', sesso: '', data_nascita: '', codice_fiscale: '', nazionalita: '',
-    email: '', telefono: '', mansione: '', livello: '', categoria: '', tipo_contratto: '', funzione_aziendale: '',
+    email: '', telefono: '', indirizzo: '', citta: '', provincia: '', cap: '', gruppo_orario: '', mansione: '', livello: '', categoria: '', tipo_contratto: '', funzione_aziendale: '',
     reparto_id: '', contract_company_id: '', data_assunzione: '', tag_id: '',
   });
   const [plantIds, setPlantIds] = useState<number[]>([]);
@@ -81,6 +81,11 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
         nazionalita: form.nazionalita || null,
         email: form.email || null,
         telefono: form.telefono || null,
+        indirizzo: form.indirizzo || null,
+        citta: form.citta || null,
+        provincia: form.provincia || null,
+        cap: form.cap || null,
+        gruppo_orario: form.gruppo_orario || null,
         mansione: form.mansione || null,
         livello: form.livello || null,
         categoria: form.categoria || null,
@@ -125,6 +130,11 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
             <div><label className="label">Nazionalità</label><input className="input" value={form.nazionalita} onChange={e => set('nazionalita', e.target.value)} placeholder="es. UE, EXTRA UE, Italia…" /></div>
             <div><label className="label">Email</label><input type="email" className="input" value={form.email} onChange={e => set('email', e.target.value)} /></div>
             <div><label className="label">Telefono</label><input className="input" value={form.telefono} onChange={e => set('telefono', e.target.value)} /></div>
+            <div className="col-span-2"><label className="label">Indirizzo (residenza)</label><input className="input" value={form.indirizzo} onChange={e => set('indirizzo', e.target.value)} /></div>
+            <div><label className="label">Città</label><input className="input" value={form.citta} onChange={e => set('citta', e.target.value)} /></div>
+            <div><label className="label">Provincia</label><input className="input" maxLength={50} value={form.provincia} onChange={e => set('provincia', e.target.value.toUpperCase())} placeholder="es. MO" /></div>
+            <div><label className="label">CAP</label><input className="input" maxLength={10} value={form.cap} onChange={e => set('cap', e.target.value)} /></div>
+            <div><label className="label">Gruppo orario</label><input className="input" value={form.gruppo_orario} onChange={e => set('gruppo_orario', e.target.value)} /></div>
 
             <div><label className="label">Funzione aziendale</label>
               <div className="flex gap-1.5">

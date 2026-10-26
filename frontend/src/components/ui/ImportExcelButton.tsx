@@ -1,9 +1,13 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 
 export interface ImportResult { inserted: number; skipped: number; errors: number; warnings?: number; detail?: string; }
-export type ImportProcessFn = (rows: Record<string, string>[]) => Promise<ImportResult>;
+// variant: valore passato a open() (es. la modalità scelta da un menu); assente se si usa il pulsante
+export type ImportProcessFn = (rows: Record<string, string>[], variant?: string) => Promise<ImportResult>;
+
+// Per aprire la scelta del file da fuori (es. da una voce di menu) con hideButton
+export interface ImportExcelHandle { open: (variant?: string) => void; }
 
 interface Props {
   columns: string[];
@@ -11,6 +15,7 @@ interface Props {
   onDone?: () => void;
   label?: string;
   iconOnly?: boolean;
+  hideButton?: boolean;   // niente pulsante: si apre con ref.open(); resta solo il riquadro dell'esito
 }
 
 function parseCSV(text: string): Record<string, string>[] {
@@ -25,11 +30,18 @@ function parseCSV(text: string): Record<string, string>[] {
   }).filter(r => Object.values(r).some(v => v !== ''));
 }
 
-export function ImportExcelButton({ columns, processRows, onDone, label = 'Importa CSV', iconOnly = false }: Props) {
+export const ImportExcelButton = forwardRef<ImportExcelHandle, Props>(function ImportExcelButton(
+  { columns, processRows, onDone, label = 'Importa CSV', iconOnly = false, hideButton = false }, ref,
+) {
   const fileRef  = useRef<HTMLInputElement>(null);
+  const variantRef = useRef<string | undefined>(undefined);
   const [running, setRunning] = useState(false);
   const [result,  setResult]  = useState<ImportResult | null>(null);
   const [hint,    setHint]    = useState(false);
+
+  useImperativeHandle(ref, () => ({
+    open: (variant?: string) => { variantRef.current = variant; setResult(null); fileRef.current?.click(); },
+  }));
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -42,13 +54,14 @@ export function ImportExcelButton({ columns, processRows, onDone, label = 'Impor
         setResult({ inserted: 0, skipped: 0, errors: 0, detail: 'File vuoto o formato non riconosciuto.' });
         return;
       }
-      const res = await processRows(rows);
+      const res = await processRows(rows, variantRef.current);
       setResult(res);
       onDone?.();
     } catch (err) {
       setResult({ inserted: 0, skipped: 0, errors: 1, detail: err instanceof Error ? err.message : String(err) });
     } finally {
       setRunning(false);
+      variantRef.current = undefined;
       if (fileRef.current) fileRef.current.value = '';
     }
   }
@@ -58,7 +71,7 @@ export function ImportExcelButton({ columns, processRows, onDone, label = 'Impor
   return (
     <div className="inline-flex flex-col items-start gap-1.5">
       <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleFile} />
-      <div className="flex items-center gap-2">
+      {!hideButton && <div className="flex items-center gap-2">
         <button
           type="button"
           className="btn btn-secondary text-sm"
@@ -87,9 +100,9 @@ export function ImportExcelButton({ columns, processRows, onDone, label = 'Impor
             ?
           </button>
         )}
-      </div>
+      </div>}
 
-      {hint && (
+      {hint && !hideButton && (
         <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 max-w-xs leading-snug">
           Da Excel: <strong>File → Salva con nome → CSV UTF-8</strong> (o CSV separato da virgole).
           <br />Colonne attese: <span className="font-mono">{columns.join(', ')}</span>
@@ -111,4 +124,4 @@ export function ImportExcelButton({ columns, processRows, onDone, label = 'Impor
       )}
     </div>
   );
-}
+});

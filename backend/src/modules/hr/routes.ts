@@ -271,7 +271,7 @@ hrRoutes.get('/deadline-pending-count', requireModule('hr'), async (c) => {
 const employeeSelect = db`
   SELECT
     e.id, e.matricola, e.nome, e.cognome, e.sesso, e.data_nascita, e.codice_fiscale,
-    e.nazionalita, e.email, e.telefono, e.indirizzo,
+    e.nazionalita, e.email, e.telefono, e.indirizzo, e.citta, e.provincia, e.cap, e.gruppo_orario,
     e.l68, e.mansione, e.livello, e.categoria, e.tipo_contratto, e.funzione_aziendale,
     e.reparto_id, d.name AS reparto_name,
     e.plant_id, e.plant_ids,
@@ -380,7 +380,11 @@ const employeeFieldsSchema = z.object({
   email:                z.string().email().max(150).optional().nullable().or(z.literal('')),
   telefono:             z.string().max(30).optional().nullable(),
   indirizzo:            z.string().max(255).optional().nullable(),
-  mansione:             z.string().max(150).optional().nullable(),
+  citta:                z.string().max(100).optional().nullable(),
+  provincia:            z.string().max(50).optional().nullable(),
+  cap:                  z.string().max(10).optional().nullable(),
+  gruppo_orario:        z.string().max(100).optional().nullable(),
+  mansione:            z.string().max(150).optional().nullable(),
   livello:              z.string().max(30).optional().nullable(),
   l68:                  z.boolean().optional(),
   categoria:            z.string().max(50).optional().nullable(),
@@ -446,7 +450,7 @@ hrRoutes.patch('/employees/:id', requireModule('hr'), async (c) => {
 
   // Un capo (senza gestione HR completa) può solo aggiornare note di contatto,
   // non dati strutturali/sensibili — quelli restano esclusivi di HR.
-  const CAPO_EDITABLE_FIELDS = new Set(['telefono', 'email', 'indirizzo', 'note']);
+  const CAPO_EDITABLE_FIELDS = new Set(['telefono', 'email', 'indirizzo', 'citta', 'provincia', 'cap', 'note']);
   const REQUIRED_FIELDS = new Set(['nome', 'cognome', 'data_assunzione']);
   const updates: Record<string, any> = {};
   for (const [k, v] of Object.entries(body)) {
@@ -518,6 +522,8 @@ hrRoutes.patch('/employees/:id', requireModule('hr'), async (c) => {
   updates.updated_at = new Date();
   await db`UPDATE hr_employee SET ${db(updates)} WHERE id = ${id}`;
 
+  // ?storico=0 (import da Excel "sostituisci tutto"): i dati cambiano senza lasciare eventi in timeline
+  if (c.req.query('storico') === '0') events.length = 0;
   for (const ev of events) {
     const eventDate = ev.event_type === 'cessazione' && updates.data_cessazione
       ? updates.data_cessazione

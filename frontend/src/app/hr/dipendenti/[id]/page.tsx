@@ -10,6 +10,7 @@ import { EventTimeline } from './EventTimeline';
 import { SalaryHistory } from './SalaryHistory';
 import { EmployeeAvatar } from '@/components/hr/EmployeeAvatar';
 import { tagBadgeStyle } from '@/lib/tagColors';
+import { resizePhoto } from '@/lib/hrPhoto';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -51,17 +52,6 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
       <p className="text-sm text-gray-800 mt-0.5">{value ?? '—'}</p>
     </div>
   );
-}
-
-// Ridimensiona la foto (lato massimo 400px) e la converte in JPEG prima dell'upload
-async function resizePhoto(file: File): Promise<Blob> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, 400 / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  return new Promise((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('Conversione non riuscita')), 'image/jpeg', 0.85));
 }
 
 export default function EmployeeDetailPage() {
@@ -231,7 +221,10 @@ export default function EmployeeDetailPage() {
             <Field label="Codice fiscale" value={employee.codice_fiscale} />
             <Field label="Email" value={employee.email} />
             <Field label="Telefono" value={employee.telefono} />
-            <Field label="Indirizzo" value={employee.indirizzo} />
+            <Field label="Indirizzo (residenza)" value={employee.indirizzo} />
+            <Field label="Città" value={employee.citta} />
+            <Field label="Provincia" value={employee.provincia} />
+            <Field label="CAP" value={employee.cap} />
             {employee.note && <Field label="Note" value={employee.note} />}
           </InfoCard>
 
@@ -251,6 +244,7 @@ export default function EmployeeDetailPage() {
             <Field label="Plant / Sedi" value={employee.plant_name} />
             <Field label="Mansione" value={employee.mansione} />
             <Field label="Livello" value={employee.livello} />
+            <Field label="Gruppo orario" value={employee.gruppo_orario} />
             <Field label="Responsabile" value={employee.capo_nome
               ? <Link href={`/hr/dipendenti/${employee.capo_id}`} className="btn-secondary text-xs">{employee.capo_nome}</Link>
               : null} />
