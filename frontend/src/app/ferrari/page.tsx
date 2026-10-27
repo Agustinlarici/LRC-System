@@ -33,7 +33,8 @@ export default function CommessePage() {
   const [q, setQ] = useState('');
   const [modello, setModello] = useState('');
   const [nuovo, setNuovo] = useState('');
-  const [dopo, setDopo] = useState<Set<string>>(new Set());   // sigle rimandate in questa sessione
+  const [scelte, setScelte] = useState<Record<string, boolean>>({});   // sigle nuove: codice → va (si salva in blocco)
+  const [pertutti, setPertutti] = useState(false);
   const [panello, setPanello] = useState(false);
   const [m, setM] = useState<Matrice | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
@@ -102,16 +103,18 @@ export default function CommessePage() {
     }
   }
 
-  async function tutteNo() {
+  async function salvaScelte() {
+    if (!modello) return;
     try {
-      await api.post('/api/ferrari/sigle/tutte-no', { modello });
+      for (const [codice, va] of Object.entries(scelte)) {
+        await api.post('/api/ferrari/sigle', { modello, codice, va, tutti: pertutti });
+      }
+      setScelte({});
       await carica(modello, q.trim());
     } catch (e) {
       setErrore((e as Error).message);
     }
   }
-
-  const prossima = m?.nuove.find(n => !dopo.has(`${m.modello}/${n.codice}`));
 
   async function invia(files: File[]) {
     if (files.length === 0) return;
@@ -202,18 +205,34 @@ export default function CommessePage() {
         </div>
       )}
 
-      {puoCaricare && m && prossima && (
+      {puoCaricare && m && m.nuove.length > 0 && (
         <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm">
-          Nuova sigla per <b>{m.modello}</b> ({m.nuove.length} da decidere): <b className="text-base">{prossima.codice}</b> — {prossima.nome}
-          <span className="text-gray-500"> · esempio: {prossima.esempio}</span> · Va in tabella?
+          <div className="font-medium">Sigle nuove per <b>{m.modello}</b> ({m.nuove.length}): scegli quali vanno in tabella</div>
+          <ul className="mt-2 max-h-72 overflow-y-auto divide-y divide-amber-200 bg-white rounded-lg border border-amber-200">
+            {m.nuove.map(n => (
+              <li key={n.codice} className="flex flex-wrap items-center gap-2 px-3 py-1.5">
+                <b className="w-16 shrink-0">{n.codice}</b>
+                <span className="flex-1 min-w-[10rem] truncate" title={`${n.nome} · esempio: ${n.esempio}`}>
+                  {n.nome} <span className="text-gray-400">· {n.esempio}</span>
+                </span>
+                <button className={`!py-0.5 text-xs ${scelte[n.codice] === true ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setScelte({ ...scelte, [n.codice]: true })}>Sì</button>
+                <button className={`!py-0.5 text-xs ${scelte[n.codice] === false ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setScelte({ ...scelte, [n.codice]: false })}>No</button>
+              </li>
+            ))}
+          </ul>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <button className="btn-primary !py-1" onClick={() => decidi(prossima.codice, true, false)}>Sì, per {m.modello}</button>
-            <button className="btn-primary !py-1" onClick={() => decidi(prossima.codice, true, true)}>Sì, per tutti i modelli</button>
-            <button className="btn-secondary !py-1" onClick={() => decidi(prossima.codice, false, false)}>No, per {m.modello}</button>
-            <button className="btn-secondary !py-1" onClick={() => decidi(prossima.codice, false, true)}>No, per tutti</button>
-            <button className="btn-secondary !py-1" onClick={() => setDopo(new Set(dopo).add(`${m.modello}/${prossima.codice}`))}>Dopo</button>
-            {m.nuove.length > 1 && <button className="btn-secondary !py-1" onClick={tutteNo}>Tutte le altre: no ({m.modello})</button>}
+            <button className="btn-secondary !py-1" onClick={() => setScelte(Object.fromEntries(m.nuove.map(n => [n.codice, true])))}>Tutte sì</button>
+            <button className="btn-secondary !py-1" onClick={() => setScelte(Object.fromEntries(m.nuove.map(n => [n.codice, false])))}>Tutte no</button>
+            <label className="flex items-center gap-1 ml-2">
+              <input type="checkbox" checked={pertutti} onChange={e => setPertutti(e.target.checked)} /> Vale per tutti i modelli
+            </label>
+            <button className="btn-primary !py-1 ml-auto" disabled={Object.keys(scelte).length === 0} onClick={salvaScelte}>
+              Salva ({Object.keys(scelte).length})
+            </button>
           </div>
+          <p className="mt-1 text-xs text-gray-500">Quelle senza scelta restano da decidere.</p>
         </div>
       )}
 
