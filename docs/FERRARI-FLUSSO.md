@@ -3,6 +3,15 @@
 Stato: **implementato (prima versione, da provare con i dati reali)**; resta da approvare dalle persone indicate in §13. Questo file e' identico in `STR-LocalAI/docs/ferrari/FLUSSO.md`
 e `LRC-System/docs/FERRARI-FLUSSO.md`: se cambia uno, cambia l'altro.
 
+## 0. Uso semplice (pagina principale)
+
+1. Carichi gli Excel di Ferrari (sulla PC IA in `/ferrari`, oppure in LRC → IT → Schede Ferrari → Commesse).
+2. La IA (solo sulla PC IA) riassume il testo scritto a mano; senza Ollama la cella mostra il testo cosi' com'e'.
+3. Cerchi la commessa: **colonne = le opzioni trovate; cella = «Sì», oppure il dettaglio (colore, filo…)**. «Scarica per Excel» esporta tutto.
+
+Regola della cella (identica nei due programmi): valore «SI» → «Sì»; valore con testo → quel testo; testo libero → il dettaglio; «SI» + dettaglio → «Sì — dettaglio»; extra campionario senza dettaglio → «Extra campionario».
+Tutto il resto di questo documento (scambio di pacchetti con la VM, confronto, revisione, conoscenza) e' **facoltativo**: serve solo se vuoi il doppio controllo VM/IA.
+
 ## 1. Principi
 
 1. **Due analisi indipendenti.** La VM (senza IA) e la PC IA analizzano *ciascuna per conto proprio*

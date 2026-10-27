@@ -5,7 +5,7 @@ import { parseBody } from '../../lib/validate.js';
 import { requireManage, requireModule, type Env } from '../../lib/auth.js';
 import {
   aggiornaConfig, caricaScheda, cerca, configCorrente, creaPacchettoConoscenza, creaPacchettoToAi, decidiConoscenza,
-  dettaglioFile, importaRisultatoIa, listaAudit, listaBundle, listaConoscenza, listaFile, mostraSegreto,
+  dettaglioFile, importaRisultatoIa, listaAudit, listaBundle, matrice, listaConoscenza, listaFile, mostraSegreto,
   proponiConoscenzaDiretta, registraDecisione, revisioneSenzaIa, rianalizza, reinviaAllaIa, rifiutaScheda, riepilogo,
   scaricaBundle, scaricaOriginale, validaScheda, verificaCatenaAudit, TIPI_DIZIONARIO,
   type Utente,
@@ -60,6 +60,8 @@ async function leggiFile(c: Context<Env>, campo: string, max = MAX_FILES): Promi
 }
 
 // ─── Lettura ──────────────────────────────────────────────────────────────────
+
+ferrariRoutes.get('/matrice', requireModule(VISTA), async (c) => c.json(await matrice(c.req.query('q')?.slice(0, 100))));
 
 ferrariRoutes.get('/summary', requireModule(VISTA), async (c) => c.json(await riepilogo()));
 

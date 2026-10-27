@@ -109,7 +109,7 @@ export default function SchedaPage() {
   return (
     <div>
       <div className="mb-2">
-        <Link href="/ferrari" className="inline-flex items-center gap-1 text-sm font-medium px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-50">← Schede</Link>
+        <Link href="/ferrari/schede" className="inline-flex items-center gap-1 text-sm font-medium px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-50">← Revisione</Link>
       </div>
       <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
         <div>

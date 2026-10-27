@@ -4,228 +4,133 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import {
-  STATI, fmtData, inviaFile,
-  type Esito, type FileRiga, type Riepilogo, type StatoFile,
-} from '@/lib/ferrari';
-import { Errore, EsitoDot, FerrariNav, StatoBadge } from '@/components/ferrari/Comuni';
+import { inviaFile } from '@/lib/ferrari';
+import { Errore, FerrariNav } from '@/components/ferrari/Comuni';
 
-const PAGINA = 50;
+interface Matrice {
+  colonne: { codice: string; nome: string }[];
+  righe: { id: number; commessa: string; modello: string | null; paese: string | null; stato: string;
+    celle: Record<string, string>; testi: Record<string, string> }[];
+}
 
-interface EsitoCarica { filename: string; id?: number; stato?: string; duplicato?: boolean; sostituisce?: number[]; stessa_commessa?: number[]; motivo?: string; errore?: string }
+function Cella({ testo, intero }: { testo?: string; intero?: string }) {
+  if (!testo) return <span className="text-gray-300">—</span>;
+  if (testo === 'Sì') return <span className="font-bold text-green-600" title={intero}>Sì</span>;
+  if (testo.startsWith('Sì — ')) {
+    return <span title={intero}><span className="font-bold text-green-600">Sì</span> {testo.slice(5)}</span>;
+  }
+  return <span title={intero}>{testo}</span>;
+}
 
-export default function FerrariPage() {
+export default function CommessePage() {
   const { canManage } = useAuth();
-  const puoOperare = canManage('ferrari_schede');
-
-  const [righe, setRighe] = useState<FileRiga[]>([]);
-  const [totale, setTotale] = useState(0);
-  const [riepilogo, setRiepilogo] = useState<Riepilogo | null>(null);
-  const [stato, setStato] = useState<StatoFile | ''>('');
-  const [esito, setEsito] = useState<Esito | ''>('');
+  const puoCaricare = canManage('ferrari_schede');
   const [q, setQ] = useState('');
-  const [qApplicata, setQApplicata] = useState('');
-  const [pagina, setPagina] = useState(0);
+  const [m, setM] = useState<Matrice | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
-  const [caricando, setCaricando] = useState(false);
-  const [esitiCarica, setEsitiCarica] = useState<EsitoCarica[] | null>(null);
-  const [trascina, setTrascina] = useState(false);
+  const [msg, setMsg] = useState<string[]>([]);
+  const [occupato, setOccupato] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const carica = useCallback(async () => {
-    const p = new URLSearchParams({ limite: String(PAGINA), offset: String(pagina * PAGINA) });
-    if (stato) p.set('stato', stato);
-    if (esito) p.set('esito', esito);
-    if (qApplicata) p.set('q', qApplicata);
+  const carica = useCallback(async (testo: string) => {
     try {
-      const [lista, riep] = await Promise.all([
-        api.get<{ totale: number; righe: FileRiga[] }>(`/api/ferrari/files?${p}`),
-        api.get<Riepilogo>('/api/ferrari/summary'),
-      ]);
-      setRighe(lista.righe);
-      setTotale(lista.totale);
-      setRiepilogo(riep);
+      setM(await api.get<Matrice>(`/api/ferrari/matrice?q=${encodeURIComponent(testo)}`));
       setErrore(null);
     } catch (e) {
       setErrore((e as Error).message);
     }
-  }, [stato, esito, qApplicata, pagina]);
+  }, []);
 
-  useEffect(() => { carica(); }, [carica]);
+  useEffect(() => {
+    const t = setTimeout(() => carica(q.trim()), 200);
+    return () => clearTimeout(t);
+  }, [q, carica]);
 
   async function invia(files: File[]) {
     if (files.length === 0) return;
-    setCaricando(true);
-    setEsitiCarica(null);
+    setOccupato(true);
     try {
-      const r = await inviaFile<{ risultati: EsitoCarica[] }>('/api/ferrari/files', 'files', files);
-      setEsitiCarica(r.risultati);
-      setPagina(0);
-      await carica();
+      const r = await inviaFile<{ risultati: { filename: string; stato?: string; duplicato?: boolean; motivo?: string; errore?: string }[] }>(
+        '/api/ferrari/files', 'files', files);
+      setMsg(r.risultati.map(x => x.errore ? `${x.filename}: ${x.errore}` : x.stato === 'QUARANTENA' ? `${x.filename}: non è una scheda (${x.motivo})`
+        : x.duplicato ? `${x.filename}: già caricata` : `${x.filename}: caricata`));
+      await carica(q.trim());
     } catch (e) {
       setErrore((e as Error).message);
     } finally {
-      setCaricando(false);
+      setOccupato(false);
       if (inputRef.current) inputRef.current.value = '';
     }
   }
 
-  const nPagine = Math.max(1, Math.ceil(totale / PAGINA));
-  const conta = (s: StatoFile) => riepilogo?.stati[s] ?? 0;
+  function scarica() {
+    if (!m) return;
+    const cella = (s: string) => `"${s.replace(/"/g, '""')}"`;
+    const righe = [['Commessa', 'Modello', 'Paese', ...m.colonne.map(c => c.nome || c.codice)].map(cella).join(';')];
+    for (const r of m.righe) righe.push([r.commessa, r.modello ?? '', r.paese ?? '', ...m.colonne.map(c => r.celle[c.codice] ?? '')].map(cella).join(';'));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['﻿' + righe.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'schede_ferrari.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
 
   return (
     <div>
       <div className="mb-4">
         <h1 className="text-3xl font-bold text-gray-900">Schede Ferrari</h1>
-        <p className="mt-1 text-gray-500">
-          Excel di allestimento ricevuti da Ferrari: analisi con IA locale e con la VM, confronto e revisione.
-        </p>
+        <p className="mt-1 text-gray-500">Cerca una commessa: vedi «Sì» o il dettaglio (colore, filo…) per ogni caratteristica.</p>
       </div>
       <FerrariNav />
       <Errore messaggio={errore} />
 
-      {riepilogo && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
-          {STATI.map(s => (
-            <button key={s.value} onClick={() => { setStato(stato === s.value ? '' : s.value); setPagina(0); }}
-              className={`text-left rounded-xl border p-3 transition-colors ${stato === s.value ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
-              <div className="text-2xl font-bold text-gray-900">{conta(s.value)}</div>
-              <div className="text-xs text-gray-500">{s.label}</div>
-            </button>
-          ))}
+      {puoCaricare && (
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <input ref={inputRef} type="file" multiple accept=".xls,.xlsx" className="hidden" onChange={e => invia(Array.from(e.target.files ?? []))} />
+          <button className="btn-secondary" disabled={occupato} onClick={() => inputRef.current?.click()}>{occupato ? 'Caricamento…' : 'Carica Excel'}</button>
+          <span className="text-xs text-gray-500">{msg.join(' · ')}</span>
         </div>
       )}
 
-      {riepilogo && (riepilogo.proposte.codici + riepilogo.proposte.componenti > 0 || riepilogo.ia_in_ritardo > 0) && (
-        <div className="mb-6 flex flex-wrap gap-3 text-sm">
-          {riepilogo.proposte.codici + riepilogo.proposte.componenti > 0 && (
-            <Link href="/ferrari/conoscenza" className="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2 hover:bg-amber-100">
-              {riepilogo.proposte.codici + riepilogo.proposte.componenti} regole proposte aspettano l&apos;approvazione del supervisore
-            </Link>
-          )}
-          {riepilogo.ia_in_ritardo > 0 && (
-            <Link href="/ferrari/scambio" className="rounded-lg bg-red-50 border border-red-200 text-red-700 px-3 py-2 hover:bg-red-100">
-              {riepilogo.ia_in_ritardo} schede inviate alla IA senza risposta oltre il tempo previsto
-            </Link>
-          )}
-        </div>
-      )}
-
-      {puoOperare && (
-        <div
-          onDragOver={e => { e.preventDefault(); setTrascina(true); }}
-          onDragLeave={() => setTrascina(false)}
-          onDrop={e => { e.preventDefault(); setTrascina(false); invia(Array.from(e.dataTransfer.files)); }}
-          className={`mb-6 rounded-xl border-2 border-dashed p-6 text-center transition-colors ${trascina ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white'}`}
-        >
-          <p className="text-sm text-gray-600 mb-3">Trascina qui gli Excel di Ferrari (.xls / .xlsx) oppure</p>
-          <input ref={inputRef} type="file" multiple accept=".xls,.xlsx" className="hidden"
-            onChange={e => invia(Array.from(e.target.files ?? []))} />
-          <button className="btn-primary" disabled={caricando} onClick={() => inputRef.current?.click()}>
-            {caricando ? 'Caricamento in corso…' : 'Scegli i file'}
-          </button>
-          <p className="text-xs text-gray-400 mt-2">L&apos;originale viene conservato così com&apos;è e non si modifica mai.</p>
-        </div>
-      )}
-
-      {esitiCarica && (
-        <div className="mb-6 rounded-xl border border-gray-200 bg-white divide-y divide-gray-100">
-          {esitiCarica.map((r, i) => (
-            <div key={i} className="px-4 py-2 text-sm flex flex-wrap items-center gap-2">
-              <span className="font-medium text-gray-800">{r.filename}</span>
-              {r.errore && <span className="text-red-600">{r.errore}</span>}
-              {r.duplicato && <span className="text-amber-700">già ricevuto (stesso contenuto): nessuna nuova scheda</span>}
-              {r.stato === 'QUARANTENA' && <span className="text-red-600">in quarantena: {r.motivo}</span>}
-              {r.stato === 'IN_ATTESA_IA' && !r.duplicato && <span className="text-green-700">ricevuto, in attesa dell&apos;analisi IA</span>}
-              {r.sostituisce && r.sostituisce.length > 0 && <span className="text-sky-700">sostituisce la scheda #{r.sostituisce.join(', #')}</span>}
-              {r.stessa_commessa && r.stessa_commessa.length > 0 && (
-                <span className="text-amber-700">attenzione: esiste già la scheda #{r.stessa_commessa.join(', #')} con la stessa commessa ma una variante diversa</span>
-              )}
-              {r.id && <Link href={`/ferrari/${r.id}`} className="ml-auto text-blue-600 hover:underline">apri</Link>}
-            </div>
-          ))}
-        </div>
-      )}
-
-      <form className="flex flex-wrap items-end gap-3 mb-4" onSubmit={e => { e.preventDefault(); setQApplicata(q.trim()); setPagina(0); }}>
-        <div className="flex-1 min-w-[220px]">
-          <label className="label">Cerca</label>
-          <input className="input" placeholder="Commessa, matricola, modello, nome file…" value={q} onChange={e => setQ(e.target.value)} />
-        </div>
-        <div>
-          <label className="label">Stato</label>
-          <select className="input" value={stato} onChange={e => { setStato(e.target.value as StatoFile | ''); setPagina(0); }}>
-            <option value="">Tutti</option>
-            {STATI.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label">Esito</label>
-          <select className="input" value={esito} onChange={e => { setEsito(e.target.value as Esito | ''); setPagina(0); }}>
-            <option value="">Tutti</option>
-            <option value="VERDE">Verde</option>
-            <option value="AMBRA">Ambra</option>
-            <option value="ROSSO">Rosso</option>
-          </select>
-        </div>
-        <button className="btn-secondary" type="submit">Cerca</button>
-      </form>
-
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50 text-gray-500">
-              <th className="py-2.5 px-4 text-left font-medium">Commessa</th>
-              <th className="py-2.5 px-4 text-left font-medium">Modello</th>
-              <th className="py-2.5 px-4 text-left font-medium">Mercato</th>
-              <th className="py-2.5 px-4 text-left font-medium">Stato</th>
-              <th className="py-2.5 px-4 text-left font-medium">Esito</th>
-              <th className="py-2.5 px-4 text-right font-medium">Da rivedere</th>
-              <th className="py-2.5 px-4 text-left font-medium">Ricevuta</th>
-            </tr>
-          </thead>
-          <tbody>
-            {righe.length === 0 ? (
-              <tr><td colSpan={7} className="text-center text-gray-400 py-8">Nessuna scheda</td></tr>
-            ) : righe.map(r => (
-              <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="py-2 px-4">
-                  <Link href={`/ferrari/${r.id}`} className="font-medium text-blue-700 hover:underline">{r.commessa ?? r.filename}</Link>
-                  <div className="text-xs text-gray-400 truncate max-w-[260px]">{r.filename}</div>
-                </td>
-                <td className="py-2 px-4">
-                  <div className="font-medium">{r.modello ?? '—'}</div>
-                  <div className="text-xs text-gray-400">{r.versione}</div>
-                </td>
-                <td className="py-2 px-4">{r.paese ?? '—'}{r.mercato_codice ? <span className="text-gray-400"> ({r.mercato_codice})</span> : null}</td>
-                <td className="py-2 px-4">
-                  <StatoBadge stato={r.stato} />
-                  {r.campione && r.stato === 'IN_REVISIONE' && <div className="text-[11px] text-gray-400 mt-0.5">a campione</div>}
-                  {r.stato === 'QUARANTENA' && <div className="text-[11px] text-red-500 mt-0.5 max-w-[220px] truncate" title={r.quarantena_motivo ?? ''}>{r.quarantena_motivo}</div>}
-                </td>
-                <td className="py-2 px-4"><EsitoDot esito={r.esito} /></td>
-                <td className="py-2 px-4 text-right">
-                  {r.stato === 'IN_REVISIONE'
-                    ? <span className={r.n_items - r.n_decisioni > 0 ? 'font-semibold text-amber-700' : 'text-green-700'}>{Math.max(r.n_items - r.n_decisioni, 0)}</span>
-                    : <span className="text-gray-300">—</span>}
-                </td>
-                <td className="py-2 px-4 text-gray-500 whitespace-nowrap">{fmtData(r.caricato_at)}<div className="text-xs">{r.caricato_da}</div></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="flex flex-wrap items-center gap-3 mb-3">
+        <input className="input !w-72" placeholder="Cerca commessa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+        <span className="text-sm text-gray-500">{m ? `${m.righe.length} commesse` : ''}</span>
+        <button className="btn-secondary ml-auto" disabled={!m || m.righe.length === 0} onClick={scarica}>Scarica per Excel</button>
+        <Link href="/ferrari/schede" className="text-sm text-blue-700 hover:underline">Revisione e analisi IA →</Link>
       </div>
 
-      {nPagine > 1 && (
-        <div className="flex items-center justify-between mt-3 text-sm text-gray-500">
-          <span>{totale} schede</span>
-          <div className="flex items-center gap-2">
-            <button className="btn-secondary" disabled={pagina === 0} onClick={() => setPagina(p => p - 1)}>←</button>
-            <span>{pagina + 1} / {nPagine}</span>
-            <button className="btn-secondary" disabled={pagina + 1 >= nPagine} onClick={() => setPagina(p => p + 1)}>→</button>
-          </div>
-        </div>
-      )}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-auto max-h-[70vh]">
+        {m && m.righe.length === 0 ? (
+          <p className="text-center text-gray-400 py-10 text-sm">{q ? 'Nessuna commessa trovata' : 'Ancora nessuna scheda: carica gli Excel di Ferrari'}</p>
+        ) : m && (
+          <table className="text-sm border-separate border-spacing-0">
+            <thead>
+              <tr>
+                <th className="sticky top-0 left-0 z-30 bg-gray-50 border-b border-r-2 border-gray-200 px-3 py-2 text-left min-w-[130px]">Commessa</th>
+                <th className="sticky top-0 z-20 bg-gray-50 border-b border-gray-200 px-3 py-2 text-left">Modello</th>
+                <th className="sticky top-0 z-20 bg-gray-50 border-b border-gray-200 px-3 py-2 text-left">Paese</th>
+                {m.colonne.map(c => (
+                  <th key={c.codice} title={c.codice} className="sticky top-0 z-20 bg-gray-50 border-b border-l border-gray-200 px-3 py-2 text-left font-semibold min-w-[130px] max-w-[220px]">{c.nome || c.codice}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {m.righe.map(r => (
+                <tr key={r.id} className="hover:bg-gray-50 align-top">
+                  <td className="sticky left-0 z-10 bg-white border-b border-r-2 border-gray-200 px-3 py-2 font-semibold">
+                    <Link href={`/ferrari/${r.id}`} className="text-blue-700 hover:underline">{r.commessa}</Link>
+                  </td>
+                  <td className="border-b border-gray-100 px-3 py-2">{r.modello}</td>
+                  <td className="border-b border-gray-100 px-3 py-2">{r.paese}</td>
+                  {m.colonne.map(c => (
+                    <td key={c.codice} className="border-b border-l border-gray-100 px-3 py-2 max-w-[320px]"><Cella testo={r.celle[c.codice]} intero={r.testi[c.codice]} /></td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }

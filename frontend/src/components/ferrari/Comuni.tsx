@@ -6,7 +6,8 @@ import type { Esito, StatoFile } from '@/lib/ferrari';
 import { STATI } from '@/lib/ferrari';
 
 const SCHEDE = [
-  { href: '/ferrari',            label: 'Schede' },
+  { href: '/ferrari',            label: 'Commesse' },
+  { href: '/ferrari/schede',     label: 'Revisione' },
   { href: '/ferrari/scambio',    label: 'Scambio con la IA' },
   { href: '/ferrari/conoscenza', label: 'Conoscenza' },
   { href: '/ferrari/consulta',   label: 'Consulta' },
@@ -14,7 +15,11 @@ const SCHEDE = [
 
 export function FerrariNav() {
   const pathname = usePathname();
-  const attiva = (href: string) => (href === '/ferrari' ? pathname === '/ferrari' || /^\/ferrari\/\d+/.test(pathname) : pathname.startsWith(href));
+  const attiva = (href: string) => {
+    if (href === '/ferrari') return pathname === '/ferrari';
+    if (href === '/ferrari/schede') return pathname.startsWith('/ferrari/schede') || /^\/ferrari\/\d+/.test(pathname);
+    return pathname.startsWith(href);
+  };
   return (
     <nav className="flex flex-wrap gap-1 border-b border-gray-200 mb-6">
       {SCHEDE.map(s => (

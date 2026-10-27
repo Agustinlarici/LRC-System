@@ -22,6 +22,7 @@ import {
   type Decisione, type DecisioneRecord, type ValoreDopo,
 } from './validato.js';
 import { collapse } from './text.js';
+import { costruisciMatrice } from './matrice.js';
 
 type Tx = typeof db;
 
@@ -817,3 +818,14 @@ export function logErrore(msg: string, err: unknown) {
 }
 
 export type { ItemConfronto };
+
+/** Matrice commesse × caratteristiche (pagina principale). Esclude le schede sostituite e quelle in quarantena. */
+export async function matrice(q?: string) {
+  const cerca = q?.trim();
+  const rows = await db<{ id: number; stato: string; canonico: Canonico }[]>`
+    SELECT id, stato, canonico FROM ferrari_file
+    WHERE stato NOT IN ('SOSTITUITO', 'QUARANTENA', 'RIFIUTATO') AND canonico IS NOT NULL
+      ${cerca ? db`AND (commessa ILIKE ${'%' + cerca + '%'} OR modello ILIKE ${'%' + cerca + '%'})` : db``}
+    ORDER BY caricato_at DESC, id DESC LIMIT 500`;
+  return costruisciMatrice(rows.map(r => ({ id: r.id, stato: r.stato, canonico: r.canonico })));
+}
