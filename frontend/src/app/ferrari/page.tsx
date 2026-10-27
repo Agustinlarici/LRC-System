@@ -21,10 +21,21 @@ interface Matrice {
 function Cella({ testo, intero }: { testo?: string; intero?: string }) {
   if (!testo) return <span className="text-gray-300">—</span>;
   if (testo === 'Sì') return <span className="font-bold text-green-600" title={intero}>Sì</span>;
-  if (testo.startsWith('Sì — ')) {
-    return <span title={intero}><span className="font-bold text-green-600">Sì</span> {testo.slice(5)}</span>;
-  }
-  return <span title={intero}>{testo}</span>;
+  if (testo === 'Extra campionario') return <span className="font-bold text-amber-700" title={intero}>Extra campionario</span>;
+  let testa: React.ReactNode = null;
+  let corpo = testo;
+  if (testo.startsWith('Sì — ')) { testa = <span className="font-bold text-green-600">Sì </span>; corpo = testo.slice(5); }
+  else if (testo.startsWith('Extra campionario — ')) { testa = <span className="font-bold text-amber-700">Extra campionario </span>; corpo = testo.slice(20); }
+  // più pezzi distinti (es. due livree): uno per riga
+  const pezzi = corpo.split(' | ');
+  return (
+    <span title={intero}>
+      {testa}
+      {pezzi.length > 1
+        ? pezzi.map((p, i) => <div key={i} className={i > 0 ? 'mt-1 border-t border-dashed border-gray-200 pt-1' : ''}>{p}</div>)
+        : corpo}
+    </span>
+  );
 }
 
 export default function CommessePage() {
