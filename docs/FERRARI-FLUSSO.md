@@ -1,6 +1,6 @@
-# Validazione Excel Ferrari — flusso completo (bozza v0.1)
+# Validazione Excel Ferrari — flusso completo (v1)
 
-Stato: **bozza da approvare**. Questo file e' identico in `STR-LocalAI/docs/ferrari/FLUSSO.md`
+Stato: **implementato (prima versione, da provare con i dati reali)**; resta da approvare dalle persone indicate in §13. Questo file e' identico in `STR-LocalAI/docs/ferrari/FLUSSO.md`
 e `LRC-System/docs/FERRARI-FLUSSO.md`: se cambia uno, cambia l'altro.
 
 ## 1. Principi
@@ -120,10 +120,10 @@ Verificato con un prototipo sulle due schede: scheda 1 = 37 opzioni, 0 blocchi; 
 {
   "source": { "filename": "...", "sha256": "...", "format": "xls-biff8", "sheet": "..." },
   "header": {
-    "commessa": "194070",
-    "variante": { "codice": "171009408", "revisione": "0", "data": "2026-10-26T12:58" },
+    "commessa": "100002",
+    "variante": { "codice": "123456789", "revisione": "0", "data": "2026-10-26T12:58" },
     "tipo_matricola": { "raw": "...", "modello": "F171VS", "versione": "F171DB850/27 CHI MY27",
-                        "matricola": "771818027", "progressivo": "346291" },
+                        "matricola": "999000027", "progressivo": "100001" },
     "destinazione": { "paese": "CINA", "codice_mercato": "27" },
     "telaio": "110"
   },
@@ -137,7 +137,7 @@ Verificato con un prototipo sulle due schede: scheda 1 = 37 opzioni, 0 blocchi; 
 }
 ```
 
-Numeri letti come numeri (`194983.0`, `17.0`) vengono riportati come testo senza `.0`, con anomalia `numero_come_testo` se il campo potrebbe perdere zeri iniziali.
+Numeri letti come numeri (es. `100001.0`, `17.0`) vengono riportati come testo senza `.0`, con anomalia `numero_come_testo` se il campo potrebbe perdere zeri iniziali.
 
 ### 6.4 Controlli deterministici (senza IA)
 
@@ -194,7 +194,9 @@ Il bundle e' lo stesso per tutti i trasporti. Si usano due cartelle per lato: `o
 |---|---|
 | Excel corrotto, con password o con macro | Quarantena, nessuna analisi, avviso IT |
 | Hash gia' visto | Duplicato, nessuna rielaborazione |
-| Nuova versione dello stesso ordine | Sostituisce la precedente (resta archiviata e collegata); decisioni passate non si modificano |
+| Nuova versione dello stesso ordine (stessa commessa e stessa variante) | Sostituisce la precedente (resta archiviata e collegata); decisioni passate non si modificano |
+| Stessa commessa ma variante diversa | Non si sostituisce nulla (potrebbe essere un'altra vettura): la scheda nuova entra e il caricamento segnala l'altra |
+| Risposta della IA incompleta | «Rimanda alla IA»: la scheda torna in attesa e le decisioni gia' prese si riportano alla nuova risposta |
 | Modello non identificato | ROSSO |
 | Testo con "VEDERE IMMAGINI" | Sempre revisione umana, anche se VM e IA coincidono |
 | Segnaposto (`ZZZZ`), testo orfano, riga ignota | AMBRA, revisione |
@@ -203,7 +205,7 @@ Il bundle e' lo stesso per tutti i trasporti. Si usano due cartelle per lato: `o
 | Bundle alterato, firma o hash errati, versione schema ignota | Rifiutato, evento di sicurezza registrato |
 | `from-ai` per un `to-ai` sconosciuto o gia' risolto | Rifiutato |
 | JSON IA non valido o evidenza inesistente | Valore scartato; se riguarda campi obbligatori -> ROSSO |
-| Pacchetto conoscenza non compatibile con la versione usata dalla IA | Avviso; la riga e' confrontata ma segnata "versione diversa" -> AMBRA |
+| La IA ha lavorato con una versione di conoscenza diversa da quella attuale della VM | Solo informazione (si vede nel confronto): il contenuto si confronta comunque, quindi se ci sono differenze dovute alle regole nuove compaiono come elementi da rivedere; se non ce ne sono, non c'e' nulla da rifare |
 | Due operatori sullo stesso caso | Blocco ottimistico: la seconda decisione viene rifiutata |
 | Ferrari corregge dopo la validazione | Riapertura come nuova versione, mai modifica dell'esistente |
 | Perdita/ritardo di un bundle | I lotti hanno scadenza; allarme se `to-ai` senza risposta oltre la soglia |
@@ -219,19 +221,41 @@ Il bundle e' lo stesso per tutti i trasporti. Si usano due cartelle per lato: `o
 
 ## 11. Stati di un file
 
-`RICEVUTO -> NORMALIZZATO -> IN_ATTESA_IA -> CONFRONTATO -> (ACCETTATO_AUTO | IN_REVISIONE) -> VALIDATO | RIFIUTATO`
-Laterali: `QUARANTENA`, `DUPLICATO`, `SOSTITUITO`, `SOLO_VM`.
+`IN_ATTESA_IA -> (ACCETTATO_AUTO | IN_REVISIONE) -> VALIDATO | RIFIUTATO`
+Laterali: `QUARANTENA` (file illeggibile, non si analizza), `SOSTITUITO` (esiste una versione piu' recente della stessa commessa).
+Un file duplicato (stesso hash) non crea una scheda nuova: si risponde con quella esistente.
+La ricezione, la normalizzazione e l'analisi della VM avvengono insieme al caricamento. Lo stato della IA e' a parte:
+`ia_stato = in_attesa | ricevuta | assente` (assente = «rivedi senza IA»: la scheda va in revisione, mai accettata in automatico).
+Una rianalisi (`Rianalizza`) rilegge la scheda con le regole attuali e **riporta le decisioni** gia' prese sugli stessi elementi.
 
 ## 12. Dove vive il codice
 
-- **STR-LocalAI** (`web/ferrari/`): import bundle `to-ai`, analisi IA, export `from-ai`, import `knowledge`, CLI per il prototipo.
-- **LRC-System** (sezione IT, modulo nuovo): tabelle (migrazioni nuove), ricezione, normalizzazione, motore deterministico, import/verifica `from-ai`, confronto, schermata di revisione, risultato finale, consulta.
+**LRC-System** (gruppo IT del menu, voce «Schede Ferrari», percorso `/ferrari`):
+- Migrazioni `0060` (permessi `ferrari_schede` e `ferrari_supervisore`) e `0061` (tabelle `ferrari_*`; originali immutabili e storico di sola aggiunta imposti da trigger del database).
+- `backend/src/modules/ferrari/`: `parser.ts` (normalizzazione), `analyzer.ts` (analisi senza IA), `compare.ts` (confronto), `bundle.ts` (pacchetti firmati), `validato.ts` (dati finali), `service.ts` (database e regole di flusso), `routes.ts` (`/api/ferrari/*`).
+- `frontend/src/app/ferrari/`: elenco, scheda con revisione, scambio con la IA, conoscenza, consulta.
+- Permessi: `ferrari_schede` (vedere) con gestione = operatore; `ferrari_supervisore` con gestione = approvare regole, impostazioni, segreto. Chi propone una regola non puo' approvarla (impostazione `four_eyes`).
+- Il segreto dei pacchetti si genera da solo la prima volta e vive nel database (non serve toccare `docker-compose.yml`): lo legge il supervisore nella pagina «Scambio con la IA».
+
+**STR-LocalAI** (`web/ferrari/`, pagina `/ferrari` di STR AI, voce «Schede Ferrari» nel menu):
+- `bundle.py` (firma identica a TypeScript), `analyzer.py` + `prompts.py` (analisi con Ollama), `knowledge.py`, `process.py`, `cli.py`, `web.py`.
+- Configurazione in `config.txt`: `FERRARI_BUNDLE_SECRET` (obbligatorio), `FERRARI_DATA_DIR`, `FERRARI_OLLAMA_MODEL`, `FERRARI_NUM_CTX`, `FERRARI_LLM_TIMEOUT`.
+- Riga di comando (dalla cartella `web`): `python -m ferrari analyze FILE.zip`, `python -m ferrari watch`, `python -m ferrari status`.
+- Cartelle in `FERRARI_DATA_DIR`: `inbox/` (pacchetti da elaborare), `outbox/` (risposte da riportare), `processed/`, `rejected/` (con il motivo), `knowledge/`.
+
+**Prove automatiche**
+- LRC: `cd backend && npm test` (analisi, confronto, pacchetti, compatibilita' con Python). Con un PostgreSQL di prova anche il flusso completo:
+  `FERRARI_TEST_DATABASE_URL=postgres://utente@localhost:5432/db_di_prova npx vitest run service.integration` (svuota le tabelle `ferrari_*`: mai su produzione).
+- STR-LocalAI: `cd web && python -m unittest discover -s ferrari/tests -t .` (la parte web richiede Flask).
+- Compatibilita' TypeScript/Python: `backend/src/modules/ferrari/__tests__/gen-fixtures.ts` genera i pacchetti di prova usati da entrambe le parti.
+
+**Cosa decide la IA e cosa no**: la IA riceve il JSON canonico (senza le celle grezze) e la conoscenza approvata; restituisce modello, componenti con il frammento citato, parole sconosciute/ambigue e incoerenze. Un componente il cui frammento non e' nel testo viene scartato (dalla IA e, di nuovo, dalla VM). La IA non puo' rendere VERDE una scheda: puo' solo aggiungere dubbi.
 
 ## 13. Punti aperti
 
-1. Posizione nel menu del modulo IT di LRC-System (non trovato nel codice di `dev`).
-2. Tabella dei codici opzione di 4 lettere (significato per STR/produzione). Se non esiste, si costruisce con le prime revisioni.
-3. Quali campi servono a produzione dalla scheda (es. colori, carbonio, livrea): definisce cosa estrarre.
-4. Trasporto del prototipo: USB / cartella / OneDrive aziendale (conferma sicurezza).
-5. Chi e' operatore e chi supervisore; volumi (schede a settimana) e percentuale di campionamento iniziale.
-6. Ambito "famiglia" (es. F171 intero) non previsto per ora: aggiungere solo se serve.
+1. Tabella dei codici opzione di 4 lettere (significato per STR/produzione). Se non esiste, si costruisce con le prime revisioni (la pagina «Conoscenza» e il pulsante «Proponi tutti i codici ignoti» servono a questo).
+2. Quali campi servono a produzione dalla scheda (es. colori, carbonio, livrea): definisce cosa estrarre e come si usano i «Dati validati».
+3. Trasporto del prototipo: USB / cartella / OneDrive aziendale (conferma della sicurezza). Con la PC IA in sede basta aggiungere il trasporto HTTPS: il formato del pacchetto non cambia.
+4. Chi e' operatore e chi supervisore (permessi nella pagina Sistema); volumi (schede a settimana) e percentuale di campionamento (parte da 100 %).
+5. Ambito «famiglia» (es. F171 intero) non previsto: aggiungere solo se serve.
+6. **Prova con Ollama reale** sulla PC IA: i prompt (`web/ferrari/prompts.py`) sono stati provati solo con una IA simulata; con il modello vero potrebbero servire ritocchi (tempi, qualita' delle risposte).

@@ -1,0 +1,819 @@
+// Logica di dominio delle Schede Ferrari (accesso al database). Le routes sono sottili: validano e chiamano qui.
+// Flusso e stati: docs/FERRARI-FLUSSO.md.
+
+import { createHash, randomBytes } from 'node:crypto';
+import { HTTPException } from 'hono/http-exception';
+import { db } from '../../db/client.js';
+import { logger } from '../../lib/logger.js';
+import { analizzaVm } from './analyzer.js';
+import {
+  BundleError, buildKnowledge, buildToAi, leggiBundle, leggiRisultatoIa, sha256, stableStringify,
+  type EsempioConoscenza,
+} from './bundle.js';
+import { confronta } from './compare.js';
+import { parseScheda, SchedaError } from './parser.js';
+import type {
+  AnalisiIa, AnalisiVm, Canonico, Conoscenza, ItemConfronto, RisultatoConfronto,
+} from './types.js';
+import { TIPI_COMPONENTE } from './types.js';
+import { TIPO_NEUTRO } from './analyzer.js';
+import {
+  costruisciDatiValidati, erroreDecisione, itemNonRisolti,
+  type Decisione, type DecisioneRecord, type ValoreDopo,
+} from './validato.js';
+import { collapse } from './text.js';
+
+type Tx = typeof db;
+
+export interface Utente { id: number; username: string }
+
+const J = (tx: Tx, v: unknown) => tx.json(v as never);
+const HASH_ZERO = '0'.repeat(64);
+const LOCK_AUDIT = 7310061;
+const LOCK_CONOSCENZA = 7310062;
+
+export const TIPI_DIZIONARIO: string[] = [...TIPI_COMPONENTE, TIPO_NEUTRO];
+
+// ─── Configurazione ───────────────────────────────────────────────────────────
+
+export async function getConfig(key: string, tx: Tx = db): Promise<string | null> {
+  const [r] = await tx<{ value: string }[]>`SELECT value FROM ferrari_config WHERE key = ${key}`;
+  return r?.value ?? null;
+}
+
+export async function setConfig(key: string, value: string, tx: Tx = db): Promise<void> {
+  await tx`
+    INSERT INTO ferrari_config (key, value) VALUES (${key}, ${value})
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+  `;
+}
+
+/** Segreto condiviso con la PC IA per firmare i pacchetti. Si genera la prima volta che serve. */
+export async function getSecret(): Promise<string> {
+  const esistente = await getConfig('bundle_secret');
+  if (esistente) return esistente;
+  await db`INSERT INTO ferrari_config (key, value) VALUES ('bundle_secret', ${randomBytes(32).toString('hex')}) ON CONFLICT (key) DO NOTHING`;
+  return (await getConfig('bundle_secret'))!;
+}
+
+async function samplingPct(tx: Tx = db): Promise<number> {
+  const n = Number(await getConfig('sampling_pct', tx));
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 100;
+}
+
+// ─── Storico (append-only, con catena di hash) ────────────────────────────────
+
+export async function audit(
+  tx: Tx, user: Utente | null, azione: string, entita: string | null, entitaId: string | number | null,
+  dettagli: Record<string, unknown> | null = null,
+): Promise<void> {
+  await tx`SELECT pg_advisory_xact_lock(${LOCK_AUDIT})`;
+  const [last] = await tx<{ hash: string }[]>`SELECT hash FROM ferrari_audit ORDER BY id DESC LIMIT 1`;
+  const prev = last?.hash ?? HASH_ZERO;
+  const ts = new Date();
+  const payload = {
+    ts: ts.toISOString(), user_id: user?.id ?? null, username: user?.username ?? null, azione,
+    entita, entita_id: entitaId === null ? null : String(entitaId), dettagli: dettagli ?? null,
+  };
+  const hash = createHash('sha256').update(prev + stableStringify(payload)).digest('hex');
+  await tx`
+    INSERT INTO ferrari_audit (ts, user_id, username, azione, entita, entita_id, dettagli, hash_prec, hash)
+    VALUES (${ts}, ${payload.user_id}, ${payload.username}, ${azione}, ${entita}, ${payload.entita_id},
+            ${dettagli ? J(tx, dettagli) : null}, ${prev}, ${hash})
+  `;
+}
+
+export async function verificaCatenaAudit(): Promise<{ ok: boolean; righe: number; errore?: string }> {
+  const rows = await db<{ id: string; ts: Date; user_id: number | null; username: string | null; azione: string;
+    entita: string | null; entita_id: string | null; dettagli: unknown; hash_prec: string; hash: string }[]>`
+    SELECT id, ts, user_id, username, azione, entita, entita_id, dettagli, hash_prec, hash FROM ferrari_audit ORDER BY id`;
+  let prev = HASH_ZERO;
+  for (const r of rows) {
+    const payload = {
+      ts: r.ts.toISOString(), user_id: r.user_id, username: r.username, azione: r.azione,
+      entita: r.entita, entita_id: r.entita_id, dettagli: r.dettagli ?? null,
+    };
+    const atteso = createHash('sha256').update(prev + stableStringify(payload)).digest('hex');
+    if (r.hash_prec !== prev || r.hash !== atteso) {
+      return { ok: false, righe: rows.length, errore: `Catena interrotta alla riga ${r.id}` };
+    }
+    prev = r.hash;
+  }
+  return { ok: true, righe: rows.length };
+}
+
+// ─── Conoscenza ───────────────────────────────────────────────────────────────
+
+export async function caricaConoscenza(tx: Tx = db): Promise<Conoscenza> {
+  const [codici, componenti, versione] = await Promise.all([
+    tx<{ codice: string; modello: string | null; significato: string; categoria: string | null }[]>`
+      SELECT codice, modello, significato, categoria FROM ferrari_codice WHERE stato = 'approvata' ORDER BY id`,
+    tx<{ pattern: string; tipo: string; valore: string; modello: string | null }[]>`
+      SELECT pattern, tipo, valore, modello FROM ferrari_componente WHERE stato = 'approvata' ORDER BY id`,
+    getConfig('conoscenza_versione', tx),
+  ]);
+  return { versione: Number(versione ?? 0), codici: [...codici], componenti: [...componenti] };
+}
+
+async function esempiConoscenza(): Promise<EsempioConoscenza[]> {
+  const rows = await db<{ esempio_testo: string; pattern: string; tipo: string; valore: string; modello: string | null }[]>`
+    SELECT esempio_testo, pattern, tipo, valore, modello FROM ferrari_componente
+    WHERE stato = 'approvata' AND esempio_testo IS NOT NULL ORDER BY id DESC LIMIT 300`;
+  return rows.map(r => ({ testo: r.esempio_testo, pattern: r.pattern, tipo: r.tipo, valore: r.valore, modello: r.modello }));
+}
+
+async function incrementaVersioneConoscenza(tx: Tx): Promise<number> {
+  await tx`SELECT pg_advisory_xact_lock(${LOCK_CONOSCENZA})`;
+  const [r] = await tx<{ value: string }[]>`
+    UPDATE ferrari_config SET value = (value::int + 1)::text, updated_at = now()
+    WHERE key = 'conoscenza_versione' RETURNING value`;
+  return Number(r!.value);
+}
+
+// ─── Caricamento delle schede ─────────────────────────────────────────────────
+
+export interface EsitoCaricamento {
+  id: number; filename: string; stato: string; duplicato: boolean; sostituisce: number[]; stessa_commessa?: number[]; motivo?: string;
+}
+
+export async function caricaScheda(user: Utente, filename: string, buf: Buffer): Promise<EsitoCaricamento> {
+  const hash = sha256(buf);
+  const nome = filename.replace(/[\\/]/g, '_').slice(0, 200) || 'scheda.xls';
+
+  const [dup] = await db<{ id: number; stato: string }[]>`SELECT id, stato FROM ferrari_file WHERE sha256 = ${hash}`;
+  if (dup) {
+    await db.begin(async raw => audit(raw as unknown as Tx, user, 'file.duplicato', 'file', dup.id, { filename: nome }));
+    return { id: dup.id, filename: nome, stato: dup.stato, duplicato: true, sostituisce: [] };
+  }
+
+  let canonico: Canonico | null = null;
+  let motivoQuarantena: string | null = null;
+  try {
+    canonico = parseScheda(buf, nome);
+  } catch (e) {
+    if (!(e instanceof SchedaError)) throw e;
+    motivoQuarantena = e.message;
+  }
+
+  try {
+    return await db.begin(async raw => {
+      const tx = raw as unknown as Tx;
+
+      if (!canonico) {
+        const [f] = await tx<{ id: number }[]>`
+          INSERT INTO ferrari_file (filename, sha256, size_bytes, original, stato, ia_stato, quarantena_motivo, caricato_da_id, caricato_da)
+          VALUES (${nome}, ${hash}, ${buf.length}, ${buf}, 'QUARANTENA', 'assente', ${motivoQuarantena}, ${user.id}, ${user.username})
+          RETURNING id`;
+        await audit(tx, user, 'file.quarantena', 'file', f!.id, { filename: nome, motivo: motivoQuarantena });
+        return { id: f!.id, filename: nome, stato: 'QUARANTENA', duplicato: false, sostituisce: [], motivo: motivoQuarantena! };
+      }
+
+      const h = canonico.header;
+      const [f] = await tx<{ id: number }[]>`
+        INSERT INTO ferrari_file (filename, sha256, size_bytes, original, stato, ia_stato, commessa, modello, versione,
+                                  mercato_codice, paese, matricola, canonico, caricato_da_id, caricato_da)
+        VALUES (${nome}, ${hash}, ${buf.length}, ${buf}, 'IN_ATTESA_IA', 'in_attesa', ${h.commessa},
+                ${h.tipo_matricola.modello}, ${h.tipo_matricola.versione}, ${h.tipo_matricola.mercato_codice},
+                ${h.destinazione.paese}, ${h.tipo_matricola.matricola}, ${J(tx, canonico)}, ${user.id}, ${user.username})
+        RETURNING id`;
+      const id = f!.id;
+
+      const k = await caricaConoscenza(tx);
+      const vm = analizzaVm(canonico, k);
+      await tx`INSERT INTO ferrari_analisi (file_id, fonte, risultato, versione_conoscenza) VALUES (${id}, 'vm', ${J(tx, vm)}, ${k.versione})`;
+
+      // Nuova versione della stessa commessa e della stessa variante: la precedente resta archiviata e collegata.
+      // Una variante diversa potrebbe essere un'altra vettura: non si tocca, ma si segnala.
+      const variante = h.variante.codice;
+      const vecchie = variante
+        ? await tx<{ id: number }[]>`
+            UPDATE ferrari_file SET stato = 'SOSTITUITO', sostituito_da = ${id}, chiuso_at = now(), chiuso_da = ${user.username}
+            WHERE commessa = ${h.commessa} AND id <> ${id} AND stato NOT IN ('SOSTITUITO', 'QUARANTENA')
+              AND canonico #>> '{header,variante,codice}' = ${variante}
+            RETURNING id`
+        : [];
+      for (const v of vecchie) await audit(tx, user, 'file.sostituito', 'file', v.id, { sostituito_da: id });
+      const altre = await tx<{ id: number }[]>`
+        SELECT id FROM ferrari_file WHERE commessa = ${h.commessa} AND id <> ${id} AND stato NOT IN ('SOSTITUITO', 'QUARANTENA')`;
+
+      await audit(tx, user, 'file.caricato', 'file', id, { filename: nome, sha256: hash, commessa: h.commessa, modello: h.tipo_matricola.modello });
+      return { id, filename: nome, stato: 'IN_ATTESA_IA', duplicato: false, sostituisce: vecchie.map(v => v.id), stessa_commessa: altre.map(a => a.id) };
+    });
+  } catch (e) {
+    // Due caricamenti simultanei dello stesso file: vince il primo
+    if ((e as { code?: string }).code === '23505') {
+      const [again] = await db<{ id: number; stato: string }[]>`SELECT id, stato FROM ferrari_file WHERE sha256 = ${hash}`;
+      if (again) return { id: again.id, filename: nome, stato: again.stato, duplicato: true, sostituisce: [] };
+    }
+    throw e;
+  }
+}
+
+// ─── Pacchetti verso la PC IA ─────────────────────────────────────────────────
+
+export async function creaPacchettoToAi(user: Utente, fileIds?: number[]) {
+  const secret = await getSecret();
+  const righe = await db<{ id: number; canonico: Canonico }[]>`
+    SELECT id, canonico FROM ferrari_file
+    WHERE stato = 'IN_ATTESA_IA' AND ia_stato = 'in_attesa'
+      ${fileIds && fileIds.length ? db`AND id = ANY(${fileIds})` : db``}
+    ORDER BY id`;
+  if (righe.length === 0) throw new HTTPException(409, { message: 'Nessuna scheda in attesa di analisi IA' });
+
+  const k = await caricaConoscenza();
+  const { zip, manifest } = buildToAi({
+    secret, schede: righe.map(r => ({ dbId: r.id, canonico: r.canonico })), conoscenza: k, esempi: await esempiConoscenza(),
+  });
+
+  await db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    await tx`
+      INSERT INTO ferrari_bundle (bundle_id, tipo, direzione, batch_id, stato, manifest, file_ids, sha256, contenuto, creato_da)
+      VALUES (${manifest.bundle_id}, 'to-ai', 'out', ${manifest.batch_id}, 'creato', ${J(tx, manifest)},
+              ${righe.map(r => r.id)}, ${sha256(zip)}, ${zip}, ${user.username})`;
+    await tx`UPDATE ferrari_file SET inviato_ia_at = now() WHERE id = ANY(${righe.map(r => r.id)})`;
+    await audit(tx, user, 'bundle.to-ai.creato', 'bundle', manifest.bundle_id, { schede: righe.length, knowledge_version: k.versione });
+  });
+  return { zip, manifest, filename: `FERRARI_to-ai_${manifest.bundle_id}.zip`, schede: righe.length };
+}
+
+export async function creaPacchettoConoscenza(user: Utente) {
+  const secret = await getSecret();
+  const k = await caricaConoscenza();
+  const { zip, manifest } = buildKnowledge({ secret, conoscenza: k, esempi: await esempiConoscenza() });
+  await db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    await tx`
+      INSERT INTO ferrari_bundle (bundle_id, tipo, direzione, batch_id, stato, manifest, sha256, contenuto, creato_da)
+      VALUES (${manifest.bundle_id}, 'knowledge', 'out', ${manifest.batch_id}, 'creato', ${J(tx, manifest)},
+              ${sha256(zip)}, ${zip}, ${user.username})`;
+    await audit(tx, user, 'bundle.knowledge.creato', 'bundle', manifest.bundle_id, { versione: k.versione });
+  });
+  return { zip, manifest, filename: `FERRARI_knowledge_v${k.versione}_${manifest.bundle_id}.zip` };
+}
+
+// ─── Importazione del risultato della IA ──────────────────────────────────────
+
+export interface EsitoImportFile {
+  file_id: string; id: number | null; esito: string | null; stato: string | null; errore?: string;
+}
+
+async function rifiutaBundle(user: Utente, filename: string, hash: string, motivo: string): Promise<never> {
+  await db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    await tx`INSERT INTO ferrari_bundle_rifiutato (filename, sha256, motivo, utente) VALUES (${filename.slice(0, 200)}, ${hash}, ${motivo}, ${user.username})`;
+    await audit(tx, user, 'bundle.rifiutato', 'bundle', null, { filename, sha256: hash, motivo });
+  });
+  throw new HTTPException(400, { message: motivo });
+}
+
+function inCampione(hash: string, pct: number): boolean {
+  return parseInt(hash.slice(0, 8), 16) % 100 < pct;
+}
+
+async function registraConfronto(
+  tx: Tx, user: Utente, file: { id: number; sha256: string; canonico: Canonico },
+  ia: { analisi: AnalisiIa; bundleId: string } | null, pct: number,
+): Promise<{ esito: string; stato: string }> {
+  const k = await caricaConoscenza(tx);
+  const vm = analizzaVm(file.canonico, k);
+  const [avm] = await tx<{ id: number }[]>`
+    INSERT INTO ferrari_analisi (file_id, fonte, risultato, versione_conoscenza) VALUES (${file.id}, 'vm', ${J(tx, vm)}, ${k.versione}) RETURNING id`;
+  let aiaId: number | null = null;
+  if (ia) {
+    const [aia] = await tx<{ id: number }[]>`
+      INSERT INTO ferrari_analisi (file_id, fonte, risultato, versione_conoscenza, bundle_id)
+      VALUES (${file.id}, 'ia', ${J(tx, ia.analisi)}, ${ia.analisi.run.knowledge_version}, ${ia.bundleId}) RETURNING id`;
+    aiaId = aia!.id;
+  }
+  const r = confronta(vm, ia?.analisi ?? null);
+  const [conf] = await tx<{ id: number }[]>`
+    INSERT INTO ferrari_confronto (file_id, analisi_vm_id, analisi_ia_id, esito, risultato)
+    VALUES (${file.id}, ${avm!.id}, ${aiaId}, ${r.esito}, ${J(tx, r)}) RETURNING id`;
+
+  // Una rianalisi non deve far perdere il lavoro gia' fatto: le decisioni sugli item identici (stessa chiave,
+  // calcolata sul contenuto) si riportano sul nuovo confronto, con la persona e l'ora originali.
+  const chiavi = r.items.map(i => i.key);
+  let riportate = 0;
+  if (chiavi.length) {
+    const copia = await tx`
+      INSERT INTO ferrari_decisione (file_id, confronto_id, item_key, decisione, valore_dopo, motivo, proposta_id, user_id, username, creata_at, riportata_da)
+      SELECT d.file_id, ${conf!.id}, d.item_key, d.decisione, d.valore_dopo, d.motivo, d.proposta_id, d.user_id, d.username, d.creata_at, d.id
+      FROM ferrari_decisione d
+      WHERE d.confronto_id = (SELECT id FROM ferrari_confronto WHERE file_id = ${file.id} AND id < ${conf!.id} ORDER BY id DESC LIMIT 1)
+        AND d.item_key = ANY(${chiavi})
+        AND d.id = (SELECT max(x.id) FROM ferrari_decisione x WHERE x.confronto_id = d.confronto_id AND x.item_key = d.item_key)`;
+    riportate = copia.count;
+  }
+
+  const campione = r.esito === 'VERDE' && inCampione(file.sha256, pct);
+  const auto = r.esito === 'VERDE' && !campione;
+  const stato = auto ? 'ACCETTATO_AUTO' : 'IN_REVISIONE';
+  const dati = auto ? costruisciDatiValidati(vm, r, [], true) : null;
+  await tx`
+    UPDATE ferrari_file SET stato = ${stato}, esito = ${r.esito}, campione = ${campione},
+      ia_stato = ${ia ? 'ricevuta' : 'assente'}, dati_validati = ${dati ? J(tx, dati) : null},
+      chiuso_da = ${auto ? 'automatico' : null}, chiuso_at = ${auto ? new Date() : null}
+    WHERE id = ${file.id}`;
+  await audit(tx, user, auto ? 'file.accettato_auto' : 'file.confrontato', 'file', file.id, {
+    confronto_id: conf!.id, esito: r.esito, items: r.items.length, decisioni_riportate: riportate, campione, ia: !!ia,
+    versioni: r.versioni,
+  });
+  return { esito: r.esito, stato };
+}
+
+export async function importaRisultatoIa(user: Utente, filename: string, buf: Buffer) {
+  const hash = sha256(buf);
+  const secret = await getSecret();
+  let letto;
+  try {
+    letto = leggiBundle(buf, secret, 'from-ai');
+  } catch (e) {
+    if (e instanceof BundleError) return rifiutaBundle(user, filename, hash, e.message);
+    throw e;
+  }
+  const { manifest, files } = letto;
+
+  const [gia] = await db<{ bundle_id: string }[]>`SELECT bundle_id FROM ferrari_bundle WHERE bundle_id = ${manifest.bundle_id}`;
+  if (gia) return rifiutaBundle(user, filename, hash, 'Pacchetto già importato (stesso bundle_id)');
+
+  if (!manifest.in_reply_to) return rifiutaBundle(user, filename, hash, 'Il pacchetto non indica a quale invio risponde (in_reply_to)');
+  const [invio] = await db<{ bundle_id: string; batch_id: string; file_ids: number[]; manifest: { knowledge_version: number } }[]>`
+    SELECT bundle_id, batch_id, file_ids, manifest FROM ferrari_bundle WHERE bundle_id = ${manifest.in_reply_to} AND tipo = 'to-ai' AND direzione = 'out'`;
+  if (!invio) return rifiutaBundle(user, filename, hash, 'Il pacchetto risponde a un invio sconosciuto');
+  if (invio.batch_id !== manifest.batch_id) return rifiutaBundle(user, filename, hash, 'batch_id diverso da quello dell\'invio');
+
+  const risultati = new Map<string, AnalisiIa>();
+  const errori = new Map<string, string>();
+  for (const [path, contenuto] of files) {
+    const m = /^results\/(f\d+)\.json$/.exec(path);
+    if (!m) continue;
+    try {
+      risultati.set(m[1]!, leggiRisultatoIa(contenuto));
+    } catch (e) {
+      errori.set(m[1]!, (e as Error).message);
+    }
+  }
+  if (risultati.size === 0 && errori.size === 0) return rifiutaBundle(user, filename, hash, 'Nessun risultato nel pacchetto');
+
+  const pct = await samplingPct();
+  const report: EsitoImportFile[] = [];
+
+  await db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    for (const [fid, msg] of errori) report.push({ file_id: fid, id: null, esito: null, stato: null, errore: msg });
+
+    for (const [fid, ia] of risultati) {
+      const id = Number(fid.slice(1));
+      if (ia.file_id !== fid) { report.push({ file_id: fid, id, esito: null, stato: null, errore: 'file_id interno diverso dal nome' }); continue; }
+      if (!invio.file_ids.includes(id)) { report.push({ file_id: fid, id, esito: null, stato: null, errore: 'scheda non inclusa nell\'invio' }); continue; }
+      const [f] = await tx<{ id: number; sha256: string; stato: string; canonico: Canonico }[]>`
+        SELECT id, sha256, stato, canonico FROM ferrari_file WHERE id = ${id} FOR UPDATE`;
+      if (!f) { report.push({ file_id: fid, id, esito: null, stato: null, errore: 'scheda inesistente' }); continue; }
+      if (f.sha256 !== ia.source_sha256) { report.push({ file_id: fid, id, esito: null, stato: null, errore: 'hash della scheda diverso: risultato riferito a un altro file' }); continue; }
+      if (!['IN_ATTESA_IA', 'IN_REVISIONE', 'ACCETTATO_AUTO'].includes(f.stato)) {
+        report.push({ file_id: fid, id, esito: null, stato: f.stato, errore: `scheda già chiusa (${f.stato})` }); continue;
+      }
+      const r = await registraConfronto(tx, user, f, { analisi: ia, bundleId: manifest.bundle_id }, pct);
+      report.push({ file_id: fid, id, esito: r.esito, stato: r.stato });
+    }
+
+    const accettati = report.filter(r => r.esito).map(r => r.id!);
+    await tx`
+      INSERT INTO ferrari_bundle (bundle_id, tipo, direzione, batch_id, in_reply_to, stato, manifest, file_ids, sha256, creato_da)
+      VALUES (${manifest.bundle_id}, 'from-ai', 'in', ${manifest.batch_id}, ${manifest.in_reply_to}, 'importato',
+              ${J(tx, manifest)}, ${accettati}, ${hash}, ${user.username})`;
+    await audit(tx, user, 'bundle.from-ai.importato', 'bundle', manifest.bundle_id, {
+      accettati: accettati.length, scartati: report.length - accettati.length, filename,
+    });
+  });
+
+  const mancanti = invio.file_ids.filter(id => !report.some(r => r.id === id));
+  return { bundle_id: manifest.bundle_id, report, mancanti };
+}
+
+// ─── Casi particolari ─────────────────────────────────────────────────────────
+
+/** Rivede una scheda senza attendere la IA (IA non disponibile). Non puo' mai essere accettata in automatico. */
+export async function revisioneSenzaIa(user: Utente, id: number) {
+  return db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    const [f] = await tx<{ id: number; sha256: string; stato: string; canonico: Canonico }[]>`
+      SELECT id, sha256, stato, canonico FROM ferrari_file WHERE id = ${id} FOR UPDATE`;
+    if (!f) throw new HTTPException(404, { message: 'Scheda non trovata' });
+    if (f.stato !== 'IN_ATTESA_IA') throw new HTTPException(409, { message: `Stato ${f.stato}: solo le schede in attesa della IA possono passare senza` });
+    const r = await registraConfronto(tx, user, f, null, 100);
+    await audit(tx, user, 'file.solo_vm', 'file', id, null);
+    return r;
+  });
+}
+
+/** Rimanda una scheda alla IA (es. risposta incompleta). Le decisioni gia' prese si riportano alla prossima importazione. */
+export async function reinviaAllaIa(user: Utente, id: number) {
+  return db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    const [f] = await tx<{ id: number; stato: string }[]>`SELECT id, stato FROM ferrari_file WHERE id = ${id} FOR UPDATE`;
+    if (!f) throw new HTTPException(404, { message: 'Scheda non trovata' });
+    if (!['IN_REVISIONE', 'ACCETTATO_AUTO'].includes(f.stato)) {
+      throw new HTTPException(409, { message: `Stato ${f.stato}: la scheda non si può rimandare alla IA` });
+    }
+    await tx`UPDATE ferrari_file SET stato = 'IN_ATTESA_IA', ia_stato = 'in_attesa', inviato_ia_at = NULL, esito = NULL,
+             campione = FALSE, chiuso_da = NULL, chiuso_at = NULL, dati_validati = NULL, rev = rev + 1 WHERE id = ${id}`;
+    await audit(tx, user, 'file.reinviato_ia', 'file', id, null);
+    return { stato: 'IN_ATTESA_IA' };
+  });
+}
+
+/** Rifa l'analisi della VM con la conoscenza attuale e la ricompara con l'ultima analisi IA (se c'e'). */
+export async function rianalizza(user: Utente, id: number) {
+  return db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    const [f] = await tx<{ id: number; sha256: string; stato: string; canonico: Canonico; ia_stato: string }[]>`
+      SELECT id, sha256, stato, canonico, ia_stato FROM ferrari_file WHERE id = ${id} FOR UPDATE`;
+    if (!f) throw new HTTPException(404, { message: 'Scheda non trovata' });
+    if (!['IN_ATTESA_IA', 'IN_REVISIONE', 'ACCETTATO_AUTO'].includes(f.stato)) {
+      throw new HTTPException(409, { message: `Stato ${f.stato}: la scheda non si può rianalizzare` });
+    }
+    if (f.stato === 'IN_ATTESA_IA') {
+      const k = await caricaConoscenza(tx);
+      const vm = analizzaVm(f.canonico, k);
+      await tx`INSERT INTO ferrari_analisi (file_id, fonte, risultato, versione_conoscenza) VALUES (${id}, 'vm', ${J(tx, vm)}, ${k.versione})`;
+      await audit(tx, user, 'file.rianalizzato', 'file', id, { versione: k.versione });
+      return { esito: null, stato: f.stato };
+    }
+    const [ultimaIa] = await tx<{ risultato: AnalisiIa; bundle_id: string }[]>`
+      SELECT risultato, bundle_id FROM ferrari_analisi WHERE file_id = ${id} AND fonte = 'ia' ORDER BY id DESC LIMIT 1`;
+    const r = await registraConfronto(tx, user, f, ultimaIa ? { analisi: ultimaIa.risultato, bundleId: ultimaIa.bundle_id } : null, await samplingPct(tx));
+    await tx`UPDATE ferrari_file SET rev = rev + 1 WHERE id = ${id}`;
+    await audit(tx, user, 'file.rianalizzato', 'file', id, { esito: r.esito });
+    return r;
+  });
+}
+
+// ─── Revisione: decisioni ─────────────────────────────────────────────────────
+
+export interface PropostaInput {
+  tipo: 'componente' | 'codice';
+  ambito: 'MODELLO' | 'TUTTI';
+  modello?: string;                 // solo per proposte fuori da una scheda con ambito MODELLO
+  // componente
+  pattern?: string; comp_tipo?: string; valore?: string; esempio_testo?: string;
+  // codice
+  codice?: string; significato?: string; categoria?: string;
+}
+
+export interface DecisioneInput {
+  rev: number; item_key: string; decisione: Decisione;
+  valore_dopo?: ValoreDopo | null; motivo?: string | null; proposta?: PropostaInput | null;
+}
+
+async function ultimoConfronto(tx: Tx, fileId: number) {
+  const [c] = await tx<{ id: number; risultato: RisultatoConfronto; analisi_vm_id: number }[]>`
+    SELECT id, risultato, analisi_vm_id FROM ferrari_confronto WHERE file_id = ${fileId} ORDER BY id DESC LIMIT 1`;
+  return c ?? null;
+}
+
+async function decisioniDelConfronto(tx: Tx, confrontoId: number): Promise<DecisioneRecord[]> {
+  return tx<DecisioneRecord[]>`
+    SELECT item_key, decisione, valore_dopo, motivo, username, creata_at
+    FROM ferrari_decisione WHERE confronto_id = ${confrontoId} ORDER BY id`;
+}
+
+async function creaProposta(tx: Tx, user: Utente, file: { id: number; modello: string | null }, p: PropostaInput): Promise<number> {
+  const modello = p.ambito === 'MODELLO' ? ((p.modello?.trim().toUpperCase() || file.modello) ?? null) : null;
+  if (p.ambito === 'MODELLO' && !modello) throw new HTTPException(400, { message: 'Indicare il modello oppure usare ambito TUTTI' });
+
+  if (p.tipo === 'codice') {
+    const codice = (p.codice ?? '').trim().toUpperCase();
+    if (!/^[A-Z0-9]{4}$/.test(codice)) throw new HTTPException(400, { message: 'Codice non valido (4 caratteri)' });
+    if (!p.significato?.trim()) throw new HTTPException(400, { message: 'Indicare il significato del codice' });
+    const [dup] = await tx<{ id: number }[]>`
+      SELECT id FROM ferrari_codice WHERE codice = ${codice} AND COALESCE(modello, '') = ${modello ?? ''} AND stato IN ('proposta', 'approvata') LIMIT 1`;
+    if (dup) return dup.id;
+    const [r] = await tx<{ id: number }[]>`
+      INSERT INTO ferrari_codice (codice, modello, significato, categoria, proposto_da, proposto_da_id, file_origine_id)
+      VALUES (${codice}, ${modello}, ${p.significato.trim()}, ${p.categoria?.trim() || null}, ${user.username}, ${user.id}, ${file.id || null})
+      RETURNING id`;
+    await audit(tx, user, 'conoscenza.codice.proposto', 'codice', r!.id, { codice, modello });
+    return r!.id;
+  }
+
+  const pattern = collapse(p.pattern ?? '');
+  const tipo = (p.comp_tipo ?? '').trim().toUpperCase();
+  if (!pattern || pattern.length > 200) throw new HTTPException(400, { message: 'Pattern non valido' });
+  if (!TIPI_DIZIONARIO.includes(tipo)) throw new HTTPException(400, { message: `Tipo non valido (ammessi: ${TIPI_DIZIONARIO.join(', ')})` });
+  const valore = tipo === TIPO_NEUTRO ? '-' : (p.valore ?? '').trim();
+  if (!valore) throw new HTTPException(400, { message: 'Indicare il valore' });
+  const [dup] = await tx<{ id: number }[]>`
+    SELECT id FROM ferrari_componente WHERE pattern = ${pattern} AND tipo = ${tipo} AND COALESCE(modello, '') = ${modello ?? ''}
+      AND stato IN ('proposta', 'approvata') LIMIT 1`;
+  if (dup) return dup.id;
+  const [r] = await tx<{ id: number }[]>`
+    INSERT INTO ferrari_componente (pattern, tipo, valore, modello, esempio_testo, proposto_da, proposto_da_id, file_origine_id)
+    VALUES (${pattern}, ${tipo}, ${valore}, ${modello}, ${p.esempio_testo?.slice(0, 1000) ?? null}, ${user.username}, ${user.id}, ${file.id || null})
+    RETURNING id`;
+  await audit(tx, user, 'conoscenza.componente.proposto', 'componente', r!.id, { pattern, tipo, valore, modello });
+  return r!.id;
+}
+
+export async function registraDecisione(user: Utente, fileId: number, d: DecisioneInput) {
+  return db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    const [f] = await tx<{ id: number; stato: string; rev: number; modello: string | null }[]>`
+      SELECT id, stato, rev, modello FROM ferrari_file WHERE id = ${fileId} FOR UPDATE`;
+    if (!f) throw new HTTPException(404, { message: 'Scheda non trovata' });
+    if (f.stato !== 'IN_REVISIONE') throw new HTTPException(409, { message: `Stato ${f.stato}: la scheda non è in revisione` });
+    if (f.rev !== d.rev) throw new HTTPException(409, { message: 'La scheda è stata modificata da un\'altra persona: ricaricare' });
+
+    const conf = await ultimoConfronto(tx, fileId);
+    if (!conf) throw new HTTPException(409, { message: 'Nessun confronto disponibile' });
+    const item = conf.risultato.items.find(i => i.key === d.item_key);
+    if (!item) throw new HTTPException(404, { message: 'Elemento da rivedere non trovato' });
+
+    const err = erroreDecisione(item, d.decisione, d.valore_dopo ?? null, d.motivo ?? null);
+    if (err) throw new HTTPException(400, { message: err });
+
+    let propostaId: number | null = null;
+    if (d.proposta) {
+      if (d.decisione !== 'correggi' && d.decisione !== 'conferma_ia' && d.decisione !== 'conferma_vm') {
+        throw new HTTPException(400, { message: 'Una regola si può proporre solo confermando o correggendo' });
+      }
+      propostaId = await creaProposta(tx, user, f, d.proposta);
+    }
+
+    await tx`
+      INSERT INTO ferrari_decisione (file_id, confronto_id, item_key, decisione, valore_dopo, motivo, proposta_id, user_id, username)
+      VALUES (${fileId}, ${conf.id}, ${d.item_key}, ${d.decisione}, ${d.valore_dopo ? J(tx, d.valore_dopo) : null},
+              ${d.motivo?.trim() || null}, ${propostaId}, ${user.id}, ${user.username})`;
+    const [upd] = await tx<{ rev: number }[]>`UPDATE ferrari_file SET rev = rev + 1 WHERE id = ${fileId} RETURNING rev`;
+    await audit(tx, user, 'decisione.registrata', 'file', fileId, {
+      item_key: d.item_key, tipo: item.tipo, decisione: d.decisione, proposta_id: propostaId, motivo: d.motivo ?? null,
+    });
+    return { rev: upd!.rev, proposta_id: propostaId };
+  });
+}
+
+export async function validaScheda(user: Utente, fileId: number, rev: number) {
+  return db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    const [f] = await tx<{ id: number; stato: string; rev: number }[]>`SELECT id, stato, rev FROM ferrari_file WHERE id = ${fileId} FOR UPDATE`;
+    if (!f) throw new HTTPException(404, { message: 'Scheda non trovata' });
+    if (f.stato !== 'IN_REVISIONE') throw new HTTPException(409, { message: `Stato ${f.stato}: la scheda non è in revisione` });
+    if (f.rev !== rev) throw new HTTPException(409, { message: 'La scheda è stata modificata da un\'altra persona: ricaricare' });
+    const conf = await ultimoConfronto(tx, fileId);
+    if (!conf) throw new HTTPException(409, { message: 'Nessun confronto disponibile' });
+    const decisioni = await decisioniDelConfronto(tx, conf.id);
+    const aperti = itemNonRisolti(conf.risultato, decisioni);
+    if (aperti.length) throw new HTTPException(409, { message: `Restano ${aperti.length} elementi da rivedere` });
+    const [avm] = await tx<{ risultato: AnalisiVm }[]>`SELECT risultato FROM ferrari_analisi WHERE id = ${conf.analisi_vm_id}`;
+    const dati = costruisciDatiValidati(avm!.risultato, conf.risultato, decisioni, false);
+    await tx`
+      UPDATE ferrari_file SET stato = 'VALIDATO', dati_validati = ${J(tx, dati)}, chiuso_da = ${user.username}, chiuso_at = now(), rev = rev + 1
+      WHERE id = ${fileId}`;
+    await audit(tx, user, 'file.validato', 'file', fileId, { confronto_id: conf.id, decisioni: decisioni.length });
+    return { stato: 'VALIDATO' };
+  });
+}
+
+export async function rifiutaScheda(user: Utente, fileId: number, rev: number, motivo: string) {
+  if (!motivo.trim()) throw new HTTPException(400, { message: 'Il motivo del rifiuto è obbligatorio' });
+  return db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    const [f] = await tx<{ id: number; stato: string; rev: number }[]>`SELECT id, stato, rev FROM ferrari_file WHERE id = ${fileId} FOR UPDATE`;
+    if (!f) throw new HTTPException(404, { message: 'Scheda non trovata' });
+    if (['VALIDATO', 'RIFIUTATO', 'SOSTITUITO'].includes(f.stato)) throw new HTTPException(409, { message: `Stato ${f.stato}: scheda già chiusa` });
+    if (f.rev !== rev) throw new HTTPException(409, { message: 'La scheda è stata modificata da un\'altra persona: ricaricare' });
+    await tx`UPDATE ferrari_file SET stato = 'RIFIUTATO', chiuso_da = ${user.username}, chiuso_at = now(), rev = rev + 1 WHERE id = ${fileId}`;
+    await audit(tx, user, 'file.rifiutato', 'file', fileId, { motivo: motivo.trim() });
+    return { stato: 'RIFIUTATO' };
+  });
+}
+
+// ─── Conoscenza: approvazione ─────────────────────────────────────────────────
+
+export type Entita = 'codice' | 'componente';
+
+export async function decidiConoscenza(
+  user: Utente, entita: Entita, ids: number[], azione: 'approva' | 'rifiuta' | 'revoca', motivo: string | null,
+) {
+  if (ids.length === 0) throw new HTTPException(400, { message: 'Nessun elemento selezionato' });
+  if ((azione === 'rifiuta' || azione === 'revoca') && !(motivo && motivo.trim())) {
+    throw new HTTPException(400, { message: 'Il motivo è obbligatorio' });
+  }
+  const quattroOcchi = (await getConfig('four_eyes')) !== 'false';
+
+  return db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    const tabella = entita === 'codice' ? 'ferrari_codice' : 'ferrari_componente';
+    const righe = await tx<{ id: number; stato: string; proposto_da_id: number | null }[]>`
+      SELECT id, stato, proposto_da_id FROM ${tx(tabella)} WHERE id = ANY(${ids}) FOR UPDATE`;
+    if (righe.length !== new Set(ids).size) throw new HTTPException(404, { message: 'Elemento non trovato' });
+
+    for (const r of righe) {
+      if (azione === 'revoca' ? r.stato !== 'approvata' : r.stato !== 'proposta') {
+        throw new HTTPException(409, { message: `Elemento ${r.id}: stato ${r.stato}, azione "${azione}" non possibile` });
+      }
+      if (azione === 'approva' && quattroOcchi && r.proposto_da_id !== null && r.proposto_da_id === user.id) {
+        throw new HTTPException(403, { message: `Elemento ${r.id}: chi propone una regola non può approvarla (doppia firma)` });
+      }
+    }
+
+    const nuovoStato = azione === 'approva' ? 'approvata' : azione === 'rifiuta' ? 'rifiutata' : 'revocata';
+    let versione: number | null = null;
+    if (azione !== 'rifiuta') versione = await incrementaVersioneConoscenza(tx);
+
+    try {
+      await tx`
+        UPDATE ${tx(tabella)} SET stato = ${nuovoStato}, deciso_da = ${user.username}, deciso_da_id = ${user.id},
+          deciso_at = now(), motivo = ${motivo?.trim() || null},
+          versione_in = ${azione === 'approva' ? versione : null}
+        WHERE id = ANY(${ids})`;
+    } catch (e) {
+      if ((e as { code?: string }).code === '23505') {
+        throw new HTTPException(409, { message: 'Esiste già una regola approvata uguale' });
+      }
+      throw e;
+    }
+    for (const id of ids) await audit(tx, user, `conoscenza.${entita}.${azione}`, entita, id, { motivo: motivo ?? null, versione });
+    return { versione: versione ?? Number(await getConfig('conoscenza_versione', tx)), aggiornati: ids.length };
+  });
+}
+
+export async function proponiConoscenzaDiretta(user: Utente, p: PropostaInput) {
+  return db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    // Proposta senza scheda di origine (es. caricamento della tabella codici): il modello arriva dal chiamante
+    return creaProposta(tx, user, { id: 0, modello: null }, p);
+  });
+}
+
+// ─── Lettura ──────────────────────────────────────────────────────────────────
+
+export interface FiltriFile {
+  stato?: string; esito?: string; modello?: string; q?: string; dal?: string; al?: string; codice?: string;
+  limite?: number; offset?: number;
+}
+
+export async function listaFile(f: FiltriFile) {
+  const limite = Math.min(Math.max(f.limite ?? 50, 1), 200);
+  const offset = Math.max(f.offset ?? 0, 0);
+  const q = f.q?.trim();
+  const rows = await db`
+    SELECT id, filename, stato, ia_stato, esito, campione, commessa, modello, versione, mercato_codice, paese,
+           caricato_da, caricato_at, inviato_ia_at, chiuso_da, chiuso_at, sostituito_da, quarantena_motivo,
+           (SELECT count(*)::int FROM ferrari_confronto c WHERE c.file_id = ferrari_file.id) AS n_confronti,
+           COALESCE((SELECT jsonb_array_length(risultato->'items') FROM ferrari_confronto c WHERE c.file_id = ferrari_file.id ORDER BY id DESC LIMIT 1), 0)::int AS n_items,
+           COALESCE((SELECT count(DISTINCT d.item_key) FROM ferrari_decisione d JOIN (SELECT id FROM ferrari_confronto WHERE file_id = ferrari_file.id ORDER BY id DESC LIMIT 1) lc ON lc.id = d.confronto_id), 0)::int AS n_decisioni
+    FROM ferrari_file
+    WHERE TRUE
+      ${f.stato ? db`AND stato = ${f.stato}` : db``}
+      ${f.esito ? db`AND esito = ${f.esito}` : db``}
+      ${f.modello ? db`AND modello = ${f.modello.toUpperCase()}` : db``}
+      ${f.dal ? db`AND caricato_at >= ${f.dal}::date` : db``}
+      ${f.al ? db`AND caricato_at < (${f.al}::date + 1)` : db``}
+      ${f.codice ? db`AND EXISTS (SELECT 1 FROM jsonb_array_elements(canonico->'opzioni') o WHERE o->>'codice' = ${f.codice.toUpperCase()})` : db``}
+      ${q ? db`AND (filename ILIKE ${'%' + q + '%'} OR commessa ILIKE ${'%' + q + '%'} OR matricola ILIKE ${'%' + q + '%'}
+                    OR modello ILIKE ${'%' + q + '%'} OR versione ILIKE ${'%' + q + '%'} OR paese ILIKE ${'%' + q + '%'})` : db``}
+    ORDER BY caricato_at DESC, id DESC
+    LIMIT ${limite} OFFSET ${offset}`;
+  const [tot] = await db<{ n: number }[]>`
+    SELECT count(*)::int AS n FROM ferrari_file
+    WHERE TRUE
+      ${f.stato ? db`AND stato = ${f.stato}` : db``}
+      ${f.esito ? db`AND esito = ${f.esito}` : db``}
+      ${f.modello ? db`AND modello = ${f.modello.toUpperCase()}` : db``}
+      ${f.dal ? db`AND caricato_at >= ${f.dal}::date` : db``}
+      ${f.al ? db`AND caricato_at < (${f.al}::date + 1)` : db``}
+      ${f.codice ? db`AND EXISTS (SELECT 1 FROM jsonb_array_elements(canonico->'opzioni') o WHERE o->>'codice' = ${f.codice.toUpperCase()})` : db``}
+      ${q ? db`AND (filename ILIKE ${'%' + q + '%'} OR commessa ILIKE ${'%' + q + '%'} OR matricola ILIKE ${'%' + q + '%'}
+                    OR modello ILIKE ${'%' + q + '%'} OR versione ILIKE ${'%' + q + '%'} OR paese ILIKE ${'%' + q + '%'})` : db``}`;
+  return { totale: tot!.n, righe: rows };
+}
+
+export async function riepilogo() {
+  const stati = await db<{ stato: string; n: number }[]>`SELECT stato, count(*)::int AS n FROM ferrari_file GROUP BY stato`;
+  const [prop] = await db<{ codici: number; componenti: number }[]>`
+    SELECT (SELECT count(*) FROM ferrari_codice WHERE stato = 'proposta')::int AS codici,
+           (SELECT count(*) FROM ferrari_componente WHERE stato = 'proposta')::int AS componenti`;
+  const ore = Number((await getConfig('ia_attesa_ore')) ?? 48);
+  const [scadute] = await db<{ n: number }[]>`
+    SELECT count(*)::int AS n FROM ferrari_file
+    WHERE stato = 'IN_ATTESA_IA' AND inviato_ia_at IS NOT NULL AND inviato_ia_at < now() - make_interval(hours => ${ore})`;
+  const k = await getConfig('conoscenza_versione');
+  return {
+    stati: Object.fromEntries(stati.map(s => [s.stato, s.n])),
+    proposte: prop,
+    ia_in_ritardo: scadute!.n,
+    conoscenza_versione: Number(k ?? 0),
+  };
+}
+
+export async function dettaglioFile(id: number) {
+  const [f] = await db`
+    SELECT id, filename, sha256, size_bytes, stato, ia_stato, esito, campione, commessa, modello, versione, mercato_codice, paese,
+           matricola, canonico, quarantena_motivo, sostituito_da, dati_validati, rev, caricato_da, caricato_at, inviato_ia_at,
+           chiuso_da, chiuso_at,
+           (SELECT array_agg(id) FROM ferrari_file x WHERE x.sostituito_da = ferrari_file.id) AS sostituisce
+    FROM ferrari_file WHERE id = ${id}`;
+  if (!f) throw new HTTPException(404, { message: 'Scheda non trovata' });
+  const [vm] = await db`SELECT id, risultato, versione_conoscenza, creata_at FROM ferrari_analisi WHERE file_id = ${id} AND fonte = 'vm' ORDER BY id DESC LIMIT 1`;
+  const [ia] = await db`SELECT id, risultato, versione_conoscenza, bundle_id, creata_at FROM ferrari_analisi WHERE file_id = ${id} AND fonte = 'ia' ORDER BY id DESC LIMIT 1`;
+  const [conf] = await db`SELECT id, esito, risultato, analisi_vm_id, analisi_ia_id, creato_at FROM ferrari_confronto WHERE file_id = ${id} ORDER BY id DESC LIMIT 1`;
+  const decisioni = conf
+    ? await db`SELECT id, item_key, decisione, valore_dopo, motivo, proposta_id, username, creata_at FROM ferrari_decisione WHERE confronto_id = ${conf.id} ORDER BY id`
+    : [];
+  // Per mostrare il confronto il testo della VM che corrisponde al confronto, non per forza l'ultimo
+  const [vmConfronto] = conf ? await db`SELECT risultato FROM ferrari_analisi WHERE id = ${conf.analisi_vm_id}` : [];
+  const storico = await db`
+    SELECT id, ts, username, azione, dettagli FROM ferrari_audit WHERE entita = 'file' AND entita_id = ${String(id)} ORDER BY id`;
+  const confronti = await db`SELECT id, esito, creato_at FROM ferrari_confronto WHERE file_id = ${id} ORDER BY id DESC`;
+  return { file: f, vm: vm ?? null, vm_confronto: vmConfronto?.risultato ?? null, ia: ia ?? null, confronto: conf ?? null, confronti, decisioni, storico };
+}
+
+export async function scaricaOriginale(id: number) {
+  const [f] = await db<{ filename: string; original: Buffer }[]>`SELECT filename, original FROM ferrari_file WHERE id = ${id}`;
+  if (!f) throw new HTTPException(404, { message: 'Scheda non trovata' });
+  return f;
+}
+
+export async function listaConoscenza(stato?: string) {
+  const codici = await db`
+    SELECT id, codice, modello, significato, categoria, stato, proposto_da, proposto_at, deciso_da, deciso_at, motivo, file_origine_id, versione_in
+    FROM ferrari_codice ${stato ? db`WHERE stato = ${stato}` : db``} ORDER BY (stato = 'proposta') DESC, id DESC LIMIT 1000`;
+  const componenti = await db`
+    SELECT id, pattern, tipo, valore, modello, esempio_testo, stato, proposto_da, proposto_at, deciso_da, deciso_at, motivo, file_origine_id, versione_in
+    FROM ferrari_componente ${stato ? db`WHERE stato = ${stato}` : db``} ORDER BY (stato = 'proposta') DESC, id DESC LIMIT 1000`;
+  return { codici, componenti, versione: Number((await getConfig('conoscenza_versione')) ?? 0) };
+}
+
+export async function listaBundle() {
+  const rows = await db`
+    SELECT bundle_id, tipo, direzione, batch_id, in_reply_to, stato, motivo, file_ids, sha256, creato_da, creato_at,
+           (contenuto IS NOT NULL) AS scaricabile
+    FROM ferrari_bundle ORDER BY creato_at DESC LIMIT 200`;
+  const rifiutati = await db`SELECT id, filename, sha256, motivo, utente, creato_at FROM ferrari_bundle_rifiutato ORDER BY id DESC LIMIT 50`;
+  return { bundle: rows, rifiutati };
+}
+
+export async function scaricaBundle(bundleId: string) {
+  const [b] = await db<{ tipo: string; contenuto: Buffer | null }[]>`SELECT tipo, contenuto FROM ferrari_bundle WHERE bundle_id = ${bundleId}`;
+  if (!b || !b.contenuto) throw new HTTPException(404, { message: 'Pacchetto non disponibile' });
+  return { filename: `FERRARI_${b.tipo}_${bundleId}.zip`, contenuto: b.contenuto };
+}
+
+/** Ricerca trasversale per la pagina di consulta. */
+export async function cerca(q: string) {
+  const like = `%${q.trim()}%`;
+  if (q.trim().length < 2) throw new HTTPException(400, { message: 'Scrivere almeno 2 caratteri' });
+  const [file, codici, componenti, decisioni, storico] = await Promise.all([
+    db`SELECT id, filename, stato, esito, commessa, modello, caricato_at FROM ferrari_file
+       WHERE filename ILIKE ${like} OR commessa ILIKE ${like} OR matricola ILIKE ${like} OR modello ILIKE ${like}
+          OR EXISTS (SELECT 1 FROM jsonb_array_elements(canonico->'opzioni') o
+                     WHERE o->>'codice' ILIKE ${like} OR o->>'valore' ILIKE ${like} OR o->>'descrizione' ILIKE ${like}
+                        OR o->>'nota' ILIKE ${like} OR (o->'blocchi_testo')::text ILIKE ${like})
+       ORDER BY caricato_at DESC LIMIT 50`,
+    db`SELECT id, codice, modello, significato, stato FROM ferrari_codice WHERE codice ILIKE ${like} OR significato ILIKE ${like} ORDER BY id DESC LIMIT 50`,
+    db`SELECT id, pattern, tipo, valore, modello, stato FROM ferrari_componente WHERE pattern ILIKE ${like} OR valore ILIKE ${like} ORDER BY id DESC LIMIT 50`,
+    db`SELECT d.id, d.file_id, d.item_key, d.decisione, d.motivo, d.username, d.creata_at FROM ferrari_decisione d
+       WHERE d.motivo ILIKE ${like} OR d.valore_dopo::text ILIKE ${like} OR d.username ILIKE ${like} ORDER BY d.id DESC LIMIT 50`,
+    db`SELECT id, ts, username, azione, entita, entita_id FROM ferrari_audit
+       WHERE azione ILIKE ${like} OR username ILIKE ${like} OR dettagli::text ILIKE ${like} ORDER BY id DESC LIMIT 50`,
+  ]);
+  return { file, codici, componenti, decisioni, storico };
+}
+
+export async function listaAudit(limite = 200, entita?: string, entitaId?: string) {
+  return db`
+    SELECT id, ts, username, azione, entita, entita_id, dettagli, hash
+    FROM ferrari_audit
+    WHERE TRUE ${entita ? db`AND entita = ${entita}` : db``} ${entitaId ? db`AND entita_id = ${entitaId}` : db``}
+    ORDER BY id DESC LIMIT ${Math.min(limite, 1000)}`;
+}
+
+export async function configCorrente() {
+  const rows = await db<{ key: string; value: string }[]>`
+    SELECT key, value FROM ferrari_config WHERE key <> 'bundle_secret' ORDER BY key`;
+  return Object.fromEntries(rows.map(r => [r.key, r.value]));
+}
+
+export async function aggiornaConfig(user: Utente, cambi: Partial<{ sampling_pct: number; four_eyes: boolean; ia_attesa_ore: number }>) {
+  await db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    if (cambi.sampling_pct !== undefined) await setConfig('sampling_pct', String(cambi.sampling_pct), tx);
+    if (cambi.four_eyes !== undefined) await setConfig('four_eyes', String(cambi.four_eyes), tx);
+    if (cambi.ia_attesa_ore !== undefined) await setConfig('ia_attesa_ore', String(cambi.ia_attesa_ore), tx);
+    await audit(tx, user, 'config.aggiornata', 'config', null, cambi);
+  });
+}
+
+export async function mostraSegreto(user: Utente): Promise<string> {
+  const s = await getSecret();
+  await db.begin(async raw => audit(raw as unknown as Tx, user, 'config.segreto.visualizzato', 'config', null, null));
+  return s;
+}
+
+export function logErrore(msg: string, err: unknown) {
+  logger.error({ err }, msg);
+}
+
+export type { ItemConfronto };
