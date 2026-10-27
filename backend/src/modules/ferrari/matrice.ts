@@ -1,6 +1,7 @@
 // Matrice commesse × caratteristiche: una colonna per opzione trovata, in cella «Sì» oppure il dettaglio (colore, filo…).
 // Stessa regola di STR-LocalAI/web/ferrari/matrice.py (la PC IA ne mostra una uguale, con il riassunto della IA nel dettaglio).
 
+import { createHash } from 'node:crypto';
 import { collapse, norm, phraseRegex } from './text.js';
 import type { Canonico, Opzione } from './types.js';
 
@@ -32,6 +33,26 @@ export function cellaOpzione(o: Opzione, dettaglio?: string | null): string {
   if (parti.length === 0) return classe === 'EXTRA' ? 'Extra campionario' : SI;
   const testo = parti.join(' · ');
   return classe === 'SI' || classe === 'EXTRA' ? `${SI} — ${testo}` : testo;
+}
+
+/** Chiave di un testo lungo: stessa regola della PC IA (sha1 del testo normalizzato, spazi compressi). */
+export function chiaveTesto(testo: string): string {
+  return createHash('sha1').update(collapse(testo), 'utf8').digest('hex');
+}
+
+/** Dettagli arrivati dalla PC IA: commessa → codice → {chiave, dettaglio}. */
+export type DettagliPerCommessa = Map<string, Map<string, { chiave: string; dettaglio: string }>>;
+
+function dettagliValidi(commessa: string, opzioni: Opzione[], tutti?: DettagliPerCommessa): Record<string, string> {
+  const out: Record<string, string> = {};
+  const della = tutti?.get(commessa);
+  if (!della) return out;
+  for (const o of opzioni) {
+    const d = della.get(o.codice);
+    // vale solo se il testo della scheda e' ancora quello da cui e' nato il riassunto
+    if (d && d.chiave === chiaveTesto(testoLibero(o))) out[o.codice] = d.dettaglio;
+  }
+  return out;
 }
 
 function estratto(testo: string, inizio: number, fine: number, margine = 40): string {
@@ -70,12 +91,13 @@ export interface RigaMatrice {
 }
 
 /** Per un modello: una riga per commessa, una colonna per ogni sigla/parola scelta. */
-export function costruisciMatrice(schede: { id: number; stato: string; canonico: Canonico }[], termini: string[]): RigaMatrice[] {
+export function costruisciMatrice(schede: { id: number; stato: string; canonico: Canonico }[], termini: string[], dettagli?: DettagliPerCommessa): RigaMatrice[] {
   return schede.map(s => {
+    const det = dettagliValidi(s.canonico.header.commessa ?? '', s.canonico.opzioni, dettagli);
     const celle: Record<string, string> = {};
     const testi: Record<string, string> = {};
     for (const t of termini) {
-      const c = cellaTermine(t, s.canonico.opzioni);
+      const c = cellaTermine(t, s.canonico.opzioni, det);
       celle[t] = c.testo;
       if (c.completo) testi[t] = c.completo;
     }

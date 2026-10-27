@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import PizZip from 'pizzip';
 import { buildBundle } from '../bundle.js';
+import { chiaveTesto } from '../matrice.js';
 import { analizzaVm } from '../analyzer.js';
 import type { Canonico } from '../types.js';
 import { schedaPersonalizzata, schedaSemplice, toXlsBuffer } from './fixtures.js';
@@ -28,7 +29,7 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   afterAll(async () => { await db?.end(); });
 
   beforeEach(async () => {
-    await db`TRUNCATE ferrari_sigla_proposta, ferrari_sigla, ferrari_termine, ferrari_decisione, ferrari_confronto, ferrari_analisi, ferrari_bundle, ferrari_bundle_rifiutato,
+    await db`TRUNCATE ferrari_dettaglio, ferrari_sigla_proposta, ferrari_sigla, ferrari_termine, ferrari_decisione, ferrari_confronto, ferrari_analisi, ferrari_bundle, ferrari_bundle_rifiutato,
              ferrari_codice, ferrari_componente, ferrari_audit, ferrari_file RESTART IDENTITY CASCADE`;
     await db`UPDATE ferrari_config SET value = '100' WHERE key = 'sampling_pct'`;
     await db`UPDATE ferrari_config SET value = 'true' WHERE key = 'four_eyes'`;
@@ -405,12 +406,12 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
 
     // «L'altro programma» = lo stesso database senza le decisioni: tutto diventa proposta
     await db`TRUNCATE ferrari_sigla`;
-    expect(await svc.importaSigle(sup, 'sigle.zip', zip)).toEqual({ nuove: 2, conflitti: 0, uguali: 0 });
+    expect(await svc.importaSigle(sup, 'sigle.zip', zip)).toEqual({ nuove: 2, conflitti: 0, uguali: 0, dettagli: 0 });
     expect((await svc.matrice()).termini).toEqual([]);                          // non si applica da solo
     expect((await svc.proposteSigle()).map((p: { codice: string }) => p.codice).sort()).toEqual(['BIC2', 'CEL2']);
 
     await svc.decidiSigla(op, 'F999XX', 'BIC2', false, false);                  // decisione locale opposta
-    expect(await svc.importaSigle(sup, 'sigle.zip', zip)).toEqual({ nuove: 1, conflitti: 1, uguali: 0 });
+    expect(await svc.importaSigle(sup, 'sigle.zip', zip)).toEqual({ nuove: 1, conflitti: 1, uguali: 0, dettagli: 0 });
     const conf = (await svc.proposteSigle()).find((p: { codice: string }) => p.codice === 'BIC2')!;
     expect(conf.conflitto).toBe(true);
 
@@ -423,6 +424,27 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
     await svc.importaSigle(sup, 'sigle.zip', zip);
     expect(await svc.risolviProposte(sup, true)).toBe(1);                       // «accetta tutte»
     expect((await svc.verificaCatenaAudit()).ok).toBe(true);
+  });
+
+  it('dettagli: il riassunto della PC IA arriva nel pacchetto delle sigle e si vede in cella solo se il testo e\' lo stesso', async () => {
+    await svc.caricaScheda(op, 'p.xls', xls(schedaPersonalizzata({ commessa: 100077, modello: 'F999XX' })));
+    await svc.decidiSigla(op, 'F999XX', 'LLOG', true, false);
+    const testo = 'SCUDETTO LASERIZZATO COME DA IMMAGINE.';
+    const secret = await svc.getSecret();
+    const pacchetto = (chiave: string) => buildBundle({
+      tipo: 'sigle', producer: 'ai', secret, knowledgeVersion: 0,
+      files: { 'sigle.json': JSON.stringify({ sigle: [], dettagli: [
+        { commessa: '100077', codice: 'LLOG', chiave, dettaglio: 'Scudetto laserizzato (scritto a mano)', manuale: true },
+        { commessa: '100077', codice: 'LLOG', chiave: 'non-valida', dettaglio: 'x' },
+      ] }) },
+    }).zip;
+    expect((await svc.importaSigle(sup, 's.zip', pacchetto(chiaveTesto(testo))))).toMatchObject({ dettagli: 1 });
+    const cella = (await svc.matrice('F999XX')).righe.find((r: { commessa: string }) => r.commessa === '100077')!.celle['LLOG'];
+    expect(cella).toBe('Sì — Scudetto laserizzato (scritto a mano)');
+    // testo cambiato nella scheda: il riassunto vecchio non si usa
+    await svc.importaSigle(sup, 's2.zip', pacchetto(chiaveTesto('TESTO DIVERSO')));
+    const cella2 = (await svc.matrice('F999XX')).righe.find((r: { commessa: string }) => r.commessa === '100077')!.celle['LLOG'];
+    expect(cella2).toContain('COME DA IMMAGINE');
   });
 
   it('sigle: pacchetto con firma sbagliata o di un altro tipo si rifiuta', async () => {

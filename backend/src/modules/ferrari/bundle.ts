@@ -284,3 +284,29 @@ export function leggiSigle(contenuto: Buffer): VoceSigla[] {
   }
   return out;
 }
+
+// ─── Dettagli (riassunti dei testi lunghi, dalla PC IA alla VM, dentro il pacchetto delle sigle) ──────────
+
+export interface VoceDettaglio { commessa: string; codice: string; chiave: string; dettaglio: string; manuale: boolean }
+
+/** Dettagli validi di un pacchetto delle sigle (campo facoltativo `dettagli`); quelli malformati si ignorano. */
+export function leggiDettagli(contenuto: Buffer): VoceDettaglio[] {
+  let json: unknown;
+  try {
+    json = JSON.parse(contenuto.toString('utf8'));
+  } catch {
+    throw new BundleError('Pacchetto delle sigle non valido');
+  }
+  const lista = (json as { dettagli?: unknown })?.dettagli;
+  if (!Array.isArray(lista)) return [];
+  const out: VoceDettaglio[] = [];
+  for (const v of lista.slice(0, 20000)) {
+    if (!v || typeof v !== 'object') continue;
+    const { commessa, codice, chiave, dettaglio, manuale } = v as Record<string, unknown>;
+    if (typeof commessa !== 'string' || typeof codice !== 'string' || typeof chiave !== 'string' || typeof dettaglio !== 'string') continue;
+    const d = dettaglio.replace(/\s+/g, ' ').trim().slice(0, 300);
+    if (!commessa.trim() || !codice.trim() || !/^[0-9a-f]{40}$/.test(chiave) || !d) continue;
+    out.push({ commessa: commessa.trim().slice(0, 30), codice: codice.trim().toUpperCase().slice(0, 60), chiave, dettaglio: d, manuale: manuale === true });
+  }
+  return out;
+}

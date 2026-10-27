@@ -93,8 +93,8 @@ export default function CommessePage() {
   async function importaSigle(f: File | undefined) {
     if (!f) return;
     try {
-      const r = await inviaFile<{ nuove: number; conflitti: number; uguali: number }>('/api/ferrari/sigle/importa', 'file', [f]);
-      setMsg([`Sigle dalla PC IA: ${r.nuove} nuove, ${r.conflitti} in conflitto, ${r.uguali} già uguali`]);
+      const r = await inviaFile<{ nuove: number; conflitti: number; uguali: number; dettagli: number }>('/api/ferrari/sigle/importa', 'file', [f]);
+      setMsg([`Dalla PC IA: ${r.nuove} sigle nuove, ${r.conflitti} in conflitto, ${r.uguali} già uguali · ${r.dettagli} riassunti di testi lunghi`]);
       await carica(modello, q.trim());
     } catch (e) {
       setErrore((e as Error).message);
@@ -150,7 +150,7 @@ export default function CommessePage() {
     <div>
       <div className="mb-4">
         <h1 className="text-3xl font-bold text-gray-900">Schede Ferrari</h1>
-        <p className="mt-1 text-gray-500">Per ogni modello decidi quali sigle vanno in tabella (es. BIC2): vedi, per ogni commessa, «Sì» o il valore trovato (es. NERO DS 1250). Quando compare una sigla nuova, l&apos;app chiede.</p>
+        <p className="mt-1 text-gray-500">Per ogni modello decidi quali sigle vanno in tabella (es. BIC2): vedi, per ogni commessa, «Sì» o il valore trovato (es. NERO DS 1250). Le sigle nuove compaiono in un elenco: scegli Sì/No e salva.</p>
       </div>
       <FerrariNav />
       <Errore messaggio={errore} />

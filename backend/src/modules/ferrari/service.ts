@@ -7,8 +7,8 @@ import { db } from '../../db/client.js';
 import { logger } from '../../lib/logger.js';
 import { analizzaVm } from './analyzer.js';
 import {
-  BundleError, buildKnowledge, buildSigle, buildToAi, leggiBundle, leggiRisultatoIa, leggiSigle, sha256, stableStringify,
-  type EsempioConoscenza,
+  BundleError, buildKnowledge, buildSigle, buildToAi, leggiBundle, leggiDettagli, leggiRisultatoIa, leggiSigle, sha256, stableStringify,
+  type EsempioConoscenza, type VoceDettaglio,
 } from './bundle.js';
 import { confronta } from './compare.js';
 import { parseScheda, SchedaError } from './parser.js';
@@ -22,7 +22,7 @@ import {
   type Decisione, type DecisioneRecord, type ValoreDopo,
 } from './validato.js';
 import { collapse } from './text.js';
-import { costruisciMatrice, nuoveSigle } from './matrice.js';
+import { costruisciMatrice, nuoveSigle, type DettagliPerCommessa } from './matrice.js';
 
 type Tx = typeof db;
 
@@ -858,12 +858,22 @@ export async function matrice(modello?: string, q?: string) {
   const nomi = new Map<string, string>();
   for (const s of tutte) for (const o of s.canonico.opzioni) if (!nomi.has(o.codice)) nomi.set(o.codice, o.descrizione);
   const cerca = q?.trim();
-  const mostrate = cerca ? tutte.filter(s => (s.canonico.header.commessa ?? '').includes(cerca)) : tutte;
+  const mostrate = (cerca ? tutte.filter(s => (s.canonico.header.commessa ?? '').includes(cerca)) : tutte).slice(0, 500);
+  const commesse = mostrate.map(s => s.canonico.header.commessa ?? '').filter(Boolean);
+  const dettagli: DettagliPerCommessa = new Map();
+  if (commesse.length) {
+    const righe = await db<{ commessa: string; codice: string; chiave: string; dettaglio: string }[]>`
+      SELECT commessa, codice, chiave, dettaglio FROM ferrari_dettaglio WHERE commessa IN ${db(commesse)}`;
+    for (const r of righe) {
+      if (!dettagli.has(r.commessa)) dettagli.set(r.commessa, new Map());
+      dettagli.get(r.commessa)!.set(r.codice, { chiave: r.chiave, dettaglio: r.dettaglio });
+    }
+  }
   return {
     modelli, modello: scelto, termini,
     nuove: nuoveSigle(tutte, new Set(decisioni.keys())),
     sigle: ordinate.map(([codice, d]) => ({ codice, nome: nomi.get(codice) ?? '(parola cercata)', va: d.va, ambito: d.ambito })),
-    righe: costruisciMatrice(mostrate.slice(0, 500), termini),
+    righe: costruisciMatrice(mostrate, termini, dettagli),
     proposte,
   };
 }
@@ -930,11 +940,13 @@ export async function esportaSigle(user: Utente) {
 export async function importaSigle(user: Utente, filename: string, buf: Buffer) {
   const secret = await getSecret();
   let voci;
+  let dettagli: VoceDettaglio[] = [];
   let da = 'ia';
   try {
     const letto = leggiBundle(buf, secret, 'sigle');
     da = letto.manifest.producer;
     voci = leggiSigle(letto.files.get('sigle.json') ?? Buffer.alloc(0));
+    dettagli = leggiDettagli(letto.files.get('sigle.json') ?? Buffer.alloc(0));
   } catch (e) {
     if (e instanceof BundleError) return rifiutaBundle(user, filename, sha256(buf), e.message);
     throw e;
@@ -950,8 +962,15 @@ export async function importaSigle(user: Utente, filename: string, buf: Buffer) 
         ON CONFLICT (modello, codice) DO UPDATE SET va = EXCLUDED.va, nome = EXCLUDED.nome, conflitto = EXCLUDED.conflitto, da = EXCLUDED.da, creata_at = now()`;
       if (locale) conflitti++; else nuove++;
     }
-    await audit(tx, user, 'sigle.importate', 'sigle', null, { filename, nuove, conflitti, uguali });
-    return { nuove, conflitti, uguali };
+    for (const d of dettagli) {
+      await tx`
+        INSERT INTO ferrari_dettaglio (commessa, codice, chiave, dettaglio, manuale, da)
+        VALUES (${d.commessa}, ${d.codice}, ${d.chiave}, ${d.dettaglio}, ${d.manuale}, ${da})
+        ON CONFLICT (commessa, codice) DO UPDATE SET chiave = EXCLUDED.chiave, dettaglio = EXCLUDED.dettaglio,
+          manuale = EXCLUDED.manuale, da = EXCLUDED.da, aggiornato_at = now()`;
+    }
+    await audit(tx, user, 'sigle.importate', 'sigle', null, { filename, nuove, conflitti, uguali, dettagli: dettagli.length });
+    return { nuove, conflitti, uguali, dettagli: dettagli.length };
   });
 }
 

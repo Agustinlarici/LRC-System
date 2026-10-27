@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseScheda } from '../parser.js';
-import { cellaOpzione, cellaTermine, classeValore, costruisciMatrice, nuoveSigle } from '../matrice.js';
+import { cellaOpzione, cellaTermine, chiaveTesto, classeValore, costruisciMatrice, nuoveSigle } from '../matrice.js';
 import type { Opzione } from '../types.js';
 import { schedaPersonalizzata, schedaSemplice, toXlsBuffer } from './fixtures.js';
 
@@ -66,6 +66,18 @@ describe('costruisciMatrice / suggerimenti', () => {
     expect(righe[0]!.celle).toEqual({ BIC2: 'NERO DS 1250', CEL2: 'Sì', LLOG: '' });
     expect(righe[1]!.celle['LLOG']).toBe('Sì — SCUDETTO LASERIZZATO COME DA IMMAGINE.');
     expect(righe[1]!.testi['LLOG']).toContain('SCUDETTO');
+  });
+
+  it('il riassunto della PC IA vale solo se il testo e\' ancora lo stesso', () => {
+    const testo = 'SCUDETTO LASERIZZATO COME DA IMMAGINE.';
+    const giusto = new Map([['100002', new Map([['LLOG', { chiave: chiaveTesto(testo), dettaglio: 'Scudetto laserizzato' }]])]]);
+    expect(costruisciMatrice(schede, ['LLOG'], giusto)[1]!.celle['LLOG']).toBe('Sì — Scudetto laserizzato');
+    const vecchio = new Map([['100002', new Map([['LLOG', { chiave: chiaveTesto('ALTRO TESTO'), dettaglio: 'Scudetto laserizzato' }]])]]);
+    expect(costruisciMatrice(schede, ['LLOG'], vecchio)[1]!.celle['LLOG']).toContain('COME DA IMMAGINE');
+  });
+
+  it('chiave del testo uguale a quella calcolata dalla PC IA (Python)', () => {
+    expect(chiaveTesto('VERNICIARE VETTURA  in colore blu — è così')).toBe('52252fd2e2adc2519b76cab0b318b6340d303553');
   });
 
   it('le sigle ancora da decidere, nell\'ordine dell\'Excel, con un esempio', () => {
