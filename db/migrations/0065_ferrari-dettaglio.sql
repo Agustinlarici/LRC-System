@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS ferrari_dettaglio (
   chiave         TEXT        NOT NULL,
   dettaglio      TEXT        NOT NULL,
   manuale        BOOLEAN     NOT NULL DEFAULT FALSE,   -- scritto da una persona (non dalla IA)
+  stato          TEXT        NOT NULL DEFAULT 'ok' CHECK (stato IN ('ok', 'rivedere', 'rivisto')),   -- rivedere = la IA non era sicura
   da             TEXT,
   pacchetto_at   TIMESTAMPTZ NOT NULL DEFAULT now(),   -- data del pacchetto: uno piu' vecchio non sovrascrive uno piu' nuovo
   aggiornato_at  TIMESTAMPTZ NOT NULL DEFAULT now(),

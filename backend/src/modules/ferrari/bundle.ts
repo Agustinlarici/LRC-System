@@ -287,7 +287,8 @@ export function leggiSigle(contenuto: Buffer): VoceSigla[] {
 
 // ─── Dettagli (riassunti dei testi lunghi, dalla PC IA alla VM, dentro il pacchetto delle sigle) ──────────
 
-export interface VoceDettaglio { commessa: string; codice: string; chiave: string; dettaglio: string; manuale: boolean }
+export type StatoDettaglio = 'ok' | 'rivedere' | 'rivisto';
+export interface VoceDettaglio { commessa: string; codice: string; chiave: string; dettaglio: string; manuale: boolean; stato: StatoDettaglio }
 
 /** Dettagli validi di un pacchetto delle sigle (campo facoltativo `dettagli`); quelli malformati si ignorano. */
 export function leggiDettagli(contenuto: Buffer): VoceDettaglio[] {
@@ -302,11 +303,12 @@ export function leggiDettagli(contenuto: Buffer): VoceDettaglio[] {
   const out: VoceDettaglio[] = [];
   for (const v of lista.slice(0, 20000)) {
     if (!v || typeof v !== 'object') continue;
-    const { commessa, codice, chiave, dettaglio, manuale } = v as Record<string, unknown>;
+    const { commessa, codice, chiave, dettaglio, manuale, stato } = v as Record<string, unknown>;
     if (typeof commessa !== 'string' || typeof codice !== 'string' || typeof chiave !== 'string' || typeof dettaglio !== 'string') continue;
-    const d = dettaglio.replace(/\s+/g, ' ').trim().slice(0, 300);          // vuoto = cancella il riassunto vecchio
+    const d = dettaglio.replace(/\s+/g, ' ').trim().slice(0, 300);          // vuoto = nessun riassunto (la IA non era sicura)
     if (!commessa.trim() || !codice.trim() || !/^[0-9a-f]{40}$/.test(chiave)) continue;
-    out.push({ commessa: commessa.trim().slice(0, 30), codice: codice.trim().toUpperCase().slice(0, 60), chiave, dettaglio: d, manuale: manuale === true });
+    out.push({ commessa: commessa.trim().slice(0, 30), codice: codice.trim().toUpperCase().slice(0, 60), chiave, dettaglio: d, manuale: manuale === true,
+      stato: stato === 'ok' || stato === 'rivedere' || stato === 'rivisto' ? stato : (d ? 'ok' : 'rivedere') });
   }
   return out;
 }

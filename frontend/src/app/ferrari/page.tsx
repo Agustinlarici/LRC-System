@@ -15,7 +15,7 @@ interface Matrice {
   sigle: { codice: string; nome: string; va: boolean; ambito: 'modello' | 'tutti' }[];
   proposte: { modello: string; codice: string; va: boolean; nome: string | null; conflitto: boolean; da: string | null }[];
   righe: { id: number; commessa: string; modello: string | null; paese: string | null; stato: string;
-    celle: Record<string, string>; testi: Record<string, string> }[];
+    celle: Record<string, string>; testi: Record<string, string>; rivedere: Record<string, boolean> }[];
 }
 
 function Cella({ testo, intero }: { testo?: string; intero?: string }) {
@@ -307,7 +307,10 @@ export default function CommessePage() {
                     <Link href={`/ferrari/${r.id}`} className="text-blue-700 hover:underline">{r.commessa}</Link>
                   </td>
                   {m.termini.map(t => (
-                    <td key={t} className="border-b border-l border-gray-100 px-3 py-2 max-w-[320px]"><Cella testo={r.celle[t]} intero={r.testi[t]} /></td>
+                    <td key={t} className={`border-b border-l border-gray-100 px-3 py-2 max-w-[320px] ${r.rivedere?.[t] ? 'shadow-[inset_3px_0_0_#f0a020]' : ''}`}>
+                      {r.rivedere?.[t] && <div className="text-xs font-semibold text-amber-700" title="La IA non era sicura: va controllato sulla PC IA">⚠ da rivedere</div>}
+                      <Cella testo={r.celle[t]} intero={r.testi[t]} />
+                    </td>
                   ))}
                 </tr>
               ))}

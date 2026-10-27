@@ -864,11 +864,11 @@ export async function matrice(modello?: string, q?: string) {
   const commesse = mostrate.map(s => s.canonico.header.commessa ?? '').filter(Boolean);
   const dettagli: DettagliPerCommessa = new Map();
   if (commesse.length) {
-    const righe = await db<{ commessa: string; codice: string; chiave: string; dettaglio: string }[]>`
-      SELECT commessa, codice, chiave, dettaglio FROM ferrari_dettaglio WHERE commessa IN ${db(commesse)}`;
+    const righe = await db<{ commessa: string; codice: string; chiave: string; dettaglio: string; stato: string }[]>`
+      SELECT commessa, codice, chiave, dettaglio, stato FROM ferrari_dettaglio WHERE commessa IN ${db(commesse)}`;
     for (const r of righe) {
       if (!dettagli.has(r.commessa)) dettagli.set(r.commessa, new Map());
-      dettagli.get(r.commessa)!.set(r.chiave, r.dettaglio);
+      dettagli.get(r.commessa)!.set(r.chiave, { dettaglio: r.dettaglio, stato: r.stato });
     }
   }
   return {
@@ -976,16 +976,11 @@ export async function importaSigle(user: Utente, filename: string, buf: Buffer) 
     }
     let applicati = 0;
     for (const d of dettagli) {
-      if (d.dettaglio === '') {          // la PC IA non ha piu' un riassunto per questo testo: si cancella quello vecchio
-        const r = await tx`DELETE FROM ferrari_dettaglio WHERE commessa = ${d.commessa} AND chiave = ${d.chiave} AND pacchetto_at <= ${pacchettoAt}`;
-        applicati += r.count;
-        continue;
-      }
       const r = await tx`
-        INSERT INTO ferrari_dettaglio (commessa, codice, chiave, dettaglio, manuale, da, pacchetto_at)
-        VALUES (${d.commessa}, ${d.codice}, ${d.chiave}, ${d.dettaglio}, ${d.manuale}, ${da}, ${pacchettoAt})
+        INSERT INTO ferrari_dettaglio (commessa, codice, chiave, dettaglio, manuale, stato, da, pacchetto_at)
+        VALUES (${d.commessa}, ${d.codice}, ${d.chiave}, ${d.dettaglio}, ${d.manuale}, ${d.stato}, ${da}, ${pacchettoAt})
         ON CONFLICT (commessa, chiave) DO UPDATE SET codice = EXCLUDED.codice, dettaglio = EXCLUDED.dettaglio,
-          manuale = EXCLUDED.manuale, da = EXCLUDED.da, pacchetto_at = EXCLUDED.pacchetto_at, aggiornato_at = now()
+          manuale = EXCLUDED.manuale, stato = EXCLUDED.stato, da = EXCLUDED.da, pacchetto_at = EXCLUDED.pacchetto_at, aggiornato_at = now()
         WHERE ferrari_dettaglio.pacchetto_at <= EXCLUDED.pacchetto_at`;
       applicati += r.count;
     }

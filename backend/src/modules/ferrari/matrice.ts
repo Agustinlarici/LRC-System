@@ -41,22 +41,25 @@ export function chiaveTesto(testo: string): string {
   return createHash('sha1').update(norm(testo).replace(/[^A-Z0-9]+/g, ' ').trim(), 'utf8').digest('hex');
 }
 
-/** Dettagli arrivati dalla PC IA: commessa → chiave del testo → dettaglio. */
-export type DettagliPerCommessa = Map<string, Map<string, string>>;
+/** Dettagli arrivati dalla PC IA: commessa → chiave del testo → dettaglio e stato. */
+export type DettagliPerCommessa = Map<string, Map<string, { dettaglio: string; stato: string }>>;
 
-function dettagliValidi(commessa: string, opzioni: Opzione[], tutti?: DettagliPerCommessa): Record<string, string> {
+function dettagliValidi(commessa: string, opzioni: Opzione[], tutti?: DettagliPerCommessa): { testi: Record<string, string>; rivedere: Record<string, boolean> } {
   const out: Record<string, string> = {};
+  const rivedere: Record<string, boolean> = {};
   const della = tutti?.get(commessa);
-  if (!della) return out;
+  if (!della) return { testi: out, rivedere };
   const visti = new Set<string>();
   for (const o of opzioni) {
     if (visti.has(o.codice)) continue;          // la cella usa la prima voce con quel codice
     visti.add(o.codice);
     // vale solo se il testo della scheda e' ancora quello da cui e' nato il riassunto
     const d = della.get(chiaveTesto(testoLibero(o)));
-    if (d) out[o.codice] = d;
+    if (!d) continue;
+    if (d.dettaglio) out[o.codice] = d.dettaglio;
+    if (d.stato === 'rivedere') rivedere[o.codice] = true;      // la IA non era sicura: serve una persona
   }
-  return out;
+  return { testi: out, rivedere };
 }
 
 function estratto(testo: string, inizio: number, fine: number, margine = 40): string {
@@ -91,7 +94,7 @@ export function cellaTermine(termine: string, opzioni: Opzione[], dettagli: Reco
 
 export interface RigaMatrice {
   id: number; commessa: string; modello: string | null; paese: string | null; stato: string;
-  celle: Record<string, string>; testi: Record<string, string>;
+  celle: Record<string, string>; testi: Record<string, string>; rivedere: Record<string, boolean>;
 }
 
 /** Per un modello: una riga per commessa, una colonna per ogni sigla/parola scelta. */
@@ -100,14 +103,16 @@ export function costruisciMatrice(schede: { id: number; stato: string; canonico:
     const det = dettagliValidi(s.canonico.header.commessa ?? '', s.canonico.opzioni, dettagli);
     const celle: Record<string, string> = {};
     const testi: Record<string, string> = {};
+    const rivedere: Record<string, boolean> = {};
     for (const t of termini) {
-      const c = cellaTermine(t, s.canonico.opzioni, det);
+      const c = cellaTermine(t, s.canonico.opzioni, det.testi);
+      if (det.rivedere[t]) rivedere[t] = true;
       celle[t] = c.testo;
       if (c.completo) testi[t] = c.completo;
     }
     return {
       id: s.id, commessa: s.canonico.header.commessa ?? '', modello: s.canonico.header.tipo_matricola.modello,
-      paese: s.canonico.header.destinazione.paese, stato: s.stato, celle, testi,
+      paese: s.canonico.header.destinazione.paese, stato: s.stato, celle, testi, rivedere,
     };
   });
 }

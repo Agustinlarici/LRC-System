@@ -70,10 +70,20 @@ describe('costruisciMatrice / suggerimenti', () => {
 
   it('il riassunto della PC IA vale solo se il testo e\' ancora lo stesso', () => {
     const testo = 'SCUDETTO LASERIZZATO COME DA IMMAGINE.';
-    const giusto = new Map([['100002', new Map([[chiaveTesto(testo), 'Scudetto laserizzato']])]]);
+    const giusto = new Map([['100002', new Map([[chiaveTesto(testo), { dettaglio: 'Scudetto laserizzato', stato: 'ok' }]])]]);
     expect(costruisciMatrice(schede, ['LLOG'], giusto)[1]!.celle['LLOG']).toBe('Sì — Scudetto laserizzato');
-    const vecchio = new Map([['100002', new Map([[chiaveTesto('ALTRO TESTO'), 'Scudetto laserizzato']])]]);
+    const vecchio = new Map([['100002', new Map([[chiaveTesto('ALTRO TESTO'), { dettaglio: 'Scudetto laserizzato', stato: 'ok' }]])]]);
     expect(costruisciMatrice(schede, ['LLOG'], vecchio)[1]!.celle['LLOG']).toContain('COME DA IMMAGINE');
+  });
+
+  it('la IA non sicura: la cella mostra l\'originale e segnala che serve una persona', () => {
+    const testo = 'SCUDETTO LASERIZZATO COME DA IMMAGINE.';
+    const dubbio = new Map([['100002', new Map([[chiaveTesto(testo), { dettaglio: '', stato: 'rivedere' }]])]]);
+    const riga = costruisciMatrice(schede, ['LLOG'], dubbio)[1]!;
+    expect(riga.celle['LLOG']).toContain('COME DA IMMAGINE');
+    expect(riga.rivedere['LLOG']).toBe(true);
+    const rivisto = new Map([['100002', new Map([[chiaveTesto(testo), { dettaglio: '', stato: 'rivisto' }]])]]);
+    expect(costruisciMatrice(schede, ['LLOG'], rivisto)[1]!.rivedere['LLOG']).toBeUndefined();
   });
 
   it('chiave del testo uguale a quella calcolata dalla PC IA (Python)', () => {

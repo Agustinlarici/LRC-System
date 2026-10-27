@@ -431,10 +431,10 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
     await svc.decidiSigla(op, 'F999XX', 'LLOG', true, false);
     const testo = 'SCUDETTO LASERIZZATO COME DA IMMAGINE.';
     const secret = await svc.getSecret();
-    const pacchetto = (dettaglio: string, createdAt?: string, chiave = chiaveTesto(testo)) => buildBundle({
+    const pacchetto = (dettaglio: string, createdAt?: string, chiave = chiaveTesto(testo), stato = 'ok') => buildBundle({
       tipo: 'sigle', producer: 'ai', secret, knowledgeVersion: 0, createdAt,
       files: { 'sigle.json': JSON.stringify({ sigle: [], dettagli: [
-        { commessa: '100077', codice: 'LLOG', chiave, dettaglio, manuale: true },
+        { commessa: '100077', codice: 'LLOG', chiave, dettaglio, manuale: true, stato },
         { commessa: '100077', codice: 'LLOG', chiave: 'non-valida', dettaglio: 'x' },
       ] }) },
     }).zip;
@@ -448,9 +448,15 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
     // riassunto per un altro testo: non si usa
     await svc.importaSigle(sup, 's3.zip', pacchetto('Altro', '2031-01-01T00:00:00.000Z', chiaveTesto('TESTO DIVERSO')));
     expect(await cella()).toBe('Sì — Scudetto laserizzato');
-    // dettaglio vuoto = la PC IA non ha piu' un riassunto: si cancella e torna il testo originale
-    await svc.importaSigle(sup, 's4.zip', pacchetto('', '2032-01-01T00:00:00.000Z'));
+    // la IA non e' piu' sicura: niente riassunto, torna il testo originale e la cella chiede supervisione
+    await svc.importaSigle(sup, 's4.zip', pacchetto('', '2032-01-01T00:00:00.000Z', chiaveTesto(testo), 'rivedere'));
     expect(await cella()).toContain('COME DA IMMAGINE');
+    const riga = (await svc.matrice('F999XX')).righe.find((r: { commessa: string }) => r.commessa === '100077')!;
+    expect(riga.rivedere['LLOG']).toBe(true);
+    // una persona lo rivede sulla PC IA: ok, senza segnalazione
+    await svc.importaSigle(sup, 's5.zip', pacchetto('', '2033-01-01T00:00:00.000Z', chiaveTesto(testo), 'rivisto'));
+    const riga2 = (await svc.matrice('F999XX')).righe.find((r: { commessa: string }) => r.commessa === '100077')!;
+    expect(riga2.rivedere['LLOG']).toBeUndefined();
   });
 
   it('caricamenti insieme della stessa commessa: resta una sola scheda attiva', async () => {
