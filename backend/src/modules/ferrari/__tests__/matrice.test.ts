@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseScheda } from '../parser.js';
-import { cellaOpzione, cellaTermine, classeValore, costruisciMatrice, suggerimenti } from '../matrice.js';
+import { cellaOpzione, cellaTermine, classeValore, costruisciMatrice, nuoveSigle } from '../matrice.js';
 import type { Opzione } from '../types.js';
 import { schedaPersonalizzata, schedaSemplice, toXlsBuffer } from './fixtures.js';
 
@@ -68,10 +68,13 @@ describe('costruisciMatrice / suggerimenti', () => {
     expect(righe[1]!.testi['LLOG']).toContain('SCUDETTO');
   });
 
-  it('suggerisce le sigle dell\'Excel non ancora scelte, dalla più frequente', () => {
-    const s = suggerimenti(schede, ['BIC2']);
-    expect(s.map(x => x.codice)).not.toContain('BIC2');
-    expect(s[0]!.codice).toBe('CEL2');                                    // presente in entrambe le schede
-    expect(s.find(x => x.codice === 'CEL2')?.nome).toBe('ALLEST.VANO MOTORE IN CARBONIO');
+  it('le sigle ancora da decidere, nell\'ordine dell\'Excel, con un esempio', () => {
+    const n = nuoveSigle(schede, new Set(['EXTC']));
+    expect(n.map(x => x.codice).slice(0, 3)).toEqual(['PNCC', 'CEL2', 'TYBR']);        // EXTC già deciso: non si chiede
+    expect(new Set(n.map(x => x.codice)).size).toBe(n.length);
+    const bic = n.find(x => x.codice === 'BIC2')!;
+    expect(bic).toMatchObject({ nome: 'CARROZZERIA BICOLORE', esempio: 'NERO DS 1250' });
+    expect(n.find(x => x.codice === 'CEL2')?.esempio).toBe('Sì');
+    expect(nuoveSigle(schede, new Set(n.map(x => x.codice).concat(['EXTC'])))).toEqual([]);
   });
 });

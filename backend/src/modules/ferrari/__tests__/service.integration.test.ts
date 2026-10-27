@@ -28,7 +28,7 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   afterAll(async () => { await db?.end(); });
 
   beforeEach(async () => {
-    await db`TRUNCATE ferrari_termine, ferrari_decisione, ferrari_confronto, ferrari_analisi, ferrari_bundle, ferrari_bundle_rifiutato,
+    await db`TRUNCATE ferrari_sigla, ferrari_termine, ferrari_decisione, ferrari_confronto, ferrari_analisi, ferrari_bundle, ferrari_bundle_rifiutato,
              ferrari_codice, ferrari_componente, ferrari_audit, ferrari_file RESTART IDENTITY CASCADE`;
     await db`UPDATE ferrari_config SET value = '100' WHERE key = 'sampling_pct'`;
     await db`UPDATE ferrari_config SET value = 'true' WHERE key = 'four_eyes'`;
@@ -350,33 +350,50 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
     }
   });
 
-  it('tabella commesse: sigle per modello, valore trovato, ricerca per commessa', async () => {
+  it('tabella commesse: all\'inizio chiede, poi per modello o per tutti, valore trovato, ricerca', async () => {
     const bic2 = ['BIC2            ', 'CARROZZERIA BICOLORE          ', 'NERO DS 1250                  '];
     await svc.caricaScheda(op, 'a.xls', toXlsBuffer([...schedaSemplice(), bic2]));
     await svc.caricaScheda(op, 'b.xls', toXlsBuffer([...schedaPersonalizzata({ commessa: 100002 }), bic2]));
-    await svc.caricaScheda(op, 'c.xls', toXlsBuffer(schedaSemplice({ commessa: 100003, modello: 'F888YY' })));
+    await svc.caricaScheda(op, 'c.xls', toXlsBuffer([...schedaSemplice({ commessa: 100003, modello: 'F888YY' }), bic2]));
 
     let m = await svc.matrice();
     expect(m.modelli.map((x: { modello: string }) => x.modello).sort()).toEqual(['F888YY', 'F999XX']);
     m = await svc.matrice('F999XX');
-    expect(m.termini).toEqual([]);
-    expect(m.suggerimenti.map((s: { codice: string }) => s.codice)).toContain('BIC2');
+    expect(m.termini).toEqual([]);                                             // niente colonne finché non si decide
+    const bic = m.nuove.find((n: { codice: string }) => n.codice === 'BIC2')!;
+    expect(bic).toMatchObject({ nome: 'CARROZZERIA BICOLORE', esempio: 'NERO DS 1250' });
 
-    expect(await svc.aggiungiTermine(op, 'f999xx', ' bic2 ')).toBe('BIC2');
-    await svc.aggiungiTermine(op, 'F999XX', 'BIC2');                       // doppione ignorato
-    await svc.aggiungiTermine(op, 'F999XX', 'llog');
-    await expect(svc.aggiungiTermine(op, 'F999XX', '   ')).rejects.toMatchObject({ status: 400 });
+    await svc.decidiSigla(op, 'f999xx', ' bic2 ', true, false);               // sì, solo per F999XX
+    await svc.decidiSigla(op, '', 'CEL2', true, true);                         // sì, per tutti i modelli
+    await svc.decidiSigla(op, 'F999XX', 'EXTC', false, false);                 // no, per F999XX
+    await svc.decidiSigla(op, 'F999XX', 'llog', true, false);
+    await expect(svc.decidiSigla(op, 'F999XX', '   ', true, false)).rejects.toMatchObject({ status: 400 });
+    await expect(svc.decidiSigla(op, '', 'X', true, false)).rejects.toMatchObject({ status: 400 });
 
     m = await svc.matrice('F999XX');
-    expect(m.termini).toEqual(['BIC2', 'LLOG']);
+    expect(m.termini).toEqual(['BIC2', 'CEL2', 'LLOG']);
+    const nuove = m.nuove.map((n: { codice: string }) => n.codice);
+    expect(nuove).not.toContain('BIC2');
+    expect(nuove).not.toContain('EXTC');                                       // «non va»: non si chiede più
     expect(m.righe.map((r: { commessa: string }) => r.commessa).sort()).toEqual(['100001', '100002']);
     const r2 = m.righe.find((r: { commessa: string }) => r.commessa === '100002')!;
-    expect(r2.celle).toEqual({ BIC2: 'NERO DS 1250', LLOG: 'Sì — SCUDETTO LASERIZZATO COME DA IMMAGINE.' });
+    expect(r2.celle).toEqual({ BIC2: 'NERO DS 1250', CEL2: 'Sì', LLOG: 'Sì — SCUDETTO LASERIZZATO COME DA IMMAGINE.' });
     expect((await svc.matrice('F999XX', '100002')).righe).toHaveLength(1);
-    expect((await svc.matrice('F888YY')).termini).toEqual([]);               // le sigle sono per modello
 
-    expect(await svc.togliTermine(op, 'F999XX', 'bic2')).toBe(1);
-    expect((await svc.matrice('F999XX')).termini).toEqual(['LLOG']);
+    const altro = await svc.matrice('F888YY');
+    expect(altro.termini).toEqual(['CEL2']);                                   // quella per tutti vale anche qui
+    expect(altro.nuove.map((n: { codice: string }) => n.codice)).toContain('BIC2');   // per F888YY è ancora da decidere
+
+    await svc.decidiSigla(op, 'F999XX', 'CEL2', false, false);                 // il modello prevale su «tutti»
+    expect((await svc.matrice('F999XX')).termini).toEqual(['BIC2', 'LLOG']);
+    expect((await svc.matrice('F888YY')).termini).toEqual(['CEL2']);
+
+    expect(await svc.togliDecisione(op, 'F999XX', 'bic2', false)).toBe(1);     // torna «da decidere»
+    expect((await svc.matrice('F999XX')).nuove.map((n: { codice: string }) => n.codice)).toContain('BIC2');
+
+    const n = await svc.tutteNo(op, 'F888YY');
+    expect(n).toBeGreaterThan(0);
+    expect((await svc.matrice('F888YY')).nuove).toEqual([]);
     expect((await svc.verificaCatenaAudit()).ok).toBe(true);
   });
 

@@ -22,7 +22,7 @@ import {
   type Decisione, type DecisioneRecord, type ValoreDopo,
 } from './validato.js';
 import { collapse } from './text.js';
-import { costruisciMatrice, suggerimenti } from './matrice.js';
+import { costruisciMatrice, nuoveSigle } from './matrice.js';
 
 type Tx = typeof db;
 
@@ -819,12 +819,15 @@ export function logErrore(msg: string, err: unknown) {
 
 export type { ItemConfronto };
 
-export function normalizzaTermine(termine: string): string {
-  return termine.replace(/\s+/g, ' ').trim().toUpperCase();
+export function normalizzaSigla(s: string): string {
+  return s.replace(/\s+/g, ' ').trim().toUpperCase();
 }
 
+export const TUTTI = '*';
+
 /**
- * Tabella commesse: per un modello, colonne = sigle/parole scelte, una riga per commessa.
+ * Tabella commesse: per un modello, colonne = le sigle che «vanno», una riga per commessa.
+ * `nuove` = sigle trovate nelle schede e non ancora decise: la pagina chiede se vanno (per il modello o per tutti).
  * Esclude le schede sostituite, rifiutate e in quarantena.
  */
 export async function matrice(modello?: string, q?: string) {
@@ -833,46 +836,74 @@ export async function matrice(modello?: string, q?: string) {
     WHERE stato NOT IN ('SOSTITUITO', 'QUARANTENA', 'RIFIUTATO') AND modello IS NOT NULL
     GROUP BY modello ORDER BY max(caricato_at) DESC`;
   const scelto = (modello?.trim().toUpperCase() || modelli[0]?.modello) ?? '';
-  const termini = scelto
-    ? (await db<{ termine: string }[]>`SELECT termine FROM ferrari_termine WHERE modello = ${scelto} ORDER BY ordine`).map(r => r.termine)
-    : [];
+  if (!scelto) return { modelli, modello: '', termini: [] as string[], nuove: [], sigle: [], righe: [] };
+
+  // Decisione del modello prevale su quella per tutti
+  const rows = await db<{ modello: string; codice: string; va: boolean; ordine: string }[]>`
+    SELECT modello, codice, va, ordine FROM ferrari_sigla WHERE modello IN (${TUTTI}, ${scelto}) ORDER BY ordine`;
+  const decisioni = new Map<string, { va: boolean; ordine: number; ambito: 'tutti' | 'modello' }>();
+  for (const m of [TUTTI, scelto]) {
+    for (const r of rows.filter(x => x.modello === m)) {
+      decisioni.set(r.codice, { va: r.va, ordine: Number(r.ordine), ambito: m === TUTTI ? 'tutti' : 'modello' });
+    }
+  }
+  const ordinate = [...decisioni.entries()].sort((a, b) => a[1].ordine - b[1].ordine);
+  const termini = ordinate.filter(([, d]) => d.va).map(([c]) => c);
+
+  const tutte = await db<{ id: number; stato: string; canonico: Canonico }[]>`
+    SELECT id, stato, canonico FROM ferrari_file
+    WHERE modello = ${scelto} AND stato NOT IN ('SOSTITUITO', 'QUARANTENA', 'RIFIUTATO') AND canonico IS NOT NULL
+    ORDER BY caricato_at DESC, id DESC LIMIT 1000`;
+  const nomi = new Map<string, string>();
+  for (const s of tutte) for (const o of s.canonico.opzioni) if (!nomi.has(o.codice)) nomi.set(o.codice, o.descrizione);
   const cerca = q?.trim();
-  const tutte = scelto
-    ? await db<{ id: number; stato: string; canonico: Canonico }[]>`
-        SELECT id, stato, canonico FROM ferrari_file
-        WHERE modello = ${scelto} AND stato NOT IN ('SOSTITUITO', 'QUARANTENA', 'RIFIUTATO') AND canonico IS NOT NULL
-        ORDER BY caricato_at DESC, id DESC LIMIT 1000`
-    : [];
   const mostrate = cerca ? tutte.filter(s => (s.canonico.header.commessa ?? '').includes(cerca)) : tutte;
   return {
     modelli, modello: scelto, termini,
-    suggerimenti: suggerimenti(tutte, termini).slice(0, 60),
+    nuove: nuoveSigle(tutte, new Set(decisioni.keys())),
+    sigle: ordinate.map(([codice, d]) => ({ codice, nome: nomi.get(codice) ?? '(parola cercata)', va: d.va, ambito: d.ambito })),
     righe: costruisciMatrice(mostrate.slice(0, 500), termini),
   };
 }
 
-export async function aggiungiTermine(user: Utente, modello: string, termine: string) {
-  const m = modello.trim().toUpperCase();
-  const t = normalizzaTermine(termine);
-  if (!m || !t || t.length > 60) throw new HTTPException(400, { message: 'Indicare il modello e la sigla o parola da cercare (max 60 caratteri)' });
+/** La sigla (o parola) va in tabella oppure no, per il modello o per tutti i modelli. */
+export async function decidiSigla(user: Utente, modello: string, codice: string, va: boolean, tutti: boolean) {
+  const c = normalizzaSigla(codice);
+  const m = tutti ? TUTTI : modello.trim().toUpperCase();
+  if (!m || !c || c.length > 60) throw new HTTPException(400, { message: 'Indicare il modello e la sigla o parola (max 60 caratteri)' });
   await db.begin(async raw => {
     const tx = raw as unknown as Tx;
     await tx`
-      INSERT INTO ferrari_termine (modello, termine, ordine, creato_da)
-      VALUES (${m}, ${t}, (SELECT COALESCE(MAX(ordine), 0) + 1 FROM ferrari_termine WHERE modello = ${m}), ${user.username})
-      ON CONFLICT (modello, termine) DO NOTHING`;
-    await audit(tx, user, 'termine.aggiunto', 'termine', `${m}/${t}`, null);
+      INSERT INTO ferrari_sigla (modello, codice, va, creato_da) VALUES (${m}, ${c}, ${va}, ${user.username})
+      ON CONFLICT (modello, codice) DO UPDATE SET va = EXCLUDED.va`;
+    await audit(tx, user, va ? 'sigla.va' : 'sigla.non_va', 'sigla', `${m}/${c}`, null);
   });
-  return t;
+  return c;
 }
 
-export async function togliTermine(user: Utente, modello: string, termine: string) {
-  const m = modello.trim().toUpperCase();
-  const t = normalizzaTermine(termine);
+/** Cancella la decisione: la sigla torna «da decidere». */
+export async function togliDecisione(user: Utente, modello: string, codice: string, tutti: boolean) {
+  const m = tutti ? TUTTI : modello.trim().toUpperCase();
+  const c = normalizzaSigla(codice);
   return db.begin(async raw => {
     const tx = raw as unknown as Tx;
-    const r = await tx`DELETE FROM ferrari_termine WHERE modello = ${m} AND termine = ${t}`;
-    if (r.count) await audit(tx, user, 'termine.tolto', 'termine', `${m}/${t}`, null);
+    const r = await tx`DELETE FROM ferrari_sigla WHERE modello = ${m} AND codice = ${c}`;
+    if (r.count) await audit(tx, user, 'sigla.da_decidere', 'sigla', `${m}/${c}`, null);
     return r.count;
   });
+}
+
+/** Segna «non va» (per il modello) tutte le sigle ancora da decidere. */
+export async function tutteNo(user: Utente, modello: string) {
+  const m = await matrice(modello);
+  if (!m.modello || m.nuove.length === 0) return 0;
+  await db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    for (const n of m.nuove) {
+      await tx`INSERT INTO ferrari_sigla (modello, codice, va, creato_da) VALUES (${m.modello}, ${n.codice}, FALSE, ${user.username})
+               ON CONFLICT (modello, codice) DO NOTHING`;
+    }
+    await audit(tx, user, 'sigla.tutte_non_va', 'sigla', m.modello, { quante: m.nuove.length });
+  });
+  return m.nuove.length;
 }

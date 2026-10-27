@@ -11,7 +11,8 @@ interface Matrice {
   modelli: { modello: string; schede: number }[];
   modello: string;
   termini: string[];
-  suggerimenti: { codice: string; nome: string }[];
+  nuove: { codice: string; nome: string; esempio: string }[];
+  sigle: { codice: string; nome: string; va: boolean; ambito: 'modello' | 'tutti' }[];
   righe: { id: number; commessa: string; modello: string | null; paese: string | null; stato: string;
     celle: Record<string, string>; testi: Record<string, string> }[];
 }
@@ -31,6 +32,8 @@ export default function CommessePage() {
   const [q, setQ] = useState('');
   const [modello, setModello] = useState('');
   const [nuovo, setNuovo] = useState('');
+  const [dopo, setDopo] = useState<Set<string>>(new Set());   // sigle rimandate in questa sessione
+  const [panello, setPanello] = useState(false);
   const [m, setM] = useState<Matrice | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [msg, setMsg] = useState<string[]>([]);
@@ -55,10 +58,10 @@ export default function CommessePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, carica]);
 
-  async function aggiungi(termine: string) {
-    if (!termine.trim() || !modello) return;
+  async function decidi(codice: string, va: boolean, tutti: boolean) {
+    if (!codice.trim() || !modello) return;
     try {
-      await api.post('/api/ferrari/termini', { modello, termine });
+      await api.post('/api/ferrari/sigle', { modello, codice, va, tutti });
       setNuovo('');
       await carica(modello, q.trim());
     } catch (e) {
@@ -66,14 +69,25 @@ export default function CommessePage() {
     }
   }
 
-  async function togli(termine: string) {
+  async function chiediDiNuovo(codice: string, tutti: boolean) {
     try {
-      await api.delete(`/api/ferrari/termini?modello=${encodeURIComponent(modello)}&termine=${encodeURIComponent(termine)}`);
+      await api.delete(`/api/ferrari/sigle?modello=${encodeURIComponent(modello)}&codice=${encodeURIComponent(codice)}${tutti ? '&tutti=1' : ''}`);
       await carica(modello, q.trim());
     } catch (e) {
       setErrore((e as Error).message);
     }
   }
+
+  async function tutteNo() {
+    try {
+      await api.post('/api/ferrari/sigle/tutte-no', { modello });
+      await carica(modello, q.trim());
+    } catch (e) {
+      setErrore((e as Error).message);
+    }
+  }
+
+  const prossima = m?.nuove.find(n => !dopo.has(`${m.modello}/${n.codice}`));
 
   async function invia(files: File[]) {
     if (files.length === 0) return;
@@ -108,7 +122,7 @@ export default function CommessePage() {
     <div>
       <div className="mb-4">
         <h1 className="text-3xl font-bold text-gray-900">Schede Ferrari</h1>
-        <p className="mt-1 text-gray-500">Per ogni modello scegli le sigle o parole da cercare (es. BIC2): in tabella vedi, per ogni commessa, «Sì» o il valore trovato (es. NERO DS 1250).</p>
+        <p className="mt-1 text-gray-500">Per ogni modello decidi quali sigle vanno in tabella (es. BIC2): vedi, per ogni commessa, «Sì» o il valore trovato (es. NERO DS 1250). Quando compare una sigla nuova, l&apos;app chiede.</p>
       </div>
       <FerrariNav />
       <Errore messaggio={errore} />
@@ -131,22 +145,60 @@ export default function CommessePage() {
         <Link href="/ferrari/schede" className="text-sm text-blue-700 hover:underline">Revisione e analisi IA →</Link>
       </div>
 
+      {puoCaricare && m && prossima && (
+        <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm">
+          Nuova sigla per <b>{m.modello}</b> ({m.nuove.length} da decidere): <b className="text-base">{prossima.codice}</b> — {prossima.nome}
+          <span className="text-gray-500"> · esempio: {prossima.esempio}</span> · Va in tabella?
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button className="btn-primary !py-1" onClick={() => decidi(prossima.codice, true, false)}>Sì, per {m.modello}</button>
+            <button className="btn-primary !py-1" onClick={() => decidi(prossima.codice, true, true)}>Sì, per tutti i modelli</button>
+            <button className="btn-secondary !py-1" onClick={() => decidi(prossima.codice, false, false)}>No, per {m.modello}</button>
+            <button className="btn-secondary !py-1" onClick={() => decidi(prossima.codice, false, true)}>No, per tutti</button>
+            <button className="btn-secondary !py-1" onClick={() => setDopo(new Set(dopo).add(`${m.modello}/${prossima.codice}`))}>Dopo</button>
+            {m.nuove.length > 1 && <button className="btn-secondary !py-1" onClick={tutteNo}>Tutte le altre: no ({m.modello})</button>}
+          </div>
+        </div>
+      )}
+
       {m && m.modello && (
         <div className="flex flex-wrap items-center gap-2 mb-3">
           {m.termini.map(t => (
             <span key={t} className="inline-flex items-center gap-1.5 bg-white border border-gray-300 rounded-full pl-3 pr-2 py-0.5 text-sm">
               <b>{t}</b>
-              {puoCaricare && <button className="text-gray-400 hover:text-red-600" title="Togli" onClick={() => togli(t)}>✕</button>}
+              {puoCaricare && <button className="text-gray-400 hover:text-red-600" title="Togli dalla tabella" onClick={() => decidi(t, false, false)}>✕</button>}
             </span>
           ))}
           {puoCaricare && (
             <input className="input !w-56 !py-1" placeholder="+ sigla o parola (es. BIC2)" value={nuovo}
-              onChange={e => setNuovo(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') aggiungi(nuovo); }} />
+              onChange={e => setNuovo(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') decidi(nuovo, true, false); }} />
           )}
-          {puoCaricare && m.suggerimenti.slice(0, 40).map(s => (
-            <button key={s.codice} title={s.nome} onClick={() => aggiungi(s.codice)}
-              className="border border-dashed border-gray-300 rounded-full px-2.5 py-0.5 text-sm text-gray-500 hover:text-gray-900 hover:border-blue-500">+ {s.codice}</button>
-          ))}
+          <button className="btn-secondary !py-1 text-xs" onClick={() => setPanello(!panello)}>Tutte le sigle</button>
+        </div>
+      )}
+
+      {panello && m && (
+        <div className="mb-3 bg-white rounded-xl border border-gray-200 p-3 max-h-[40vh] overflow-auto text-sm">
+          {m.sigle.length === 0 ? <p className="text-gray-400">Nessuna decisione ancora</p> : (
+            <table className="w-full">
+              <tbody>
+                {m.sigle.map(s => (
+                  <tr key={s.codice} className="border-b border-gray-100">
+                    <td className="py-1 pr-3 font-semibold">{s.codice}</td>
+                    <td className="py-1 pr-3 text-gray-500">{s.nome}</td>
+                    <td className={`py-1 pr-3 ${s.va ? 'text-green-600 font-semibold' : 'text-gray-400'}`}>
+                      {s.va ? 'va' : 'non va'} <span className="text-gray-400 font-normal">({s.ambito === 'tutti' ? 'tutti i modelli' : m.modello})</span>
+                    </td>
+                    <td className="py-1 text-right whitespace-nowrap">
+                      {puoCaricare && <>
+                        <button className="btn-secondary !py-0.5 text-xs mr-1" onClick={() => decidi(s.codice, !s.va, false)}>{s.va ? 'Non va' : 'Va'}</button>
+                        <button className="btn-secondary !py-0.5 text-xs" onClick={() => chiediDiNuovo(s.codice, s.ambito === 'tutti')}>Chiedi di nuovo</button>
+                      </>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 
@@ -155,8 +207,7 @@ export default function CommessePage() {
           <p className="text-center text-gray-400 py-10 text-sm">Ancora nessuna scheda: carica gli Excel di Ferrari</p>
         ) : m.termini.length === 0 ? (
           <p className="text-gray-500 py-8 px-6 text-sm">
-            Scegli le sigle o parole da cercare per il modello <b>{m.modello}</b>: scrivile qui sopra oppure clicca quelle suggerite
-            (sono le sigle della prima colonna dell&apos;Excel).
+            Nessuna sigla scelta per il modello <b>{m.modello}</b>: rispondi alle domande qui sopra (sono le sigle della prima colonna dell&apos;Excel).
           </p>
         ) : m.righe.length === 0 ? (
           <p className="text-center text-gray-400 py-10 text-sm">Nessuna commessa trovata</p>

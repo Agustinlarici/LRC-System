@@ -6,7 +6,7 @@ e `LRC-System/docs/FERRARI-FLUSSO.md`: se cambia uno, cambia l'altro.
 ## 0. Uso semplice (pagina principale)
 
 1. Carichi gli Excel di Ferrari (sulla PC IA in `/ferrari`, oppure in LRC → IT → Schede Ferrari → Commesse).
-2. Per ogni **modello** scegli le **sigle o parole da cercare** (es. `BIC2`, la sigla della prima colonna dell'Excel): sono le colonne della tabella. La pagina suggerisce le sigle che trova nelle schede.
+2. L'app legge **tutte** le sigle (la prima colonna dell'Excel, es. `BIC2`). Per ogni **modello** decidi quali vanno in tabella e quali no; quando compare una sigla **nuova** l'app chiede: «Sì/No, per questo modello» oppure «Sì/No, per tutti i modelli» (una decisione del modello prevale su quella per tutti). Le sigle «va» sono le colonne; «Tutte le sigle» permette di cambiare idea o di far richiedere.
 3. Cerchi la commessa: nella cella vedi «Sì» o il valore trovato (es. `BIC2` → `NERO DS 1250`). «Scarica per Excel» esporta la tabella.
 4. La IA (solo sulla PC IA) riassume il testo scritto a mano; senza Ollama la cella mostra il testo cosi' com'e'.
 

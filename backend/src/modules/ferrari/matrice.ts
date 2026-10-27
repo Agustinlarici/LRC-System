@@ -86,18 +86,21 @@ export function costruisciMatrice(schede: { id: number; stato: string; canonico:
   });
 }
 
-/** Sigle presenti nelle schede e non ancora scelte, dalla più frequente (per aggiungerle con un click). */
-export function suggerimenti(schede: { canonico: Canonico }[], scelte: string[]): { codice: string; nome: string }[] {
-  const freq = new Map<string, number>();
+export interface SiglaNuova { codice: string; nome: string; esempio: string }
+
+/** Sigle presenti nelle schede e non ancora decise (nell'ordine dell'Excel), con un esempio di cosa contengono. */
+export function nuoveSigle(schede: { canonico: Canonico }[], decise: Set<string>): SiglaNuova[] {
+  const ordine: string[] = [];
   const nomi = new Map<string, string>();
+  const esempi = new Map<string, string>();
+  const banale = (e: string) => e === SI || e === 'Extra campionario';
   for (const s of schede) {
     for (const o of s.canonico.opzioni) {
-      freq.set(o.codice, (freq.get(o.codice) ?? 0) + 1);
-      if (!nomi.has(o.codice)) nomi.set(o.codice, o.descrizione);
+      if (!nomi.has(o.codice)) { ordine.push(o.codice); nomi.set(o.codice, o.descrizione); }
+      const e = cellaOpzione(o);
+      const prima = esempi.get(o.codice);
+      if (prima === undefined || (banale(prima) && !banale(e))) esempi.set(o.codice, e);
     }
   }
-  return [...freq.keys()]
-    .filter(c => !scelte.includes(c))
-    .sort((a, b) => (freq.get(b)! - freq.get(a)!) || a.localeCompare(b))
-    .map(codice => ({ codice, nome: nomi.get(codice) ?? '' }));
+  return ordine.filter(c => !decise.has(c)).map(codice => ({ codice, nome: nomi.get(codice) ?? '', esempio: esempi.get(codice) ?? SI }));
 }
