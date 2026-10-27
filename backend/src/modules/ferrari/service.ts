@@ -22,7 +22,7 @@ import {
   type Decisione, type DecisioneRecord, type ValoreDopo,
 } from './validato.js';
 import { collapse } from './text.js';
-import { costruisciMatrice } from './matrice.js';
+import { costruisciMatrice, suggerimenti } from './matrice.js';
 
 type Tx = typeof db;
 
@@ -819,13 +819,60 @@ export function logErrore(msg: string, err: unknown) {
 
 export type { ItemConfronto };
 
-/** Matrice commesse × caratteristiche (pagina principale). Esclude le schede sostituite e quelle in quarantena. */
-export async function matrice(q?: string) {
+export function normalizzaTermine(termine: string): string {
+  return termine.replace(/\s+/g, ' ').trim().toUpperCase();
+}
+
+/**
+ * Tabella commesse: per un modello, colonne = sigle/parole scelte, una riga per commessa.
+ * Esclude le schede sostituite, rifiutate e in quarantena.
+ */
+export async function matrice(modello?: string, q?: string) {
+  const modelli = await db<{ modello: string; schede: number }[]>`
+    SELECT modello, count(*)::int AS schede FROM ferrari_file
+    WHERE stato NOT IN ('SOSTITUITO', 'QUARANTENA', 'RIFIUTATO') AND modello IS NOT NULL
+    GROUP BY modello ORDER BY max(caricato_at) DESC`;
+  const scelto = (modello?.trim().toUpperCase() || modelli[0]?.modello) ?? '';
+  const termini = scelto
+    ? (await db<{ termine: string }[]>`SELECT termine FROM ferrari_termine WHERE modello = ${scelto} ORDER BY ordine`).map(r => r.termine)
+    : [];
   const cerca = q?.trim();
-  const rows = await db<{ id: number; stato: string; canonico: Canonico }[]>`
-    SELECT id, stato, canonico FROM ferrari_file
-    WHERE stato NOT IN ('SOSTITUITO', 'QUARANTENA', 'RIFIUTATO') AND canonico IS NOT NULL
-      ${cerca ? db`AND (commessa ILIKE ${'%' + cerca + '%'} OR modello ILIKE ${'%' + cerca + '%'})` : db``}
-    ORDER BY caricato_at DESC, id DESC LIMIT 500`;
-  return costruisciMatrice(rows.map(r => ({ id: r.id, stato: r.stato, canonico: r.canonico })));
+  const tutte = scelto
+    ? await db<{ id: number; stato: string; canonico: Canonico }[]>`
+        SELECT id, stato, canonico FROM ferrari_file
+        WHERE modello = ${scelto} AND stato NOT IN ('SOSTITUITO', 'QUARANTENA', 'RIFIUTATO') AND canonico IS NOT NULL
+        ORDER BY caricato_at DESC, id DESC LIMIT 1000`
+    : [];
+  const mostrate = cerca ? tutte.filter(s => (s.canonico.header.commessa ?? '').includes(cerca)) : tutte;
+  return {
+    modelli, modello: scelto, termini,
+    suggerimenti: suggerimenti(tutte, termini).slice(0, 60),
+    righe: costruisciMatrice(mostrate.slice(0, 500), termini),
+  };
+}
+
+export async function aggiungiTermine(user: Utente, modello: string, termine: string) {
+  const m = modello.trim().toUpperCase();
+  const t = normalizzaTermine(termine);
+  if (!m || !t || t.length > 60) throw new HTTPException(400, { message: 'Indicare il modello e la sigla o parola da cercare (max 60 caratteri)' });
+  await db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    await tx`
+      INSERT INTO ferrari_termine (modello, termine, ordine, creato_da)
+      VALUES (${m}, ${t}, (SELECT COALESCE(MAX(ordine), 0) + 1 FROM ferrari_termine WHERE modello = ${m}), ${user.username})
+      ON CONFLICT (modello, termine) DO NOTHING`;
+    await audit(tx, user, 'termine.aggiunto', 'termine', `${m}/${t}`, null);
+  });
+  return t;
+}
+
+export async function togliTermine(user: Utente, modello: string, termine: string) {
+  const m = modello.trim().toUpperCase();
+  const t = normalizzaTermine(termine);
+  return db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    const r = await tx`DELETE FROM ferrari_termine WHERE modello = ${m} AND termine = ${t}`;
+    if (r.count) await audit(tx, user, 'termine.tolto', 'termine', `${m}/${t}`, null);
+    return r.count;
+  });
 }

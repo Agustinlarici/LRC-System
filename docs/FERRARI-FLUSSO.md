@@ -6,11 +6,13 @@ e `LRC-System/docs/FERRARI-FLUSSO.md`: se cambia uno, cambia l'altro.
 ## 0. Uso semplice (pagina principale)
 
 1. Carichi gli Excel di Ferrari (sulla PC IA in `/ferrari`, oppure in LRC → IT → Schede Ferrari → Commesse).
-2. La IA (solo sulla PC IA) riassume il testo scritto a mano; senza Ollama la cella mostra il testo cosi' com'e'.
-3. Cerchi la commessa: **colonne = le opzioni trovate; cella = «Sì», oppure il dettaglio (colore, filo…)**. «Scarica per Excel» esporta tutto.
+2. Per ogni **modello** scegli le **sigle o parole da cercare** (es. `BIC2`, la sigla della prima colonna dell'Excel): sono le colonne della tabella. La pagina suggerisce le sigle che trova nelle schede.
+3. Cerchi la commessa: nella cella vedi «Sì» o il valore trovato (es. `BIC2` → `NERO DS 1250`). «Scarica per Excel» esporta la tabella.
+4. La IA (solo sulla PC IA) riassume il testo scritto a mano; senza Ollama la cella mostra il testo cosi' com'e'.
 
-Regola della cella (identica nei due programmi): valore «SI» → «Sì»; valore con testo → quel testo; testo libero → il dettaglio; «SI» + dettaglio → «Sì — dettaglio»; extra campionario senza dettaglio → «Extra campionario».
-Tutto il resto di questo documento (scambio di pacchetti con la VM, confronto, revisione, conoscenza) e' **facoltativo**: serve solo se vuoi il doppio controllo VM/IA.
+Regola della cella (identica nei due programmi): sigla = codice di un'opzione → «Sì» se il valore e' SI, altrimenti il valore (o «Sì — dettaglio» se c'e' testo libero); parola nel valore → il valore; parola nel testo libero → il riassunto (o un estratto del testo); parola solo nella descrizione → «Sì»; non trovata → vuota. Solo parole intere.
+Quando i due programmi si collegheranno, alla VM non serve l'Excel: la VM lo converte in testo (JSON) e manda solo quello (e' gia' cosi' nei pacchetti, §7).
+Tutto il resto di questo documento (scambio di pacchetti con la VM, confronto, revisione, conoscenza) e' **facoltativo**.
 
 ## 1. Principi
 

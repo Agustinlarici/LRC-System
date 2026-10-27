@@ -5,7 +5,7 @@ import { parseBody } from '../../lib/validate.js';
 import { requireManage, requireModule, type Env } from '../../lib/auth.js';
 import {
   aggiornaConfig, caricaScheda, cerca, configCorrente, creaPacchettoConoscenza, creaPacchettoToAi, decidiConoscenza,
-  dettaglioFile, importaRisultatoIa, listaAudit, listaBundle, matrice, listaConoscenza, listaFile, mostraSegreto,
+  dettaglioFile, importaRisultatoIa, aggiungiTermine, listaAudit, listaBundle, matrice, togliTermine, listaConoscenza, listaFile, mostraSegreto,
   proponiConoscenzaDiretta, registraDecisione, revisioneSenzaIa, rianalizza, reinviaAllaIa, rifiutaScheda, riepilogo,
   scaricaBundle, scaricaOriginale, validaScheda, verificaCatenaAudit, TIPI_DIZIONARIO,
   type Utente,
@@ -61,7 +61,16 @@ async function leggiFile(c: Context<Env>, campo: string, max = MAX_FILES): Promi
 
 // ─── Lettura ──────────────────────────────────────────────────────────────────
 
-ferrariRoutes.get('/matrice', requireModule(VISTA), async (c) => c.json(await matrice(c.req.query('q')?.slice(0, 100))));
+ferrariRoutes.get('/matrice', requireModule(VISTA), async (c) =>
+  c.json(await matrice(c.req.query('modello')?.slice(0, 30), c.req.query('q')?.slice(0, 100))));
+
+ferrariRoutes.post('/termini', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ modello: z.string().min(1).max(30), termine: z.string().min(1).max(60) }));
+  return c.json({ termine: await aggiungiTermine(utente(c), b.modello, b.termine) });
+});
+
+ferrariRoutes.delete('/termini', requireManage(VISTA), async (c) =>
+  c.json({ tolti: await togliTermine(utente(c), c.req.query('modello') ?? '', c.req.query('termine') ?? '') }));
 
 ferrariRoutes.get('/summary', requireModule(VISTA), async (c) => c.json(await riepilogo()));
 

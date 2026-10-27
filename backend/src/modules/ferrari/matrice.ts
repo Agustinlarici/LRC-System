@@ -1,7 +1,7 @@
 // Matrice commesse × caratteristiche: una colonna per opzione trovata, in cella «Sì» oppure il dettaglio (colore, filo…).
 // Stessa regola di STR-LocalAI/web/ferrari/matrice.py (la PC IA ne mostra una uguale, con il riassunto della IA nel dettaglio).
 
-import { collapse } from './text.js';
+import { collapse, norm, phraseRegex } from './text.js';
 import type { Canonico, Opzione } from './types.js';
 
 export const SI = 'Sì';
@@ -34,29 +34,70 @@ export function cellaOpzione(o: Opzione, dettaglio?: string | null): string {
   return classe === 'SI' || classe === 'EXTRA' ? `${SI} — ${testo}` : testo;
 }
 
-export interface Colonna { codice: string; nome: string }
+function estratto(testo: string, inizio: number, fine: number, margine = 40): string {
+  const a = Math.max(0, inizio - margine);
+  const b = Math.min(testo.length, fine + margine);
+  return (a > 0 ? '…' : '') + testo.slice(a, b).trim() + (b < testo.length ? '…' : '');
+}
+
+/**
+ * Cosa mostrare in cella per una sigla (es. BIC2) o una parola (es. CAVALLINO) cercata in una scheda.
+ * Priorità: sigla uguale al codice → regola normale; parola nel valore → il valore; parola nel testo libero →
+ * l'estratto del testo; parola nella descrizione o nella nota → «Sì». Altrimenti vuota.
+ * `dettagli`: riassunti della IA per codice (facoltativi).
+ */
+export function cellaTermine(termine: string, opzioni: Opzione[], dettagli: Record<string, string> = {}): { testo: string; completo: string | null } {
+  const t = collapse(termine);
+  if (!t) return { testo: '', completo: null };
+  const perCodice = opzioni.find(o => o.codice.toUpperCase() === t);
+  if (perCodice) return { testo: cellaOpzione(perCodice, dettagli[perCodice.codice]), completo: testoLibero(perCodice) || null };
+
+  const rx = phraseRegex(termine);
+  for (const o of opzioni) if (rx.test(norm(o.valore))) return { testo: o.valore.trim(), completo: null };
+  for (const o of opzioni) {
+    for (const b of o.blocchi_testo) {
+      const m = rx.exec(norm(b.testo));
+      if (m) return { testo: dettagli[o.codice] || estratto(b.testo, m.index, m.index + m[0].length), completo: testoLibero(o) };
+    }
+  }
+  for (const o of opzioni) if (rx.test(norm(o.descrizione)) || rx.test(norm(o.nota))) return { testo: SI, completo: null };
+  return { testo: '', completo: null };
+}
+
 export interface RigaMatrice {
   id: number; commessa: string; modello: string | null; paese: string | null; stato: string;
   celle: Record<string, string>; testi: Record<string, string>;
 }
 
-export function costruisciMatrice(schede: { id: number; stato: string; canonico: Canonico }[]): { colonne: Colonna[]; righe: RigaMatrice[] } {
-  const colonne: Colonna[] = [];
-  const visti = new Set<string>();
-  const righe: RigaMatrice[] = [];
-  for (const s of schede) {
+/** Per un modello: una riga per commessa, una colonna per ogni sigla/parola scelta. */
+export function costruisciMatrice(schede: { id: number; stato: string; canonico: Canonico }[], termini: string[]): RigaMatrice[] {
+  return schede.map(s => {
     const celle: Record<string, string> = {};
     const testi: Record<string, string> = {};
-    for (const o of s.canonico.opzioni) {
-      if (!visti.has(o.codice)) { visti.add(o.codice); colonne.push({ codice: o.codice, nome: o.descrizione }); }
-      celle[o.codice] = cellaOpzione(o);
-      const libero = testoLibero(o);
-      if (libero) testi[o.codice] = libero;
+    for (const t of termini) {
+      const c = cellaTermine(t, s.canonico.opzioni);
+      celle[t] = c.testo;
+      if (c.completo) testi[t] = c.completo;
     }
-    righe.push({
+    return {
       id: s.id, commessa: s.canonico.header.commessa ?? '', modello: s.canonico.header.tipo_matricola.modello,
       paese: s.canonico.header.destinazione.paese, stato: s.stato, celle, testi,
-    });
+    };
+  });
+}
+
+/** Sigle presenti nelle schede e non ancora scelte, dalla più frequente (per aggiungerle con un click). */
+export function suggerimenti(schede: { canonico: Canonico }[], scelte: string[]): { codice: string; nome: string }[] {
+  const freq = new Map<string, number>();
+  const nomi = new Map<string, string>();
+  for (const s of schede) {
+    for (const o of s.canonico.opzioni) {
+      freq.set(o.codice, (freq.get(o.codice) ?? 0) + 1);
+      if (!nomi.has(o.codice)) nomi.set(o.codice, o.descrizione);
+    }
   }
-  return { colonne, righe };
+  return [...freq.keys()]
+    .filter(c => !scelte.includes(c))
+    .sort((a, b) => (freq.get(b)! - freq.get(a)!) || a.localeCompare(b))
+    .map(codice => ({ codice, nome: nomi.get(codice) ?? '' }));
 }

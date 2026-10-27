@@ -28,7 +28,7 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   afterAll(async () => { await db?.end(); });
 
   beforeEach(async () => {
-    await db`TRUNCATE ferrari_decisione, ferrari_confronto, ferrari_analisi, ferrari_bundle, ferrari_bundle_rifiutato,
+    await db`TRUNCATE ferrari_termine, ferrari_decisione, ferrari_confronto, ferrari_analisi, ferrari_bundle, ferrari_bundle_rifiutato,
              ferrari_codice, ferrari_componente, ferrari_audit, ferrari_file RESTART IDENTITY CASCADE`;
     await db`UPDATE ferrari_config SET value = '100' WHERE key = 'sampling_pct'`;
     await db`UPDATE ferrari_config SET value = 'true' WHERE key = 'four_eyes'`;
@@ -348,6 +348,36 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
     } finally {
       await db`ALTER TABLE ferrari_audit ENABLE TRIGGER trg_ferrari_audit_append`;
     }
+  });
+
+  it('tabella commesse: sigle per modello, valore trovato, ricerca per commessa', async () => {
+    const bic2 = ['BIC2            ', 'CARROZZERIA BICOLORE          ', 'NERO DS 1250                  '];
+    await svc.caricaScheda(op, 'a.xls', toXlsBuffer([...schedaSemplice(), bic2]));
+    await svc.caricaScheda(op, 'b.xls', toXlsBuffer([...schedaPersonalizzata({ commessa: 100002 }), bic2]));
+    await svc.caricaScheda(op, 'c.xls', toXlsBuffer(schedaSemplice({ commessa: 100003, modello: 'F888YY' })));
+
+    let m = await svc.matrice();
+    expect(m.modelli.map((x: { modello: string }) => x.modello).sort()).toEqual(['F888YY', 'F999XX']);
+    m = await svc.matrice('F999XX');
+    expect(m.termini).toEqual([]);
+    expect(m.suggerimenti.map((s: { codice: string }) => s.codice)).toContain('BIC2');
+
+    expect(await svc.aggiungiTermine(op, 'f999xx', ' bic2 ')).toBe('BIC2');
+    await svc.aggiungiTermine(op, 'F999XX', 'BIC2');                       // doppione ignorato
+    await svc.aggiungiTermine(op, 'F999XX', 'llog');
+    await expect(svc.aggiungiTermine(op, 'F999XX', '   ')).rejects.toMatchObject({ status: 400 });
+
+    m = await svc.matrice('F999XX');
+    expect(m.termini).toEqual(['BIC2', 'LLOG']);
+    expect(m.righe.map((r: { commessa: string }) => r.commessa).sort()).toEqual(['100001', '100002']);
+    const r2 = m.righe.find((r: { commessa: string }) => r.commessa === '100002')!;
+    expect(r2.celle).toEqual({ BIC2: 'NERO DS 1250', LLOG: 'Sì — SCUDETTO LASERIZZATO COME DA IMMAGINE.' });
+    expect((await svc.matrice('F999XX', '100002')).righe).toHaveLength(1);
+    expect((await svc.matrice('F888YY')).termini).toEqual([]);               // le sigle sono per modello
+
+    expect(await svc.togliTermine(op, 'F999XX', 'bic2')).toBe(1);
+    expect((await svc.matrice('F999XX')).termini).toEqual(['LLOG']);
+    expect((await svc.verificaCatenaAudit()).ok).toBe(true);
   });
 
   it('ricerca e filtri', async () => {

@@ -8,7 +8,10 @@ import { inviaFile } from '@/lib/ferrari';
 import { Errore, FerrariNav } from '@/components/ferrari/Comuni';
 
 interface Matrice {
-  colonne: { codice: string; nome: string }[];
+  modelli: { modello: string; schede: number }[];
+  modello: string;
+  termini: string[];
+  suggerimenti: { codice: string; nome: string }[];
   righe: { id: number; commessa: string; modello: string | null; paese: string | null; stato: string;
     celle: Record<string, string>; testi: Record<string, string> }[];
 }
@@ -26,15 +29,19 @@ export default function CommessePage() {
   const { canManage } = useAuth();
   const puoCaricare = canManage('ferrari_schede');
   const [q, setQ] = useState('');
+  const [modello, setModello] = useState('');
+  const [nuovo, setNuovo] = useState('');
   const [m, setM] = useState<Matrice | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [msg, setMsg] = useState<string[]>([]);
   const [occupato, setOccupato] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const carica = useCallback(async (testo: string) => {
+  const carica = useCallback(async (mod: string, testo: string) => {
     try {
-      setM(await api.get<Matrice>(`/api/ferrari/matrice?q=${encodeURIComponent(testo)}`));
+      const r = await api.get<Matrice>(`/api/ferrari/matrice?modello=${encodeURIComponent(mod)}&q=${encodeURIComponent(testo)}`);
+      setM(r);
+      setModello(r.modello);
       setErrore(null);
     } catch (e) {
       setErrore((e as Error).message);
@@ -42,9 +49,31 @@ export default function CommessePage() {
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => carica(q.trim()), 200);
+    const t = setTimeout(() => carica(modello, q.trim()), 200);
     return () => clearTimeout(t);
+    // il modello si aggiorna da solo con la risposta: si ricarica solo quando cambia la ricerca o lo scelgo io
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, carica]);
+
+  async function aggiungi(termine: string) {
+    if (!termine.trim() || !modello) return;
+    try {
+      await api.post('/api/ferrari/termini', { modello, termine });
+      setNuovo('');
+      await carica(modello, q.trim());
+    } catch (e) {
+      setErrore((e as Error).message);
+    }
+  }
+
+  async function togli(termine: string) {
+    try {
+      await api.delete(`/api/ferrari/termini?modello=${encodeURIComponent(modello)}&termine=${encodeURIComponent(termine)}`);
+      await carica(modello, q.trim());
+    } catch (e) {
+      setErrore((e as Error).message);
+    }
+  }
 
   async function invia(files: File[]) {
     if (files.length === 0) return;
@@ -54,7 +83,7 @@ export default function CommessePage() {
         '/api/ferrari/files', 'files', files);
       setMsg(r.risultati.map(x => x.errore ? `${x.filename}: ${x.errore}` : x.stato === 'QUARANTENA' ? `${x.filename}: non è una scheda (${x.motivo})`
         : x.duplicato ? `${x.filename}: già caricata` : `${x.filename}: caricata`));
-      await carica(q.trim());
+      await carica(modello, q.trim());
     } catch (e) {
       setErrore((e as Error).message);
     } finally {
@@ -66,11 +95,11 @@ export default function CommessePage() {
   function scarica() {
     if (!m) return;
     const cella = (s: string) => `"${s.replace(/"/g, '""')}"`;
-    const righe = [['Commessa', 'Modello', 'Paese', ...m.colonne.map(c => c.nome || c.codice)].map(cella).join(';')];
-    for (const r of m.righe) righe.push([r.commessa, r.modello ?? '', r.paese ?? '', ...m.colonne.map(c => r.celle[c.codice] ?? '')].map(cella).join(';'));
+    const righe = [['Commessa', 'Modello', ...m.termini].map(cella).join(';')];
+    for (const r of m.righe) righe.push([r.commessa, r.modello ?? '', ...m.termini.map(x => r.celle[x] ?? '')].map(cella).join(';'));
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob(['﻿' + righe.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
-    a.download = 'schede_ferrari.csv';
+    a.href = URL.createObjectURL(new Blob(['\ufeff' + righe.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+    a.download = `schede_ferrari_${m.modello}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   }
@@ -79,7 +108,7 @@ export default function CommessePage() {
     <div>
       <div className="mb-4">
         <h1 className="text-3xl font-bold text-gray-900">Schede Ferrari</h1>
-        <p className="mt-1 text-gray-500">Cerca una commessa: vedi «Sì» o il dettaglio (colore, filo…) per ogni caratteristica.</p>
+        <p className="mt-1 text-gray-500">Per ogni modello scegli le sigle o parole da cercare (es. BIC2): in tabella vedi, per ogni commessa, «Sì» o il valore trovato (es. NERO DS 1250).</p>
       </div>
       <FerrariNav />
       <Errore messaggio={errore} />
@@ -93,24 +122,51 @@ export default function CommessePage() {
       )}
 
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        <input className="input !w-72" placeholder="Cerca commessa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+        <select className="input !w-auto" value={modello} onChange={e => { setModello(e.target.value); carica(e.target.value, q.trim()); }}>
+          {m?.modelli.map(x => <option key={x.modello} value={x.modello}>{x.modello} ({x.schede})</option>)}
+        </select>
+        <input className="input !w-64" placeholder="Cerca commessa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
         <span className="text-sm text-gray-500">{m ? `${m.righe.length} commesse` : ''}</span>
         <button className="btn-secondary ml-auto" disabled={!m || m.righe.length === 0} onClick={scarica}>Scarica per Excel</button>
         <Link href="/ferrari/schede" className="text-sm text-blue-700 hover:underline">Revisione e analisi IA →</Link>
       </div>
 
+      {m && m.modello && (
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          {m.termini.map(t => (
+            <span key={t} className="inline-flex items-center gap-1.5 bg-white border border-gray-300 rounded-full pl-3 pr-2 py-0.5 text-sm">
+              <b>{t}</b>
+              {puoCaricare && <button className="text-gray-400 hover:text-red-600" title="Togli" onClick={() => togli(t)}>✕</button>}
+            </span>
+          ))}
+          {puoCaricare && (
+            <input className="input !w-56 !py-1" placeholder="+ sigla o parola (es. BIC2)" value={nuovo}
+              onChange={e => setNuovo(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') aggiungi(nuovo); }} />
+          )}
+          {puoCaricare && m.suggerimenti.slice(0, 40).map(s => (
+            <button key={s.codice} title={s.nome} onClick={() => aggiungi(s.codice)}
+              className="border border-dashed border-gray-300 rounded-full px-2.5 py-0.5 text-sm text-gray-500 hover:text-gray-900 hover:border-blue-500">+ {s.codice}</button>
+          ))}
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-gray-200 overflow-auto max-h-[70vh]">
-        {m && m.righe.length === 0 ? (
-          <p className="text-center text-gray-400 py-10 text-sm">{q ? 'Nessuna commessa trovata' : 'Ancora nessuna scheda: carica gli Excel di Ferrari'}</p>
-        ) : m && (
+        {!m || m.modelli.length === 0 ? (
+          <p className="text-center text-gray-400 py-10 text-sm">Ancora nessuna scheda: carica gli Excel di Ferrari</p>
+        ) : m.termini.length === 0 ? (
+          <p className="text-gray-500 py-8 px-6 text-sm">
+            Scegli le sigle o parole da cercare per il modello <b>{m.modello}</b>: scrivile qui sopra oppure clicca quelle suggerite
+            (sono le sigle della prima colonna dell&apos;Excel).
+          </p>
+        ) : m.righe.length === 0 ? (
+          <p className="text-center text-gray-400 py-10 text-sm">Nessuna commessa trovata</p>
+        ) : (
           <table className="text-sm border-separate border-spacing-0">
             <thead>
               <tr>
                 <th className="sticky top-0 left-0 z-30 bg-gray-50 border-b border-r-2 border-gray-200 px-3 py-2 text-left min-w-[130px]">Commessa</th>
-                <th className="sticky top-0 z-20 bg-gray-50 border-b border-gray-200 px-3 py-2 text-left">Modello</th>
-                <th className="sticky top-0 z-20 bg-gray-50 border-b border-gray-200 px-3 py-2 text-left">Paese</th>
-                {m.colonne.map(c => (
-                  <th key={c.codice} title={c.codice} className="sticky top-0 z-20 bg-gray-50 border-b border-l border-gray-200 px-3 py-2 text-left font-semibold min-w-[130px] max-w-[220px]">{c.nome || c.codice}</th>
+                {m.termini.map(t => (
+                  <th key={t} className="sticky top-0 z-20 bg-gray-50 border-b border-l border-gray-200 px-3 py-2 text-left font-semibold min-w-[120px]">{t}</th>
                 ))}
               </tr>
             </thead>
@@ -120,10 +176,8 @@ export default function CommessePage() {
                   <td className="sticky left-0 z-10 bg-white border-b border-r-2 border-gray-200 px-3 py-2 font-semibold">
                     <Link href={`/ferrari/${r.id}`} className="text-blue-700 hover:underline">{r.commessa}</Link>
                   </td>
-                  <td className="border-b border-gray-100 px-3 py-2">{r.modello}</td>
-                  <td className="border-b border-gray-100 px-3 py-2">{r.paese}</td>
-                  {m.colonne.map(c => (
-                    <td key={c.codice} className="border-b border-l border-gray-100 px-3 py-2 max-w-[320px]"><Cella testo={r.celle[c.codice]} intero={r.testi[c.codice]} /></td>
+                  {m.termini.map(t => (
+                    <td key={t} className="border-b border-l border-gray-100 px-3 py-2 max-w-[320px]"><Cella testo={r.celle[t]} intero={r.testi[t]} /></td>
                   ))}
                 </tr>
               ))}
