@@ -132,7 +132,8 @@ export default function CommessePage() {
 
   function scarica() {
     if (!m) return;
-    const cella = (s: string) => `"${s.replace(/"/g, '""')}"`;
+    // una cella che inizia con = + - @ sarebbe una formula per Excel: si neutralizza con un apice
+    const cella = (s: string) => `"${(/^[=+\-@\t\r]/.test(s) ? "'" + s : s).replace(/"/g, '""')}"`;
     const righe = [['Commessa', 'Modello', ...m.termini].map(cella).join(';')];
     for (const r of m.righe) righe.push([r.commessa, r.modello ?? '', ...m.termini.map(x => r.celle[x] ?? '')].map(cella).join(';'));
     const a = document.createElement('a');

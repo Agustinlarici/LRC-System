@@ -59,7 +59,7 @@ function leggiFoglio(buf: Buffer): { righe: RigaLetta[]; sheet: string; anomalie
 
   let wb: XLSX.WorkBook;
   try {
-    wb = XLSX.read(buf, { type: 'buffer', cellDates: false, bookVBA: true });
+    wb = XLSX.read(buf, { type: 'buffer', cellDates: false, bookVBA: false });
   } catch (e) {
     throw new SchedaError(`File illeggibile o protetto da password (${(e as Error).message})`);
   }
