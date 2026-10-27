@@ -1,20 +1,21 @@
 # Validazione Excel Ferrari — flusso completo (v1)
 
-Stato: **implementato (prima versione, da provare con i dati reali)**; resta da approvare dalle persone indicate in §13. Questo file e' identico in `STR-LocalAI/docs/ferrari/FLUSSO.md`
+Stato: **implementato; da provare con Ollama e dati reali**. Uso quotidiano: §0. Questo file e' identico in `STR-LocalAI/docs/ferrari/FLUSSO.md`
 e `LRC-System/docs/FERRARI-FLUSSO.md`: se cambia uno, cambia l'altro.
 
-## 0. Uso semplice (pagina principale)
+## 0. Uso quotidiano
 
-1. Carichi gli Excel di Ferrari (sulla PC IA in `/ferrari`, oppure in LRC → IT → Schede Ferrari → Commesse).
-2. L'app legge **tutte** le sigle (la prima colonna dell'Excel, es. `BIC2`). Per ogni **modello** decidi quali vanno in tabella e quali no; quando compare una sigla **nuova** l'app chiede: «Sì/No, per questo modello» oppure «Sì/No, per tutti i modelli» (una decisione del modello prevale su quella per tutti). Le sigle «va» sono le colonne; «Tutte le sigle» permette di cambiare idea o di far richiedere.
-3. Cerchi la commessa: nella cella vedi «Sì» o il valore trovato (es. `BIC2` → `NERO DS 1250`). «Scarica per Excel» esporta la tabella.
-4. La IA (solo sulla PC IA) riassume il testo scritto a mano; senza Ollama la cella mostra il testo cosi' com'e'.
-5. **Sincronizzazione**: le decisioni sulle sigle (e le parole aggiunte a mano) viaggiano tra PC IA e VM in un piccolo pacchetto firmato («Sigle → VM» / «Sigle → PC IA»). Chi lo riceve non applica nulla da solo: vede **proposte** (nuove o in conflitto con le sue) e le accetta o rifiuta una per una o tutte insieme.
-6. Per vedere come la IA legge i testi lunghi: `python -m ferrari prova FILE.xls` (sulla PC IA) mostra testo, risposta della IA e cosa va in tabella; una risposta con parole che non stanno nel testo si scarta.
+1. **Carichi** gli Excel di Ferrari (PC IA: `/ferrari`; VM: IT → Schede Ferrari → Commesse).
+2. **Sigle nuove**: compaiono in un elenco con Sì/No. Salvi tutte insieme; la casella «Vale per tutti i modelli» vale per quella tornata. La decisione del modello prevale su quella per tutti.
+3. **Tabella**: scegli il modello, cerchi la commessa. Colonne = sigle scelte (es. `BIC2`); cella = «Sì» o il valore (es. `NERO DS 1250`). «Scarica per Excel» esporta.
+4. **Testi lunghi** (scritti a mano): sulla PC IA la IA li riassume; senza Ollama la cella mostra il testo originale. Clic su una cella con testo lungo → vedi l'originale e scrivi la risposta giusta («Salva la mia risposta»): vince sempre sulla IA e diventa un esempio per le volte dopo.
+5. **Scambio PC IA ↔ VM** (a mano, USB/OneDrive): un solo zip firmato con le sigle **e i riassunti dei testi lunghi** (anche quelli corretti a mano). PC IA → VM: «Invia alla VM», poi sulla VM «PC IA → Carica file dalla PC IA». VM → PC IA: «Invia sigle alla PC IA», poi si trascina lo zip nella pagina della PC IA. Chi riceve non applica le sigle da solo: sono **proposte** da accettare o rifiutare. I riassunti valgono solo se il testo della scheda e' ancora lo stesso; un pacchetto piu' vecchio non sovrascrive uno piu' nuovo.
+6. **Provare la IA**: `python -m ferrari prova FILE.xls` (PC IA) mostra testo, risposta e cosa andrebbe in tabella.
 
-Regola della cella (identica nei due programmi): sigla = codice di un'opzione → «Sì» se il valore e' SI, altrimenti il valore (o «Sì — dettaglio» se c'e' testo libero); parola nel valore → il valore; parola nel testo libero → il riassunto (o un estratto del testo); parola solo nella descrizione → «Sì»; non trovata → vuota. Solo parole intere.
-Quando i due programmi si collegheranno, alla VM non serve l'Excel: la VM lo converte in testo (JSON) e manda solo quello (e' gia' cosi' nei pacchetti, §7).
-Tutto il resto di questo documento (scambio di pacchetti con la VM, confronto, revisione, conoscenza) e' **facoltativo**.
+Regola della cella (identica nei due programmi): sigla = codice di un'opzione → «Sì» se il valore e' SI, altrimenti il valore (o «Sì — dettaglio» se c'e' testo libero); parola nel valore → il valore; parola nel testo libero → il riassunto (o un estratto); parola solo nella descrizione → «Sì»; non trovata → vuota. Solo parole intere.
+
+**Primo giorno** — PC IA: (1) Python + `pip install -r requirements.txt`; (2) Ollama con il modello di `config.txt`; (3) in `config.txt` metti `FERRARI_BUNDLE_SECRET` (lo stesso della VM: lo legge il supervisore in «Scambio con la IA»); (4) avvia `STR-AI-Web.bat` e apri `/ferrari`. La pagina e' accessibile solo da quel PC (per la rete: `FERRARI_LAN=1`). VM: serve il permesso `ferrari_schede`; la migrazione 0065 (`ferrari_dettaglio`) la applica `./deploy.sh update`.
+Tutto il resto di questo documento (pacchetti per revisione completa, confronto, conoscenza) e' **facoltativo**.
 
 ## 1. Principi
 

@@ -110,6 +110,7 @@ export default function CommessePage() {
         await api.post('/api/ferrari/sigle', { modello, codice, va, tutti: pertutti });
       }
       setScelte({});
+      setPertutti(false);
       await carica(modello, q.trim());
     } catch (e) {
       setErrore((e as Error).message);
@@ -150,7 +151,6 @@ export default function CommessePage() {
     <div>
       <div className="mb-4">
         <h1 className="text-3xl font-bold text-gray-900">Schede Ferrari</h1>
-        <p className="mt-1 text-gray-500">Per ogni modello decidi quali sigle vanno in tabella (es. BIC2): vedi, per ogni commessa, «Sì» o il valore trovato (es. NERO DS 1250). Le sigle nuove compaiono in un elenco: scegli Sì/No e salva.</p>
       </div>
       <FerrariNav />
       <Errore messaggio={errore} />
@@ -160,9 +160,14 @@ export default function CommessePage() {
           <input ref={inputRef} type="file" multiple accept=".xls,.xlsx" className="hidden" onChange={e => invia(Array.from(e.target.files ?? []))} />
           <button className="btn-secondary" disabled={occupato} onClick={() => inputRef.current?.click()}>{occupato ? 'Caricamento…' : 'Carica Excel'}</button>
           <input ref={sigleRef} type="file" accept=".zip" className="hidden" onChange={e => importaSigle(e.target.files?.[0])} />
-          <button className="btn-secondary" title="Le tue decisioni sulle sigle, da caricare sulla PC IA"
-            onClick={() => scaricaFile('/api/ferrari/sigle/esporta', { nome: 'FERRARI_sigle_vm.zip' }).catch(e => setErrore((e as Error).message))}>Sigle → PC IA</button>
-          <button className="btn-secondary" title="Carica il file delle sigle prodotto dalla PC IA" onClick={() => sigleRef.current?.click()}>Sigle ← PC IA</button>
+          <details className="relative">
+            <summary className="btn-secondary cursor-pointer list-none">PC IA ▾</summary>
+            <div className="absolute z-10 mt-1 flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-2 shadow-lg whitespace-nowrap">
+              <button className="btn-secondary"
+                onClick={() => scaricaFile('/api/ferrari/sigle/esporta', { nome: 'FERRARI_sigle_vm.zip' }).catch(e => setErrore((e as Error).message))}>Invia sigle alla PC IA</button>
+              <button className="btn-secondary" onClick={() => sigleRef.current?.click()}>Carica file dalla PC IA</button>
+            </div>
+          </details>
           <span className="text-xs text-gray-500">{msg.join(' · ')}</span>
         </div>
       )}
@@ -174,13 +179,12 @@ export default function CommessePage() {
         <input className="input !w-64" placeholder="Cerca commessa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
         <span className="text-sm text-gray-500">{m ? `${m.righe.length} commesse` : ''}</span>
         <button className="btn-secondary ml-auto" disabled={!m || m.righe.length === 0} onClick={scarica}>Scarica per Excel</button>
-        <Link href="/ferrari/schede" className="text-sm text-blue-700 hover:underline">Revisione e analisi IA →</Link>
       </div>
 
       {puoCaricare && m && m.proposte.length > 0 && (
         <div className="mb-3 rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm">
           <div className="flex flex-wrap items-center gap-2">
-            <b>La PC IA propone {m.proposte.length} modifiche alle sigle</b>
+            <b>Dalla PC IA: {m.proposte.length} modifiche</b>
             <button className="btn-primary !py-0.5 text-xs" onClick={() => risolvi('accetta-tutte')}>Accetta tutte</button>
             <button className="btn-secondary !py-0.5 text-xs" onClick={() => risolvi('rifiuta-tutte')}>Rifiuta tutte</button>
           </div>
@@ -192,7 +196,7 @@ export default function CommessePage() {
                   <td className="py-1 pr-3"><b>{p.codice}</b> <span className="text-gray-500">{p.nome}</span></td>
                   <td className="py-1 pr-3">
                     {p.va ? <span className="text-green-600 font-semibold">va in tabella</span> : <span className="text-gray-500">non va</span>}
-                    {p.conflitto && <span className="ml-2 text-xs bg-amber-100 text-amber-800 rounded px-1.5">qui hai deciso il contrario</span>}
+                    {p.conflitto && <span className="ml-2 text-xs bg-amber-100 text-amber-800 rounded px-1.5">tu: il contrario</span>}
                   </td>
                   <td className="py-1 text-right whitespace-nowrap">
                     <button className="btn-primary !py-0.5 text-xs mr-1" onClick={() => risolvi('accetta', p.modello, p.codice)}>Accetta</button>
@@ -207,7 +211,7 @@ export default function CommessePage() {
 
       {puoCaricare && m && m.nuove.length > 0 && (
         <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm">
-          <div className="font-medium">Sigle nuove per <b>{m.modello}</b> ({m.nuove.length}): scegli quali vanno in tabella</div>
+          <div className="font-medium">Sigle nuove per <b>{m.modello}</b> ({m.nuove.length})</div>
           <ul className="mt-2 max-h-72 overflow-y-auto divide-y divide-amber-200 bg-white rounded-lg border border-amber-200">
             {m.nuove.map(n => (
               <li key={n.codice} className="flex flex-wrap items-center gap-2 px-3 py-1.5">
@@ -223,7 +227,7 @@ export default function CommessePage() {
             ))}
           </ul>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <button className="btn-secondary !py-1" onClick={() => setScelte(Object.fromEntries(m.nuove.map(n => [n.codice, true])))}>Tutte sì</button>
+            <button className="btn-secondary !py-1" onClick={() => { if (m.nuove.length > 15 && !confirm(`Aggiungere ${m.nuove.length} colonne alla tabella?`)) return; setScelte(Object.fromEntries(m.nuove.map(n => [n.codice, true]))); }}>Tutte sì</button>
             <button className="btn-secondary !py-1" onClick={() => setScelte(Object.fromEntries(m.nuove.map(n => [n.codice, false])))}>Tutte no</button>
             <label className="flex items-center gap-1 ml-2">
               <input type="checkbox" checked={pertutti} onChange={e => setPertutti(e.target.checked)} /> Vale per tutti i modelli
@@ -232,7 +236,6 @@ export default function CommessePage() {
               Salva ({Object.keys(scelte).length})
             </button>
           </div>
-          <p className="mt-1 text-xs text-gray-500">Quelle senza scelta restano da decidere.</p>
         </div>
       )}
 
@@ -280,10 +283,10 @@ export default function CommessePage() {
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-auto max-h-[70vh]">
         {!m || m.modelli.length === 0 ? (
-          <p className="text-center text-gray-400 py-10 text-sm">Ancora nessuna scheda: carica gli Excel di Ferrari</p>
+          <p className="text-center text-gray-400 py-10 text-sm">Carica un Excel per iniziare</p>
         ) : m.termini.length === 0 ? (
           <p className="text-gray-500 py-8 px-6 text-sm">
-            Nessuna sigla scelta per il modello <b>{m.modello}</b>: rispondi alle domande qui sopra (sono le sigle della prima colonna dell&apos;Excel).
+            Scegli le sigle da mostrare.
           </p>
         ) : m.righe.length === 0 ? (
           <p className="text-center text-gray-400 py-10 text-sm">Nessuna commessa trovata</p>

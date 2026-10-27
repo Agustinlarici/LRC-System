@@ -942,9 +942,12 @@ export async function importaSigle(user: Utente, filename: string, buf: Buffer) 
   let voci;
   let dettagli: VoceDettaglio[] = [];
   let da = 'ia';
+  let pacchettoAt = new Date();
   try {
     const letto = leggiBundle(buf, secret, 'sigle');
     da = letto.manifest.producer;
+    const dataPacchetto = new Date(letto.manifest.created_at);
+    if (!Number.isNaN(dataPacchetto.getTime())) pacchettoAt = dataPacchetto;
     voci = leggiSigle(letto.files.get('sigle.json') ?? Buffer.alloc(0));
     dettagli = leggiDettagli(letto.files.get('sigle.json') ?? Buffer.alloc(0));
   } catch (e) {
@@ -964,10 +967,11 @@ export async function importaSigle(user: Utente, filename: string, buf: Buffer) 
     }
     for (const d of dettagli) {
       await tx`
-        INSERT INTO ferrari_dettaglio (commessa, codice, chiave, dettaglio, manuale, da)
-        VALUES (${d.commessa}, ${d.codice}, ${d.chiave}, ${d.dettaglio}, ${d.manuale}, ${da})
+        INSERT INTO ferrari_dettaglio (commessa, codice, chiave, dettaglio, manuale, da, pacchetto_at)
+        VALUES (${d.commessa}, ${d.codice}, ${d.chiave}, ${d.dettaglio}, ${d.manuale}, ${da}, ${pacchettoAt})
         ON CONFLICT (commessa, codice) DO UPDATE SET chiave = EXCLUDED.chiave, dettaglio = EXCLUDED.dettaglio,
-          manuale = EXCLUDED.manuale, da = EXCLUDED.da, aggiornato_at = now()`;
+          manuale = EXCLUDED.manuale, da = EXCLUDED.da, pacchetto_at = EXCLUDED.pacchetto_at, aggiornato_at = now()
+        WHERE ferrari_dettaglio.pacchetto_at <= EXCLUDED.pacchetto_at`;
     }
     await audit(tx, user, 'sigle.importate', 'sigle', null, { filename, nuove, conflitti, uguali, dettagli: dettagli.length });
     return { nuove, conflitti, uguali, dettagli: dettagli.length };

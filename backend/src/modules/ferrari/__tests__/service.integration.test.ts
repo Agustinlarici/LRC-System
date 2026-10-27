@@ -431,8 +431,8 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
     await svc.decidiSigla(op, 'F999XX', 'LLOG', true, false);
     const testo = 'SCUDETTO LASERIZZATO COME DA IMMAGINE.';
     const secret = await svc.getSecret();
-    const pacchetto = (chiave: string) => buildBundle({
-      tipo: 'sigle', producer: 'ai', secret, knowledgeVersion: 0,
+    const pacchetto = (chiave: string, createdAt?: string) => buildBundle({
+      tipo: 'sigle', producer: 'ai', secret, knowledgeVersion: 0, createdAt,
       files: { 'sigle.json': JSON.stringify({ sigle: [], dettagli: [
         { commessa: '100077', codice: 'LLOG', chiave, dettaglio: 'Scudetto laserizzato (scritto a mano)', manuale: true },
         { commessa: '100077', codice: 'LLOG', chiave: 'non-valida', dettaglio: 'x' },
@@ -445,6 +445,10 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
     await svc.importaSigle(sup, 's2.zip', pacchetto(chiaveTesto('TESTO DIVERSO')));
     const cella2 = (await svc.matrice('F999XX')).righe.find((r: { commessa: string }) => r.commessa === '100077')!.celle['LLOG'];
     expect(cella2).toContain('COME DA IMMAGINE');
+    // un pacchetto piu' vecchio non sovrascrive uno piu' nuovo
+    await svc.importaSigle(sup, 's3.zip', pacchetto(chiaveTesto(testo), '2020-01-01T00:00:00.000Z'));
+    const cella3 = (await svc.matrice('F999XX')).righe.find((r: { commessa: string }) => r.commessa === '100077')!.celle['LLOG'];
+    expect(cella3).toContain('COME DA IMMAGINE');
   });
 
   it('sigle: pacchetto con firma sbagliata o di un altro tipo si rifiuta', async () => {
