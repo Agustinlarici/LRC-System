@@ -9,5 +9,5 @@ CREATE TABLE IF NOT EXISTS ferrari_dettaglio (
   da             TEXT,
   pacchetto_at   TIMESTAMPTZ NOT NULL DEFAULT now(),   -- data del pacchetto: uno piu' vecchio non sovrascrive uno piu' nuovo
   aggiornato_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  PRIMARY KEY (commessa, codice)
+  PRIMARY KEY (commessa, chiave)           -- un testo uguale = stesso riassunto (sigle ripetute nella stessa scheda restano distinte)
 );

@@ -170,6 +170,8 @@ export async function caricaScheda(user: Utente, filename: string, buf: Buffer):
       }
 
       const h = canonico.header;
+      // due caricamenti insieme della stessa commessa: uno aspetta l'altro, cosi' la sostituzione vede la riga precedente
+      await tx`SELECT pg_advisory_xact_lock(hashtext(${'ferrari:' + h.commessa}))`;
       const [f] = await tx<{ id: number }[]>`
         INSERT INTO ferrari_file (filename, sha256, size_bytes, original, stato, ia_stato, commessa, modello, versione,
                                   mercato_codice, paese, matricola, canonico, caricato_da_id, caricato_da)
@@ -866,7 +868,7 @@ export async function matrice(modello?: string, q?: string) {
       SELECT commessa, codice, chiave, dettaglio FROM ferrari_dettaglio WHERE commessa IN ${db(commesse)}`;
     for (const r of righe) {
       if (!dettagli.has(r.commessa)) dettagli.set(r.commessa, new Map());
-      dettagli.get(r.commessa)!.set(r.codice, { chiave: r.chiave, dettaglio: r.dettaglio });
+      dettagli.get(r.commessa)!.set(r.chiave, r.dettaglio);
     }
   }
   return {
@@ -888,6 +890,7 @@ export async function decidiSigla(user: Utente, modello: string, codice: string,
     await tx`
       INSERT INTO ferrari_sigla (modello, codice, va, creato_da) VALUES (${m}, ${c}, ${va}, ${user.username})
       ON CONFLICT (modello, codice) DO UPDATE SET va = EXCLUDED.va`;
+    await tx`DELETE FROM ferrari_sigla_proposta WHERE modello = ${m} AND codice = ${c}`;   // decisa: la proposta e' superata
     await audit(tx, user, va ? 'sigla.va' : 'sigla.non_va', 'sigla', `${m}/${c}`, null);
   });
   return c;
@@ -956,25 +959,38 @@ export async function importaSigle(user: Utente, filename: string, buf: Buffer) 
   }
   return db.begin(async raw => {
     const tx = raw as unknown as Tx;
+    // stesso ordine in ogni importazione: due importazioni insieme non si bloccano a vicenda
+    await tx`SELECT pg_advisory_xact_lock(hashtext('ferrari:sigle'))`;
     let nuove = 0, conflitti = 0, uguali = 0;
-    for (const v of voci) {
+    for (const v of [...voci].sort((x, y) => (x.modello + x.codice).localeCompare(y.modello + y.codice))) {
       const [locale] = await tx<{ va: boolean }[]>`SELECT va FROM ferrari_sigla WHERE modello = ${v.modello} AND codice = ${v.codice}`;
-      if (locale && locale.va === v.va) { uguali++; continue; }
+      if (locale && locale.va === v.va) {
+        await tx`DELETE FROM ferrari_sigla_proposta WHERE modello = ${v.modello} AND codice = ${v.codice}`;
+        uguali++;
+        continue;
+      }
       await tx`
         INSERT INTO ferrari_sigla_proposta (modello, codice, va, nome, conflitto, da) VALUES (${v.modello}, ${v.codice}, ${v.va}, ${v.nome}, ${!!locale}, ${da})
         ON CONFLICT (modello, codice) DO UPDATE SET va = EXCLUDED.va, nome = EXCLUDED.nome, conflitto = EXCLUDED.conflitto, da = EXCLUDED.da, creata_at = now()`;
       if (locale) conflitti++; else nuove++;
     }
+    let applicati = 0;
     for (const d of dettagli) {
-      await tx`
+      if (d.dettaglio === '') {          // la PC IA non ha piu' un riassunto per questo testo: si cancella quello vecchio
+        const r = await tx`DELETE FROM ferrari_dettaglio WHERE commessa = ${d.commessa} AND chiave = ${d.chiave} AND pacchetto_at <= ${pacchettoAt}`;
+        applicati += r.count;
+        continue;
+      }
+      const r = await tx`
         INSERT INTO ferrari_dettaglio (commessa, codice, chiave, dettaglio, manuale, da, pacchetto_at)
         VALUES (${d.commessa}, ${d.codice}, ${d.chiave}, ${d.dettaglio}, ${d.manuale}, ${da}, ${pacchettoAt})
-        ON CONFLICT (commessa, codice) DO UPDATE SET chiave = EXCLUDED.chiave, dettaglio = EXCLUDED.dettaglio,
+        ON CONFLICT (commessa, chiave) DO UPDATE SET codice = EXCLUDED.codice, dettaglio = EXCLUDED.dettaglio,
           manuale = EXCLUDED.manuale, da = EXCLUDED.da, pacchetto_at = EXCLUDED.pacchetto_at, aggiornato_at = now()
         WHERE ferrari_dettaglio.pacchetto_at <= EXCLUDED.pacchetto_at`;
+      applicati += r.count;
     }
-    await audit(tx, user, 'sigle.importate', 'sigle', null, { filename, nuove, conflitti, uguali, dettagli: dettagli.length });
-    return { nuove, conflitti, uguali, dettagli: dettagli.length };
+    await audit(tx, user, 'sigle.importate', 'sigle', null, { filename, nuove, conflitti, uguali, dettagli: applicati });
+    return { nuove, conflitti, uguali, dettagli: applicati };
   });
 }
 

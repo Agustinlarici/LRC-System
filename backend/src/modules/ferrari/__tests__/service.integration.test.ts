@@ -426,29 +426,39 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
     expect((await svc.verificaCatenaAudit()).ok).toBe(true);
   });
 
-  it('dettagli: il riassunto della PC IA arriva nel pacchetto delle sigle e si vede in cella solo se il testo e\' lo stesso', async () => {
+  it('dettagli: il riassunto della PC IA arriva nel pacchetto delle sigle, si aggiorna, si cancella e non torna indietro', async () => {
     await svc.caricaScheda(op, 'p.xls', xls(schedaPersonalizzata({ commessa: 100077, modello: 'F999XX' })));
     await svc.decidiSigla(op, 'F999XX', 'LLOG', true, false);
     const testo = 'SCUDETTO LASERIZZATO COME DA IMMAGINE.';
     const secret = await svc.getSecret();
-    const pacchetto = (chiave: string, createdAt?: string) => buildBundle({
+    const pacchetto = (dettaglio: string, createdAt?: string, chiave = chiaveTesto(testo)) => buildBundle({
       tipo: 'sigle', producer: 'ai', secret, knowledgeVersion: 0, createdAt,
       files: { 'sigle.json': JSON.stringify({ sigle: [], dettagli: [
-        { commessa: '100077', codice: 'LLOG', chiave, dettaglio: 'Scudetto laserizzato (scritto a mano)', manuale: true },
+        { commessa: '100077', codice: 'LLOG', chiave, dettaglio, manuale: true },
         { commessa: '100077', codice: 'LLOG', chiave: 'non-valida', dettaglio: 'x' },
       ] }) },
     }).zip;
-    expect((await svc.importaSigle(sup, 's.zip', pacchetto(chiaveTesto(testo))))).toMatchObject({ dettagli: 1 });
-    const cella = (await svc.matrice('F999XX')).righe.find((r: { commessa: string }) => r.commessa === '100077')!.celle['LLOG'];
-    expect(cella).toBe('Sì — Scudetto laserizzato (scritto a mano)');
-    // testo cambiato nella scheda: il riassunto vecchio non si usa
-    await svc.importaSigle(sup, 's2.zip', pacchetto(chiaveTesto('TESTO DIVERSO')));
-    const cella2 = (await svc.matrice('F999XX')).righe.find((r: { commessa: string }) => r.commessa === '100077')!.celle['LLOG'];
-    expect(cella2).toContain('COME DA IMMAGINE');
+    const cella = async () => (await svc.matrice('F999XX')).righe.find((r: { commessa: string }) => r.commessa === '100077')!.celle['LLOG'];
+
+    expect(await svc.importaSigle(sup, 's1.zip', pacchetto('Scudetto laserizzato', '2030-01-01T00:00:00.000Z'))).toMatchObject({ dettagli: 1 });
+    expect(await cella()).toBe('Sì — Scudetto laserizzato');
     // un pacchetto piu' vecchio non sovrascrive uno piu' nuovo
-    await svc.importaSigle(sup, 's3.zip', pacchetto(chiaveTesto(testo), '2020-01-01T00:00:00.000Z'));
-    const cella3 = (await svc.matrice('F999XX')).righe.find((r: { commessa: string }) => r.commessa === '100077')!.celle['LLOG'];
-    expect(cella3).toContain('COME DA IMMAGINE');
+    await svc.importaSigle(sup, 's2.zip', pacchetto('Vecchio', '2020-01-01T00:00:00.000Z'));
+    expect(await cella()).toBe('Sì — Scudetto laserizzato');
+    // riassunto per un altro testo: non si usa
+    await svc.importaSigle(sup, 's3.zip', pacchetto('Altro', '2031-01-01T00:00:00.000Z', chiaveTesto('TESTO DIVERSO')));
+    expect(await cella()).toBe('Sì — Scudetto laserizzato');
+    // dettaglio vuoto = la PC IA non ha piu' un riassunto: si cancella e torna il testo originale
+    await svc.importaSigle(sup, 's4.zip', pacchetto('', '2032-01-01T00:00:00.000Z'));
+    expect(await cella()).toContain('COME DA IMMAGINE');
+  });
+
+  it('caricamenti insieme della stessa commessa: resta una sola scheda attiva', async () => {
+    const a = xls(schedaPersonalizzata({ commessa: 100088, modello: 'F999XX' }));
+    const b = xls([...schedaPersonalizzata({ commessa: 100088, modello: 'F999XX' }), ['BIC2            ', 'CARROZZERIA BICOLORE          ', 'NERO DS 1250                  ']]);
+    await Promise.all([svc.caricaScheda(op, 'a.xls', a), svc.caricaScheda(op, 'b.xls', b)]);
+    const attive = await db`SELECT id FROM ferrari_file WHERE commessa = '100088' AND stato NOT IN ('SOSTITUITO', 'QUARANTENA')`;
+    expect(attive).toHaveLength(1);
   });
 
   it('sigle: pacchetto con firma sbagliata o di un altro tipo si rifiuta', async () => {

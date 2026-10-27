@@ -37,20 +37,24 @@ export function cellaOpzione(o: Opzione, dettaglio?: string | null): string {
 
 /** Chiave di un testo lungo: stessa regola della PC IA (sha1 del testo normalizzato, spazi compressi). */
 export function chiaveTesto(testo: string): string {
-  return createHash('sha1').update(collapse(testo), 'utf8').digest('hex');
+  // solo lettere e cifre: indipendente da spazi strani e punteggiatura
+  return createHash('sha1').update(norm(testo).replace(/[^A-Z0-9]+/g, ' ').trim(), 'utf8').digest('hex');
 }
 
-/** Dettagli arrivati dalla PC IA: commessa → codice → {chiave, dettaglio}. */
-export type DettagliPerCommessa = Map<string, Map<string, { chiave: string; dettaglio: string }>>;
+/** Dettagli arrivati dalla PC IA: commessa → chiave del testo → dettaglio. */
+export type DettagliPerCommessa = Map<string, Map<string, string>>;
 
 function dettagliValidi(commessa: string, opzioni: Opzione[], tutti?: DettagliPerCommessa): Record<string, string> {
   const out: Record<string, string> = {};
   const della = tutti?.get(commessa);
   if (!della) return out;
+  const visti = new Set<string>();
   for (const o of opzioni) {
-    const d = della.get(o.codice);
+    if (visti.has(o.codice)) continue;          // la cella usa la prima voce con quel codice
+    visti.add(o.codice);
     // vale solo se il testo della scheda e' ancora quello da cui e' nato il riassunto
-    if (d && d.chiave === chiaveTesto(testoLibero(o))) out[o.codice] = d.dettaglio;
+    const d = della.get(chiaveTesto(testoLibero(o)));
+    if (d) out[o.codice] = d;
   }
   return out;
 }

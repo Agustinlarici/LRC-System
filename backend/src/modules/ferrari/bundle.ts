@@ -304,8 +304,8 @@ export function leggiDettagli(contenuto: Buffer): VoceDettaglio[] {
     if (!v || typeof v !== 'object') continue;
     const { commessa, codice, chiave, dettaglio, manuale } = v as Record<string, unknown>;
     if (typeof commessa !== 'string' || typeof codice !== 'string' || typeof chiave !== 'string' || typeof dettaglio !== 'string') continue;
-    const d = dettaglio.replace(/\s+/g, ' ').trim().slice(0, 300);
-    if (!commessa.trim() || !codice.trim() || !/^[0-9a-f]{40}$/.test(chiave) || !d) continue;
+    const d = dettaglio.replace(/\s+/g, ' ').trim().slice(0, 300);          // vuoto = cancella il riassunto vecchio
+    if (!commessa.trim() || !codice.trim() || !/^[0-9a-f]{40}$/.test(chiave)) continue;
     out.push({ commessa: commessa.trim().slice(0, 30), codice: codice.trim().toUpperCase().slice(0, 60), chiave, dettaglio: d, manuale: manuale === true });
   }
   return out;

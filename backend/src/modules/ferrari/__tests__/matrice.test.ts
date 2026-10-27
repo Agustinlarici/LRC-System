@@ -70,14 +70,15 @@ describe('costruisciMatrice / suggerimenti', () => {
 
   it('il riassunto della PC IA vale solo se il testo e\' ancora lo stesso', () => {
     const testo = 'SCUDETTO LASERIZZATO COME DA IMMAGINE.';
-    const giusto = new Map([['100002', new Map([['LLOG', { chiave: chiaveTesto(testo), dettaglio: 'Scudetto laserizzato' }]])]]);
+    const giusto = new Map([['100002', new Map([[chiaveTesto(testo), 'Scudetto laserizzato']])]]);
     expect(costruisciMatrice(schede, ['LLOG'], giusto)[1]!.celle['LLOG']).toBe('Sì — Scudetto laserizzato');
-    const vecchio = new Map([['100002', new Map([['LLOG', { chiave: chiaveTesto('ALTRO TESTO'), dettaglio: 'Scudetto laserizzato' }]])]]);
+    const vecchio = new Map([['100002', new Map([[chiaveTesto('ALTRO TESTO'), 'Scudetto laserizzato']])]]);
     expect(costruisciMatrice(schede, ['LLOG'], vecchio)[1]!.celle['LLOG']).toContain('COME DA IMMAGINE');
   });
 
   it('chiave del testo uguale a quella calcolata dalla PC IA (Python)', () => {
-    expect(chiaveTesto('VERNICIARE VETTURA  in colore blu — è così')).toBe('52252fd2e2adc2519b76cab0b318b6340d303553');
+    expect(chiaveTesto('VERNICIARE VETTURA  in colore blu — è così')).toBe('cdcdbad0bdeff79bf9a8491da52ad04080fb21a2');
+    expect(chiaveTesto('VERNICIARE\u001cVETTURA in colore BLU, e cosi')).toBe('cdcdbad0bdeff79bf9a8491da52ad04080fb21a2');   // spazi strani e punteggiatura non contano
   });
 
   it('le sigle ancora da decidere, nell\'ordine dell\'Excel, con un esempio', () => {
