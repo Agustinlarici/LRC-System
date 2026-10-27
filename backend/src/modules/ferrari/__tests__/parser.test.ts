@@ -18,6 +18,12 @@ describe('parseScheda — testata', () => {
     expect(c.header.tipo_matricola.mercato_sigla).toBe('CHI');
   });
 
+  it('una variante dopo il modello (RHT) non cambia il modello', () => {
+    const v = parseScheda(toXlsBuffer(schedaSemplice({ modello: 'F999XX RHT' })), 'v.xls');
+    expect(v.header.tipo_matricola.modello).toBe('F999XX');
+    expect(v.header.tipo_matricola.raw).toContain('F999XX RHT - ');
+  });
+
   it('legge matricola, progressivo, destinazione e codice mercato', () => {
     expect(c.header.tipo_matricola.matricola).toBe('999000027');
     expect(c.header.tipo_matricola.progressivo).toBe('100001');

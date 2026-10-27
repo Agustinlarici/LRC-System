@@ -15,7 +15,7 @@ describe('cellaOpzione (stessa regola della PC IA)', () => {
     [o('ROSSO IMOLA'), 'ROSSO IMOLA'],
     [o('SI', ['IN BLU']), 'Sì — IN BLU'],
     [o('EXTRACAMPIONARIO-NOT STANDARD'), 'Extra campionario'],
-    [o('EXTRACAMPIONARIO - NOT STANDAR', ['COLORE BLU']), 'Sì — COLORE BLU'],
+    [o('EXTRACAMPIONARIO - NOT STANDAR', ['COLORE BLU']), 'Extra campionario — COLORE BLU'],
     [o('SI', ['RIGA UNO', 'RIGA DUE']), 'Sì — RIGA UNO RIGA DUE'],
     [o('50'), '50'],
     [o('', [], 'CLIENTE'), 'CLIENTE'],
@@ -42,7 +42,7 @@ const c = (t: string, det: Record<string, string> = {}) => cellaTermine(t, OPZ, 
 describe('cellaTermine (stessa regola della PC IA)', () => {
   it('sigla con valore', () => { expect(c('BIC2')).toBe('NERO DS 1250'); expect(c('bic2')).toBe('NERO DS 1250'); });
   it('sigla con "SI"', () => expect(c('CEL2')).toBe('Sì'));
-  it('sigla con testo libero e riassunto', () => expect(c('PNT1', { PNT1: 'Blu elder' })).toBe('Sì — Blu elder'));
+  it('sigla con testo libero e riassunto', () => expect(c('PNT1', { PNT1: 'Blu elder' })).toBe('Extra campionario — Blu elder'));
   it('sigla assente o vuota: cella vuota', () => { expect(c('ZZZ9')).toBe(''); expect(c('')).toBe(''); });
   it('parola nel valore', () => expect(c('NERO')).toBe('NERO DS 1250'));
   it('parola nel testo libero: riassunto o estratto', () => {

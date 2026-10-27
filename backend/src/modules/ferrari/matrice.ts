@@ -32,7 +32,8 @@ export function cellaOpzione(o: Opzione, dettaglio?: string | null): string {
   if (nota && parti.length === 0 && classe !== 'SI') parti.push(nota);
   if (parti.length === 0) return classe === 'EXTRA' ? 'Extra campionario' : SI;
   const testo = parti.join(' · ');
-  return classe === 'SI' || classe === 'EXTRA' ? `${SI} — ${testo}` : testo;
+  if (classe === 'EXTRA') return `Extra campionario — ${testo}`;
+  return classe === 'SI' ? `${SI} — ${testo}` : testo;
 }
 
 /** Chiave di un testo lungo: stessa regola della PC IA (sha1 del testo normalizzato, spazi compressi). */

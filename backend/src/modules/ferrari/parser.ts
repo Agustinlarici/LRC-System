@@ -137,7 +137,8 @@ function parseHeader(valori: Partial<Record<Etichetta, RigaLetta>>, anomalie: An
     const compat = tipoRaw.replace(/\s+/g, ' ').trim();
     const sep = compat.indexOf(' - ');
     if (sep > 0) {
-      modello = compat.slice(0, sep).trim().toUpperCase();
+      // «F171VS RHT»: RHT e' una variante, il modello e' la prima parola
+      modello = compat.slice(0, sep).trim().split(' ')[0]!.toUpperCase();
       versione = compat.slice(sep + 3).trim().toUpperCase();
     } else {
       modello = compat.split(' ')[0]!.toUpperCase();
