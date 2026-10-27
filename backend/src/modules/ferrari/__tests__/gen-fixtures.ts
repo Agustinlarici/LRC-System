@@ -4,7 +4,7 @@
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildToAi, buildKnowledge } from '../bundle.js';
+import { buildToAi, buildKnowledge, buildSigle } from '../bundle.js';
 import { parseScheda } from '../parser.js';
 import { schedaPersonalizzata, schedaSemplice, toXlsBuffer } from './fixtures.js';
 
@@ -31,4 +31,9 @@ const schede = [
 
 writeFileSync(join(out, 'to-ai.zip'), buildToAi({ secret: SECRET, schede, conoscenza: k, esempi }).zip);
 writeFileSync(join(out, 'knowledge.zip'), buildKnowledge({ secret: SECRET, conoscenza: { ...k, versione: 5 }, esempi }).zip);
+writeFileSync(join(out, 'sigle-ts.zip'), buildSigle({ secret: SECRET, voci: [
+  { modello: 'F999XX', codice: 'BIC2', va: true, nome: 'CARROZZERIA BICOLORE' },
+  { modello: '*', codice: 'CEL2', va: true, nome: 'ALLEST.VANO MOTORE IN CARBONIO' },
+  { modello: 'F999XX', codice: 'EXTC', va: false, nome: 'Esterni' },
+] }).zip);
 console.log('fixture scritte in', out);

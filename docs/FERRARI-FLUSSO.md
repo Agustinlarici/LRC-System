@@ -9,6 +9,8 @@ e `LRC-System/docs/FERRARI-FLUSSO.md`: se cambia uno, cambia l'altro.
 2. L'app legge **tutte** le sigle (la prima colonna dell'Excel, es. `BIC2`). Per ogni **modello** decidi quali vanno in tabella e quali no; quando compare una sigla **nuova** l'app chiede: «Sì/No, per questo modello» oppure «Sì/No, per tutti i modelli» (una decisione del modello prevale su quella per tutti). Le sigle «va» sono le colonne; «Tutte le sigle» permette di cambiare idea o di far richiedere.
 3. Cerchi la commessa: nella cella vedi «Sì» o il valore trovato (es. `BIC2` → `NERO DS 1250`). «Scarica per Excel» esporta la tabella.
 4. La IA (solo sulla PC IA) riassume il testo scritto a mano; senza Ollama la cella mostra il testo cosi' com'e'.
+5. **Sincronizzazione**: le decisioni sulle sigle (e le parole aggiunte a mano) viaggiano tra PC IA e VM in un piccolo pacchetto firmato («Sigle → VM» / «Sigle → PC IA»). Chi lo riceve non applica nulla da solo: vede **proposte** (nuove o in conflitto con le sue) e le accetta o rifiuta una per una o tutte insieme.
+6. Per vedere come la IA legge i testi lunghi: `python -m ferrari prova FILE.xls` (sulla PC IA) mostra testo, risposta della IA e cosa va in tabella; una risposta con parole che non stanno nel testo si scarta.
 
 Regola della cella (identica nei due programmi): sigla = codice di un'opzione → «Sì» se il valore e' SI, altrimenti il valore (o «Sì — dettaglio» se c'e' testo libero); parola nel valore → il valore; parola nel testo libero → il riassunto (o un estratto del testo); parola solo nella descrizione → «Sì»; non trovata → vuota. Solo parole intere.
 Quando i due programmi si collegheranno, alla VM non serve l'Excel: la VM lo converte in testo (JSON) e manda solo quello (e' gia' cosi' nei pacchetti, §7).

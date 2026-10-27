@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { inviaFile } from '@/lib/ferrari';
+import { inviaFile, scaricaFile } from '@/lib/ferrari';
 import { Errore, FerrariNav } from '@/components/ferrari/Comuni';
 
 interface Matrice {
@@ -13,6 +13,7 @@ interface Matrice {
   termini: string[];
   nuove: { codice: string; nome: string; esempio: string }[];
   sigle: { codice: string; nome: string; va: boolean; ambito: 'modello' | 'tutti' }[];
+  proposte: { modello: string; codice: string; va: boolean; nome: string | null; conflitto: boolean; da: string | null }[];
   righe: { id: number; commessa: string; modello: string | null; paese: string | null; stato: string;
     celle: Record<string, string>; testi: Record<string, string> }[];
 }
@@ -39,6 +40,7 @@ export default function CommessePage() {
   const [msg, setMsg] = useState<string[]>([]);
   const [occupato, setOccupato] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const sigleRef = useRef<HTMLInputElement>(null);
 
   const carica = useCallback(async (mod: string, testo: string) => {
     try {
@@ -75,6 +77,28 @@ export default function CommessePage() {
       await carica(modello, q.trim());
     } catch (e) {
       setErrore((e as Error).message);
+    }
+  }
+
+  async function risolvi(azione: 'accetta' | 'rifiuta' | 'accetta-tutte' | 'rifiuta-tutte', mod?: string, codice?: string) {
+    try {
+      await api.post('/api/ferrari/proposte', { azione, modello: mod, codice });
+      await carica(modello, q.trim());
+    } catch (e) {
+      setErrore((e as Error).message);
+    }
+  }
+
+  async function importaSigle(f: File | undefined) {
+    if (!f) return;
+    try {
+      const r = await inviaFile<{ nuove: number; conflitti: number; uguali: number }>('/api/ferrari/sigle/importa', 'file', [f]);
+      setMsg([`Sigle dalla PC IA: ${r.nuove} nuove, ${r.conflitti} in conflitto, ${r.uguali} già uguali`]);
+      await carica(modello, q.trim());
+    } catch (e) {
+      setErrore((e as Error).message);
+    } finally {
+      if (sigleRef.current) sigleRef.current.value = '';
     }
   }
 
@@ -131,6 +155,10 @@ export default function CommessePage() {
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <input ref={inputRef} type="file" multiple accept=".xls,.xlsx" className="hidden" onChange={e => invia(Array.from(e.target.files ?? []))} />
           <button className="btn-secondary" disabled={occupato} onClick={() => inputRef.current?.click()}>{occupato ? 'Caricamento…' : 'Carica Excel'}</button>
+          <input ref={sigleRef} type="file" accept=".zip" className="hidden" onChange={e => importaSigle(e.target.files?.[0])} />
+          <button className="btn-secondary" title="Le tue decisioni sulle sigle, da caricare sulla PC IA"
+            onClick={() => scaricaFile('/api/ferrari/sigle/esporta', { nome: 'FERRARI_sigle_vm.zip' }).catch(e => setErrore((e as Error).message))}>Sigle → PC IA</button>
+          <button className="btn-secondary" title="Carica il file delle sigle prodotto dalla PC IA" onClick={() => sigleRef.current?.click()}>Sigle ← PC IA</button>
           <span className="text-xs text-gray-500">{msg.join(' · ')}</span>
         </div>
       )}
@@ -144,6 +172,34 @@ export default function CommessePage() {
         <button className="btn-secondary ml-auto" disabled={!m || m.righe.length === 0} onClick={scarica}>Scarica per Excel</button>
         <Link href="/ferrari/schede" className="text-sm text-blue-700 hover:underline">Revisione e analisi IA →</Link>
       </div>
+
+      {puoCaricare && m && m.proposte.length > 0 && (
+        <div className="mb-3 rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <b>La PC IA propone {m.proposte.length} modifiche alle sigle</b>
+            <button className="btn-primary !py-0.5 text-xs" onClick={() => risolvi('accetta-tutte')}>Accetta tutte</button>
+            <button className="btn-secondary !py-0.5 text-xs" onClick={() => risolvi('rifiuta-tutte')}>Rifiuta tutte</button>
+          </div>
+          <table className="mt-2 w-full">
+            <tbody>
+              {m.proposte.map(p => (
+                <tr key={`${p.modello}/${p.codice}`} className="border-t border-sky-200">
+                  <td className="py-1 pr-3 font-semibold">{p.modello === '*' ? 'tutti i modelli' : p.modello}</td>
+                  <td className="py-1 pr-3"><b>{p.codice}</b> <span className="text-gray-500">{p.nome}</span></td>
+                  <td className="py-1 pr-3">
+                    {p.va ? <span className="text-green-600 font-semibold">va in tabella</span> : <span className="text-gray-500">non va</span>}
+                    {p.conflitto && <span className="ml-2 text-xs bg-amber-100 text-amber-800 rounded px-1.5">qui hai deciso il contrario</span>}
+                  </td>
+                  <td className="py-1 text-right whitespace-nowrap">
+                    <button className="btn-primary !py-0.5 text-xs mr-1" onClick={() => risolvi('accetta', p.modello, p.codice)}>Accetta</button>
+                    <button className="btn-secondary !py-0.5 text-xs" onClick={() => risolvi('rifiuta', p.modello, p.codice)}>Rifiuta</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {puoCaricare && m && prossima && (
         <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm">

@@ -5,7 +5,7 @@ import { parseBody } from '../../lib/validate.js';
 import { requireManage, requireModule, type Env } from '../../lib/auth.js';
 import {
   aggiornaConfig, caricaScheda, cerca, configCorrente, creaPacchettoConoscenza, creaPacchettoToAi, decidiConoscenza,
-  dettaglioFile, importaRisultatoIa, decidiSigla, listaAudit, listaBundle, matrice, togliDecisione, tutteNo, listaConoscenza, listaFile, mostraSegreto,
+  dettaglioFile, importaRisultatoIa, decidiSigla, esportaSigle, importaSigle, listaAudit, listaBundle, matrice, risolviProposte, togliDecisione, tutteNo, listaConoscenza, listaFile, mostraSegreto,
   proponiConoscenzaDiretta, registraDecisione, revisioneSenzaIa, rianalizza, reinviaAllaIa, rifiutaScheda, riepilogo,
   scaricaBundle, scaricaOriginale, validaScheda, verificaCatenaAudit, TIPI_DIZIONARIO,
   type Utente,
@@ -74,6 +74,26 @@ ferrariRoutes.post('/sigle', requireManage(VISTA), async (c) => {
 ferrariRoutes.post('/sigle/tutte-no', requireManage(VISTA), async (c) => {
   const b = await parseBody(c, z.object({ modello: z.string().min(1).max(30) }));
   return c.json({ segnate: await tutteNo(utente(c), b.modello) });
+});
+
+ferrariRoutes.get('/sigle/esporta', requireManage(VISTA), async (c) => {
+  const r = await esportaSigle(utente(c));
+  return scarica(c, r.filename, r.zip, 'application/zip');
+});
+
+ferrariRoutes.post('/sigle/importa', requireManage(VISTA), async (c) => {
+  const [f] = await leggiFile(c, 'file', 1);
+  return c.json(await importaSigle(utente(c), f!.name, f!.buf));
+});
+
+ferrariRoutes.post('/proposte', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({
+    azione: z.enum(['accetta', 'rifiuta', 'accetta-tutte', 'rifiuta-tutte']),
+    modello: z.string().max(30).optional(), codice: z.string().max(60).optional(),
+  }));
+  const tutte = b.azione.endsWith('-tutte');
+  if (!tutte && (!b.modello || !b.codice)) throw new HTTPException(400, { message: 'Indicare modello e sigla' });
+  return c.json({ trattate: await risolviProposte(utente(c), b.azione.startsWith('accetta'), tutte ? undefined : b.modello, tutte ? undefined : b.codice) });
 });
 
 ferrariRoutes.delete('/sigle', requireManage(VISTA), async (c) =>

@@ -7,7 +7,7 @@ import { db } from '../../db/client.js';
 import { logger } from '../../lib/logger.js';
 import { analizzaVm } from './analyzer.js';
 import {
-  BundleError, buildKnowledge, buildToAi, leggiBundle, leggiRisultatoIa, sha256, stableStringify,
+  BundleError, buildKnowledge, buildSigle, buildToAi, leggiBundle, leggiRisultatoIa, leggiSigle, sha256, stableStringify,
   type EsempioConoscenza,
 } from './bundle.js';
 import { confronta } from './compare.js';
@@ -836,7 +836,8 @@ export async function matrice(modello?: string, q?: string) {
     WHERE stato NOT IN ('SOSTITUITO', 'QUARANTENA', 'RIFIUTATO') AND modello IS NOT NULL
     GROUP BY modello ORDER BY max(caricato_at) DESC`;
   const scelto = (modello?.trim().toUpperCase() || modelli[0]?.modello) ?? '';
-  if (!scelto) return { modelli, modello: '', termini: [] as string[], nuove: [], sigle: [], righe: [] };
+  const proposte = await proposteSigle();
+  if (!scelto) return { modelli, modello: '', termini: [] as string[], nuove: [], sigle: [], righe: [], proposte };
 
   // Decisione del modello prevale su quella per tutti
   const rows = await db<{ modello: string; codice: string; va: boolean; ordine: string }[]>`
@@ -863,6 +864,7 @@ export async function matrice(modello?: string, q?: string) {
     nuove: nuoveSigle(tutte, new Set(decisioni.keys())),
     sigle: ordinate.map(([codice, d]) => ({ codice, nome: nomi.get(codice) ?? '(parola cercata)', va: d.va, ambito: d.ambito })),
     righe: costruisciMatrice(mostrate.slice(0, 500), termini),
+    proposte,
   };
 }
 
@@ -906,4 +908,76 @@ export async function tutteNo(user: Utente, modello: string) {
     await audit(tx, user, 'sigla.tutte_non_va', 'sigla', m.modello, { quante: m.nuove.length });
   });
   return m.nuove.length;
+}
+
+// ─── Sincronizzazione delle sigle con la PC IA ────────────────────────────────
+
+/** Pacchetto firmato con tutte le decisioni sulle sigle: la PC IA le riceve come proposte. */
+export async function esportaSigle(user: Utente) {
+  const secret = await getSecret();
+  const voci = await db<{ modello: string; codice: string; va: boolean }[]>`SELECT modello, codice, va FROM ferrari_sigla ORDER BY ordine`;
+  const nomi = new Map<string, string>();
+  const schede = await db<{ canonico: Canonico }[]>`SELECT canonico FROM ferrari_file WHERE canonico IS NOT NULL`;
+  for (const s of schede) for (const o of s.canonico.opzioni) if (!nomi.has(o.codice)) nomi.set(o.codice, o.descrizione);
+  const { zip, manifest } = buildSigle({
+    secret, voci: voci.map(v => ({ modello: v.modello, codice: v.codice, va: v.va, nome: nomi.get(v.codice) ?? '(parola cercata)' })),
+  });
+  await db.begin(async raw => audit(raw as unknown as Tx, user, 'sigle.esportate', 'sigle', manifest.bundle_id, { voci: voci.length }));
+  return { zip, filename: `FERRARI_sigle_vm_${manifest.bundle_id}.zip`, voci: voci.length };
+}
+
+/** Legge le decisioni della PC IA e le trasforma in PROPOSTE (le nuove e quelle in conflitto con le nostre). */
+export async function importaSigle(user: Utente, filename: string, buf: Buffer) {
+  const secret = await getSecret();
+  let voci;
+  let da = 'ia';
+  try {
+    const letto = leggiBundle(buf, secret, 'sigle');
+    da = letto.manifest.producer;
+    voci = leggiSigle(letto.files.get('sigle.json') ?? Buffer.alloc(0));
+  } catch (e) {
+    if (e instanceof BundleError) return rifiutaBundle(user, filename, sha256(buf), e.message);
+    throw e;
+  }
+  return db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    let nuove = 0, conflitti = 0, uguali = 0;
+    for (const v of voci) {
+      const [locale] = await tx<{ va: boolean }[]>`SELECT va FROM ferrari_sigla WHERE modello = ${v.modello} AND codice = ${v.codice}`;
+      if (locale && locale.va === v.va) { uguali++; continue; }
+      await tx`
+        INSERT INTO ferrari_sigla_proposta (modello, codice, va, nome, conflitto, da) VALUES (${v.modello}, ${v.codice}, ${v.va}, ${v.nome}, ${!!locale}, ${da})
+        ON CONFLICT (modello, codice) DO UPDATE SET va = EXCLUDED.va, nome = EXCLUDED.nome, conflitto = EXCLUDED.conflitto, da = EXCLUDED.da, creata_at = now()`;
+      if (locale) conflitti++; else nuove++;
+    }
+    await audit(tx, user, 'sigle.importate', 'sigle', null, { filename, nuove, conflitti, uguali });
+    return { nuove, conflitti, uguali };
+  });
+}
+
+export async function proposteSigle() {
+  return db<{ modello: string; codice: string; va: boolean; nome: string | null; conflitto: boolean; da: string | null }[]>`
+    SELECT modello, codice, va, nome, conflitto, da FROM ferrari_sigla_proposta ORDER BY creata_at, modello, codice`;
+}
+
+/** Accetta (diventa una decisione locale) o rifiuta una proposta; senza modello/codice tratta tutte. */
+export async function risolviProposte(user: Utente, accetta: boolean, modello?: string, codice?: string) {
+  return db.begin(async raw => {
+    const tx = raw as unknown as Tx;
+    const m = modello?.trim().toUpperCase();
+    const c = codice?.trim().toUpperCase();
+    const righe = await tx<{ modello: string; codice: string; va: boolean }[]>`
+      SELECT modello, codice, va FROM ferrari_sigla_proposta WHERE TRUE
+        ${m && c ? tx`AND modello = ${m} AND codice = ${c}` : tx``} FOR UPDATE`;
+    for (const r of righe) {
+      if (accetta) {
+        await tx`
+          INSERT INTO ferrari_sigla (modello, codice, va, creato_da) VALUES (${r.modello}, ${r.codice}, ${r.va}, ${user.username})
+          ON CONFLICT (modello, codice) DO UPDATE SET va = EXCLUDED.va`;
+      }
+      await tx`DELETE FROM ferrari_sigla_proposta WHERE modello = ${r.modello} AND codice = ${r.codice}`;
+      await audit(tx, user, accetta ? 'sigle.proposta_accettata' : 'sigle.proposta_rifiutata', 'sigla', `${r.modello}/${r.codice}`, { va: r.va });
+    }
+    return righe.length;
+  });
 }

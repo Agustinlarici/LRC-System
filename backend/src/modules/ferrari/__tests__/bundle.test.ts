@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import PizZip from 'pizzip';
 import {
-  buildBundle, buildToAi, buildKnowledge, leggiBundle, leggiRisultatoIa, stableStringify, firma, BundleError,
+  buildBundle, buildToAi, buildKnowledge, buildSigle, leggiSigle, leggiBundle, leggiRisultatoIa, stableStringify, firma, BundleError,
 } from '../bundle.js';
 import { parseScheda } from '../parser.js';
 import { schedaSemplice, toXlsBuffer } from './fixtures.js';
@@ -131,5 +131,35 @@ describe('leggiRisultatoIa', () => {
     expect(() => leggiRisultatoIa(buf({ ...base, schema_version: 2 }))).toThrow(/non valido/);
     expect(() => leggiRisultatoIa(buf({ ...base, source_sha256: 'zz' }))).toThrow(/non valido/);
     expect(() => leggiRisultatoIa(buf({ ...base, opzioni: [{ riga: 0, codice: 'X' }] }))).toThrow(/non valido/);
+  });
+});
+
+describe('pacchetto delle sigle', () => {
+  const voci = [
+    { modello: 'F999XX', codice: 'BIC2', va: true, nome: 'CARROZZERIA BICOLORE' },
+    { modello: '*', codice: 'CEL2', va: false, nome: 'Vano motore' },
+  ];
+
+  it('andata e ritorno firmata', () => {
+    const { zip } = buildSigle({ secret: SECRET, voci });
+    const r = leggiBundle(zip, SECRET, 'sigle');
+    expect(r.manifest.producer).toBe('vm');
+    expect(leggiSigle(r.files.get('sigle.json')!)).toEqual(voci);
+  });
+
+  it('segreto diverso o tipo sbagliato: rifiutato', () => {
+    const { zip } = buildSigle({ secret: SECRET, voci });
+    expect(() => leggiBundle(zip, 'altro', 'sigle')).toThrow(/Firma non valida/);
+    expect(() => leggiBundle(zip, SECRET, 'knowledge')).toThrow(/Tipo di pacchetto errato/);
+  });
+
+  it('le voci malformate si ignorano e i valori si normalizzano', () => {
+    const buf = Buffer.from(JSON.stringify({ sigle: [
+      { modello: ' f1 ', codice: ' aaaa ', va: true }, { modello: 5, codice: 'X', va: true },
+      { modello: 'F1', codice: '', va: true }, { modello: 'F1', codice: 'BBBB', va: 'si' }, 'boh', null,
+    ] }));
+    expect(leggiSigle(buf)).toEqual([{ modello: 'F1', codice: 'AAAA', va: true, nome: '' }]);
+    expect(() => leggiSigle(Buffer.from('no'))).toThrow(/non valido/);
+    expect(() => leggiSigle(Buffer.from('{"x":1}'))).toThrow(/non valido/);
   });
 });

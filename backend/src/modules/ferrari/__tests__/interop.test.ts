@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { analizzaVm } from '../analyzer.js';
-import { leggiBundle, leggiRisultatoIa } from '../bundle.js';
+import { leggiBundle, leggiRisultatoIa, leggiSigle } from '../bundle.js';
 import { confronta } from '../compare.js';
 import type { Canonico, Conoscenza } from '../types.js';
 
@@ -63,5 +63,15 @@ describe('interoperabilità TypeScript ↔ Python', () => {
     expect(soloVm).toEqual(['CODICE_VERNICE', 'MATERIALE']);
     expect(r.items.some(i => i.tipo === 'immagini')).toBe(true);
     expect(r.items.some(i => i.tipo === 'placeholder')).toBe(true);
+  });
+
+  it('il pacchetto delle sigle esportato da Python si legge qui', () => {
+    const r = leggiBundle(leggi('sigle-python.zip'), SECRET, 'sigle');
+    expect(r.manifest.producer).toBe('ai');
+    expect(leggiSigle(r.files.get('sigle.json')!)).toEqual([
+      { modello: 'F999XX', codice: 'BIC2', va: true, nome: '(parola cercata)' },      // senza schede caricate non ha il nome
+      { modello: '*', codice: 'CEL2', va: true, nome: '(parola cercata)' },
+      { modello: 'F999XX', codice: 'CAVALLINO', va: false, nome: '(parola cercata)' },
+    ]);
   });
 });

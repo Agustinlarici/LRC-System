@@ -8,7 +8,7 @@ import { z } from 'zod';
 import type { AnalisiIa, Canonico, Conoscenza } from './types.js';
 
 export const BUNDLE_SCHEMA_VERSION = 1;
-export type BundleTipo = 'to-ai' | 'from-ai' | 'knowledge';
+export type BundleTipo = 'to-ai' | 'from-ai' | 'knowledge' | 'sigle';
 
 const MAX_ZIP_BYTES = 80 * 1024 * 1024;
 const MAX_UNZIPPED_BYTES = 300 * 1024 * 1024;
@@ -45,7 +45,7 @@ const PATH_OK = /^[A-Za-z0-9_][A-Za-z0-9_.\-/]*$/;
 
 export const ManifestSchema = z.object({
   schema_version:    z.literal(BUNDLE_SCHEMA_VERSION),
-  bundle_type:       z.enum(['to-ai', 'from-ai', 'knowledge']),
+  bundle_type:       z.enum(['to-ai', 'from-ai', 'knowledge', 'sigle']),
   bundle_id:         UUID,
   in_reply_to:       UUID.nullable(),
   batch_id:          UUID,
@@ -249,4 +249,38 @@ export function leggiRisultatoIa(contenuto: Buffer): AnalisiIa {
     throw new BundleError(`Risultato IA non valido: ${r.error.errors.slice(0, 5).map(e => `${e.path.join('.')} ${e.message}`).join('; ')}`);
   }
   return r.data as AnalisiIa;
+}
+
+// ─── Sigle (decisioni «va / non va» da sincronizzare tra VM e PC IA) ──────────
+
+export interface VoceSigla { modello: string; codice: string; va: boolean; nome: string }
+
+export function buildSigle(opts: { secret: string; voci: VoceSigla[] }) {
+  return buildBundle({
+    tipo: 'sigle', producer: 'vm', secret: opts.secret, knowledgeVersion: 0,
+    files: { 'sigle.json': JSON.stringify({ sigle: opts.voci }) },
+  });
+}
+
+/** Voci valide di un pacchetto delle sigle; quelle malformate si ignorano. */
+export function leggiSigle(contenuto: Buffer): VoceSigla[] {
+  let json: unknown;
+  try {
+    json = JSON.parse(contenuto.toString('utf8'));
+  } catch {
+    throw new BundleError('Pacchetto delle sigle non valido');
+  }
+  const lista = (json as { sigle?: unknown })?.sigle;
+  if (!Array.isArray(lista)) throw new BundleError('Pacchetto delle sigle non valido');
+  const out: VoceSigla[] = [];
+  for (const v of lista) {
+    if (!v || typeof v !== 'object') continue;
+    const { modello, codice, va, nome } = v as Record<string, unknown>;
+    if (typeof modello !== 'string' || typeof codice !== 'string' || typeof va !== 'boolean') continue;
+    const m = modello.trim().toUpperCase().slice(0, 30);
+    const c = codice.trim().toUpperCase().slice(0, 60);
+    if (!m || !c) continue;
+    out.push({ modello: m, codice: c, va, nome: typeof nome === 'string' ? nome.slice(0, 120) : '' });
+  }
+  return out;
 }

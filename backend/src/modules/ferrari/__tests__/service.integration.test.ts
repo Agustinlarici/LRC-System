@@ -28,7 +28,7 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   afterAll(async () => { await db?.end(); });
 
   beforeEach(async () => {
-    await db`TRUNCATE ferrari_sigla, ferrari_termine, ferrari_decisione, ferrari_confronto, ferrari_analisi, ferrari_bundle, ferrari_bundle_rifiutato,
+    await db`TRUNCATE ferrari_sigla_proposta, ferrari_sigla, ferrari_termine, ferrari_decisione, ferrari_confronto, ferrari_analisi, ferrari_bundle, ferrari_bundle_rifiutato,
              ferrari_codice, ferrari_componente, ferrari_audit, ferrari_file RESTART IDENTITY CASCADE`;
     await db`UPDATE ferrari_config SET value = '100' WHERE key = 'sampling_pct'`;
     await db`UPDATE ferrari_config SET value = 'true' WHERE key = 'four_eyes'`;
@@ -395,6 +395,41 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
     expect(n).toBeGreaterThan(0);
     expect((await svc.matrice('F888YY')).nuove).toEqual([]);
     expect((await svc.verificaCatenaAudit()).ok).toBe(true);
+  });
+
+  it('sigle: la VM esporta, l\'altro programma propone, una persona accetta o rifiuta', async () => {
+    await svc.decidiSigla(op, 'F999XX', 'BIC2', true, false);
+    await svc.decidiSigla(op, '', 'CEL2', true, true);
+    const { zip, voci } = await svc.esportaSigle(op);
+    expect(voci).toBe(2);
+
+    // «L'altro programma» = lo stesso database senza le decisioni: tutto diventa proposta
+    await db`TRUNCATE ferrari_sigla`;
+    expect(await svc.importaSigle(sup, 'sigle.zip', zip)).toEqual({ nuove: 2, conflitti: 0, uguali: 0 });
+    expect((await svc.matrice()).termini).toEqual([]);                          // non si applica da solo
+    expect((await svc.proposteSigle()).map((p: { codice: string }) => p.codice).sort()).toEqual(['BIC2', 'CEL2']);
+
+    await svc.decidiSigla(op, 'F999XX', 'BIC2', false, false);                  // decisione locale opposta
+    expect(await svc.importaSigle(sup, 'sigle.zip', zip)).toEqual({ nuove: 1, conflitti: 1, uguali: 0 });
+    const conf = (await svc.proposteSigle()).find((p: { codice: string }) => p.codice === 'BIC2')!;
+    expect(conf.conflitto).toBe(true);
+
+    expect(await svc.risolviProposte(sup, true, 'F999XX', 'BIC2')).toBe(1);
+    expect(await svc.risolviProposte(sup, false, '*', 'CEL2')).toBe(1);        // rifiutata
+    expect((await svc.proposteSigle())).toHaveLength(0);
+    const rows = await db<{ modello: string; codice: string; va: boolean }[]>`SELECT modello, codice, va FROM ferrari_sigla`;
+    expect(rows).toEqual([{ modello: 'F999XX', codice: 'BIC2', va: true }]);
+
+    await svc.importaSigle(sup, 'sigle.zip', zip);
+    expect(await svc.risolviProposte(sup, true)).toBe(1);                       // «accetta tutte»
+    expect((await svc.verificaCatenaAudit()).ok).toBe(true);
+  });
+
+  it('sigle: pacchetto con firma sbagliata o di un altro tipo si rifiuta', async () => {
+    const { zip } = buildBundle({ tipo: 'sigle', producer: 'ai', secret: 'segreto-sbagliato', knowledgeVersion: 0,
+      files: { 'sigle.json': '{"sigle":[]}' } });
+    await expect(svc.importaSigle(sup, 'x.zip', zip)).rejects.toMatchObject({ status: 400 });
+    expect((await svc.listaBundle()).rifiutati[0].motivo).toMatch(/Firma non valida/);
   });
 
   it('ricerca e filtri', async () => {
