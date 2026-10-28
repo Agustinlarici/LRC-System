@@ -2,7 +2,7 @@
 // Stessa regola di STR-LocalAI/web/ferrari/matrice.py (la PC IA ne mostra una uguale, con il riassunto della IA nel dettaglio).
 
 import { createHash } from 'node:crypto';
-import { collapse, norm, phraseRegex } from './text.js';
+import { collapse, escapeRegExp, norm, phraseRegex } from './text.js';
 import type { Canonico, Opzione } from './types.js';
 
 export const SI = 'Sì';
@@ -75,46 +75,96 @@ function estratto(testo: string, inizio: number, fine: number, margine = 40): st
  * l'estratto del testo; parola nella descrizione o nella nota → «Sì». Altrimenti vuota.
  * `dettagli`: riassunti della IA per codice (facoltativi).
  */
-export function cellaTermine(termine: string, opzioni: Opzione[], dettagli: Record<string, string> = {}): { testo: string; completo: string | null; opzione: Opzione | null } {
+export interface CtxSigle {
+  /** codice scritto → codice giusto, deciso da una persona */
+  alias: ReadonlyMap<string, string>;
+  /** codici gia' decisi (anche «no»): non si considerano errori di scrittura */
+  decisi: ReadonlySet<string>;
+}
+
+/** True se i due codici differiscono per un solo carattere (sbagliato, in piu', in meno o due scambiati). */
+export function entroUno(a: string, b: string): boolean {
+  if (a === b || Math.abs(a.length - b.length) > 1) return false;
+  if (a.length === b.length) {
+    const diff: number[] = [];
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) diff.push(i);
+    if (diff.length === 1) return true;
+    return diff.length === 2 && diff[1] === diff[0]! + 1 && a[diff[0]!] === b[diff[1]!] && a[diff[1]!] === b[diff[0]!];
+  }
+  const [corta, lunga] = a.length < b.length ? [a, b] : [b, a];
+  for (let i = 0; i < lunga.length; i++) if (lunga.slice(0, i) + lunga.slice(i + 1) === corta) return true;
+  return false;
+}
+
+/** Il codice noto a un solo carattere di distanza (solo codici di almeno 4 caratteri); prima quelli della stessa lunghezza. */
+export function simileA(codice: string, noti: Iterable<string>): string | null {
+  if (codice.length < 4) return null;
+  const vicini = [...noti].filter(s => s.length >= 4 && entroUno(codice, s));
+  vicini.sort((x, y) => Number(x.length !== codice.length) - Number(y.length !== codice.length) || (x < y ? -1 : x > y ? 1 : 0));
+  return vicini[0] ?? null;
+}
+
+export function cellaTermine(
+  termine: string, opzioni: Opzione[], dettagli: Record<string, string> = {}, ctx?: CtxSigle,
+): { testo: string; completo: string | null; opzione: Opzione | null; avviso: string | null } {
   const t = collapse(termine);
-  if (!t) return { testo: '', completo: null, opzione: null };
-  const perCodice = opzioni.find(o => o.codice.toUpperCase() === t);
-  if (perCodice) return { testo: cellaOpzione(perCodice, dettagli[perCodice.codice]), completo: testoLibero(perCodice) || null, opzione: perCodice };
+  if (!t) return { testo: '', completo: null, opzione: null, avviso: null };
+  for (const o of opzioni) {
+    const c = o.codice.toUpperCase();
+    if (c === t || ctx?.alias.get(c) === t) {
+      return { testo: cellaOpzione(o, dettagli[o.codice]), completo: testoLibero(o) || null, opzione: o, avviso: c === t ? null : `scritta ${c}, corretta in ${t}` };
+    }
+  }
 
   const rx = phraseRegex(termine);
-  for (const o of opzioni) if (rx.test(norm(o.valore))) return { testo: o.valore.trim(), completo: null, opzione: o };
+  for (const o of opzioni) if (rx.test(norm(o.valore))) return { testo: o.valore.trim(), completo: null, opzione: o, avviso: null };
   for (const o of opzioni) {
     for (const b of o.blocchi_testo) {
       const m = rx.exec(norm(b.testo));
-      if (m) return { testo: dettagli[o.codice] || estratto(b.testo, m.index, m.index + m[0].length), completo: testoLibero(o), opzione: o };
+      if (m) return { testo: dettagli[o.codice] || estratto(b.testo, m.index, m.index + m[0].length), completo: testoLibero(o), opzione: o, avviso: null };
     }
   }
-  for (const o of opzioni) if (rx.test(norm(o.descrizione)) || rx.test(norm(o.nota))) return { testo: SI, completo: null, opzione: o };
-  return { testo: '', completo: null, opzione: null };
+  for (const o of opzioni) if (rx.test(norm(o.descrizione)) || rx.test(norm(o.nota))) return { testo: SI, completo: null, opzione: o, avviso: null };
+  // una sigla che non c'e': un codice della scheda a un carattere di distanza e MAI deciso e' un probabile errore di scrittura
+  if (t.length >= 4 && /^[A-Z0-9]+$/.test(t) && ctx) {
+    for (const o of opzioni) {
+      const c = o.codice.toUpperCase();
+      if (!ctx.decisi.has(c) && !ctx.alias.has(c) && entroUno(c, t)) {
+        return { testo: cellaOpzione(o, dettagli[o.codice]), completo: testoLibero(o) || null, opzione: o, avviso: `scritta ${c}: forse ${t}? controlla` };
+      }
+    }
+  }
+  return { testo: '', completo: null, opzione: null, avviso: null };
 }
 
 export interface RigaMatrice {
   id: number; commessa: string; modello: string | null; paese: string | null; stato: string;
   celle: Record<string, string>; testi: Record<string, string>; rivedere: Record<string, boolean>;
-  sub: Record<string, { codice: string; testo: string }[]>;
+  sub: Record<string, SottoSiglaTrovata[]>;
+  avvisi: Record<string, string>;
 }
+
+export interface SottoSiglaTrovata { codice: string; testo: string; avviso: string | null; scritto: string | null }
 
 /** Per un modello: una riga per commessa, una colonna per ogni sigla/parola scelta. */
 export function costruisciMatrice(
   schede: { id: number; stato: string; canonico: Canonico }[], termini: string[], dettagli?: DettagliPerCommessa, subOk: ReadonlySet<string> = new Set(),
+  ctx?: CtxSigle,
 ): RigaMatrice[] {
   return schede.map(s => {
     const det = dettagliValidi(s.canonico.header.commessa ?? '', s.canonico.opzioni, dettagli);
     const celle: Record<string, string> = {};
     const testi: Record<string, string> = {};
     const rivedere: Record<string, boolean> = {};
-    const sub: Record<string, { codice: string; testo: string }[]> = {};
+    const sub: Record<string, SottoSiglaTrovata[]> = {};
+    const avvisi: Record<string, string> = {};
     const propri = new Set(s.canonico.opzioni.map(o => o.codice));
     for (const t of termini) {
-      const c = cellaTermine(t, s.canonico.opzioni, det.testi);
+      const c = cellaTermine(t, s.canonico.opzioni, det.testi, ctx);
       if (det.rivedere[t]) rivedere[t] = true;
+      if (c.avviso) avvisi[t] = c.avviso;
       if (c.opzione && subOk.size > 0) {
-        const dentro = sottosigle(c.opzione, propri).filter(x => subOk.has(x.codice)).map(x => ({ codice: x.codice, testo: x.frase }));
+        const dentro = sottosigleAccettate(c.opzione, subOk, ctx, propri);
         if (dentro.length > 0) sub[t] = dentro;
       }
       celle[t] = c.testo;
@@ -122,7 +172,7 @@ export function costruisciMatrice(
     }
     return {
       id: s.id, commessa: s.canonico.header.commessa ?? '', modello: s.canonico.header.tipo_matricola.modello,
-      paese: s.canonico.header.destinazione.paese, stato: s.stato, celle, testi, rivedere, sub,
+      paese: s.canonico.header.destinazione.paese, stato: s.stato, celle, testi, rivedere, sub, avvisi,
     };
   });
 }
@@ -152,10 +202,57 @@ export function sottosigle(o: Opzione, escludi: ReadonlySet<string> = new Set())
   return out;
 }
 
-export interface SiglaNuova { codice: string; nome: string; esempio: string; sub?: boolean; padre?: string }
+/**
+ * Le sotto-sigle accettate che compaiono nel testo libero di un'opzione, anche se scritte male (con avviso): il codice esatto,
+ * un alias deciso da una persona, il codice con spazi o trattini (TL M5), un codice a un carattere di distanza (TLM15 per TLM16)
+ * purche' mai deciso e non gia' un'opzione della scheda. Un elemento per sotto-sigla, nell'ordine del testo. Stessa regola della PC IA.
+ */
+export function sottosigleAccettate(
+  o: Opzione, accettate: ReadonlySet<string>, ctx?: CtxSigle, propri: ReadonlySet<string> = new Set(),
+): SottoSiglaTrovata[] {
+  const out: SottoSiglaTrovata[] = [];
+  const viste = new Set<string>();
+  const ordinate = [...accettate].sort();
+  for (const b of o.blocchi_testo) {
+    for (const frase of b.testo.split(FRASI)) {
+      const nf = norm(frase);
+      const trovate: { pos: number; codice: string; scritto: string | null; avviso: string | null }[] = [];
+      for (const m of nf.matchAll(/(?<![A-Z0-9])[A-Z0-9]{3,8}(?![A-Z0-9])/g)) {
+        const t = m[0];
+        const alias = ctx?.alias.get(t);
+        if (accettate.has(t)) trovate.push({ pos: m.index!, codice: t, scritto: null, avviso: null });
+        else if (alias && accettate.has(alias)) trovate.push({ pos: m.index!, codice: alias, scritto: t, avviso: `scritta ${t} (corretta in ${alias})` });
+        else if (ctx && !ctx.decisi.has(t) && !propri.has(t)) {
+          const vicini = ordinate.filter(s => s.length >= 4 && t.length >= 4 && entroUno(t, s))
+            .sort((x, y) => Number(x.length !== t.length) - Number(y.length !== t.length) || (x < y ? -1 : 1));
+          if (vicini.length === 1) trovate.push({ pos: m.index!, codice: vicini[0]!, scritto: t, avviso: `scritta ${t}: forse ${vicini[0]}? controlla` });
+          else if (vicini.length > 1) trovate.push({ pos: m.index!, codice: t, scritto: t, avviso: `scritta ${t}: forse ${vicini.join(' o ')}? controlla` });
+        }
+      }
+      for (const s of ordinate) {                              // scritti con spazi o trattini: «TL M5», «TLM-13»
+        if (s.length < 3) continue;
+        const rx = new RegExp('(?<![A-Z0-9])' + [...s].map(escapeRegExp).join('[ \\-]?') + '(?![A-Z0-9])', 'g');
+        for (const m of nf.matchAll(rx)) {
+          if (m[0] !== s) {
+            const scritto = frase.slice(m.index!, m.index! + m[0].length);
+            trovate.push({ pos: m.index!, codice: s, scritto, avviso: `scritta «${scritto}»` });
+          }
+        }
+      }
+      for (const x of trovate.sort((p, q) => p.pos - q.pos)) {
+        if (viste.has(x.codice)) continue;
+        viste.add(x.codice);
+        out.push({ codice: x.codice, testo: frase.trim(), avviso: x.avviso, scritto: x.scritto });
+      }
+    }
+  }
+  return out;
+}
+
+export interface SiglaNuova { codice: string; nome: string; esempio: string; sub?: boolean; padre?: string; simile_a?: string }
 
 /** Sigle presenti nelle schede e non ancora decise (nell'ordine dell'Excel), con un esempio di cosa contengono. */
-export function nuoveSigle(schede: { canonico: Canonico }[], decise: Set<string>): SiglaNuova[] {
+export function nuoveSigle(schede: { canonico: Canonico }[], decise: Set<string>, noti: Iterable<string> = []): SiglaNuova[] {
   const ordine: string[] = [];
   const nomi = new Map<string, string>();
   const esempi = new Map<string, string>();
@@ -168,7 +265,7 @@ export function nuoveSigle(schede: { canonico: Canonico }[], decise: Set<string>
       if (prima === undefined || (banale(prima) && !banale(e))) esempi.set(o.codice, e);
     }
   }
-  const normali = ordine.filter(c => !decise.has(c)).map(codice => ({ codice, nome: nomi.get(codice) ?? '', esempio: esempi.get(codice) ?? SI }));
+  const normali: SiglaNuova[] = ordine.filter(c => !decise.has(c)).map(codice => ({ codice, nome: nomi.get(codice) ?? '', esempio: esempi.get(codice) ?? SI }));
   // sotto-sigle non ancora decise: si chiede come per le sigle normali
   const sub = new Map<string, SiglaNuova>();
   for (const s of schede) {
@@ -181,5 +278,11 @@ export function nuoveSigle(schede: { canonico: Canonico }[], decise: Set<string>
       }
     }
   }
-  return [...normali, ...sub.values()];
+  const tutte = [...normali, ...sub.values()];
+  const giusti = [...noti];
+  for (const n of tutte) {                                  // avviso: assomiglia a un codice gia' accettato (errore di scrittura?)
+    const vicino = simileA(n.codice, giusti);
+    if (vicino) n.simile_a = vicino;
+  }
+  return tutte;
 }

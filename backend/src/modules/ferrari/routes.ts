@@ -106,8 +106,9 @@ ferrariRoutes.post('/componenti/proposte', requireManage(VISTA), async (c) => {
 ferrariRoutes.post('/sigle', requireManage(VISTA), async (c) => {
   const b = await parseBody(c, z.object({
     modello: z.string().max(30), codice: z.string().min(1).max(60), va: z.boolean(), tutti: z.boolean(), sub: z.boolean().optional(),
+    alias: z.string().max(60).nullable().optional(),
   }));
-  return c.json({ codice: await decidiSigla(utente(c), b.modello, b.codice, b.va, b.tutti, b.sub ?? false) });
+  return c.json({ codice: await decidiSigla(utente(c), b.modello, b.codice, b.va, b.tutti, b.sub ?? false, b.alias ?? null) });
 });
 
 ferrariRoutes.post('/sigle/tutte-no', requireManage(VISTA), async (c) => {

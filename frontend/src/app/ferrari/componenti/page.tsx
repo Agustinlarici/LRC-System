@@ -15,7 +15,8 @@ interface Elenco {
 }
 interface Voce {
   termine: string; codice: string; voce: string; testo: string; completo: string | null; rivedere: boolean;
-  sub: { codice: string; testo: string }[];
+  avviso: string | null;
+  sub: { codice: string; testo: string; avviso: string | null }[];
 }
 interface Risultati {
   componenti: string[];
@@ -250,9 +251,13 @@ export default function ComponentiPage() {
                       <span className="w-60 shrink-0 text-xs text-gray-500">{v.voce}</span>
                       <span className="flex-1">
                         {v.rivedere && <span className="text-xs font-semibold text-amber-700" title="La IA non era sicura: va controllato sulla PC IA">⚠ da rivedere </span>}
+                        {v.avviso && <div className="text-xs font-semibold text-amber-700">⚠ {v.avviso}</div>}
                         <Cella testo={v.testo} intero={v.completo ?? undefined} />
                         {v.sub.map(x => (
-                          <div key={x.codice} className="mt-1 rounded-lg border-l-[3px] border-gray-300 bg-white/60 px-2 py-0.5 text-xs text-gray-600"><b>{x.codice}</b> {x.testo}</div>
+                          <div key={x.codice} className="mt-1 rounded-lg border-l-[3px] border-gray-300 bg-white/60 px-2 py-0.5 text-xs text-gray-600">
+                            {x.avviso && <div className="font-semibold text-amber-700">⚠ {x.avviso}</div>}
+                            <b>{x.codice}</b> {x.testo}
+                          </div>
                         ))}
                       </span>
                     </div>

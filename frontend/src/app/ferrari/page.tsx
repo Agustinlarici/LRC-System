@@ -11,12 +11,12 @@ interface Matrice {
   modelli: { modello: string; schede: number }[];
   modello: string;
   termini: string[];
-  nuove: { codice: string; nome: string; esempio: string; sub?: boolean; padre?: string }[];
-  sigle: { codice: string; nome: string; va: boolean; ambito: 'modello' | 'tutti'; sub: boolean }[];
-  proposte: { modello: string; codice: string; va: boolean; sub: boolean; nome: string | null; conflitto: boolean; da: string | null }[];
+  nuove: { codice: string; nome: string; esempio: string; sub?: boolean; padre?: string; simile_a?: string }[];
+  sigle: { codice: string; nome: string; va: boolean; ambito: 'modello' | 'tutti'; sub: boolean; alias: string | null }[];
+  proposte: { modello: string; codice: string; va: boolean; sub: boolean; alias: string | null; nome: string | null; conflitto: boolean; da: string | null }[];
   righe: { id: number; commessa: string; modello: string | null; paese: string | null; stato: string;
     celle: Record<string, string>; testi: Record<string, string>; rivedere: Record<string, boolean>;
-    sub: Record<string, { codice: string; testo: string }[]> }[];
+    sub: Record<string, { codice: string; testo: string; avviso: string | null }[]>; avvisi: Record<string, string> }[];
 }
 
 export default function CommessePage() {
@@ -25,7 +25,8 @@ export default function CommessePage() {
   const [q, setQ] = useState('');
   const [modello, setModello] = useState('');
   const [nuovo, setNuovo] = useState('');
-  const [scelte, setScelte] = useState<Record<string, boolean>>({});   // sigle nuove: codice → va (si salva in blocco)
+  const [scelte, setScelte] = useState<Record<string, boolean | string>>({});   // sigle nuove: codice → va, oppure il codice di cui e' un errore (si salva in blocco)
+  const [nuovaSub, setNuovaSub] = useState('');
   const [pertutti, setPertutti] = useState(false);
   const [panello, setPanello] = useState(false);
   const [m, setM] = useState<Matrice | null>(null);
@@ -57,6 +58,7 @@ export default function CommessePage() {
     if (!codice.trim() || !modello) return;
     try {
       await api.post('/api/ferrari/sigle', { modello, codice, va, tutti, sub });
+      setNuovaSub('');
       setNuovo('');
       await carica(modello, q.trim());
     } catch (e) {
@@ -99,8 +101,9 @@ export default function CommessePage() {
     if (!modello) return;
     try {
       const subs = new Set(m?.nuove.filter(n => n.sub).map(n => n.codice));
-      for (const [codice, va] of Object.entries(scelte)) {
-        await api.post('/api/ferrari/sigle', { modello, codice, va, tutti: pertutti, sub: subs.has(codice) });
+      for (const [codice, scelta] of Object.entries(scelte)) {
+        const alias = typeof scelta === 'string' ? scelta : null;
+        await api.post('/api/ferrari/sigle', { modello, codice, va: alias ? true : scelta, tutti: pertutti, sub: subs.has(codice), alias });
       }
       setScelte({});
       setPertutti(false);
@@ -186,7 +189,7 @@ export default function CommessePage() {
               {m.proposte.map(p => (
                 <tr key={`${p.modello}/${p.codice}`} className="border-t border-sky-200">
                   <td className="py-1 pr-3 font-semibold">{p.modello === '*' ? 'tutti i modelli' : p.modello}</td>
-                  <td className="py-1 pr-3"><b>{p.codice}</b> <span className="text-gray-500">{p.nome}</span>{p.sub && <span className="ml-2 text-xs bg-gray-100 text-gray-600 rounded px-1.5">sotto-sigla</span>}</td>
+                  <td className="py-1 pr-3"><b>{p.codice}</b> <span className="text-gray-500">{p.nome}</span>{p.sub && <span className="ml-2 text-xs bg-gray-100 text-gray-600 rounded px-1.5">sotto-sigla</span>}{p.alias && <span className="ml-2 text-xs bg-gray-100 text-gray-600 rounded px-1.5">= {p.alias}</span>}</td>
                   <td className="py-1 pr-3">
                     {p.va ? <span className="text-green-600 font-semibold">{p.sub ? 'va dentro la voce' : 'va in tabella'}</span> : <span className="text-gray-500">non va</span>}
                     {p.conflitto && <span className="ml-2 text-xs bg-amber-100 text-amber-800 rounded px-1.5">tu: il contrario</span>}
@@ -210,12 +213,18 @@ export default function CommessePage() {
               <li key={n.codice} className="flex flex-wrap items-center gap-2 px-3 py-1.5">
                 <b className="w-16 shrink-0">{n.codice}</b>
                 <span className="flex-1 min-w-[10rem] truncate" title={`${n.nome} · esempio: ${n.esempio}`}>
-                  {n.sub && <span className="mr-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5">sotto-sigla</span>}{n.nome} <span className="text-gray-400">· {n.esempio}</span>
+                  {n.sub && <span className="mr-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5">sotto-sigla</span>}
+                  {n.simile_a && <span className="mr-1.5 text-xs font-semibold text-amber-700">⚠ simile a {n.simile_a}: errore di scrittura?</span>}
+                  {n.nome} <span className="text-gray-400">· {n.esempio}</span>
                 </span>
                 <button className={`!py-0.5 text-xs ${scelte[n.codice] === true ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => setScelte({ ...scelte, [n.codice]: true })}>Sì</button>
                 <button className={`!py-0.5 text-xs ${scelte[n.codice] === false ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => setScelte({ ...scelte, [n.codice]: false })}>No</button>
+                {n.simile_a && (
+                  <button className={`!py-0.5 text-xs ${scelte[n.codice] === n.simile_a ? 'btn-primary' : 'btn-secondary'}`} title={`È un errore di scrittura di ${n.simile_a}`}
+                    onClick={() => setScelte({ ...scelte, [n.codice]: n.simile_a! })}>= {n.simile_a}</button>
+                )}
               </li>
             ))}
           </ul>
@@ -250,13 +259,21 @@ export default function CommessePage() {
 
       {panello && m && (
         <div className="mb-3 bg-white rounded-xl border border-gray-200 p-3 max-h-[40vh] overflow-auto text-sm">
+          {puoCaricare && (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <input className="input !w-60 !py-1" placeholder="+ sotto-sigla (es. TLM13)" value={nuovaSub} onChange={e => setNuovaSub(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') decidi(nuovaSub, true, false, true); }} />
+              <button className="btn-secondary !py-1 text-xs" disabled={!nuovaSub.trim()} onClick={() => decidi(nuovaSub, true, false, true)}>Aggiungi</button>
+              <span className="text-xs text-gray-500">dentro i testi liberi: compare nella cella dell&apos;opzione che la contiene</span>
+            </div>
+          )}
           {m.sigle.length === 0 ? <p className="text-gray-400">Nessuna decisione ancora</p> : (
             <table className="w-full">
               <tbody>
                 {m.sigle.map(s => (
                   <tr key={s.codice} className="border-b border-gray-100">
                     <td className="py-1 pr-3 font-semibold">{s.codice}</td>
-                    <td className="py-1 pr-3 text-gray-500">{s.sub && <span className="mr-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5">sotto-sigla</span>}{s.nome}</td>
+                    <td className="py-1 pr-3 text-gray-500">{s.sub && <span className="mr-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5">sotto-sigla</span>}{s.alias && <span className="mr-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5">= {s.alias}</span>}{s.nome}</td>
                     <td className={`py-1 pr-3 ${s.va ? 'text-green-600 font-semibold' : 'text-gray-400'}`}>
                       {s.va ? 'va' : 'non va'} <span className="text-gray-400 font-normal">({s.ambito === 'tutti' ? 'tutti i modelli' : m.modello})</span>
                     </td>
@@ -302,9 +319,13 @@ export default function CommessePage() {
                   {m.termini.map(t => (
                     <td key={t} className={`border-b border-l border-gray-100 px-3 py-2 max-w-[320px] ${r.rivedere?.[t] ? 'shadow-[inset_3px_0_0_#f0a020]' : ''}`}>
                       {r.rivedere?.[t] && <div className="text-xs font-semibold text-amber-700" title="La IA non era sicura: va controllato sulla PC IA">⚠ da rivedere</div>}
+                      {r.avvisi?.[t] && <div className="text-xs font-semibold text-amber-700">⚠ {r.avvisi[t]}</div>}
                       <Cella testo={r.celle[t]} intero={r.testi[t]} />
                       {r.sub?.[t]?.map(x => (
-                        <div key={x.codice} className="mt-1 rounded-lg border-l-[3px] border-gray-300 bg-white/60 px-2 py-0.5 text-xs text-gray-600"><b>{x.codice}</b> {x.testo}</div>
+                        <div key={x.codice} className="mt-1 rounded-lg border-l-[3px] border-gray-300 bg-white/60 px-2 py-0.5 text-xs text-gray-600">
+                          {x.avviso && <div className="font-semibold text-amber-700">⚠ {x.avviso}</div>}
+                          <b>{x.codice}</b> {x.testo}
+                        </div>
                       ))}
                     </td>
                   ))}

@@ -147,4 +147,32 @@ describe.skipIf(!URL)('Componenti per modello — integrazione con database', ()
     expect((await svc.importaSigle(sup, 's2.zip', zip)).conflitti).toBe(1);
     expect((await svc.verificaCatenaAudit()).ok).toBe(true);
   });
+
+  it('errori di scrittura: avviso, «e\' un errore di…» (alias) e sincronizzazione dell\'alias', async () => {
+    const riga = () => ['LIVR            ', 'LIVREA SPECIALE          ', 'SI                  '];
+    await svc.caricaScheda(op, 'a.xls', toXlsBuffer([...schedaPersonalizzata({ commessa: 100081 }), riga(), ['LIVR: LIVREA TLM16 SUGLI SPECCHI (VEDI IMMAGINI)']]));
+    await svc.decidiSigla(op, 'F999XX', 'LIVR', true, false);
+    await svc.decidiSigla(op, 'F999XX', 'TLM16', true, false, true);
+    await svc.caricaScheda(op, 'b.xls', toXlsBuffer([...schedaPersonalizzata({ commessa: 100082 }), riga(), ['LIVR: LIVREA TLM15 SUGLI SPECCHI (VEDI IMMAGINI)']]));
+    const sub = async (commessa: string) => (await svc.matrice('F999XX')).righe.find((r: { commessa: string }) => r.commessa === commessa)!.sub['LIVR'];
+    let m = await svc.matrice('F999XX');
+    expect(m.nuove.find((n: { codice: string }) => n.codice === 'TLM15')).toMatchObject({ sub: true, simile_a: 'TLM16' });
+    expect((await sub('100082'))[0]).toMatchObject({ codice: 'TLM16', scritto: 'TLM15', avviso: 'scritta TLM15: forse TLM16? controlla' });
+
+    await svc.decidiSigla(op, 'F999XX', 'TLM15', true, false, true, 'TLM16');          // «e' un errore di TLM16»
+    m = await svc.matrice('F999XX');
+    expect(m.nuove.some((n: { codice: string }) => n.codice === 'TLM15')).toBe(false);
+    expect((await sub('100082'))[0].avviso).toBe('scritta TLM15 (corretta in TLM16)');
+    expect(m.termini).toEqual(['LIVR']);                                                // un alias non e' una colonna
+    expect((await comp.cercaComponenti('F999XX', '100082')).risultati.length).toBe(1);
+
+    const { zip } = await svc.esportaSigle(op);
+    await db`TRUNCATE ferrari_sigla`;
+    await svc.importaSigle(sup, 's.zip', zip);
+    expect((await svc.proposteSigle()).find((p: { codice: string }) => p.codice === 'TLM15')).toMatchObject({ alias: 'TLM16', sub: true });
+    await svc.risolviProposte(sup, true);
+    const dopo = await db<{ codice: string; alias: string | null }[]>`SELECT codice, alias FROM ferrari_sigla WHERE codice = 'TLM15'`;
+    expect(dopo).toEqual([{ codice: 'TLM15', alias: 'TLM16' }]);
+    expect((await svc.verificaCatenaAudit()).ok).toBe(true);
+  });
 });

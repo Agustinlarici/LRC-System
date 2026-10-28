@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { parseScheda } from '../parser.js';
-import { cellaOpzione, cellaTermine, chiaveTesto, classeValore, costruisciMatrice, nuoveSigle, sottosigle } from '../matrice.js';
+import {
+  cellaOpzione, cellaTermine, chiaveTesto, classeValore, costruisciMatrice, entroUno, nuoveSigle, simileA, sottosigle, sottosigleAccettate,
+  type CtxSigle,
+} from '../matrice.js';
 import type { Opzione } from '../types.js';
 import { schedaPersonalizzata, schedaSemplice, toXlsBuffer } from './fixtures.js';
 
@@ -131,5 +134,50 @@ describe('sotto-sigle (codici dentro i testi liberi, stessa regola della PC IA)'
     expect(riga.sub['LIVR']!.map(x => x.codice)).toEqual(['TML5']);
     expect(riga.sub['LIVR']![0]!.testo).toContain('BIANCO PROVA');
     expect(costruisciMatrice(schede, ['LIVR'])[0]!.sub).toEqual({});
+  });
+});
+
+
+describe('tolleranza agli errori di scrittura (stessa regola della PC IA)', () => {
+  const ctx = (alias: Record<string, string> = {}, decisi: string[] = []): CtxSigle => ({ alias: new Map(Object.entries(alias)), decisi: new Set(decisi) });
+  const opz = (cod: string, valore: string, testi: string[] = []) => ({ ...o(valore, testi), codice: cod, descrizione: 'D ' + cod });
+
+  it('un carattere di distanza', () => {
+    for (const [a, b] of [['TLM15', 'TLM16'], ['TML5', 'TLM5'], ['BIC2', 'BLC2'], ['TLM5', 'TLM55'], ['TLM55', 'TLM5']]) expect(entroUno(a!, b!)).toBe(true);
+    for (const [a, b] of [['TLM5', 'TLM5'], ['TLM15', 'TLM26'], ['ABC', 'ABCDE']]) expect(entroUno(a!, b!)).toBe(false);
+    expect(simileA('AB1', ['AB2'])).toBeNull();                                  // troppo corto
+    expect(simileA('TLM15', ['TLM5', 'TLM16', 'ZZZ9'])).toBe('TLM16');          // prima lo stesso numero di caratteri
+  });
+
+  it('codici scritti con spazi o trattini', () => {
+    const r = sottosigleAccettate(opz('LIVR', 'SI', ['LIVREA TL m5 E TLM-13 SUGLI SPECCHI']), new Set(['TLM5', 'TLM13']), ctx());
+    const per = Object.fromEntries(r.map(x => [x.codice, x.avviso]));
+    expect(per).toEqual({ TLM5: 'scritta «TL m5»', TLM13: 'scritta «TLM-13»' });
+  });
+
+  it('errore di una cifra: avviso; alias deciso: correzione; deciso come codice vero: niente avviso', () => {
+    const livr = opz('LIVR', 'SI', ['LIVREA TLM15 SUGLI SPECCHI']);
+    const acc = new Set(['TLM16']);
+    expect(sottosigleAccettate(livr, acc, ctx())[0]).toMatchObject({ codice: 'TLM16', scritto: 'TLM15', avviso: 'scritta TLM15: forse TLM16? controlla' });
+    expect(sottosigleAccettate(livr, acc, ctx({ TLM15: 'TLM16' }, ['TLM15']))[0]).toMatchObject({ codice: 'TLM16', avviso: 'scritta TLM15 (corretta in TLM16)' });
+    expect(sottosigleAccettate(livr, new Set(['TLM15', 'TLM16']), ctx({}, ['TLM15']))[0]).toMatchObject({ codice: 'TLM15', avviso: null });
+    expect(sottosigleAccettate(livr, acc, ctx({}, ['TLM15']))).toEqual([]);                           // deciso (anche «no»): non e' un sospetto
+  });
+
+  it('sigla di colonna scritta male, con alias, e codici veri simili che non si confondono', () => {
+    const blc2 = [opz('BLC2', 'NERO DS 1250')];
+    const cella = (c?: CtxSigle) => cellaTermine('BIC2', blc2, {}, c);
+    expect(cella(ctx())).toMatchObject({ testo: 'NERO DS 1250', avviso: 'scritta BLC2: forse BIC2? controlla' });
+    expect(cella(ctx({ BLC2: 'BIC2' }, ['BLC2']))).toMatchObject({ testo: 'NERO DS 1250', avviso: 'scritta BLC2, corretta in BIC2' });
+    expect(cella(ctx({}, ['BLC2']))).toMatchObject({ testo: '', opzione: null });                    // deciso come codice vero: colonna vuota
+    const cexs = [opz('CEXS', 'SI')];
+    expect(cellaTermine('CEXD', cexs, {}, ctx({}, ['CEXS', 'CEXD'])).testo).toBe('');                // CEXD e CEXS sono due opzioni vere
+  });
+
+  it('la domanda ha l\'indizio «simile a»', () => {
+    const livr = opz('LIVR', 'SI', ['LIVREA TLM15 CON PARTE PRINCIPALE']);
+    const canonico = { ...parseScheda(toXlsBuffer(schedaSemplice()), 'a.xls'), opzioni: [livr] } as ReturnType<typeof parseScheda>;
+    const n = nuoveSigle([{ canonico }], new Set(['TLM16']), ['TLM16']).find(x => x.codice === 'TLM15');
+    expect(n).toMatchObject({ sub: true, simile_a: 'TLM16' });
   });
 });
