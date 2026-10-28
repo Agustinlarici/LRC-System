@@ -255,10 +255,12 @@ export function leggiRisultatoIa(contenuto: Buffer): AnalisiIa {
 
 export interface VoceSigla { modello: string; codice: string; va: boolean; nome: string }
 
-export function buildSigle(opts: { secret: string; voci: VoceSigla[] }) {
+export interface VoceComponente { modello: string; nome: string; termini: string[] }
+
+export function buildSigle(opts: { secret: string; voci: VoceSigla[]; componenti?: VoceComponente[] }) {
   return buildBundle({
     tipo: 'sigle', producer: 'vm', secret: opts.secret, knowledgeVersion: 0,
-    files: { 'sigle.json': JSON.stringify({ sigle: opts.voci }) },
+    files: { 'sigle.json': JSON.stringify({ sigle: opts.voci, componenti: opts.componenti ?? [] }) },
   });
 }
 
@@ -309,6 +311,26 @@ export function leggiDettagli(contenuto: Buffer): VoceDettaglio[] {
     if (!commessa.trim() || !codice.trim() || !/^[0-9a-f]{40}$/.test(chiave)) continue;
     out.push({ commessa: commessa.trim().slice(0, 30), codice: codice.trim().toUpperCase().slice(0, 60), chiave, dettaglio: d, manuale: manuale === true,
       stato: stato === 'ok' || stato === 'rivedere' || stato === 'rivisto' ? stato : (d ? 'ok' : 'rivedere') });
+  }
+  return out;
+}
+
+/** Componenti di un pacchetto delle sigle (campo facoltativo `componenti`); quelli malformati si ignorano. */
+export function leggiComponenti(contenuto: Buffer): VoceComponente[] {
+  let json: unknown;
+  try {
+    json = JSON.parse(contenuto.toString('utf8'));
+  } catch {
+    throw new BundleError('Pacchetto delle sigle non valido');
+  }
+  const lista = (json as { componenti?: unknown })?.componenti;
+  if (!Array.isArray(lista)) return [];
+  const out: VoceComponente[] = [];
+  for (const v of lista.slice(0, 2000)) {
+    if (!v || typeof v !== 'object') continue;
+    const { modello, nome, termini } = v as Record<string, unknown>;
+    if (typeof modello !== 'string' || typeof nome !== 'string' || !Array.isArray(termini)) continue;
+    out.push({ modello, nome, termini: termini.filter((t): t is string => typeof t === 'string') });
   }
   return out;
 }

@@ -406,12 +406,12 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
 
     // «L'altro programma» = lo stesso database senza le decisioni: tutto diventa proposta
     await db`TRUNCATE ferrari_sigla`;
-    expect(await svc.importaSigle(sup, 'sigle.zip', zip)).toEqual({ nuove: 2, conflitti: 0, uguali: 0, dettagli: 0 });
+    expect(await svc.importaSigle(sup, 'sigle.zip', zip)).toEqual({ nuove: 2, conflitti: 0, uguali: 0, dettagli: 0, componenti: 0 });
     expect((await svc.matrice()).termini).toEqual([]);                          // non si applica da solo
     expect((await svc.proposteSigle()).map((p: { codice: string }) => p.codice).sort()).toEqual(['BIC2', 'CEL2']);
 
     await svc.decidiSigla(op, 'F999XX', 'BIC2', false, false);                  // decisione locale opposta
-    expect(await svc.importaSigle(sup, 'sigle.zip', zip)).toEqual({ nuove: 1, conflitti: 1, uguali: 0, dettagli: 0 });
+    expect(await svc.importaSigle(sup, 'sigle.zip', zip)).toEqual({ nuove: 1, conflitti: 1, uguali: 0, dettagli: 0, componenti: 0 });
     const conf = (await svc.proposteSigle()).find((p: { codice: string }) => p.codice === 'BIC2')!;
     expect(conf.conflitto).toBe(true);
 

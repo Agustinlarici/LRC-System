@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { inviaFile, scaricaFile } from '@/lib/ferrari';
-import { Errore, FerrariNav } from '@/components/ferrari/Comuni';
+import { Cella, Errore, FerrariNav } from '@/components/ferrari/Comuni';
 
 interface Matrice {
   modelli: { modello: string; schede: number }[];
@@ -16,26 +16,6 @@ interface Matrice {
   proposte: { modello: string; codice: string; va: boolean; nome: string | null; conflitto: boolean; da: string | null }[];
   righe: { id: number; commessa: string; modello: string | null; paese: string | null; stato: string;
     celle: Record<string, string>; testi: Record<string, string>; rivedere: Record<string, boolean> }[];
-}
-
-function Cella({ testo, intero }: { testo?: string; intero?: string }) {
-  if (!testo) return <span className="text-gray-300">—</span>;
-  if (testo === 'Sì') return <span className="font-bold text-green-600" title={intero}>Sì</span>;
-  if (testo === 'Extra campionario') return <span className="font-bold text-amber-700" title={intero}>Extra campionario</span>;
-  let testa: React.ReactNode = null;
-  let corpo = testo;
-  if (testo.startsWith('Sì — ')) { testa = <span className="font-bold text-green-600">Sì </span>; corpo = testo.slice(5); }
-  else if (testo.startsWith('Extra campionario — ')) { testa = <span className="font-bold text-amber-700">Extra campionario </span>; corpo = testo.slice(20); }
-  // più pezzi distinti (es. due livree): uno per riga
-  const pezzi = corpo.split(' | ');
-  return (
-    <span title={intero}>
-      {testa}
-      {pezzi.length > 1
-        ? pezzi.map((p, i) => <div key={i} className={i > 0 ? 'mt-1 border-t border-dashed border-gray-200 pt-1' : ''}>{p}</div>)
-        : corpo}
-    </span>
-  );
 }
 
 export default function CommessePage() {

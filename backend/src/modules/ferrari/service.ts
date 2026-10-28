@@ -7,8 +7,8 @@ import { db } from '../../db/client.js';
 import { logger } from '../../lib/logger.js';
 import { analizzaVm } from './analyzer.js';
 import {
-  BundleError, buildKnowledge, buildSigle, buildToAi, leggiBundle, leggiDettagli, leggiRisultatoIa, leggiSigle, sha256, stableStringify,
-  type EsempioConoscenza, type VoceDettaglio,
+  BundleError, buildKnowledge, buildSigle, buildToAi, leggiBundle, leggiComponenti, leggiDettagli, leggiRisultatoIa, leggiSigle, sha256, stableStringify,
+  type EsempioConoscenza, type VoceComponente, type VoceDettaglio,
 } from './bundle.js';
 import { confronta } from './compare.js';
 import { parseScheda, SchedaError } from './parser.js';
@@ -23,6 +23,7 @@ import {
 } from './validato.js';
 import { collapse } from './text.js';
 import { costruisciMatrice, nuoveSigle, type DettagliPerCommessa } from './matrice.js';
+import { esportaComponenti, importaComponenti } from './componenti-base.js';
 
 type Tx = typeof db;
 
@@ -832,6 +833,19 @@ export const TUTTI = '*';
  * `nuove` = sigle trovate nelle schede e non ancora decise: la pagina chiede se vanno (per il modello o per tutti).
  * Esclude le schede sostituite, rifiutate e in quarantena.
  */
+/** Riassunti dei testi lunghi arrivati dalla PC IA, per commessa (si usano solo se il testo e' ancora lo stesso). */
+export async function caricaDettagli(commesse: string[]): Promise<DettagliPerCommessa> {
+  const dettagli: DettagliPerCommessa = new Map();
+  if (commesse.length === 0) return dettagli;
+  const righe = await db<{ commessa: string; codice: string; chiave: string; dettaglio: string; stato: string }[]>`
+    SELECT commessa, codice, chiave, dettaglio, stato FROM ferrari_dettaglio WHERE commessa IN ${db(commesse)}`;
+  for (const r of righe) {
+    if (!dettagli.has(r.commessa)) dettagli.set(r.commessa, new Map());
+    dettagli.get(r.commessa)!.set(r.chiave, { dettaglio: r.dettaglio, stato: r.stato });
+  }
+  return dettagli;
+}
+
 export async function matrice(modello?: string, q?: string) {
   const modelli = await db<{ modello: string; schede: number }[]>`
     SELECT modello, count(*)::int AS schede FROM ferrari_file
@@ -862,15 +876,7 @@ export async function matrice(modello?: string, q?: string) {
   const cerca = q?.trim();
   const mostrate = (cerca ? tutte.filter(s => (s.canonico.header.commessa ?? '').includes(cerca)) : tutte).slice(0, 500);
   const commesse = mostrate.map(s => s.canonico.header.commessa ?? '').filter(Boolean);
-  const dettagli: DettagliPerCommessa = new Map();
-  if (commesse.length) {
-    const righe = await db<{ commessa: string; codice: string; chiave: string; dettaglio: string; stato: string }[]>`
-      SELECT commessa, codice, chiave, dettaglio, stato FROM ferrari_dettaglio WHERE commessa IN ${db(commesse)}`;
-    for (const r of righe) {
-      if (!dettagli.has(r.commessa)) dettagli.set(r.commessa, new Map());
-      dettagli.get(r.commessa)!.set(r.chiave, { dettaglio: r.dettaglio, stato: r.stato });
-    }
-  }
+  const dettagli = await caricaDettagli(commesse);
   return {
     modelli, modello: scelto, termini,
     nuove: nuoveSigle(tutte, new Set(decisioni.keys())),
@@ -932,8 +938,9 @@ export async function esportaSigle(user: Utente) {
   const nomi = new Map<string, string>();
   const schede = await db<{ canonico: Canonico }[]>`SELECT canonico FROM ferrari_file WHERE canonico IS NOT NULL`;
   for (const s of schede) for (const o of s.canonico.opzioni) if (!nomi.has(o.codice)) nomi.set(o.codice, o.descrizione);
+  const componenti = await esportaComponenti(db);
   const { zip, manifest } = buildSigle({
-    secret, voci: voci.map(v => ({ modello: v.modello, codice: v.codice, va: v.va, nome: nomi.get(v.codice) ?? '(parola cercata)' })),
+    secret, componenti, voci: voci.map(v => ({ modello: v.modello, codice: v.codice, va: v.va, nome: nomi.get(v.codice) ?? '(parola cercata)' })),
   });
   await db.begin(async raw => audit(raw as unknown as Tx, user, 'sigle.esportate', 'sigle', manifest.bundle_id, { voci: voci.length }));
   return { zip, filename: `FERRARI_sigle_vm_${manifest.bundle_id}.zip`, voci: voci.length };
@@ -944,6 +951,7 @@ export async function importaSigle(user: Utente, filename: string, buf: Buffer) 
   const secret = await getSecret();
   let voci;
   let dettagli: VoceDettaglio[] = [];
+  let componenti: VoceComponente[] = [];
   let da = 'ia';
   let pacchettoAt = new Date();
   try {
@@ -953,6 +961,7 @@ export async function importaSigle(user: Utente, filename: string, buf: Buffer) 
     if (!Number.isNaN(dataPacchetto.getTime())) pacchettoAt = dataPacchetto;
     voci = leggiSigle(letto.files.get('sigle.json') ?? Buffer.alloc(0));
     dettagli = leggiDettagli(letto.files.get('sigle.json') ?? Buffer.alloc(0));
+    componenti = leggiComponenti(letto.files.get('sigle.json') ?? Buffer.alloc(0));
   } catch (e) {
     if (e instanceof BundleError) return rifiutaBundle(user, filename, sha256(buf), e.message);
     throw e;
@@ -974,6 +983,7 @@ export async function importaSigle(user: Utente, filename: string, buf: Buffer) 
         ON CONFLICT (modello, codice) DO UPDATE SET va = EXCLUDED.va, nome = EXCLUDED.nome, conflitto = EXCLUDED.conflitto, da = EXCLUDED.da, creata_at = now()`;
       if (locale) conflitti++; else nuove++;
     }
+    const comp = await importaComponenti(tx, componenti, da);
     let applicati = 0;
     for (const d of dettagli) {
       const r = await tx`
@@ -984,8 +994,8 @@ export async function importaSigle(user: Utente, filename: string, buf: Buffer) 
         WHERE ferrari_dettaglio.pacchetto_at <= EXCLUDED.pacchetto_at`;
       applicati += r.count;
     }
-    await audit(tx, user, 'sigle.importate', 'sigle', null, { filename, nuove, conflitti, uguali, dettagli: applicati });
-    return { nuove, conflitti, uguali, dettagli: applicati };
+    await audit(tx, user, 'sigle.importate', 'sigle', null, { filename, nuove, conflitti, uguali, dettagli: applicati, componenti: comp.nuove + comp.conflitti });
+    return { nuove, conflitti, uguali, dettagli: applicati, componenti: comp.nuove + comp.conflitti };
   });
 }
 

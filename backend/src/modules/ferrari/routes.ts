@@ -11,6 +11,10 @@ import {
   type Utente,
 } from './service.js';
 
+import {
+  cercaComponenti, copiaComponenti, eliminaComponente, elencoComponenti, risolviProposteComponenti, salvaComponente, suggerisciTermini,
+} from './componenti.js';
+
 export const ferrariRoutes = new Hono<Env>();
 
 const VISTA = 'ferrari_schede' as const;
@@ -63,6 +67,41 @@ async function leggiFile(c: Context<Env>, campo: string, max = MAX_FILES): Promi
 
 ferrariRoutes.get('/matrice', requireModule(VISTA), async (c) =>
   c.json(await matrice(c.req.query('modello')?.slice(0, 30), c.req.query('q')?.slice(0, 100))));
+
+// ─── Componenti per modello (es. «Paraurti posteriore») ───────────────────────
+
+ferrariRoutes.get('/componenti', requireModule(VISTA), async (c) => c.json(await elencoComponenti(c.req.query('modello')?.slice(0, 30))));
+
+ferrariRoutes.get('/componenti/cerca', requireModule(VISTA), async (c) =>
+  c.json(await cercaComponenti(c.req.query('modello')?.slice(0, 30), c.req.query('q')?.slice(0, 100), c.req.query('componente')?.slice(0, 60) || undefined)));
+
+ferrariRoutes.get('/componenti/suggerisci', requireModule(VISTA), async (c) =>
+  c.json({ suggerimenti: await suggerisciTermini(c.req.query('modello') ?? '', c.req.query('q')?.slice(0, 60) ?? '') }));
+
+ferrariRoutes.post('/componenti', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({
+    modello: z.string().min(1).max(30), nome: z.string().min(1).max(60), termini: z.array(z.string().max(60)).max(40),
+    vecchio: z.string().max(60).optional(),
+  }));
+  return c.json(await salvaComponente(utente(c), b.modello, b.nome, b.termini, b.vecchio));
+});
+
+ferrariRoutes.delete('/componenti', requireManage(VISTA), async (c) =>
+  c.json({ eliminati: await eliminaComponente(utente(c), c.req.query('modello') ?? '', c.req.query('nome') ?? '') }));
+
+ferrariRoutes.post('/componenti/copia', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ da: z.string().min(1).max(30), a: z.string().min(1).max(30) }));
+  return c.json({ aggiunti: await copiaComponenti(utente(c), b.da, b.a) });
+});
+
+ferrariRoutes.post('/componenti/proposte', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({
+    azione: z.enum(['accetta', 'rifiuta', 'accetta-tutte', 'rifiuta-tutte']),
+    modello: z.string().max(30).optional(), nome: z.string().max(60).optional(),
+  }));
+  const tutte = b.azione.endsWith('-tutte');
+  return c.json({ trattate: await risolviProposteComponenti(utente(c), b.azione.startsWith('accetta'), tutte ? undefined : b.modello, tutte ? undefined : b.nome) });
+});
 
 ferrariRoutes.post('/sigle', requireManage(VISTA), async (c) => {
   const b = await parseBody(c, z.object({

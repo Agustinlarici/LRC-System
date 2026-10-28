@@ -7,11 +7,32 @@ import { STATI } from '@/lib/ferrari';
 
 const SCHEDE = [
   { href: '/ferrari',            label: 'Commesse' },
+  { href: '/ferrari/componenti', label: 'Componenti' },
   { href: '/ferrari/schede',     label: 'Revisione' },
   { href: '/ferrari/scambio',    label: 'Scambio con la IA' },
   { href: '/ferrari/conoscenza', label: 'Conoscenza' },
   { href: '/ferrari/consulta',   label: 'Consulta' },
 ];
+
+export function Cella({ testo, intero }: { testo?: string; intero?: string }) {
+  if (!testo) return <span className="text-gray-300">—</span>;
+  if (testo === 'Sì') return <span className="font-bold text-green-600" title={intero}>Sì</span>;
+  if (testo === 'Extra campionario') return <span className="font-bold text-amber-700" title={intero}>Extra campionario</span>;
+  let testa: React.ReactNode = null;
+  let corpo = testo;
+  if (testo.startsWith('Sì — ')) { testa = <span className="font-bold text-green-600">Sì </span>; corpo = testo.slice(5); }
+  else if (testo.startsWith('Extra campionario — ')) { testa = <span className="font-bold text-amber-700">Extra campionario </span>; corpo = testo.slice(20); }
+  // più pezzi distinti (es. due livree): uno per riga
+  const pezzi = corpo.split(' | ');
+  return (
+    <span title={intero}>
+      {testa}
+      {pezzi.length > 1
+        ? pezzi.map((p, i) => <div key={i} className={i > 0 ? 'mt-1 border-t border-dashed border-gray-200 pt-1' : ''}>{p}</div>)
+        : corpo}
+    </span>
+  );
+}
 
 export function FerrariNav() {
   const pathname = usePathname();
@@ -20,14 +41,14 @@ export function FerrariNav() {
     if (href === '/ferrari/schede') return pathname.startsWith('/ferrari/schede') || /^\/ferrari\/\d+/.test(pathname);
     return pathname.startsWith(href);
   };
-  const avanzate = SCHEDE.slice(1);
+  const avanzate = SCHEDE.slice(2);
   const inAvanzate = avanzate.some(s => attiva(s.href));
   const cls = (on: boolean) =>
     `px-4 py-2 text-sm font-medium rounded-t-lg -mb-px border-b-2 transition-colors ${
       on ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`;
   return (
     <nav className="flex flex-wrap items-center gap-1 border-b border-gray-200 mb-6">
-      <Link href={SCHEDE[0].href} className={cls(attiva(SCHEDE[0].href))}>{SCHEDE[0].label}</Link>
+      {SCHEDE.slice(0, 2).map(s => <Link key={s.href} href={s.href} className={cls(attiva(s.href))}>{s.label}</Link>)}
       {/* il flusso a revisione completa non serve nell'uso quotidiano: resta raggiungibile da qui */}
       <details className="relative" open={inAvanzate}>
         <summary className={`${cls(inAvanzate)} cursor-pointer list-none`}>Avanzate</summary>

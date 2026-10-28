@@ -45,7 +45,7 @@ export function chiaveTesto(testo: string): string {
 /** Dettagli arrivati dalla PC IA: commessa → chiave del testo → dettaglio e stato. */
 export type DettagliPerCommessa = Map<string, Map<string, { dettaglio: string; stato: string }>>;
 
-function dettagliValidi(commessa: string, opzioni: Opzione[], tutti?: DettagliPerCommessa): { testi: Record<string, string>; rivedere: Record<string, boolean> } {
+export function dettagliValidi(commessa: string, opzioni: Opzione[], tutti?: DettagliPerCommessa): { testi: Record<string, string>; rivedere: Record<string, boolean> } {
   const out: Record<string, string> = {};
   const rivedere: Record<string, boolean> = {};
   const della = tutti?.get(commessa);
@@ -75,22 +75,22 @@ function estratto(testo: string, inizio: number, fine: number, margine = 40): st
  * l'estratto del testo; parola nella descrizione o nella nota → «Sì». Altrimenti vuota.
  * `dettagli`: riassunti della IA per codice (facoltativi).
  */
-export function cellaTermine(termine: string, opzioni: Opzione[], dettagli: Record<string, string> = {}): { testo: string; completo: string | null } {
+export function cellaTermine(termine: string, opzioni: Opzione[], dettagli: Record<string, string> = {}): { testo: string; completo: string | null; opzione: Opzione | null } {
   const t = collapse(termine);
-  if (!t) return { testo: '', completo: null };
+  if (!t) return { testo: '', completo: null, opzione: null };
   const perCodice = opzioni.find(o => o.codice.toUpperCase() === t);
-  if (perCodice) return { testo: cellaOpzione(perCodice, dettagli[perCodice.codice]), completo: testoLibero(perCodice) || null };
+  if (perCodice) return { testo: cellaOpzione(perCodice, dettagli[perCodice.codice]), completo: testoLibero(perCodice) || null, opzione: perCodice };
 
   const rx = phraseRegex(termine);
-  for (const o of opzioni) if (rx.test(norm(o.valore))) return { testo: o.valore.trim(), completo: null };
+  for (const o of opzioni) if (rx.test(norm(o.valore))) return { testo: o.valore.trim(), completo: null, opzione: o };
   for (const o of opzioni) {
     for (const b of o.blocchi_testo) {
       const m = rx.exec(norm(b.testo));
-      if (m) return { testo: dettagli[o.codice] || estratto(b.testo, m.index, m.index + m[0].length), completo: testoLibero(o) };
+      if (m) return { testo: dettagli[o.codice] || estratto(b.testo, m.index, m.index + m[0].length), completo: testoLibero(o), opzione: o };
     }
   }
-  for (const o of opzioni) if (rx.test(norm(o.descrizione)) || rx.test(norm(o.nota))) return { testo: SI, completo: null };
-  return { testo: '', completo: null };
+  for (const o of opzioni) if (rx.test(norm(o.descrizione)) || rx.test(norm(o.nota))) return { testo: SI, completo: null, opzione: o };
+  return { testo: '', completo: null, opzione: null };
 }
 
 export interface RigaMatrice {
