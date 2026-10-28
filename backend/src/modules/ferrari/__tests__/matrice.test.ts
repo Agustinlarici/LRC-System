@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseScheda } from '../parser.js';
-import { cellaOpzione, cellaTermine, chiaveTesto, classeValore, costruisciMatrice, nuoveSigle } from '../matrice.js';
+import { cellaOpzione, cellaTermine, chiaveTesto, classeValore, costruisciMatrice, nuoveSigle, sottosigle } from '../matrice.js';
 import type { Opzione } from '../types.js';
 import { schedaPersonalizzata, schedaSemplice, toXlsBuffer } from './fixtures.js';
 
@@ -99,5 +99,37 @@ describe('costruisciMatrice / suggerimenti', () => {
     expect(bic).toMatchObject({ nome: 'CARROZZERIA BICOLORE', esempio: 'NERO DS 1250' });
     expect(n.find(x => x.codice === 'CEL2')?.esempio).toBe('Sì');
     expect(nuoveSigle(schede, new Set(n.map(x => x.codice).concat(['EXTC'])))).toEqual([]);
+  });
+});
+
+
+describe('sotto-sigle (codici dentro i testi liberi, stessa regola della PC IA)', () => {
+  const LIVR = 'LIVR: LIVREA TML5 CON PARTE PRINCIPALE IN BIANCO PROVA COD.VERN FYM.*0002 E STRISCE IN NERO DS 1250 (VEDI IMMAGINI). '
+    + 'LIVR: LIVREA TLM13 CON IL TRICOLORE SUGLI SPECCHIETTI (VEDI IMMAGINI)';
+  const livr = { ...o('SI', [LIVR]), codice: 'LIVR', descrizione: 'LIVREA SPECIALE' };
+
+  it('riconosce i codici con la frase che li contiene', () => {
+    const t = sottosigle(livr);
+    expect(t.map(x => x.codice)).toEqual(['TML5', 'TLM13']);
+    expect(t[0]!.frase.startsWith('LIVR: LIVREA TML5')).toBe(true);
+    expect(t[0]!.frase.endsWith('(VEDI IMMAGINI).')).toBe(true);
+    expect(t[1]!.frase.startsWith('LIVR: LIVREA TLM13')).toBe(true);
+    expect(sottosigle(o('SI', ['COLORE 4000 FILO 816 P2 FYM.*0585 DS 1250']))).toEqual([]);        // numeri e codici corti: no
+    expect(sottosigle(o('SI', ['PELLE 2J8B'])).map(x => x.codice)).toEqual(['2J8B']);
+    expect(sottosigle(livr, new Set(['TML5']))[0]!.codice).toBe('TLM13');                           // le opzioni vere sono sigle normali
+  });
+
+  it('si chiede come per le sigle normali e, se vanno, compaiono dentro la cella (non come colonna)', () => {
+    const bic2 = { ...o('NERO DS 1250'), codice: 'BIC2', descrizione: 'CARROZZERIA BICOLORE' };
+    const canonico = { ...parseScheda(toXlsBuffer(schedaSemplice()), 'a.xls'), opzioni: [bic2, livr] } as ReturnType<typeof parseScheda>;
+    const schede = [{ id: 1, stato: 'IN_REVISIONE', canonico }];
+    const nuove = nuoveSigle(schede, new Set());
+    expect(nuove.filter(n => n.sub).map(n => n.codice)).toEqual(['TML5', 'TLM13']);
+    expect(nuove.find(n => n.codice === 'TML5')).toMatchObject({ sub: true, padre: 'LIVR' });
+    expect(nuoveSigle(schede, new Set(['TML5', 'TLM13'])).filter(n => n.sub)).toEqual([]);          // gia' decise
+    const riga = costruisciMatrice(schede, ['LIVR'], undefined, new Set(['TML5']))[0]!;
+    expect(riga.sub['LIVR']!.map(x => x.codice)).toEqual(['TML5']);
+    expect(riga.sub['LIVR']![0]!.testo).toContain('BIANCO PROVA');
+    expect(costruisciMatrice(schede, ['LIVR'])[0]!.sub).toEqual({});
   });
 });

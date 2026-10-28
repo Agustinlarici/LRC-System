@@ -96,29 +96,63 @@ export function cellaTermine(termine: string, opzioni: Opzione[], dettagli: Reco
 export interface RigaMatrice {
   id: number; commessa: string; modello: string | null; paese: string | null; stato: string;
   celle: Record<string, string>; testi: Record<string, string>; rivedere: Record<string, boolean>;
+  sub: Record<string, { codice: string; testo: string }[]>;
 }
 
 /** Per un modello: una riga per commessa, una colonna per ogni sigla/parola scelta. */
-export function costruisciMatrice(schede: { id: number; stato: string; canonico: Canonico }[], termini: string[], dettagli?: DettagliPerCommessa): RigaMatrice[] {
+export function costruisciMatrice(
+  schede: { id: number; stato: string; canonico: Canonico }[], termini: string[], dettagli?: DettagliPerCommessa, subOk: ReadonlySet<string> = new Set(),
+): RigaMatrice[] {
   return schede.map(s => {
     const det = dettagliValidi(s.canonico.header.commessa ?? '', s.canonico.opzioni, dettagli);
     const celle: Record<string, string> = {};
     const testi: Record<string, string> = {};
     const rivedere: Record<string, boolean> = {};
+    const sub: Record<string, { codice: string; testo: string }[]> = {};
+    const propri = new Set(s.canonico.opzioni.map(o => o.codice));
     for (const t of termini) {
       const c = cellaTermine(t, s.canonico.opzioni, det.testi);
       if (det.rivedere[t]) rivedere[t] = true;
+      if (c.opzione && subOk.size > 0) {
+        const dentro = sottosigle(c.opzione, propri).filter(x => subOk.has(x.codice)).map(x => ({ codice: x.codice, testo: x.frase }));
+        if (dentro.length > 0) sub[t] = dentro;
+      }
       celle[t] = c.testo;
       if (c.completo) testi[t] = c.completo;
     }
     return {
       id: s.id, commessa: s.canonico.header.commessa ?? '', modello: s.canonico.header.tipo_matricola.modello,
-      paese: s.canonico.header.destinazione.paese, stato: s.stato, celle, testi, rivedere,
+      paese: s.canonico.header.destinazione.paese, stato: s.stato, celle, testi, rivedere, sub,
     };
   });
 }
 
-export interface SiglaNuova { codice: string; nome: string; esempio: string }
+// ─── Sotto-sigle: codici importanti dentro i testi liberi (es. TML5 dentro LIVR) ────────────────
+
+const CANDIDATO = /(?<![A-Z0-9])(?=[A-Z0-9]*[A-Z])(?=[A-Z0-9]*[0-9])[A-Z0-9]{3,8}(?![A-Z0-9])/g;
+const FRASI = /(?<=[.!?])\s+(?=[A-Z0-9])/;
+
+/**
+ * Le parole-codice (lettere e cifre, es. TML5, TLM13) del testo libero di un'opzione, con la frase che le contiene.
+ * `escludi` = codici che sono gia' opzioni della scheda (quelli sono sigle normali). Stessa regola della PC IA.
+ */
+export function sottosigle(o: Opzione, escludi: ReadonlySet<string> = new Set()): { codice: string; frase: string }[] {
+  const out: { codice: string; frase: string }[] = [];
+  const viste = new Set<string>();
+  for (const b of o.blocchi_testo) {
+    for (const frase of b.testo.split(FRASI)) {
+      for (const m of norm(frase).matchAll(CANDIDATO)) {
+        const c = m[0];
+        if (viste.has(c) || escludi.has(c) || c === o.codice.toUpperCase()) continue;
+        viste.add(c);
+        out.push({ codice: c, frase: frase.trim() });
+      }
+    }
+  }
+  return out;
+}
+
+export interface SiglaNuova { codice: string; nome: string; esempio: string; sub?: boolean; padre?: string }
 
 /** Sigle presenti nelle schede e non ancora decise (nell'ordine dell'Excel), con un esempio di cosa contengono. */
 export function nuoveSigle(schede: { canonico: Canonico }[], decise: Set<string>): SiglaNuova[] {
@@ -134,5 +168,18 @@ export function nuoveSigle(schede: { canonico: Canonico }[], decise: Set<string>
       if (prima === undefined || (banale(prima) && !banale(e))) esempi.set(o.codice, e);
     }
   }
-  return ordine.filter(c => !decise.has(c)).map(codice => ({ codice, nome: nomi.get(codice) ?? '', esempio: esempi.get(codice) ?? SI }));
+  const normali = ordine.filter(c => !decise.has(c)).map(codice => ({ codice, nome: nomi.get(codice) ?? '', esempio: esempi.get(codice) ?? SI }));
+  // sotto-sigle non ancora decise: si chiede come per le sigle normali
+  const sub = new Map<string, SiglaNuova>();
+  for (const s of schede) {
+    const propri = new Set(s.canonico.opzioni.map(o => o.codice));
+    for (const o of s.canonico.opzioni) {
+      for (const x of sottosigle(o, propri)) {
+        if (!decise.has(x.codice) && !sub.has(x.codice)) {
+          sub.set(x.codice, { codice: x.codice, nome: `dentro ${o.codice} — ${o.descrizione}`, esempio: x.frase.slice(0, 160), sub: true, padre: o.codice });
+        }
+      }
+    }
+  }
+  return [...normali, ...sub.values()];
 }

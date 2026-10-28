@@ -69,9 +69,9 @@ describe('interoperabilità TypeScript ↔ Python', () => {
     const r = leggiBundle(leggi('sigle-python.zip'), SECRET, 'sigle');
     expect(r.manifest.producer).toBe('ai');
     expect(leggiSigle(r.files.get('sigle.json')!)).toEqual([
-      { modello: 'F999XX', codice: 'BIC2', va: true, nome: '(parola cercata)' },      // senza schede caricate non ha il nome
-      { modello: '*', codice: 'CEL2', va: true, nome: '(parola cercata)' },
-      { modello: 'F999XX', codice: 'CAVALLINO', va: false, nome: '(parola cercata)' },
+      { modello: 'F999XX', codice: 'BIC2', va: true, sub: false, nome: '(parola cercata)' },      // senza schede caricate non ha il nome
+      { modello: '*', codice: 'CEL2', va: true, sub: false, nome: '(parola cercata)' },
+      { modello: 'F999XX', codice: 'CAVALLINO', va: false, sub: false, nome: '(parola cercata)' },
     ]);
   });
 });

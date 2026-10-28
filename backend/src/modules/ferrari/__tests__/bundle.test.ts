@@ -144,7 +144,7 @@ describe('pacchetto delle sigle', () => {
     const { zip } = buildSigle({ secret: SECRET, voci });
     const r = leggiBundle(zip, SECRET, 'sigle');
     expect(r.manifest.producer).toBe('vm');
-    expect(leggiSigle(r.files.get('sigle.json')!)).toEqual(voci);
+    expect(leggiSigle(r.files.get('sigle.json')!)).toEqual(voci.map(v => ({ sub: false, ...v })));
   });
 
   it('segreto diverso o tipo sbagliato: rifiutato', () => {
@@ -158,7 +158,7 @@ describe('pacchetto delle sigle', () => {
       { modello: ' f1 ', codice: ' aaaa ', va: true }, { modello: 5, codice: 'X', va: true },
       { modello: 'F1', codice: '', va: true }, { modello: 'F1', codice: 'BBBB', va: 'si' }, 'boh', null,
     ] }));
-    expect(leggiSigle(buf)).toEqual([{ modello: 'F1', codice: 'AAAA', va: true, nome: '' }]);
+    expect(leggiSigle(buf)).toEqual([{ modello: 'F1', codice: 'AAAA', va: true, nome: '', sub: false }]);
     expect(() => leggiSigle(Buffer.from('no'))).toThrow(/non valido/);
     expect(() => leggiSigle(Buffer.from('{"x":1}'))).toThrow(/non valido/);
   });

@@ -253,7 +253,7 @@ export function leggiRisultatoIa(contenuto: Buffer): AnalisiIa {
 
 // ─── Sigle (decisioni «va / non va» da sincronizzare tra VM e PC IA) ──────────
 
-export interface VoceSigla { modello: string; codice: string; va: boolean; nome: string }
+export interface VoceSigla { modello: string; codice: string; va: boolean; nome: string; sub?: boolean }
 
 export interface VoceComponente { modello: string; nome: string; termini: string[] }
 
@@ -277,12 +277,12 @@ export function leggiSigle(contenuto: Buffer): VoceSigla[] {
   const out: VoceSigla[] = [];
   for (const v of lista) {
     if (!v || typeof v !== 'object') continue;
-    const { modello, codice, va, nome } = v as Record<string, unknown>;
+    const { modello, codice, va, nome, sub } = v as Record<string, unknown>;
     if (typeof modello !== 'string' || typeof codice !== 'string' || typeof va !== 'boolean') continue;
     const m = modello.trim().toUpperCase().slice(0, 30);
     const c = codice.trim().toUpperCase().slice(0, 60);
     if (!m || !c) continue;
-    out.push({ modello: m, codice: c, va, nome: typeof nome === 'string' ? nome.slice(0, 120) : '' });
+    out.push({ modello: m, codice: c, va, nome: typeof nome === 'string' ? nome.slice(0, 120) : '', sub: sub === true });
   }
   return out;
 }

@@ -3,7 +3,7 @@
 import { HTTPException } from 'hono/http-exception';
 import { db } from '../../db/client.js';
 import { audit, caricaDettagli, type Utente } from './service.js';
-import { cellaTermine, dettagliValidi } from './matrice.js';
+import { cellaTermine, dettagliValidi, sottosigle } from './matrice.js';
 import { collapse, norm } from './text.js';
 import type { Canonico } from './types.js';
 import {
@@ -91,7 +91,10 @@ export async function suggerisciTermini(modello: string, q: string) {
   return lista;
 }
 
-export interface VoceTrovata { termine: string; codice: string; voce: string; testo: string; completo: string | null; rivedere: boolean }
+export interface VoceTrovata {
+  termine: string; codice: string; voce: string; testo: string; completo: string | null; rivedere: boolean;
+  sub: { codice: string; testo: string }[];
+}
 
 /** Per ogni commessa del modello (che contiene q) e per ogni componente: cosa c'e' nella scheda. */
 export async function cercaComponenti(modello?: string, q?: string, componente?: string) {
@@ -108,9 +111,16 @@ export async function cercaComponenti(modello?: string, q?: string, componente?:
     : [];
   const schede = tutte.filter(s => !cerca || (s.canonico.header.commessa ?? '').includes(cerca)).slice(0, MAX_RISULTATI);
   const dettagli = await caricaDettagli(schede.map(s => s.canonico.header.commessa ?? '').filter(Boolean));
+  const decisioni = m
+    ? await db<{ modello: string; codice: string; va: boolean; sub: boolean }[]>`SELECT modello, codice, va, sub FROM ferrari_sigla WHERE modello IN ('*', ${m})`
+    : [];
+  const stato = new Map<string, { va: boolean; sub: boolean }>();
+  for (const mod of ['*', m]) for (const r of decisioni.filter(x => x.modello === mod)) stato.set(r.codice, { va: r.va, sub: r.sub });   // il modello prevale
+  const subOk = new Set([...stato].filter(([, d]) => d.va && d.sub).map(([c]) => c));
   const risultati = schede.map(s => {
     const commessa = s.canonico.header.commessa ?? '';
     const det = dettagliValidi(commessa, s.canonico.opzioni, dettagli);
+    const propri = new Set(s.canonico.opzioni.map(o => o.codice));
     return {
       commessa, versione: s.canonico.header.tipo_matricola.versione,
       componenti: comps.map(c => {
@@ -121,7 +131,8 @@ export async function cercaComponenti(modello?: string, q?: string, componente?:
           if (!r.testo || !r.opzione || viste.has(r.opzione)) continue;     // la stessa voce trovata da due termini si mostra una volta
           viste.add(r.opzione);
           voci.push({ termine: t, codice: r.opzione.codice, voce: r.opzione.descrizione, testo: r.testo, completo: r.completo,
-                      rivedere: det.rivedere[r.opzione.codice] === true });
+                      rivedere: det.rivedere[r.opzione.codice] === true,
+                      sub: sottosigle(r.opzione, propri).filter(x => subOk.has(x.codice)).map(x => ({ codice: x.codice, testo: x.frase })) });
         }
         return { nome: c.nome, vuoto: voci.length === 0, voci };
       }),

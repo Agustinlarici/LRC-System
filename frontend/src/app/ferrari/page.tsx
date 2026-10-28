@@ -11,11 +11,12 @@ interface Matrice {
   modelli: { modello: string; schede: number }[];
   modello: string;
   termini: string[];
-  nuove: { codice: string; nome: string; esempio: string }[];
-  sigle: { codice: string; nome: string; va: boolean; ambito: 'modello' | 'tutti' }[];
-  proposte: { modello: string; codice: string; va: boolean; nome: string | null; conflitto: boolean; da: string | null }[];
+  nuove: { codice: string; nome: string; esempio: string; sub?: boolean; padre?: string }[];
+  sigle: { codice: string; nome: string; va: boolean; ambito: 'modello' | 'tutti'; sub: boolean }[];
+  proposte: { modello: string; codice: string; va: boolean; sub: boolean; nome: string | null; conflitto: boolean; da: string | null }[];
   righe: { id: number; commessa: string; modello: string | null; paese: string | null; stato: string;
-    celle: Record<string, string>; testi: Record<string, string>; rivedere: Record<string, boolean> }[];
+    celle: Record<string, string>; testi: Record<string, string>; rivedere: Record<string, boolean>;
+    sub: Record<string, { codice: string; testo: string }[]> }[];
 }
 
 export default function CommessePage() {
@@ -52,10 +53,10 @@ export default function CommessePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, carica]);
 
-  async function decidi(codice: string, va: boolean, tutti: boolean) {
+  async function decidi(codice: string, va: boolean, tutti: boolean, sub = false) {
     if (!codice.trim() || !modello) return;
     try {
-      await api.post('/api/ferrari/sigle', { modello, codice, va, tutti });
+      await api.post('/api/ferrari/sigle', { modello, codice, va, tutti, sub });
       setNuovo('');
       await carica(modello, q.trim());
     } catch (e) {
@@ -97,8 +98,9 @@ export default function CommessePage() {
   async function salvaScelte() {
     if (!modello) return;
     try {
+      const subs = new Set(m?.nuove.filter(n => n.sub).map(n => n.codice));
       for (const [codice, va] of Object.entries(scelte)) {
-        await api.post('/api/ferrari/sigle', { modello, codice, va, tutti: pertutti });
+        await api.post('/api/ferrari/sigle', { modello, codice, va, tutti: pertutti, sub: subs.has(codice) });
       }
       setScelte({});
       setPertutti(false);
@@ -184,9 +186,9 @@ export default function CommessePage() {
               {m.proposte.map(p => (
                 <tr key={`${p.modello}/${p.codice}`} className="border-t border-sky-200">
                   <td className="py-1 pr-3 font-semibold">{p.modello === '*' ? 'tutti i modelli' : p.modello}</td>
-                  <td className="py-1 pr-3"><b>{p.codice}</b> <span className="text-gray-500">{p.nome}</span></td>
+                  <td className="py-1 pr-3"><b>{p.codice}</b> <span className="text-gray-500">{p.nome}</span>{p.sub && <span className="ml-2 text-xs bg-gray-100 text-gray-600 rounded px-1.5">sotto-sigla</span>}</td>
                   <td className="py-1 pr-3">
-                    {p.va ? <span className="text-green-600 font-semibold">va in tabella</span> : <span className="text-gray-500">non va</span>}
+                    {p.va ? <span className="text-green-600 font-semibold">{p.sub ? 'va dentro la voce' : 'va in tabella'}</span> : <span className="text-gray-500">non va</span>}
                     {p.conflitto && <span className="ml-2 text-xs bg-amber-100 text-amber-800 rounded px-1.5">tu: il contrario</span>}
                   </td>
                   <td className="py-1 text-right whitespace-nowrap">
@@ -208,7 +210,7 @@ export default function CommessePage() {
               <li key={n.codice} className="flex flex-wrap items-center gap-2 px-3 py-1.5">
                 <b className="w-16 shrink-0">{n.codice}</b>
                 <span className="flex-1 min-w-[10rem] truncate" title={`${n.nome} · esempio: ${n.esempio}`}>
-                  {n.nome} <span className="text-gray-400">· {n.esempio}</span>
+                  {n.sub && <span className="mr-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5">sotto-sigla</span>}{n.nome} <span className="text-gray-400">· {n.esempio}</span>
                 </span>
                 <button className={`!py-0.5 text-xs ${scelte[n.codice] === true ? 'btn-primary' : 'btn-secondary'}`}
                   onClick={() => setScelte({ ...scelte, [n.codice]: true })}>Sì</button>
@@ -254,13 +256,13 @@ export default function CommessePage() {
                 {m.sigle.map(s => (
                   <tr key={s.codice} className="border-b border-gray-100">
                     <td className="py-1 pr-3 font-semibold">{s.codice}</td>
-                    <td className="py-1 pr-3 text-gray-500">{s.nome}</td>
+                    <td className="py-1 pr-3 text-gray-500">{s.sub && <span className="mr-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5">sotto-sigla</span>}{s.nome}</td>
                     <td className={`py-1 pr-3 ${s.va ? 'text-green-600 font-semibold' : 'text-gray-400'}`}>
                       {s.va ? 'va' : 'non va'} <span className="text-gray-400 font-normal">({s.ambito === 'tutti' ? 'tutti i modelli' : m.modello})</span>
                     </td>
                     <td className="py-1 text-right whitespace-nowrap">
                       {puoCaricare && <>
-                        <button className="btn-secondary !py-0.5 text-xs mr-1" onClick={() => decidi(s.codice, !s.va, false)}>{s.va ? 'Non va' : 'Va'}</button>
+                        <button className="btn-secondary !py-0.5 text-xs mr-1" onClick={() => decidi(s.codice, !s.va, false, s.sub)}>{s.va ? 'Non va' : 'Va'}</button>
                         <button className="btn-secondary !py-0.5 text-xs" onClick={() => chiediDiNuovo(s.codice, s.ambito === 'tutti')}>Chiedi di nuovo</button>
                       </>}
                     </td>
@@ -301,6 +303,9 @@ export default function CommessePage() {
                     <td key={t} className={`border-b border-l border-gray-100 px-3 py-2 max-w-[320px] ${r.rivedere?.[t] ? 'shadow-[inset_3px_0_0_#f0a020]' : ''}`}>
                       {r.rivedere?.[t] && <div className="text-xs font-semibold text-amber-700" title="La IA non era sicura: va controllato sulla PC IA">⚠ da rivedere</div>}
                       <Cella testo={r.celle[t]} intero={r.testi[t]} />
+                      {r.sub?.[t]?.map(x => (
+                        <div key={x.codice} className="mt-1 rounded-lg border-l-[3px] border-gray-300 bg-white/60 px-2 py-0.5 text-xs text-gray-600"><b>{x.codice}</b> {x.testo}</div>
+                      ))}
                     </td>
                   ))}
                 </tr>

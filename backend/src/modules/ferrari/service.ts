@@ -856,16 +856,17 @@ export async function matrice(modello?: string, q?: string) {
   if (!scelto) return { modelli, modello: '', termini: [] as string[], nuove: [], sigle: [], righe: [], proposte };
 
   // Decisione del modello prevale su quella per tutti
-  const rows = await db<{ modello: string; codice: string; va: boolean; ordine: string }[]>`
-    SELECT modello, codice, va, ordine FROM ferrari_sigla WHERE modello IN (${TUTTI}, ${scelto}) ORDER BY ordine`;
-  const decisioni = new Map<string, { va: boolean; ordine: number; ambito: 'tutti' | 'modello' }>();
+  const rows = await db<{ modello: string; codice: string; va: boolean; ordine: string; sub: boolean }[]>`
+    SELECT modello, codice, va, ordine, sub FROM ferrari_sigla WHERE modello IN (${TUTTI}, ${scelto}) ORDER BY ordine`;
+  const decisioni = new Map<string, { va: boolean; ordine: number; ambito: 'tutti' | 'modello'; sub: boolean }>();
   for (const m of [TUTTI, scelto]) {
     for (const r of rows.filter(x => x.modello === m)) {
-      decisioni.set(r.codice, { va: r.va, ordine: Number(r.ordine), ambito: m === TUTTI ? 'tutti' : 'modello' });
+      decisioni.set(r.codice, { va: r.va, ordine: Number(r.ordine), ambito: m === TUTTI ? 'tutti' : 'modello', sub: r.sub });
     }
   }
   const ordinate = [...decisioni.entries()].sort((a, b) => a[1].ordine - b[1].ordine);
-  const termini = ordinate.filter(([, d]) => d.va).map(([c]) => c);
+  const termini = ordinate.filter(([, d]) => d.va && !d.sub).map(([c]) => c);
+  const subOk = new Set(ordinate.filter(([, d]) => d.va && d.sub).map(([c]) => c));
 
   const tutte = await db<{ id: number; stato: string; canonico: Canonico }[]>`
     SELECT id, stato, canonico FROM ferrari_file
@@ -880,22 +881,22 @@ export async function matrice(modello?: string, q?: string) {
   return {
     modelli, modello: scelto, termini,
     nuove: nuoveSigle(tutte, new Set(decisioni.keys())),
-    sigle: ordinate.map(([codice, d]) => ({ codice, nome: nomi.get(codice) ?? '(parola cercata)', va: d.va, ambito: d.ambito })),
-    righe: costruisciMatrice(mostrate, termini, dettagli),
+    sigle: ordinate.map(([codice, d]) => ({ codice, nome: nomi.get(codice) ?? '(parola cercata)', va: d.va, ambito: d.ambito, sub: d.sub })),
+    righe: costruisciMatrice(mostrate, termini, dettagli, subOk),
     proposte,
   };
 }
 
 /** La sigla (o parola) va in tabella oppure no, per il modello o per tutti i modelli. */
-export async function decidiSigla(user: Utente, modello: string, codice: string, va: boolean, tutti: boolean) {
+export async function decidiSigla(user: Utente, modello: string, codice: string, va: boolean, tutti: boolean, sub = false) {
   const c = normalizzaSigla(codice);
   const m = tutti ? TUTTI : modello.trim().toUpperCase();
   if (!m || !c || c.length > 60) throw new HTTPException(400, { message: 'Indicare il modello e la sigla o parola (max 60 caratteri)' });
   await db.begin(async raw => {
     const tx = raw as unknown as Tx;
     await tx`
-      INSERT INTO ferrari_sigla (modello, codice, va, creato_da) VALUES (${m}, ${c}, ${va}, ${user.username})
-      ON CONFLICT (modello, codice) DO UPDATE SET va = EXCLUDED.va`;
+      INSERT INTO ferrari_sigla (modello, codice, va, sub, creato_da) VALUES (${m}, ${c}, ${va}, ${sub}, ${user.username})
+      ON CONFLICT (modello, codice) DO UPDATE SET va = EXCLUDED.va, sub = EXCLUDED.sub`;
     await tx`DELETE FROM ferrari_sigla_proposta WHERE modello = ${m} AND codice = ${c}`;   // decisa: la proposta e' superata
     await audit(tx, user, va ? 'sigla.va' : 'sigla.non_va', 'sigla', `${m}/${c}`, null);
   });
@@ -921,7 +922,7 @@ export async function tutteNo(user: Utente, modello: string) {
   await db.begin(async raw => {
     const tx = raw as unknown as Tx;
     for (const n of m.nuove) {
-      await tx`INSERT INTO ferrari_sigla (modello, codice, va, creato_da) VALUES (${m.modello}, ${n.codice}, FALSE, ${user.username})
+      await tx`INSERT INTO ferrari_sigla (modello, codice, va, sub, creato_da) VALUES (${m.modello}, ${n.codice}, FALSE, ${n.sub === true}, ${user.username})
                ON CONFLICT (modello, codice) DO NOTHING`;
     }
     await audit(tx, user, 'sigla.tutte_non_va', 'sigla', m.modello, { quante: m.nuove.length });
@@ -934,13 +935,13 @@ export async function tutteNo(user: Utente, modello: string) {
 /** Pacchetto firmato con tutte le decisioni sulle sigle: la PC IA le riceve come proposte. */
 export async function esportaSigle(user: Utente) {
   const secret = await getSecret();
-  const voci = await db<{ modello: string; codice: string; va: boolean }[]>`SELECT modello, codice, va FROM ferrari_sigla ORDER BY ordine`;
+  const voci = await db<{ modello: string; codice: string; va: boolean; sub: boolean }[]>`SELECT modello, codice, va, sub FROM ferrari_sigla ORDER BY ordine`;
   const nomi = new Map<string, string>();
   const schede = await db<{ canonico: Canonico }[]>`SELECT canonico FROM ferrari_file WHERE canonico IS NOT NULL`;
   for (const s of schede) for (const o of s.canonico.opzioni) if (!nomi.has(o.codice)) nomi.set(o.codice, o.descrizione);
   const componenti = await esportaComponenti(db);
   const { zip, manifest } = buildSigle({
-    secret, componenti, voci: voci.map(v => ({ modello: v.modello, codice: v.codice, va: v.va, nome: nomi.get(v.codice) ?? '(parola cercata)' })),
+    secret, componenti, voci: voci.map(v => ({ modello: v.modello, codice: v.codice, va: v.va, sub: v.sub, nome: nomi.get(v.codice) ?? '(parola cercata)' })),
   });
   await db.begin(async raw => audit(raw as unknown as Tx, user, 'sigle.esportate', 'sigle', manifest.bundle_id, { voci: voci.length }));
   return { zip, filename: `FERRARI_sigle_vm_${manifest.bundle_id}.zip`, voci: voci.length };
@@ -972,15 +973,16 @@ export async function importaSigle(user: Utente, filename: string, buf: Buffer) 
     await tx`SELECT pg_advisory_xact_lock(hashtext('ferrari:sigle'))`;
     let nuove = 0, conflitti = 0, uguali = 0;
     for (const v of [...voci].sort((x, y) => (x.modello + x.codice).localeCompare(y.modello + y.codice))) {
-      const [locale] = await tx<{ va: boolean }[]>`SELECT va FROM ferrari_sigla WHERE modello = ${v.modello} AND codice = ${v.codice}`;
-      if (locale && locale.va === v.va) {
+      const sub = v.sub === true;
+      const [locale] = await tx<{ va: boolean; sub: boolean }[]>`SELECT va, sub FROM ferrari_sigla WHERE modello = ${v.modello} AND codice = ${v.codice}`;
+      if (locale && locale.va === v.va && locale.sub === sub) {
         await tx`DELETE FROM ferrari_sigla_proposta WHERE modello = ${v.modello} AND codice = ${v.codice}`;
         uguali++;
         continue;
       }
       await tx`
-        INSERT INTO ferrari_sigla_proposta (modello, codice, va, nome, conflitto, da) VALUES (${v.modello}, ${v.codice}, ${v.va}, ${v.nome}, ${!!locale}, ${da})
-        ON CONFLICT (modello, codice) DO UPDATE SET va = EXCLUDED.va, nome = EXCLUDED.nome, conflitto = EXCLUDED.conflitto, da = EXCLUDED.da, creata_at = now()`;
+        INSERT INTO ferrari_sigla_proposta (modello, codice, va, sub, nome, conflitto, da) VALUES (${v.modello}, ${v.codice}, ${v.va}, ${sub}, ${v.nome}, ${!!locale}, ${da})
+        ON CONFLICT (modello, codice) DO UPDATE SET va = EXCLUDED.va, sub = EXCLUDED.sub, nome = EXCLUDED.nome, conflitto = EXCLUDED.conflitto, da = EXCLUDED.da, creata_at = now()`;
       if (locale) conflitti++; else nuove++;
     }
     const comp = await importaComponenti(tx, componenti, da);
@@ -1000,8 +1002,8 @@ export async function importaSigle(user: Utente, filename: string, buf: Buffer) 
 }
 
 export async function proposteSigle() {
-  return db<{ modello: string; codice: string; va: boolean; nome: string | null; conflitto: boolean; da: string | null }[]>`
-    SELECT modello, codice, va, nome, conflitto, da FROM ferrari_sigla_proposta ORDER BY creata_at, modello, codice`;
+  return db<{ modello: string; codice: string; va: boolean; sub: boolean; nome: string | null; conflitto: boolean; da: string | null }[]>`
+    SELECT modello, codice, va, sub, nome, conflitto, da FROM ferrari_sigla_proposta ORDER BY creata_at, modello, codice`;
 }
 
 /** Accetta (diventa una decisione locale) o rifiuta una proposta; senza modello/codice tratta tutte. */
@@ -1010,14 +1012,14 @@ export async function risolviProposte(user: Utente, accetta: boolean, modello?: 
     const tx = raw as unknown as Tx;
     const m = modello?.trim().toUpperCase();
     const c = codice?.trim().toUpperCase();
-    const righe = await tx<{ modello: string; codice: string; va: boolean }[]>`
-      SELECT modello, codice, va FROM ferrari_sigla_proposta WHERE TRUE
+    const righe = await tx<{ modello: string; codice: string; va: boolean; sub: boolean }[]>`
+      SELECT modello, codice, va, sub FROM ferrari_sigla_proposta WHERE TRUE
         ${m && c ? tx`AND modello = ${m} AND codice = ${c}` : tx``} FOR UPDATE`;
     for (const r of righe) {
       if (accetta) {
         await tx`
-          INSERT INTO ferrari_sigla (modello, codice, va, creato_da) VALUES (${r.modello}, ${r.codice}, ${r.va}, ${user.username})
-          ON CONFLICT (modello, codice) DO UPDATE SET va = EXCLUDED.va`;
+          INSERT INTO ferrari_sigla (modello, codice, va, sub, creato_da) VALUES (${r.modello}, ${r.codice}, ${r.va}, ${r.sub}, ${user.username})
+          ON CONFLICT (modello, codice) DO UPDATE SET va = EXCLUDED.va, sub = EXCLUDED.sub`;
       }
       await tx`DELETE FROM ferrari_sigla_proposta WHERE modello = ${r.modello} AND codice = ${r.codice}`;
       await audit(tx, user, accetta ? 'sigle.proposta_accettata' : 'sigle.proposta_rifiutata', 'sigla', `${r.modello}/${r.codice}`, { va: r.va });

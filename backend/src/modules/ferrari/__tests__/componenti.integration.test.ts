@@ -114,4 +114,37 @@ describe.skipIf(!URL)('Componenti per modello — integrazione con database', ()
     expect((await comp.elencoComponenti('F999XX')).componenti[0]!.termini).toEqual(['SPOILER']);
     expect((await svc.verificaCatenaAudit()).ok).toBe(true);
   });
+
+  it('sotto-sigle: si chiede (come una sigla), si decide, e va dentro la cella; si sincronizza col flag', async () => {
+    const LIVR = 'LIVR: LIVREA TML5 CON PARTE PRINCIPALE IN BIANCO PROVA COD.VERN FYM.*0002 (VEDI IMMAGINI). LIVR: LIVREA TLM13 CON IL TRICOLORE (VEDI IMMAGINI)';
+    await svc.caricaScheda(op, 'l.xls', toXlsBuffer([...schedaPersonalizzata({ commessa: 100077 }), ['LIVR            ', 'LIVREA SPECIALE          ', 'SI                  '], [LIVR]]));
+    const nuove = (await svc.matrice('F999XX')).nuove.filter((n: { sub?: boolean }) => n.sub);
+    expect(nuove.map((n: { codice: string }) => n.codice)).toEqual(['TML5', 'TLM13']);
+    expect(nuove[0]).toMatchObject({ padre: 'LIVR' });
+
+    await svc.decidiSigla(op, 'F999XX', 'LIVR', true, false);
+    await svc.decidiSigla(op, 'F999XX', 'TML5', true, false, true);
+    await svc.decidiSigla(op, 'F999XX', 'TLM13', false, false, true);                 // «no»: non si chiede piu'
+    const m = await svc.matrice('F999XX');
+    expect(m.termini).toEqual(['LIVR']);                                              // TML5 non e' una colonna
+    expect(m.nuove.filter((n: { sub?: boolean }) => n.sub)).toEqual([]);
+    expect(m.sigle.filter((s: { sub: boolean }) => s.sub).map((s: { codice: string }) => s.codice)).toEqual(['TML5', 'TLM13']);
+    const riga = m.righe.find((r: { commessa: string }) => r.commessa === '100077')!;
+    expect(riga.sub['LIVR'].map((x: { codice: string }) => x.codice)).toEqual(['TML5']);
+
+    await comp.salvaComponente(op, 'F999XX', 'Livrea', ['LIVR']);
+    const voce = (await comp.cercaComponenti('F999XX', '100077', 'Livrea')).risultati[0]!.componenti[0]!.voci[0]!;
+    expect(voce.sub.map(x => x.codice)).toEqual(['TML5']);
+
+    // sincronizzazione: il flag sub viaggia; e' una proposta come le altre, e se differisce e' un conflitto
+    const { zip } = await svc.esportaSigle(op);
+    await db`TRUNCATE ferrari_sigla`;
+    expect((await svc.importaSigle(sup, 's.zip', zip)).nuove).toBe(3);
+    expect((await svc.proposteSigle()).filter((p: { sub: boolean }) => p.sub).map((p: { codice: string }) => p.codice).sort()).toEqual(['TLM13', 'TML5']);
+    expect(await svc.risolviProposte(sup, true)).toBe(3);
+    expect((await svc.matrice('F999XX')).righe.find((r: { commessa: string }) => r.commessa === '100077')!.sub['LIVR']).toHaveLength(1);
+    await svc.decidiSigla(op, 'F999XX', 'TML5', true, false, false);                  // adesso e' una colonna normale
+    expect((await svc.importaSigle(sup, 's2.zip', zip)).conflitti).toBe(1);
+    expect((await svc.verificaCatenaAudit()).ok).toBe(true);
+  });
 });
