@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseScheda } from '../parser.js';
 import {
   cellaOpzione, cellaTermine, chiaveTesto, classeValore, costruisciMatrice, entroUno, nuoveSigle, simileA, sottosigle, sottosigleAccettate,
-  type CtxSigle,
+  dividiSottoSigle, type CtxSigle,
 } from '../matrice.js';
 import type { Opzione } from '../types.js';
 import { schedaPersonalizzata, schedaSemplice, toXlsBuffer } from './fixtures.js';
@@ -179,5 +179,38 @@ describe('tolleranza agli errori di scrittura (stessa regola della PC IA)', () =
     const canonico = { ...parseScheda(toXlsBuffer(schedaSemplice()), 'a.xls'), opzioni: [livr] } as ReturnType<typeof parseScheda>;
     const n = nuoveSigle([{ canonico }], new Set(['TLM16']), ['TLM16']).find(x => x.codice === 'TLM15');
     expect(n).toMatchObject({ sub: true, simile_a: 'TLM16' });
+  });
+});
+
+
+describe('niente ripetizioni: ogni parte del testo sta in un posto solo (come sulla PC IA)', () => {
+  const DET = 'LIVR: LIVREA TML5: bianco prova cod. vern. FYM.*0002, strisce nero DS 1250 (vedi immagini) | LIVR: LIVREA TLM13: tricolore sugli specchietti (vedi immagini)';
+  const RAW = 'LIVR: LIVREA TML5 CON PARTE PRINCIPALE IN BIANCO PROVA (VEDI IMMAGINI). LIVR: LIVREA TLM13 CON IL TRICOLORE (VEDI IMMAGINI)';
+  const mk = (testi: string[]) => ({ ...o('SI', testi), codice: 'LIVR', descrizione: 'LIVREA SPECIALE' });
+  const scheda = (op: ReturnType<typeof mk>) => [{
+    id: 1, stato: 'IN_REVISIONE',
+    canonico: { ...parseScheda(toXlsBuffer(schedaSemplice()), 'a.xls'), opzioni: [op] } as ReturnType<typeof parseScheda>,
+  }];
+
+  it('con il riassunto della IA: ogni sotto-sigla ha il suo pezzo e nella cella resta solo «Sì»', () => {
+    const dettagli = new Map([[scheda(mk([RAW]))[0]!.canonico.header.commessa ?? '', new Map([[chiaveTesto(RAW), { dettaglio: DET, stato: 'ok' }]])]]);
+    const riga = costruisciMatrice(scheda(mk([RAW])), ['LIVR'], dettagli, new Set(['TML5', 'TLM13']))[0]!;
+    expect(riga.celle['LIVR']).toBe('Sì');
+    expect(riga.sub['LIVR']!.map(x => [x.codice, x.testo])).toEqual([['TML5', DET.split(' | ')[0]], ['TLM13', DET.split(' | ')[1]]]);
+  });
+
+  it('quello che non e\' di nessuna sigla resta fuori, una volta sola; con una sola accettata, l\'altra parte resta fuori', () => {
+    const { resto, sub } = dividiSottoSigle(mk([RAW]), new Set(['TML5']));
+    expect(resto.startsWith('LIVR: LIVREA TLM13 CON IL TRICOLORE')).toBe(true);
+    expect(sub.map(x => x.codice)).toEqual(['TML5']);
+    const riga = costruisciMatrice(scheda(mk([RAW])), ['LIVR'], undefined, new Set(['TML5']))[0]!;
+    expect(riga.celle['LIVR']!.startsWith('Sì — LIVR: LIVREA TLM13 CON IL TRICOLORE')).toBe(true);
+    expect(riga.celle['LIVR']).not.toContain('TML5');
+  });
+
+  it('due sotto-sigle nella stessa parte non la ripetono', () => {
+    const { resto, sub } = dividiSottoSigle(mk(['LIVREA TML5 E TLM13 INSIEME. ALTRA COSA SENZA CODICI']), new Set(['TML5', 'TLM13']));
+    expect(resto).toBe('ALTRA COSA SENZA CODICI');
+    expect(sub.map(x => [x.codice, x.testo !== ''])).toEqual([['TML5', true], ['TLM13', false]]);
   });
 });

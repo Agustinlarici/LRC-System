@@ -22,9 +22,10 @@ export function testoLibero(o: Opzione): string {
   return o.blocchi_testo.map(b => b.testo).join(' ');
 }
 
-export function cellaOpzione(o: Opzione, dettaglio?: string | null): string {
+/** `liberoForzato`: se dato (anche vuoto) sostituisce il testo libero mostrato (parti passate a una sotto-sigla). */
+export function cellaOpzione(o: Opzione, dettaglio?: string | null, liberoForzato?: string): string {
   const classe = classeValore(o.valore);
-  const libero = (dettaglio || testoLibero(o)).trim();
+  const libero = (liberoForzato ?? (dettaglio || testoLibero(o))).trim();
   const parti: string[] = [];
   if (classe === 'TESTO' || classe === 'NUMERO') parti.push(o.valore.trim());
   if (libero) parti.push(libero);
@@ -163,11 +164,15 @@ export function costruisciMatrice(
       const c = cellaTermine(t, s.canonico.opzioni, det.testi, ctx);
       if (det.rivedere[t]) rivedere[t] = true;
       if (c.avviso) avvisi[t] = c.avviso;
-      if (c.opzione && subOk.size > 0) {
-        const dentro = sottosigleAccettate(c.opzione, subOk, ctx, propri);
-        if (dentro.length > 0) sub[t] = dentro;
-      }
       celle[t] = c.testo;
+      if (c.opzione && subOk.size > 0) {
+        const { resto, sub: dentro } = dividiSottoSigle(c.opzione, subOk, ctx, propri, det.testi[c.opzione.codice]);
+        if (dentro.length > 0) {
+          sub[t] = dentro;
+          // cella dell'opzione: le parti passate alle sotto-sigle non si ripetono
+          if (c.testo === cellaOpzione(c.opzione, det.testi[c.opzione.codice])) celle[t] = cellaOpzione(c.opzione, undefined, resto);
+        }
+      }
       if (c.completo) testi[t] = c.completo;
     }
     return {
@@ -247,6 +252,34 @@ export function sottosigleAccettate(
     }
   }
   return out;
+}
+
+/**
+ * Divide il testo libero di un'opzione tra le sotto-sigle accettate e il resto: ogni parte sta in UN solo posto.
+ * Le parti sono i pezzi del riassunto della IA (separati da « | ») se c'e', altrimenti le frasi del testo. Una parte che contiene una
+ * sotto-sigla accettata (anche scritta male) va a quella; le altre restano fuori. Stessa regola della PC IA.
+ */
+export function dividiSottoSigle(
+  o: Opzione, accettate: ReadonlySet<string>, ctx?: CtxSigle, propri: ReadonlySet<string> = new Set(), det?: string,
+): { resto: string; sub: SottoSiglaTrovata[] } {
+  const parti = det?.trim()
+    ? det.split(' | ').map(p => p.trim()).filter(Boolean)
+    : o.blocchi_testo.flatMap(b => b.testo.split(FRASI)).map(p => p.trim()).filter(Boolean);
+  const resto: string[] = [];
+  const ordine: string[] = [];
+  const per = new Map<string, { testi: string[]; avviso: string | null; scritto: string | null }>();
+  for (const parte of parti) {
+    const trovate = sottosigleAccettate({ ...o, blocchi_testo: [{ n: 0, righe: [], testo: parte }] }, accettate, ctx, propri);
+    if (trovate.length === 0) { resto.push(parte); continue; }
+    trovate.forEach((x, i) => {
+      if (!per.has(x.codice)) { per.set(x.codice, { testi: [], avviso: x.avviso, scritto: x.scritto }); ordine.push(x.codice); }
+      if (i === 0) per.get(x.codice)!.testi.push(parte);       // la parte va alla prima sotto-sigla che contiene; le altre mostrano solo il codice
+    });
+  }
+  return {
+    resto: resto.join(' | '),
+    sub: ordine.map(c => ({ codice: c, testo: per.get(c)!.testi.join(' | '), avviso: per.get(c)!.avviso, scritto: per.get(c)!.scritto })),
+  };
 }
 
 export interface SiglaNuova { codice: string; nome: string; esempio: string; sub?: boolean; padre?: string; simile_a?: string }

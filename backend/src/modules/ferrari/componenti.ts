@@ -3,7 +3,7 @@
 import { HTTPException } from 'hono/http-exception';
 import { db } from '../../db/client.js';
 import { audit, caricaDettagli, type Utente } from './service.js';
-import { cellaTermine, dettagliValidi, sottosigleAccettate, type CtxSigle, type SottoSiglaTrovata } from './matrice.js';
+import { cellaOpzione, cellaTermine, dettagliValidi, dividiSottoSigle, type CtxSigle, type SottoSiglaTrovata } from './matrice.js';
 import { collapse, norm } from './text.js';
 import type { Canonico } from './types.js';
 import {
@@ -135,9 +135,15 @@ export async function cercaComponenti(modello?: string, q?: string, componente?:
           const r = cellaTermine(t, s.canonico.opzioni, det.testi, ctx);
           if (!r.testo || !r.opzione || viste.has(r.opzione)) continue;     // la stessa voce trovata da due termini si mostra una volta
           viste.add(r.opzione);
-          voci.push({ termine: t, codice: r.opzione.codice, voce: r.opzione.descrizione, testo: r.testo, completo: r.completo,
+          const { resto, sub: dentro } = subOk.size > 0
+            ? dividiSottoSigle(r.opzione, subOk, ctx, propri, det.testi[r.opzione.codice])
+            : { resto: '', sub: [] as SottoSiglaTrovata[] };
+          const testo = dentro.length > 0 && r.testo === cellaOpzione(r.opzione, det.testi[r.opzione.codice])
+            ? cellaOpzione(r.opzione, undefined, resto)               // le parti delle sotto-sigle non si ripetono
+            : r.testo;
+          voci.push({ termine: t, codice: r.opzione.codice, voce: r.opzione.descrizione, testo, completo: r.completo,
                       rivedere: det.rivedere[r.opzione.codice] === true,
-                      avviso: r.avviso, sub: sottosigleAccettate(r.opzione, subOk, ctx, propri) });
+                      avviso: r.avviso, sub: dentro });
         }
         return { nome: c.nome, vuoto: voci.length === 0, voci };
       }),
