@@ -27,7 +27,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
   const [funzioni, setFunzioni] = useState(initialFunzioni);
   const [form, setForm] = useState({
     matricola: '', nome: '', cognome: '', sesso: '', data_nascita: '', codice_fiscale: '', nazionalita: '',
-    email: '', telefono: '', indirizzo: '', citta: '', provincia: '', cap: '', gruppo_orario: '', mansione: '', livello: '', categoria: '', tipo_contratto: '', funzione_aziendale: '',
+    email: '', telefono: '', indirizzo: '', citta: '', provincia: '', cap: '', gruppo_orario: '', nome_osti: '', taglia_pantaloni: '', taglia_maglia: '', taglia_scarpe: '', mansione: '', livello: '', categoria: '', tipo_contratto: '', funzione_aziendale: '',
     reparto_id: '', contract_company_id: '', data_assunzione: '', tag_id: '',
   });
   const [plantIds, setPlantIds] = useState<number[]>([]);
@@ -86,6 +86,10 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
         provincia: form.provincia || null,
         cap: form.cap || null,
         gruppo_orario: form.gruppo_orario || null,
+        nome_osti: form.nome_osti || null,
+        taglia_pantaloni: form.taglia_pantaloni || null,
+        taglia_maglia: form.taglia_maglia || null,
+        taglia_scarpe: form.taglia_scarpe || null,
         mansione: form.mansione || null,
         livello: form.livello || null,
         categoria: form.categoria || null,
@@ -127,6 +131,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
             </div>
             <div><label className="label">Data di nascita</label><input type="date" className="input" value={form.data_nascita} onChange={e => set('data_nascita', e.target.value)} /></div>
             <div><label className="label">Codice fiscale</label><input className="input" value={form.codice_fiscale} onChange={e => set('codice_fiscale', e.target.value)} /></div>
+            <div><label className="label">Nome Osti</label><input className="input" maxLength={200} value={form.nome_osti} onChange={e => set('nome_osti', e.target.value)} placeholder="Come compare in Osti" /></div>
             <div><label className="label">Nazionalità</label><input className="input" value={form.nazionalita} onChange={e => set('nazionalita', e.target.value)} placeholder="es. UE, EXTRA UE, Italia…" /></div>
             <div><label className="label">Email</label><input type="email" className="input" value={form.email} onChange={e => set('email', e.target.value)} /></div>
             <div><label className="label">Telefono</label><input className="input" value={form.telefono} onChange={e => set('telefono', e.target.value)} /></div>
@@ -135,6 +140,10 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
             <div><label className="label">Provincia</label><input className="input" maxLength={50} value={form.provincia} onChange={e => set('provincia', e.target.value.toUpperCase())} placeholder="es. MO" /></div>
             <div><label className="label">CAP</label><input className="input" maxLength={10} value={form.cap} onChange={e => set('cap', e.target.value)} /></div>
             <div><label className="label">Gruppo orario</label><input className="input" value={form.gruppo_orario} onChange={e => set('gruppo_orario', e.target.value)} /></div>
+            <p className="col-span-full text-sm font-semibold text-gray-700 -mb-2">Vestiario</p>
+            <div><label className="label">Taglia pantaloni</label><input className="input" maxLength={20} value={form.taglia_pantaloni} onChange={e => set('taglia_pantaloni', e.target.value)} placeholder="es. 48" /></div>
+            <div><label className="label">Taglia maglia</label><input className="input" maxLength={20} value={form.taglia_maglia} onChange={e => set('taglia_maglia', e.target.value)} placeholder="es. L" /></div>
+            <div><label className="label">Taglia scarpe</label><input className="input" maxLength={20} value={form.taglia_scarpe} onChange={e => set('taglia_scarpe', e.target.value)} placeholder="es. 42" /></div>
 
             <div><label className="label">Funzione aziendale</label>
               <div className="flex gap-1.5">

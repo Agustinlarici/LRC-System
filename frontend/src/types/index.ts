@@ -738,6 +738,10 @@ export interface HrEmployee {
   provincia:                string | null;
   cap:                      string | null;
   gruppo_orario:            string | null;
+  nome_osti:                string | null;
+  taglia_pantaloni:         string | null;
+  taglia_maglia:            string | null;
+  taglia_scarpe:            string | null;
   mansione:                 string | null;
   livello:                  string | null;
   categoria:                string | null;

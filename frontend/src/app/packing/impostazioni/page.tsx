@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
-import { ImportExcelButton, type ImportResult } from '@/components/ui/ImportExcelButton';
+import { ImportExcelButton, type ImportResult, type ImportIssue } from '@/components/ui/ImportExcelButton';
 
 // Parses a number from a string handling both dot and comma as decimal separator
 function parseNum(v: string | undefined): number {
@@ -142,17 +142,19 @@ function ListaVoce({ titolo, voci, loading, errore, onAggiungi, onElimina, impor
 
   async function processImportRows(rows: Record<string, string>[]): Promise<ImportResult> {
     let inserted = 0, skipped = 0, errors = 0;
-    for (const row of rows) {
+    const issues: ImportIssue[] = [];
+    for (const [n, row] of rows.entries()) {
       const nome = row['nome']?.trim();
-      if (!nome) { skipped++; continue; }
+      if (!nome) { skipped++; issues.push({ type: 'Saltato', name: `Riga ${n + 2}`, note: 'nome mancante' }); continue; }
       try {
         await api.post(importEndpoint, { name: nome });
         inserted++;
       } catch {
         skipped++; // duplicate
+        issues.push({ type: 'Saltato', name: nome, note: 'esiste già o rifiutato' });
       }
     }
-    return { inserted, skipped, errors };
+    return { inserted, skipped, errors, issues };
   }
 
   return (
@@ -246,10 +248,11 @@ function ScatoleSection() {
   async function processImportRows(rows: Record<string, string>[]): Promise<ImportResult> {
     const existingNames = new Set(containers.map(c => c.name.toLowerCase()));
     let inserted = 0, skipped = 0, errors = 0;
-    for (const row of rows) {
+    const issues: ImportIssue[] = [];
+    for (const [n, row] of rows.entries()) {
       const nome = row['nome']?.trim();
-      if (!nome) { skipped++; continue; }
-      if (existingNames.has(nome.toLowerCase())) { skipped++; continue; }
+      if (!nome) { skipped++; issues.push({ type: 'Saltato', name: `Riga ${n + 2}`, note: 'nome mancante' }); continue; }
+      if (existingNames.has(nome.toLowerCase())) { skipped++; issues.push({ type: 'Saltato', name: nome, note: 'esiste già' }); continue; }
       const lmm  = row['lunghezza_mm'] ? Number(row['lunghezza_mm']) : null;
       const wmm  = row['larghezza_mm'] ? Number(row['larghezza_mm']) : null;
       const hmm  = row['altezza_mm']   ? Number(row['altezza_mm'])   : null;
@@ -258,9 +261,9 @@ function ScatoleSection() {
         await api.post('/api/pack/containers/upsert', { name: nome, length_mm: lmm, width_mm: wmm, height_mm: hmm, tare_kg: tare, active: true });
         existingNames.add(nome.toLowerCase());
         inserted++;
-      } catch { errors++; }
+      } catch { errors++; issues.push({ type: 'Errore', name: nome, note: 'dati rifiutati dal server' }); }
     }
-    return { inserted, skipped, errors };
+    return { inserted, skipped, errors, issues };
   }
 
   const inp = (field: keyof typeof form, placeholder: string, type = 'text') => (
@@ -390,19 +393,20 @@ function PesiSection() {
 
   async function processImportRows(rows: Record<string, string>[]): Promise<ImportResult> {
     let inserted = 0, skipped = 0, errors = 0;
-    for (const row of rows) {
+    const issues: ImportIssue[] = [];
+    for (const [n, row] of rows.entries()) {
       const code   = col(row, 'codice_articolo', 'codice')?.trim().toUpperCase();
       const weight = parseNum(col(row, 'peso_kg', 'peso'));
-      if (!code || isNaN(weight)) { skipped++; continue; }
+      if (!code || isNaN(weight)) { skipped++; issues.push({ type: 'Saltato', name: code || `Riga ${n + 2}`, note: !code ? 'codice articolo mancante' : 'peso mancante o non numerico' }); continue; }
       try {
         await api.post('/api/pack/article-weight/upsert', { article_code: code, unit_weight_kg: weight });
         inserted++;
-      } catch { errors++; }
+      } catch { errors++; issues.push({ type: 'Errore', name: code, note: 'dati rifiutati dal server' }); }
     }
     const detail = inserted === 0 && skipped > 0
       ? `Colonne lette: ${Object.keys(rows[0] ?? {}).join(', ')}. Attese: codice_articolo, peso_kg`
       : undefined;
-    return { inserted, skipped, errors, detail };
+    return { inserted, skipped, errors, detail, issues };
   }
 
   return (
@@ -474,21 +478,22 @@ function PrezziSection() {
 
   async function processImportRows(rows: Record<string, string>[]): Promise<ImportResult> {
     let inserted = 0, skipped = 0, errors = 0;
-    for (const row of rows) {
+    const issues: ImportIssue[] = [];
+    for (const [n, row] of rows.entries()) {
       const code    = col(row, 'codice_articolo', 'codice')?.trim().toUpperCase();
       const costStr = col(row, 'prezzo_eur', 'prezzo_eu', 'prezzo', 'unit_cost');
       const cost    = parseNum(costStr);
-      if (!code) { skipped++; continue; }
-      if (isNaN(cost)) { skipped++; continue; }
+      if (!code) { skipped++; issues.push({ type: 'Saltato', name: `Riga ${n + 2}`, note: 'codice articolo mancante' }); continue; }
+      if (isNaN(cost)) { skipped++; issues.push({ type: 'Saltato', name: code, note: 'prezzo mancante o non numerico' }); continue; }
       try {
         await api.post('/api/pack/article-prices/upsert', { article_code: code, currency: 'EUR', unit_cost: cost });
         inserted++;
-      } catch { errors++; }
+      } catch { errors++; issues.push({ type: 'Errore', name: code, note: 'dati rifiutati dal server' }); }
     }
     const detail = inserted === 0 && skipped > 0
       ? `Colonne lette: ${Object.keys(rows[0] ?? {}).join(', ')}. Attese: codice_articolo, prezzo_eur`
       : undefined;
-    return { inserted, skipped, errors, detail };
+    return { inserted, skipped, errors, detail, issues };
   }
 
   return (
@@ -573,18 +578,19 @@ function AssociazioniSection() {
   async function processImportRows(rows: Record<string, string>[]): Promise<ImportResult> {
     const contMap = new Map(containers.map(c => [c.name.toLowerCase(), c.id]));
     let inserted = 0, skipped = 0, errors = 0;
-    for (const row of rows) {
+    const issues: ImportIssue[] = [];
+    for (const [n, row] of rows.entries()) {
       const code     = row['codice_articolo']?.trim().toUpperCase();
       const contName = row['nome_scatola']?.trim();
-      if (!code || !contName) { skipped++; continue; }
+      if (!code || !contName) { skipped++; issues.push({ type: 'Saltato', name: code || `Riga ${n + 2}`, note: 'codice articolo o nome scatola mancante' }); continue; }
       const contId = contMap.get(contName.toLowerCase());
-      if (!contId) { errors++; continue; }
+      if (!contId) { errors++; issues.push({ type: 'Scatola non trovata', name: code, note: contName }); continue; }
       try {
         await api.post('/api/pack/article-container/map', { article_code: code, container_id: contId });
         inserted++;
-      } catch { errors++; }
+      } catch { errors++; issues.push({ type: 'Errore', name: code, note: 'dati rifiutati dal server' }); }
     }
-    return { inserted, skipped, errors };
+    return { inserted, skipped, errors, issues };
   }
 
   return (
@@ -685,18 +691,19 @@ function ArticoloDestinazioniSection() {
   async function processImportRows(rows: Record<string, string>[]): Promise<ImportResult> {
     const destMap = new Map(dests.map(d => [d.name.toLowerCase(), d.id]));
     let inserted = 0, skipped = 0, errors = 0;
-    for (const row of rows) {
+    const issues: ImportIssue[] = [];
+    for (const [n, row] of rows.entries()) {
       const code     = row['codice_articolo']?.trim().toUpperCase();
       const destName = row['nome_destinazione']?.trim();
-      if (!code || !destName) { skipped++; continue; }
+      if (!code || !destName) { skipped++; issues.push({ type: 'Saltato', name: code || `Riga ${n + 2}`, note: 'codice articolo o destinazione mancante' }); continue; }
       const destId = destMap.get(destName.toLowerCase());
-      if (!destId) { errors++; continue; }
+      if (!destId) { errors++; issues.push({ type: 'Destinazione non trovata', name: code, note: destName }); continue; }
       try {
         await api.post('/api/pack/article-dispatch-rules', { article_code: code, destination_id: destId });
         inserted++;
-      } catch { errors++; }
+      } catch { errors++; issues.push({ type: 'Errore', name: code, note: 'dati rifiutati dal server' }); }
     }
-    return { inserted, skipped, errors };
+    return { inserted, skipped, errors, issues };
   }
 
   const grouped = rules.reduce<Record<string, DispatchRule[]>>((acc, r) => {
@@ -825,11 +832,12 @@ function GruppiSection() {
     const freshGruppi = await api.get<CommessaGroup[]>('/api/pack/commessa-groups').catch(() => gruppi);
     const gruppoMap   = new Map(freshGruppi.map(g => [g.name.toLowerCase(), g.id]));
     let inserted = 0, skipped = 0, errors = 0;
+    const issues: ImportIssue[] = [];
 
-    for (const row of rows) {
+    for (const [n, row] of rows.entries()) {
       const nomeGruppo = row['nome_gruppo']?.trim();
       const codiceArt  = row['codice_articolo']?.trim().toUpperCase() || null;
-      if (!nomeGruppo) { skipped++; continue; }
+      if (!nomeGruppo) { skipped++; issues.push({ type: 'Saltato', name: `Riga ${n + 2}`, note: 'nome gruppo mancante' }); continue; }
 
       let gId = gruppoMap.get(nomeGruppo.toLowerCase());
       if (!gId) {
@@ -837,17 +845,17 @@ function GruppiSection() {
           const g = await api.post<{ id: number; name: string }>('/api/pack/commessa-groups', { name: nomeGruppo });
           gId = g.id;
           gruppoMap.set(nomeGruppo.toLowerCase(), gId);
-        } catch { errors++; continue; }
+        } catch { errors++; issues.push({ type: 'Errore', name: nomeGruppo, note: 'gruppo non creato' }); continue; }
       }
 
       if (codiceArt) {
         try {
           await api.post('/api/pack/article-group/map', { article_code: codiceArt, group_id: gId });
-        } catch { errors++; continue; }
+        } catch { errors++; issues.push({ type: 'Errore', name: codiceArt, note: `non collegato al gruppo ${nomeGruppo}` }); continue; }
       }
       inserted++;
     }
-    return { inserted, skipped, errors };
+    return { inserted, skipped, errors, issues };
   }
 
   return (

@@ -47,6 +47,10 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
     sesso: employee.sesso ?? '',
     data_nascita: employee.data_nascita?.slice(0, 10) ?? '',
     gruppo_orario: employee.gruppo_orario ?? '',
+    nome_osti: employee.nome_osti ?? '',
+    taglia_pantaloni: employee.taglia_pantaloni ?? '',
+    taglia_maglia: employee.taglia_maglia ?? '',
+    taglia_scarpe: employee.taglia_scarpe ?? '',
     nazionalita: employee.nazionalita ?? '',
     mansione: employee.mansione ?? '',
     livello: employee.livello ?? '',
@@ -230,6 +234,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
                 </div>
                 <div><label className="label">Data di nascita</label><input type="date" className="input" value={form.data_nascita} onChange={e => set('data_nascita', e.target.value)} /></div>
                 <div><label className="label">Nazionalità</label><input className="input" value={form.nazionalita} onChange={e => set('nazionalita', e.target.value)} /></div>
+                <div><label className="label">Nome Osti</label><input className="input" maxLength={200} value={form.nome_osti} onChange={e => set('nome_osti', e.target.value)} placeholder="Come compare in Osti" /></div>
               </div>
             </div>
           )}
@@ -296,6 +301,17 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
                     {allEmployees.map(e => <option key={e.id} value={e.id}>{e.cognome} {e.nome}</option>)}
                   </select>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {fullManage && (
+            <div>
+              <p className="text-sm font-semibold text-gray-700 mb-2">Vestiario</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div><label className="label">Taglia pantaloni</label><input className="input" maxLength={20} value={form.taglia_pantaloni} onChange={e => set('taglia_pantaloni', e.target.value)} placeholder="es. 48" /></div>
+                <div><label className="label">Taglia maglia</label><input className="input" maxLength={20} value={form.taglia_maglia} onChange={e => set('taglia_maglia', e.target.value)} placeholder="es. L" /></div>
+                <div><label className="label">Taglia scarpe</label><input className="input" maxLength={20} value={form.taglia_scarpe} onChange={e => set('taglia_scarpe', e.target.value)} placeholder="es. 42" /></div>
               </div>
             </div>
           )}
