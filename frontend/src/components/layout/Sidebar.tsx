@@ -170,8 +170,10 @@ export function Sidebar() {
 
   // Impostazioni: stessa posizione in ogni pagina; punta a quelle del modulo corrente
   // oppure, fuori dai moduli, a quelle di sistema (solo per chi può gestirle).
+  // Solo per IT (e admin): gli altri utenti non vedono la voce.
+  const isIt           = user?.role === 'it' || user?.role === 'admin';
   const moduleSettings = settingsHrefFor(pathname);
-  const settingsHref   = moduleSettings ?? (canManage('impostazioni') ? '/admin/system' : null);
+  const settingsHref   = !isIt ? null : (moduleSettings ?? (canManage('impostazioni') ? '/admin/system' : null));
   const settingsActive = !!settingsHref && (pathname === settingsHref || pathname.startsWith(settingsHref + '/'));
 
   return (
@@ -287,6 +289,18 @@ export function Sidebar() {
             {expanded && <span className="truncate font-medium">Impostazioni</span>}
           </Link>
         )}
+        {/* Utente corrente: un solo posto, in fondo al menu */}
+        <div className={`flex items-center gap-3 px-2.5 py-2 ${expanded ? '' : 'justify-center'}`} title={user?.display_name}>
+          <span className="flex items-center justify-center w-8 h-8 rounded-full bg-white/10 text-white text-xs font-semibold shrink-0">
+            {(user?.display_name ?? '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('')}
+          </span>
+          {expanded && (
+            <span className="min-w-0 leading-tight">
+              <span className="block text-sm font-medium text-white truncate">{user?.display_name ?? 'STR System'}</span>
+              {user?.department_name && <span className="block text-xs text-zinc-500 truncate">{user.department_name}</span>}
+            </span>
+          )}
+        </div>
         <button onClick={logout} title="Esci" aria-label="Esci"
           className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-sm text-zinc-500 hover:bg-white/5 hover:text-white transition-colors
             ${expanded ? '' : 'justify-center'}`}>

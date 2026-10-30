@@ -7,10 +7,10 @@ import { visibleModules } from '@/lib/modules';
 import { ICON_MAP, IconSearch, IconSettings } from '@/components/icons/ModuleIcons';
 
 // Barra superiore uguale in tutte le pagine: ricerca rapida dei moduli a cui
-// l'utente ha accesso + utente corrente.
+// l'utente ha accesso. Nome utente e Esci stanno in fondo al sidebar.
 export function TopBar() {
   const router = useRouter();
-  const { user, canView } = useAuth();
+  const { canView } = useAuth();
   const [q, setQ]       = useState('');
   const [open, setOpen] = useState(false);
   const [sel, setSel]   = useState(0);
@@ -46,9 +46,6 @@ export function TopBar() {
     else if (e.key === 'Enter' && results[sel]) go(results[sel].href);
     else if (e.key === 'Escape') { setOpen(false); (e.target as HTMLElement).blur(); }
   }
-
-  const initials = (user?.display_name ?? '?')
-    .split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('');
 
   return (
     <div className="d-print-none shrink-0 flex items-center justify-between gap-4 px-6 h-16">
@@ -89,15 +86,6 @@ export function TopBar() {
         )}
       </div>
 
-      <div className="flex items-center gap-3 shrink-0">
-        <div className="hidden sm:block text-right leading-tight">
-          <p className="text-sm font-medium text-ink-900">{user?.display_name}</p>
-          {user?.department_name && <p className="text-xs text-muted">{user.department_name}</p>}
-        </div>
-        <span className="flex items-center justify-center w-10 h-10 rounded-full bg-ink-800 text-white text-sm font-semibold">
-          {initials}
-        </span>
-      </div>
     </div>
   );
 }
