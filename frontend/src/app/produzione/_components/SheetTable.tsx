@@ -123,7 +123,7 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
 
   if (rows.length === 0) {
     return (
-      <div className="bg-white rounded-card border border-line shadow-card p-12 text-center text-muted">
+      <div className="p-12 text-center text-muted">
         Nessun ordine con data di ingresso in linea trovato.
       </div>
     );
@@ -131,14 +131,14 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
 
   return (
     <div>
-      <div className="d-print-none mb-3 flex justify-end gap-2">
+      <div className="d-print-none px-5 py-3 flex justify-end gap-2 border-b border-line">
         <Button onClick={esportaExcel}>Scarica Excel</Button>
         <Button variant={raggruppa ? 'primary' : 'secondary'} onClick={() => setRaggruppa(g => !g)}>
           {raggruppa ? '✓ Raggruppato per commessa' : 'Raggruppa per commessa'}
         </Button>
       </div>
 
-      <div className="overflow-auto max-h-[70vh] bg-white rounded-card border border-line shadow-card print:max-h-none print:overflow-visible print:border-0 print:shadow-none print:rounded-none">
+      <div className="overflow-auto max-h-[68vh] print:max-h-none print:overflow-visible">
         <table className="w-full text-sm border-separate border-spacing-0 operator-sheet">
         <thead>
           <tr>

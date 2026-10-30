@@ -140,19 +140,17 @@ export default function ProduzioneAreaSheetPage() {
         }
       />
 
-      <div className="d-print-none bg-white rounded-card border border-line shadow-card p-5 mb-6 space-y-4">
+      <div className="bg-white rounded-card shadow-card overflow-hidden print:shadow-none print:rounded-none print:overflow-visible">
+      <div className="d-print-none p-5 border-b border-line">
         {/* Filtri */}
         <div>
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <h2 className="text-sm font-semibold text-ink-900">Filtri</h2>
-            <div className="flex items-center gap-3">
-              <p className="text-xs text-muted">
-                Mostrando <span className="font-medium text-ink-900">{filteredRows.length}</span> di {rows.length} righe
-              </p>
-              {hasActiveFilters && (
-                <Button variant="ghost" onClick={resetFiltri}>Cancella filtri</Button>
-              )}
-            </div>
+            <p className="text-sm text-muted">
+              <span className="font-semibold text-ink-900">{filteredRows.length}</span> di {rows.length} righe
+            </p>
+            {hasActiveFilters && (
+              <Button variant="ghost" onClick={resetFiltri}>Cancella filtri</Button>
+            )}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
             <FilterField label="Commessa">
@@ -190,7 +188,7 @@ export default function ProduzioneAreaSheetPage() {
             <FilterField label="Righe da mostrare" highlight>
               <input id="fMax" value={fMax} onChange={e => setFMax(e.target.value)} type="number" min={1} placeholder="Tutte"
                 title="Numero massimo di righe da mostrare/stampare — vuoto = tutte"
-                className="input text-center font-semibold bg-stone-50" />
+                className="input text-center font-semibold" />
             </FilterField>
           </div>
         </div>
@@ -210,6 +208,7 @@ export default function ProduzioneAreaSheetPage() {
 
         <SheetTable rows={filteredRows} />
 
+      </div>
       </div>
     </div>
   );

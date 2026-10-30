@@ -61,11 +61,11 @@ export function TopBar() {
           onKeyDown={onKeyDown}
           placeholder="Cerca un modulo…"
           aria-label="Cerca un modulo"
-          className="w-full h-10 rounded-full bg-white border border-line pl-10 pr-4 text-sm placeholder:text-stone-400
-                     focus:outline-none focus:ring-2 focus:ring-ink-800/15 focus:border-ink-700"
+          className="w-full h-11 rounded-full bg-white shadow-card border border-transparent pl-11 pr-4 text-sm placeholder:text-stone-400
+                     focus:outline-none focus:ring-4 focus:ring-ink-800/10"
         />
         {open && q.trim() && (
-          <div className="absolute z-30 mt-2 w-full rounded-2xl bg-white border border-line shadow-float p-1.5">
+          <div className="absolute z-30 mt-2 w-full rounded-2xl bg-white shadow-float p-1.5">
             {results.length === 0 ? (
               <p className="px-3 py-2.5 text-sm text-muted">Nessun modulo trovato</p>
             ) : results.map((m, i) => {
@@ -75,7 +75,7 @@ export function TopBar() {
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-sm transition-colors ${
                     i === sel ? 'bg-stone-100' : ''
                   }`}>
-                  <span className="flex items-center justify-center w-8 h-8 rounded-full bg-ink-800 text-white shrink-0">
+                  <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-stone-100 text-ink-800 shrink-0">
                     <Icon className="w-4 h-4" />
                   </span>
                   <span className="min-w-0">

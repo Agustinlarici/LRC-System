@@ -225,8 +225,8 @@ export function Sidebar() {
                 // ── Expanded: collapsible group header ──────────────────────
                 <>
                   <button onClick={() => toggleGroup(group)}
-                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold
-                      uppercase tracking-widest transition-colors select-none
+                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium
+                      transition-colors select-none
                       ${groupActive && !groupOpen
                         ? 'text-white hover:bg-white/5'
                         : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'}`}
@@ -287,14 +287,14 @@ export function Sidebar() {
             {expanded && <span className="truncate font-medium">Impostazioni</span>}
           </Link>
         )}
-        <div className={`flex items-center gap-2 px-2.5 py-2 text-xs text-zinc-500 ${expanded ? 'justify-between' : 'justify-center'}`}>
-          {expanded && <span className="truncate">{user?.display_name ?? 'STR System'}</span>}
-          <button onClick={logout} title="Esci" aria-label="Esci" className="text-zinc-500 hover:text-white transition-colors shrink-0">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-          </button>
-        </div>
+        <button onClick={logout} title="Esci" aria-label="Esci"
+          className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-sm text-zinc-500 hover:bg-white/5 hover:text-white transition-colors
+            ${expanded ? '' : 'justify-center'}`}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-5 h-5 shrink-0">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+          {expanded && <span className="truncate font-medium">Esci</span>}
+        </button>
       </div>
     </aside>
   );

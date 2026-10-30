@@ -69,7 +69,7 @@ export default function ProduzionePage() {
             <Link
               key={area.id}
               href={`/produzione/${area.id}`}
-              className="group flex items-center justify-between gap-3 bg-white rounded-card border border-line shadow-card p-5 transition-all hover:shadow-float hover:-translate-y-0.5"
+              className="group flex items-center justify-between gap-3 bg-white rounded-card shadow-card p-5 transition-all hover:shadow-float hover:-translate-y-0.5"
             >
               <span className="font-semibold text-ink-900">{area.description}</span>
               <span aria-hidden className="flex items-center justify-center w-9 h-9 rounded-full bg-stone-100 text-ink-800 shrink-0 transition-colors group-hover:bg-ink-800 group-hover:text-white">→</span>
