@@ -747,7 +747,7 @@ export default function DipendentiPage() {
         </div>
         {showFilters && (
         <>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2 px-4 py-3 [&_.input]:py-1 [&_.input]:text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 px-4 py-3">
           <input value={fNominativo} onChange={e => setFNominativo(e.target.value)} placeholder="Nome e cognome" className="input text-sm min-w-0" />
           <input value={fMatricola} onChange={e => setFMatricola(e.target.value)} placeholder="Matricola" className="input text-sm min-w-0" />
           <select value={fSesso} onChange={e => setFSesso(e.target.value)} className={`input text-sm min-w-0 ${fSesso ? '' : 'text-gray-400'}`}>
