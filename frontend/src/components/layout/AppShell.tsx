@@ -3,7 +3,6 @@
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Sidebar } from './Sidebar';
-import { TopBar } from './TopBar';
 import { ToastProvider } from '@/components/ui/Toast';
 import { useAuth } from '@/lib/auth';
 import type { ModuleKey } from '@/types';
@@ -137,10 +136,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div className="flex-1 min-w-0 h-full bg-ink-900 p-2 print:p-0 print:bg-white print:h-auto">
         <div className="h-full flex flex-col bg-canvas rounded-3xl overflow-hidden print:overflow-visible print:w-full print:rounded-none print:h-auto print:bg-white">
-          <TopBar />
           <main className="flex-1 min-h-0 overflow-auto print:overflow-visible">
             {hasAccess
-              ? <div className="px-6 pb-8 pt-2 print:p-6">{children}</div>
+              ? <div className="p-6 pb-8 print:p-6">{children}</div>
               : <AccessDenied />
             }
           </main>
