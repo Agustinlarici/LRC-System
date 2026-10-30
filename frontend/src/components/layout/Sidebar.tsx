@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { MODULE_GROUPS, modulesByGroup } from '@/lib/modules';
@@ -95,6 +95,19 @@ export function Sidebar() {
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const { user, canView, canManage, logout } = useAuth();
   const [deadlineCount, setDeadlineCount] = useState(0);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Chiude il menu utente cliccando fuori o cambiando pagina
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setUserMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [userMenuOpen]);
+  useEffect(() => { setUserMenuOpen(false); }, [pathname]);
   const canSeeHr = canView('hr');
 
   // Scadenze HR da vedere: si aggiorna a ogni cambio pagina e quando la pagina
@@ -268,27 +281,35 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Footer — utente + esci */}
-      <div className="border-t border-white/10 px-2 py-3 space-y-0.5">
-        {/* Utente corrente: un solo posto, in fondo al menu */}
-        <div className={`flex items-center gap-3 px-2.5 py-2 ${expanded ? '' : 'justify-center'}`} title={user?.display_name}>
+      {/* Footer — utente: toccandolo si apre il menu con "Esci" */}
+      <div ref={userMenuRef} className="relative border-t border-white/10 px-2 py-3">
+        {userMenuOpen && (
+          <div className="absolute bottom-full left-2 mb-1 min-w-[10rem] rounded-xl bg-ink-800 border border-white/10 shadow-float p-1 z-50">
+            <button onClick={logout}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-zinc-300 hover:bg-white/10 hover:text-white transition-colors">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4 shrink-0">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Esci
+            </button>
+          </div>
+        )}
+        <button onClick={() => setUserMenuOpen(o => !o)} aria-haspopup="menu" aria-expanded={userMenuOpen}
+          title={user?.display_name}
+          className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-white/5 transition-colors text-left
+            ${expanded ? '' : 'justify-center'}`}>
           <span className="flex items-center justify-center w-8 h-8 rounded-full bg-white/10 text-white text-xs font-semibold shrink-0">
             {(user?.display_name ?? '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('')}
           </span>
           {expanded && (
-            <span className="min-w-0 leading-tight">
-              <span className="block text-sm font-medium text-white truncate">{user?.display_name ?? 'STR System'}</span>
-              {user?.department_name && <span className="block text-xs text-zinc-500 truncate">{user.department_name}</span>}
-            </span>
+            <>
+              <span className="min-w-0 flex-1 leading-tight">
+                <span className="block text-sm font-medium text-white truncate">{user?.display_name ?? 'STR System'}</span>
+                {user?.department_name && <span className="block text-xs text-zinc-500 truncate">{user.department_name}</span>}
+              </span>
+              <IconChevron open={!userMenuOpen} />
+            </>
           )}
-        </div>
-        <button onClick={logout} title="Esci" aria-label="Esci"
-          className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-sm text-zinc-500 hover:bg-white/5 hover:text-white transition-colors
-            ${expanded ? '' : 'justify-center'}`}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-5 h-5 shrink-0">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
-          {expanded && <span className="truncate font-medium">Esci</span>}
         </button>
       </div>
     </aside>
