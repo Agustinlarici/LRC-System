@@ -69,21 +69,21 @@ export default function ImpostazioniPage() {
     }
   }
 
-  const badge = (n: number) => n > 0 && <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 text-[11px] font-bold text-white">{n}</span>;
+  const badge = (n: number) => n > 0 && <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 text-[11px] font-bold leading-4 text-white">{n}</span>;
 
   return (
     <div>
       <FerrariNav />
-      <div className="mb-4">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Programma Produzione</p>
-        <h1 className="text-2xl font-bold text-gray-900">Impostazioni — schede</h1>
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-gray-900">Impostazioni schede</h1>
+        <p className="mt-1 text-gray-500">Cartella degli Excel, sigle, modelli e componenti.</p>
       </div>
       <Errore messaggio={errore} />
 
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-6 flex gap-1 overflow-x-auto border-b border-gray-200">
         {SCHEDE.map(s => (
           <button key={s.id} onClick={() => apri(s.id)}
-            className={`px-4 py-1.5 text-sm rounded-lg border ${tab === s.id ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>
+            className={`whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition-colors ${tab === s.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
             {s.label}
             {s.id === 'sigle' && badge(daDecidere + (cont?.descrizioni_da_confermare ?? 0))}
             {s.id === 'modelli' && badge(modelliNuovi)}
@@ -93,13 +93,13 @@ export default function ImpostazioniPage() {
       </div>
 
       {!puoGestire ? (
-        <p className="rounded-lg border border-gray-200 bg-white px-4 py-6 text-sm text-gray-500">Non hai il permesso di modificare le impostazioni delle schede.</p>
+        <p className="rounded-xl border border-gray-200 bg-white px-4 py-6 text-sm text-gray-500">Non hai il permesso di modificare le impostazioni delle schede.</p>
       ) : (
         <>
           {tab === 'sigle' && <ImpostazioniSigle onCambia={(c: ConfigSigle) => setCont(c as unknown as Contatori)} />}
-          {tab === 'modelli' && <ImpostazioniModelli onCambia={contatori} />}
-          {tab === 'componenti' && <ComponentiGestione />}
-          {tab === 'cartella' && <ImpostazioniCartella />}
+          {tab === 'modelli' && <div className="max-w-3xl"><ImpostazioniModelli onCambia={contatori} /></div>}
+          {tab === 'componenti' && <div className="max-w-3xl"><ComponentiGestione /></div>}
+          {tab === 'cartella' && <div className="max-w-3xl"><ImpostazioniCartella /></div>}
           {tab === 'avanzate' && (
             <div className="space-y-4">
               <div className="rounded-xl border border-gray-200 bg-white p-5">

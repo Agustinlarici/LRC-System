@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { Esito, StatoFile } from '@/lib/ferrari';
 import { STATI } from '@/lib/ferrari';
+import { IconaIndietro } from './Icone';
 
 export function Cella({ testo, intero }: { testo?: string; intero?: string }) {
   if (!testo) return <span className="text-gray-300">—</span>;
@@ -25,38 +26,23 @@ export function Cella({ testo, intero }: { testo?: string; intero?: string }) {
   );
 }
 
-/** Si parte sempre da «Vedere»: le Impostazioni (cartella, sigle, modelli, componenti) stanno dietro l'ingranaggio in alto a destra. */
-export function FerrariNav({ badge = 0 }: { badge?: number }) {
+/** Pagine delle Impostazioni (e le altre avanzate): un semplice «indietro», come le altre impostazioni della VM. */
+export function FerrariNav() {
   const pathname = usePathname();
-  const inImpostazioni = pathname.startsWith('/ferrari/impostazioni') || pathname.startsWith('/ferrari/schede') || pathname.startsWith('/ferrari/scambio')
-    || pathname.startsWith('/ferrari/conoscenza') || pathname.startsWith('/ferrari/consulta') || /^\/ferrari\/\d+/.test(pathname);
+  if (pathname === '/ferrari' || pathname.startsWith('/ferrari/componenti')) return null;
   return (
-    <nav className="d-print-none flex items-center justify-between mb-4">
-      {inImpostazioni
-        ? <Link href="/ferrari" className="text-sm font-medium text-blue-700 hover:underline">← Vedere</Link>
-        : <span />}
-      {pathname.startsWith('/ferrari/impostazioni')
-        ? <span />
-        : (
-          <Link href="/ferrari/impostazioni" title="Impostazioni" aria-label="Impostazioni"
-            className="relative rounded-full border border-gray-200 bg-white p-2 text-gray-600 hover:bg-gray-50 hover:text-gray-900">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-            {badge > 0 && <span className="absolute -right-1 -top-1 rounded-full bg-amber-500 px-1.5 text-[11px] font-bold leading-4 text-white">{badge}</span>}
-          </Link>
-        )}
-    </nav>
+    <div className="d-print-none mb-2">
+      <Link href="/ferrari" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><IconaIndietro /> Programma produzione (schede)</Link>
+    </div>
   );
 }
 
-/** Come si guarda la tabella: per sigle (colonne) o per componente (paraurti, spoiler...). */
+/** Come si guarda la tabella: per sigle (colonne) o per componente (paraurti, spoiler...). Pestanas come nelle altre pagine. */
 export function VistaToggle() {
   const pathname = usePathname();
-  const cls = (on: boolean) => `px-3 py-1.5 text-sm rounded-lg border ${on ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`;
+  const cls = (on: boolean) => `px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${on ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`;
   return (
-    <div className="d-print-none flex gap-2">
+    <div className="d-print-none mb-4 flex gap-1 border-b border-gray-200">
       <Link href="/ferrari" className={cls(pathname === '/ferrari')}>Per sigle</Link>
       <Link href="/ferrari/componenti" className={cls(pathname.startsWith('/ferrari/componenti'))}>Per componente</Link>
     </div>

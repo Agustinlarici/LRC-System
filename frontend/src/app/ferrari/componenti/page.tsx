@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import Link from 'next/link';
-import { Cella, Errore, FerrariNav, SottoSigla, VistaToggle } from '@/components/ferrari/Comuni';
+import { Cella, Errore, SottoSigla, VistaToggle } from '@/components/ferrari/Comuni';
+import { IconaAvviso } from '@/components/ferrari/Icone';
 
 interface Componente { nome: string; termini: string[] }
 interface Elenco {
@@ -61,45 +62,32 @@ export default function PerComponentePage() {
 
   return (
     <div>
-      <FerrariNav />
+      <div className="mb-6 flex items-start justify-between flex-wrap gap-3 d-print-none">
+        <h1 className="text-3xl font-bold text-gray-900">Programma produzione (schede)</h1>
+        <div className="flex gap-2 flex-wrap">
+          <button className="flex items-center gap-1.5 text-sm border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors" onClick={() => window.print()}>Stampa</button>
+          {puoModificare && <Link href="/ferrari/impostazioni#componenti" className="flex items-center gap-1.5 text-sm border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">Impostazioni</Link>}
+        </div>
+      </div>
       <Errore messaggio={errore} />
 
-      <div className="d-print-none bg-white rounded-xl border border-gray-200 p-5 mb-6 space-y-4">
-        <div className="flex items-start justify-between flex-wrap gap-3 pb-4 border-b border-gray-100">
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Programma Produzione</p>
-            <h1 className="text-2xl font-bold text-gray-900 mt-1">Programma produzione (schede) — per componente</h1>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <VistaToggle />
-            <button className="inline-flex items-center gap-1 text-sm font-medium px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700" onClick={() => window.print()}>🖨️ Stampa</button>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-gray-400">Modello</label>
-            <select className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm bg-white" value={modello} onChange={e => { setComp(''); caricaElenco(e.target.value); }}>
-              {el?.modelli.map(x => <option key={x.modello} value={x.modello}>{x.modello} ({x.schede})</option>)}
-            </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-gray-400">Commessa</label>
-            <input className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" placeholder="Es. 100001" value={q} onChange={e => setQ(e.target.value)} autoFocus />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-gray-400">Componente</label>
-            <select className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm bg-white" value={comp} onChange={e => setComp(e.target.value)}>
-              <option value="">Tutti i componenti</option>
-              {el?.componenti.map(c => <option key={c.nome} value={c.nome}>{c.nome}</option>)}
-            </select>
-          </div>
-        </div>
+      <VistaToggle />
+
+      <div className="d-print-none mb-4 flex flex-wrap items-center gap-2">
+        <select className="input !w-auto" value={modello} onChange={e => { setComp(''); caricaElenco(e.target.value); }}>
+          {el?.modelli.map(x => <option key={x.modello} value={x.modello}>{x.modello} ({x.schede})</option>)}
+        </select>
+        <input className="input !w-48" placeholder="Commessa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+        <select className="input !w-auto" value={comp} onChange={e => setComp(e.target.value)}>
+          <option value="">Tutti i componenti</option>
+          {el?.componenti.map(c => <option key={c.nome} value={c.nome}>{c.nome}</option>)}
+        </select>
       </div>
 
       {!el || !ris ? null : el.modelli.length === 0 ? (
         <p className="text-center text-gray-400 py-10 text-sm">Carica un Excel per iniziare</p>
       ) : el.componenti.length === 0 ? (
-        <p className="text-center text-gray-400 py-10 text-sm">Nessun componente per {modello}.{puoModificare && <> Definiscili in <Link href="/ferrari/impostazioni#componenti" className="text-blue-700 hover:underline">Impostazioni → Componenti</Link>.</>}</p>
+        <p className="text-center text-gray-400 py-10 text-sm">Nessun componente per {modello}.{puoModificare && <> Definiscili in <Link href="/ferrari/impostazioni#componenti" className="text-blue-700 hover:underline">Impostazioni, scheda Componenti</Link>.</>}</p>
       ) : ris.risultati.length === 0 ? (
         <p className="text-center text-gray-400 py-10 text-sm">Nessuna commessa trovata</p>
       ) : (
@@ -118,8 +106,8 @@ export default function PerComponentePage() {
                       <span className="w-14 shrink-0 font-bold">{v.codice}</span>
                       <span className="w-60 shrink-0 text-xs text-gray-500">{v.voce}</span>
                       <span className="flex-1">
-                        {v.rivedere && <span className="text-xs font-semibold text-amber-700" title="La IA non era sicura: va controllato sulla PC IA">⚠ da rivedere </span>}
-                        {v.avviso && <div className="text-xs font-semibold text-amber-700">⚠ {v.avviso}</div>}
+                        {v.rivedere && <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700" title="Da controllare"><IconaAvviso /> da rivedere </span>}
+                        {v.avviso && <div className="flex items-center gap-1 text-xs font-semibold text-amber-700"><IconaAvviso /> {v.avviso}</div>}
                         <Cella testo={v.testo} intero={v.completo ?? undefined} />
                         {v.sub.map(x => <SottoSigla key={x.codice} x={x} modello={modello} onFatto={() => cerca(modello, q.trim(), comp)} onErrore={setErrore} />)}
                       </span>

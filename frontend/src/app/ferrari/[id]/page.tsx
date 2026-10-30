@@ -13,6 +13,7 @@ import {
 } from '@/lib/ferrari';
 import { Errore, EsitoDot, FerrariNav, StatoBadge } from '@/components/ferrari/Comuni';
 import { ItemCard } from '@/components/ferrari/ItemCard';
+import { IconaIndietro } from '@/components/ferrari/Icone';
 
 const IA_STATO = { in_attesa: 'in attesa di risposta', ricevuta: 'risposta ricevuta', assente: 'assente (solo VM)' } as const;
 
@@ -109,7 +110,7 @@ export default function SchedaPage() {
   return (
     <div>
       <div className="mb-2">
-        <Link href="/ferrari/schede" className="inline-flex items-center gap-1 text-sm font-medium px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-50">← Revisione</Link>
+        <Link href="/ferrari/schede" className="inline-flex items-center gap-1 text-sm font-medium px-3 py-2 rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"><IconaIndietro /> Revisione</Link>
       </div>
       <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
         <div>

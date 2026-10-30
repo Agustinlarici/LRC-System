@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Errore } from '@/components/ferrari/Comuni';
+import { IconaChiudi, IconaDestra, IconaGiu, IconaMatita } from '@/components/ferrari/Icone';
 
 type Stato = 'colonna' | 'sub' | 'no' | 'alias' | 'nonsigla' | 'da_decidere';
 interface StatoModello {
@@ -46,8 +47,6 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
   const [filtro, setFiltro] = useState<Filtro>('tutte');
   const [scelto, setScelto] = useState(false);
   const [cerca, setCerca] = useState('');
-  const [nuovo, setNuovo] = useState('');
-  const [tipo, setTipo] = useState('colonna');
   const [scelti, setScelti] = useState<Record<string, string[]>>({});
   const [elencoAperto, setElencoAperto] = useState(false);
   const [testoElenco, setTestoElenco] = useState('');
@@ -85,16 +84,6 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
       await api.post('/api/ferrari/sigle/imposta', { codice: s.codice, stato, modelli: tutti ? '*' : mods, alias, padre });
       setScelti(x => { const y = { ...x }; delete y[s.codice]; return y; });
       setNota(null);
-    } catch (e) { setErrore((e as Error).message); }
-    await carica();
-  }
-
-  async function aggiungi() {
-    if (!nuovo.trim()) { setNota('Scrivi prima la sigla o la parola da aggiungere.'); return; }
-    try {
-      await api.post('/api/ferrari/sigle/imposta', { codice: nuovo.trim(), stato: tipo, modelli: '*' });
-      setNota(`Aggiunta ${nuovo.trim().toUpperCase()} a tutti i modelli`);
-      setNuovo('');
     } catch (e) { setErrore((e as Error).message); }
     await carica();
   }
@@ -192,18 +181,13 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
   return (
     <div className="space-y-3">
       <Errore messaggio={errore} />
-      <div className="flex flex-wrap items-center gap-2">
-        <input className="input !w-52 !py-1" placeholder="+ sigla o parola (es. BIC2)" value={nuovo} onChange={e => setNuovo(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') aggiungi(); }} />
-        <select className="input !w-auto !py-1" value={tipo} onChange={e => setTipo(e.target.value)}><option value="colonna">Colonna</option><option value="sub">Sotto-sigla</option></select>
-        <button className="btn-secondary !py-1" onClick={aggiungi}>Aggiungi sigla</button>
-        {nota && <span className="text-xs text-gray-600">{nota}</span>}
-      </div>
+      {nota && <p className="text-xs text-gray-600">{nota}</p>}
 
       <div className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm">
-        <button className="font-medium text-blue-700 hover:underline" onClick={() => setElencoAperto(o => !o)}>{elencoAperto ? '▾' : '▸'} Carica un elenco di sigle con le descrizioni</button>
+        <button className="font-medium text-blue-700 hover:underline" onClick={() => setElencoAperto(o => !o)}><span className="inline-flex items-center gap-1">{elencoAperto ? <IconaGiu /> : <IconaDestra />} Aggiungi sigle (una o un elenco, con le descrizioni)</span></button>
         {elencoAperto && (
           <div className="mt-2 space-y-2">
-            <p className="text-xs text-gray-500">Una sigla per riga, con la descrizione dopo un tab, un «;» o uno spazio (es. <code>BIC2 CARROZZERIA BICOLORE</code>). Puoi incollarlo oppure scegliere un file (.txt, .csv, .xlsx: sigla nella prima colonna, descrizione nella seconda). Senza descrizione va bene: quando un Excel la ha, ti chiedo se aggiungerla.</p>
+            <p className="text-xs text-gray-500">Una sigla per riga (anche una sola), con la descrizione dopo un tab, un «;» o uno spazio (es. <code>BIC2 CARROZZERIA BICOLORE</code>). Puoi incollarlo oppure scegliere un file (.txt, .csv, .xlsx: sigla nella prima colonna, descrizione nella seconda). Senza descrizione va bene: quando un Excel la ha, ti chiedo se aggiungerla.</p>
             <textarea className="input w-full font-mono text-xs" rows={6} value={testoElenco} onChange={e => setTestoElenco(e.target.value)} placeholder={'BIC2\tCARROZZERIA BICOLORE\nCEXS\tRIVEST.SOTTOPORTA IN CARBONIO\nTLM13'} />
             <div className="flex flex-wrap items-center gap-2">
               <input type="file" accept=".txt,.csv,.tsv,.xlsx,.xls" className="text-xs" onChange={e => leggiFile(e.target.files?.[0])} />
@@ -284,7 +268,7 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
                     {x.padre && <span className="mr-1.5 rounded bg-amber-100 px-1.5 text-xs text-amber-800">dentro {x.padre}</span>}
                     {x.simile_a && <span className="mr-1.5 text-xs font-semibold text-amber-700">simile a {x.simile_a}</span>}
                     {s.nome}{s.esempio && <span className="text-xs text-gray-400"> · {s.esempio.slice(0, 70)}</span>}
-                    <button className="ml-1.5 text-xs text-gray-400 hover:text-blue-700" title="Scrivi o cambia la descrizione" onClick={() => scriviDescrizione(s)}>✎</button>
+                    <button className="ml-1.5 text-xs text-gray-400 hover:text-blue-700" title="Scrivi o cambia la descrizione" onClick={() => scriviDescrizione(s)}><IconaMatita /></button>
                   </td>
                   <td className="border-b border-gray-100 px-3 py-1.5 whitespace-nowrap">
                     {([['colonna', 'Sì', st === 'da_decidere' && x.sub ? 'sub' : 'colonna'], ['no', 'Non mi serve', 'no'], ['nonsigla', 'Non è una sigla', 'nonsigla']] as const).map(([id, label, valore]) => (
@@ -327,7 +311,7 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
                   </td>
                   <td className="border-b border-gray-100 px-3 py-1.5 text-right">
                     <button className="text-gray-400 hover:text-red-600" title="Togli questa sigla da tutti i modelli (tornerà da decidere)"
-                      onClick={async () => { if (confirm(`Togliere ${s.codice} da tutti i modelli? Tornerà da decidere se compare ancora nelle schede.`)) { try { await api.post('/api/ferrari/sigle/imposta', { codice: s.codice, stato: 'reset', modelli: '*' }); } catch (e) { setErrore((e as Error).message); } await carica(); } }}>✕</button>
+                      onClick={async () => { if (confirm(`Togliere ${s.codice} da tutti i modelli? Tornerà da decidere se compare ancora nelle schede.`)) { try { await api.post('/api/ferrari/sigle/imposta', { codice: s.codice, stato: 'reset', modelli: '*' }); } catch (e) { setErrore((e as Error).message); } await carica(); } }}><IconaChiudi /></button>
                   </td>
                 </tr>
               );

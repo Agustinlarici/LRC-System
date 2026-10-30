@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { Errore } from '@/components/ferrari/Comuni';
+import { IconaChiudi } from '@/components/ferrari/Icone';
 
 interface Elenco {
   noti: { modello: string; schede: number; forma: string }[];
@@ -81,14 +82,14 @@ export function ImpostazioniModelli({ onCambia }: { onCambia?: () => void }) {
               <tr key={m.modello} className="border-b border-gray-100">
                 <td className="px-3 py-1.5 font-bold">{m.modello}</td><td className="px-3 py-1.5">{m.schede}</td><td className="px-3 py-1.5 text-gray-500">{m.forma}</td>
                 <td className="px-3 py-1.5 text-right"><button className="text-gray-400 hover:text-red-600" title="Togli dall'elenco"
-                  onClick={() => { if (confirm(`Togliere ${m.modello} dall'elenco? Le schede restano.`)) azione('togli', m.modello); }}>✕</button></td>
+                  onClick={() => { if (confirm(`Togliere ${m.modello} dall'elenco? Le schede restano.`)) azione('togli', m.modello); }}><IconaChiudi /></button></td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
       {g.alias.length > 0 && (
-        <p className="text-xs text-gray-500">Errori di scrittura che correggo da solo: {g.alias.map(a => <span key={a.sbagliato} className="mr-1 rounded bg-gray-100 px-1.5">{a.sbagliato} → {a.giusto}</span>)}</p>
+        <p className="text-xs text-gray-500">Errori di scrittura che correggo da solo: {g.alias.map(a => <span key={a.sbagliato} className="mr-1 rounded bg-gray-100 px-1.5">{a.sbagliato} diventa {a.giusto}</span>)}</p>
       )}
     </div>
   );

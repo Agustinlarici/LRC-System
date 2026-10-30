@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { api } from '@/lib/api';
+import { IconaOk } from '@/components/ferrari/Icone';
 import {
   DECISIONE_LABEL, TIPI_COMPONENTE_LABEL, fmtData,
   type Decisione, type DecisioneRec, type ItemConfronto, type OpzioneVm,
@@ -136,10 +137,10 @@ export function ItemCard({ item, ultima, abilitato, fileId, rev, modello, opzion
   if (ultima && !modifica) {
     return (
       <div className="rounded-lg border border-green-200 bg-green-50/50 px-3 py-2 text-sm flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="text-green-700 font-medium">✓ {DECISIONE_LABEL[ultima.decisione]}</span>
+        <span className="inline-flex items-center gap-1 text-green-700 font-medium"><IconaOk /> {DECISIONE_LABEL[ultima.decisione]}</span>
         <span className="text-gray-600">{TIPO_LABEL[item.tipo] ?? item.tipo}: {item.descrizione}</span>
-        {ultima.valore_dopo?.valore && <span className="text-gray-800 font-medium">→ {ultima.valore_dopo.tipo} = {ultima.valore_dopo.valore}</span>}
-        {ultima.valore_dopo?.significato && <span className="text-gray-800 font-medium">→ {ultima.valore_dopo.significato}</span>}
+        {ultima.valore_dopo?.valore && <span className="text-gray-800 font-medium">{ultima.valore_dopo.tipo} = {ultima.valore_dopo.valore}</span>}
+        {ultima.valore_dopo?.significato && <span className="text-gray-800 font-medium">{ultima.valore_dopo.significato}</span>}
         {ultima.motivo && <span className="text-gray-500 italic">“{ultima.motivo}”</span>}
         <span className="text-xs text-gray-400 ml-auto">{ultima.username} · {fmtData(ultima.creata_at)}</span>
         {abilitato && <button className="text-xs text-blue-600 hover:underline" onClick={() => setModifica(true)}>Cambia</button>}

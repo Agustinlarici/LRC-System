@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { Errore } from '@/components/ferrari/Comuni';
 import { quando, riassunto, type StatoCartella } from '@/components/ferrari/InfoCartella';
+import { IconaOk } from '@/components/ferrari/Icone';
 
 /** Impostazioni → Cartella: dove sono gli Excel, lettura automatica di notte e lettura a mano. */
 export function ImpostazioniCartella({ onCambia }: { onCambia?: () => void }) {
@@ -83,7 +84,7 @@ export function ImpostazioniCartella({ onCambia }: { onCambia?: () => void }) {
               {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:20</option>)}
             </select>
           </label>
-          <button className="btn-primary ml-auto" disabled={!cambiata} onClick={salva}>{salvato ? 'Salvato ✓' : 'Salva'}</button>
+          <button className="btn-primary ml-auto" disabled={!cambiata} onClick={salva}>{salvato ? <span className="inline-flex items-center gap-1"><IconaOk /> Salvato</span> : 'Salva'}</button>
         </div>
       </div>
 

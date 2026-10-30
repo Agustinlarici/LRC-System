@@ -111,7 +111,7 @@ export default function ConsultaPage() {
             </Gruppo>
             <Gruppo titolo="Componenti del testo" n={ris.componenti.length}>
               {ris.componenti.map(c => (
-                <div key={c.id} className="px-3 py-2"><span className="font-medium">{c.pattern}</span> → {c.tipo}{c.tipo !== 'NEUTRO' && <> = {c.valore}</>}
+                <div key={c.id} className="px-3 py-2"><span className="font-medium">{c.pattern}</span> = {c.tipo}{c.tipo !== 'NEUTRO' && <> = {c.valore}</>}
                   <span className="text-gray-400"> · {c.modello ?? 'tutti'} · {c.stato}</span></div>
               ))}
             </Gruppo>

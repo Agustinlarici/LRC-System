@@ -9,6 +9,7 @@ import {
   type Esito, type FileRiga, type Riepilogo, type StatoFile,
 } from '@/lib/ferrari';
 import { Errore, EsitoDot, FerrariNav, StatoBadge } from '@/components/ferrari/Comuni';
+import { IconaDestra, IconaSinistra } from '@/components/ferrari/Icone';
 
 const PAGINA = 50;
 
@@ -220,9 +221,9 @@ export default function SchedePage() {
         <div className="flex items-center justify-between mt-3 text-sm text-gray-500">
           <span>{totale} schede</span>
           <div className="flex items-center gap-2">
-            <button className="btn-secondary" disabled={pagina === 0} onClick={() => setPagina(p => p - 1)}>←</button>
+            <button className="btn-secondary" disabled={pagina === 0} aria-label="Pagina precedente" onClick={() => setPagina(p => p - 1)}><IconaSinistra /></button>
             <span>{pagina + 1} / {nPagine}</span>
-            <button className="btn-secondary" disabled={pagina + 1 >= nPagine} onClick={() => setPagina(p => p + 1)}>→</button>
+            <button className="btn-secondary" disabled={pagina + 1 >= nPagine} aria-label="Pagina successiva" onClick={() => setPagina(p => p + 1)}><IconaDestra /></button>
           </div>
         </div>
       )}

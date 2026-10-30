@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { usePromptDialog } from '@/components/ui/PromptDialog';
 import { Errore } from '@/components/ferrari/Comuni';
+import { IconaChiudi } from '@/components/ferrari/Icone';
 
 interface Componente { nome: string; termini: string[] }
 interface Elenco {
@@ -14,7 +15,7 @@ interface Elenco {
 }
 interface Suggerimento { termine: string; nome: string; tipo: 'sigla' | 'parola' }
 
-/** Impostazioni → Componenti: definire i componenti di un modello (nome + sigle/parole), copiarli in altri modelli. */
+/** Impostazioni, scheda Componenti: definire i componenti di un modello (nome + sigle/parole), copiarli in altri modelli. */
 export function ComponentiGestione({ onCambia }: { onCambia?: () => void }) {
   const { ask, dialog } = usePromptDialog();
   const [modello, setModello] = useState('');
@@ -119,7 +120,7 @@ export function ComponentiGestione({ onCambia }: { onCambia?: () => void }) {
 
   return (
     <div>
-      <p className="mb-3 text-sm text-gray-500">Un componente (es. Paraurti posteriore) è un nome con le sigle o parole che lo compongono, per modello. In «Vedere → Per componente» cerchi commessa + componente.</p>
+      <p className="mb-3 text-sm text-gray-500">Un componente (es. Paraurti posteriore) è un nome con le sigle o parole che lo compongono, per modello. In «Per componente» cerchi commessa + componente.</p>
       <Errore messaggio={errore} />
       {el && el.proposte.length > 0 && (
         <div className="mb-3 rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm">
@@ -183,7 +184,7 @@ export function ComponentiGestione({ onCambia }: { onCambia?: () => void }) {
                 {c.termini.map(t => (
                   <span key={t} className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-0.5">
                     {t}
-                    <button className="text-gray-400 hover:text-red-600" title="Togli" onClick={() => salva(c.nome, c.termini.filter(x => x !== t))}>✕</button>
+                    <button className="text-gray-400 hover:text-red-600" title="Togli" onClick={() => salva(c.nome, c.termini.filter(x => x !== t))}><IconaChiudi /></button>
                   </span>
                 ))}
                 <span className="relative">
