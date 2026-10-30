@@ -3,6 +3,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import { compareCategorie } from '@/lib/utils';
+import { Button } from '@/components/ui/Button';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import type { ProdSheetRow, ProdSheetCategoria, ProdCategoryOrder } from '@/types';
 
 // Un'unica riga per commessa: unisce le categorie/caratteristiche di tutti
@@ -121,7 +123,7 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
 
   if (rows.length === 0) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400">
+      <div className="bg-white rounded-card border border-line shadow-card p-12 text-center text-muted">
         Nessun ordine con data di ingresso in linea trovato.
       </div>
     );
@@ -129,38 +131,28 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
 
   return (
     <div>
-      <div className="d-print-none mb-2 flex justify-end gap-2">
-        <button
-          onClick={esportaExcel}
-          className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
-        >
-          📥 Scarica Excel
-        </button>
-        <button
-          onClick={() => setRaggruppa(g => !g)}
-          className={`text-sm px-3 py-1.5 rounded-lg transition-colors ${
-            raggruppa ? 'bg-gray-700 text-white hover:bg-gray-800' : 'border border-gray-200 hover:bg-gray-50'
-          }`}
-        >
+      <div className="d-print-none mb-3 flex justify-end gap-2">
+        <Button onClick={esportaExcel}>Scarica Excel</Button>
+        <Button variant={raggruppa ? 'primary' : 'secondary'} onClick={() => setRaggruppa(g => !g)}>
           {raggruppa ? '✓ Raggruppato per commessa' : 'Raggruppa per commessa'}
-        </button>
+        </Button>
       </div>
 
-      <div className="overflow-auto max-h-[75vh] print:max-h-none print:overflow-visible">
+      <div className="overflow-auto max-h-[70vh] bg-white rounded-card border border-line shadow-card print:max-h-none print:overflow-visible print:border-0 print:shadow-none print:rounded-none">
         <table className="w-full text-sm border-separate border-spacing-0 operator-sheet">
         <thead>
-          <tr className="bg-gray-100">
-            <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5">#</th>
-            <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">Origine</th>
-            <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">Stato</th>
-            <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">Commessa</th>
-            <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">Codice</th>
-            <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">Descrizione</th>
-            <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left whitespace-nowrap">Ingresso Linea</th>
-            <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">Colore</th>
-            <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left whitespace-nowrap">Ultima Fase</th>
+          <tr>
+            <th className="sheet-th text-center">#</th>
+            <th className="sheet-th">Origine</th>
+            <th className="sheet-th">Stato</th>
+            <th className="sheet-th">Commessa</th>
+            <th className="sheet-th">Codice</th>
+            <th className="sheet-th">Descrizione</th>
+            <th className="sheet-th whitespace-nowrap">Ingresso Linea</th>
+            <th className="sheet-th">Colore</th>
+            <th className="sheet-th whitespace-nowrap">Ultima Fase</th>
             {categorieUniche.map(cat => (
-              <th key={cat} className={`sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-center ${cat === 'X.EXTRA' ? 'font-bold' : ''}`}>
+              <th key={cat} className={`sheet-th ${cat === 'X.EXTRA' ? 'text-ink-900' : ''}`}>
                 {cat}
               </th>
             ))}
@@ -168,28 +160,24 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
         </thead>
         <tbody>
           {displayRows.map((row, idx) => (
-            <tr key={`${row.codice_articolo}-${row.commessa}`} className="bg-white hover:bg-gray-50">
-              <td className="border border-gray-200 px-2 py-1 text-center">{idx + 1}</td>
-              <td className="border border-gray-200 px-2 py-1">
-                <span className={`inline-block text-xs px-2 py-0.5 rounded font-medium whitespace-nowrap ${
-                  row.fonte_ordine === 'confermato' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                }`}>
+            <tr key={`${row.codice_articolo}-${row.commessa}`} className="bg-white hover:bg-stone-50 transition-colors">
+              <td className="sheet-td text-center">{idx + 1}</td>
+              <td className="sheet-td">
+                <StatusBadge tone={row.fonte_ordine === 'confermato' ? 'success' : 'warning'}>
                   {row.fonte_ordine === 'confermato' ? 'Confermato' : 'Forecast'}
-                </span>
+                </StatusBadge>
               </td>
-              <td className="border border-gray-200 px-2 py-1">
+              <td className="sheet-td">
                 {row.chiuso ? (
-                  <span className="inline-block text-xs px-2 py-0.5 rounded font-medium whitespace-nowrap bg-gray-200 text-gray-600">
-                    Spedito
-                  </span>
-                ) : <span className="text-gray-300">–</span>}
+                  <StatusBadge tone="neutral">Spedito</StatusBadge>
+                ) : <span className="text-stone-300">–</span>}
               </td>
-              <td className="border border-gray-200 px-2 py-1 font-mono">{row.commessa}</td>
-              <td className="border border-gray-200 px-2 py-1 font-mono whitespace-pre-line">{row.codice_articolo}</td>
-              <td className="border border-gray-200 px-2 py-1 min-w-[180px] max-w-[260px] whitespace-pre-line break-words" title={row.descrizione ?? ''}>
-                {row.descrizione ?? <span className="text-gray-300">–</span>}
+              <td className="sheet-td font-mono">{row.commessa}</td>
+              <td className="sheet-td font-mono whitespace-pre-line">{row.codice_articolo}</td>
+              <td className="sheet-td min-w-[180px] max-w-[260px] whitespace-pre-line break-words" title={row.descrizione ?? ''}>
+                {row.descrizione ?? <span className="text-stone-300">–</span>}
               </td>
-              <td className="border border-gray-200 px-2 py-1 whitespace-nowrap">
+              <td className="sheet-td whitespace-nowrap">
                 {row.insertion_line_ts ? (
                   <>
                     {new Date(row.insertion_line_ts).toLocaleString('it-IT', {
@@ -197,7 +185,7 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
                     })}
                     {row.insertion_schedulato && (
                       <span
-                        className="ml-1 text-amber-600"
+                        className="ml-1 text-warning"
                         title="Data da Schedulato — non ancora fisicamente in linea, da controllare"
                       >
                         ⚠
@@ -206,23 +194,23 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
                   </>
                 ) : '–'}
               </td>
-              <td className="border border-gray-200 px-2 py-1">{row.colore ?? <span className="text-gray-300">–</span>}</td>
-              <td className="border border-gray-200 px-2 py-1 whitespace-pre-line">{row.ultima_fase ?? <span className="text-gray-300">–</span>}</td>
+              <td className="sheet-td">{row.colore ?? <span className="text-stone-300">–</span>}</td>
+              <td className="sheet-td whitespace-pre-line">{row.ultima_fase ?? <span className="text-stone-300">–</span>}</td>
               {categorieUniche.map(cat => {
                 const match = row.categorie.find(c => c.categoria === cat);
                 return (
-                  <td key={cat} className={`border border-gray-200 px-2 py-1 ${cat === 'X.EXTRA' ? 'max-w-[220px] whitespace-normal' : 'whitespace-nowrap'}`}>
+                  <td key={cat} className={`sheet-td ${cat === 'X.EXTRA' ? 'max-w-[220px] whitespace-normal' : 'whitespace-nowrap'}`}>
                     {match ? match.caratteristiche.map((c, i) => (
                       <React.Fragment key={c.valore}>
                         {i > 0 && ', '}
                         <span
-                          className={c.daAltroComponente ? 'text-amber-600' : undefined}
+                          className={c.daAltroComponente ? 'text-warning' : undefined}
                           title={c.daAltroComponente ? 'Trovata nella descrizione di un altro componente della stessa commessa' : undefined}
                         >
                           {c.valore}
                         </span>
                       </React.Fragment>
-                    )) : <span className="text-gray-300">–</span>}
+                    )) : <span className="text-stone-300">–</span>}
                   </td>
                 );
               })}

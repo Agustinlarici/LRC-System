@@ -3,10 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { MODULE_GROUPS, modulesByGroup } from '@/lib/modules';
+import { MODULE_GROUPS, modulesByGroup, settingsHrefFor } from '@/lib/modules';
 import { useAuth } from '@/lib/auth';
 import type { ModuleKey } from '@/types';
-import { ICON_MAP, GROUP_ICON_MAP } from '@/components/icons/ModuleIcons';
+import { ICON_MAP, GROUP_ICON_MAP, IconSettings } from '@/components/icons/ModuleIcons';
 
 // ─── SVG Icons (sidebar chrome only) ───────────────────────────────────────────
 
@@ -37,11 +37,16 @@ const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
+// Barretta rossa a sinistra della voce attiva (accento di marca)
+function ActiveMark() {
+  return <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-brand" />;
+}
+
 // Pallino con il numero di scadenze HR non ancora prese in carico (0 = nascosto)
 function CountBadge({ n, className = '' }: { n: number; className?: string }) {
   if (n <= 0) return null;
   return (
-    <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none shrink-0 ${className}`}>
+    <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-brand text-white text-[10px] font-semibold leading-none shrink-0 ${className}`}>
       {n > 99 ? '99+' : n}
     </span>
   );
@@ -163,13 +168,19 @@ export function Sidebar() {
     return false;
   }
 
+  // Impostazioni: stessa posizione in ogni pagina; punta a quelle del modulo corrente
+  // oppure, fuori dai moduli, a quelle di sistema (solo per chi può gestirle).
+  const moduleSettings = settingsHrefFor(pathname);
+  const settingsHref   = moduleSettings ?? (canManage('impostazioni') ? '/admin/system' : null);
+  const settingsActive = !!settingsHref && (pathname === settingsHref || pathname.startsWith(settingsHref + '/'));
+
   return (
-    <aside className={`d-print-none relative min-h-full bg-zinc-900 text-white flex flex-col shrink-0 transition-all duration-300 ${
+    <aside className={`d-print-none relative min-h-full bg-ink-900 text-white flex flex-col shrink-0 transition-all duration-300 ${
       expanded ? 'w-56' : 'w-[68px]'
     }`}>
 
       {/* Logo */}
-      <div className="flex items-center justify-center border-b border-zinc-800 h-14 px-4">
+      <div className="flex items-center justify-center border-b border-white/10 h-14 px-4">
         <img src="/logo.png" alt="STR" className="h-9 select-none object-contain" />
       </div>
 
@@ -180,7 +191,7 @@ export function Sidebar() {
         <button onClick={toggleSidebar}
           aria-label={expanded ? 'Comprimi menu' : 'Espandi menu'}
           className={`w-full flex items-center px-2.5 py-2 rounded-lg text-sm text-zinc-500
-            hover:bg-zinc-800 hover:text-white transition-colors mb-1
+            hover:bg-white/5 hover:text-white transition-colors mb-1
             ${expanded ? 'justify-end' : 'justify-center'}`}
         >
           {expanded
@@ -190,10 +201,11 @@ export function Sidebar() {
 
         {/* Home */}
         <Link href="/" title="Home"
-          className={`flex items-center gap-3 px-2.5 py-2.5 rounded-lg text-sm transition-colors
+          className={`relative flex items-center gap-3 px-2.5 py-2.5 rounded-xl text-sm transition-colors
             ${expanded ? '' : 'justify-center'}
-            ${isActive('/') ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'}`}
+            ${isActive('/') ? 'bg-white/10 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}
         >
+          {isActive('/') && <ActiveMark />}
           <IconHome />
           {expanded && <span className="truncate font-medium">Home</span>}
         </Link>
@@ -216,8 +228,8 @@ export function Sidebar() {
                     className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold
                       uppercase tracking-widest transition-colors select-none
                       ${groupActive && !groupOpen
-                        ? 'text-blue-400 hover:bg-zinc-800'
-                        : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'}`}
+                        ? 'text-white hover:bg-white/5'
+                        : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'}`}
                   >
                     <span>{group}</span>
                     <span className="flex items-center gap-1.5">
@@ -232,9 +244,10 @@ export function Sidebar() {
                         const active = isActive(m.href);
                         return (
                           <Link key={m.href} href={m.href} title={m.label}
-                            className={`flex items-center gap-3 pl-5 pr-2.5 py-2 rounded-lg text-sm transition-colors
-                              ${active ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'}`}
+                            className={`relative flex items-center gap-3 pl-5 pr-2.5 py-2 rounded-xl text-sm transition-colors
+                              ${active ? 'bg-white/10 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}
                           >
+                            {active && <ActiveMark />}
                             <Icon />
                             <span className="truncate font-medium flex-1">{m.label}</span>
                             {m.href === '/hr/scadenze' && <CountBadge n={deadlineCount} />}
@@ -248,7 +261,7 @@ export function Sidebar() {
                 // ── Collapsed: one icon per group, click expands sidebar ────
                 <button onClick={() => expandToGroup(group)} title={group}
                   className={`w-full flex justify-center px-2.5 py-2.5 rounded-lg transition-colors
-                    ${groupActive ? 'text-blue-400 bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300'}`}
+                    ${groupActive ? 'text-white bg-white/10' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'}`}
                 >
                   <span className="relative">
                     <GroupIcon />
@@ -261,24 +274,27 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Footer — user + logout */}
-      <div className={`border-t border-zinc-800 py-3 px-3 text-xs text-zinc-500 ${expanded ? '' : 'flex justify-center'}`}>
-        {expanded ? (
-          <div className="flex items-center justify-between gap-2">
-            <span className="truncate">{user?.display_name ?? 'STR System'}</span>
-            <button onClick={logout} title="Esci" className="text-zinc-600 hover:text-white transition-colors shrink-0">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-            </button>
-          </div>
-        ) : (
-          <button onClick={logout} title="Esci" className="text-zinc-600 hover:text-white transition-colors">
+      {/* Footer — Impostazioni (sempre qui, in basso) + utente + esci */}
+      <div className="border-t border-white/10 px-2 py-3 space-y-0.5">
+        {settingsHref && (
+          <Link href={settingsHref} title="Impostazioni"
+            className={`relative flex items-center gap-3 px-2.5 py-2 rounded-xl text-sm transition-colors
+              ${expanded ? '' : 'justify-center'}
+              ${settingsActive ? 'bg-white/10 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}
+          >
+            {settingsActive && <ActiveMark />}
+            <IconSettings />
+            {expanded && <span className="truncate font-medium">Impostazioni</span>}
+          </Link>
+        )}
+        <div className={`flex items-center gap-2 px-2.5 py-2 text-xs text-zinc-500 ${expanded ? 'justify-between' : 'justify-center'}`}>
+          {expanded && <span className="truncate">{user?.display_name ?? 'STR System'}</span>}
+          <button onClick={logout} title="Esci" aria-label="Esci" className="text-zinc-500 hover:text-white transition-colors shrink-0">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="w-4 h-4">
               <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
           </button>
-        )}
+        </div>
       </div>
     </aside>
   );

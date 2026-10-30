@@ -4,6 +4,8 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import type { ProdArea, ProdComponentConflict } from '@/types';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Button } from '@/components/ui/Button';
 
 export default function ProduzionePage() {
   const [aree,        setAree]        = useState<ProdArea[]>([]);
@@ -28,52 +30,49 @@ export default function ProduzionePage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
-        <h1 className="text-3xl font-bold text-gray-900">Programma Produzione</h1>
-        <div className="flex gap-2 flex-wrap">
-          <Link href="/produzione/sync"
-            className="flex items-center gap-1.5 text-sm bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors">
-            Sincronizza
-          </Link>
-          <Link href="/produzione/conflitti"
-            className={`flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg transition-colors ${
-              hasUrgentDup ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
-            }`}>
-            Duplicati
-          </Link>
-          <Link href="/spma/import"
-            className="flex items-center gap-1.5 text-sm border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
-            Import Planning
-          </Link>
-          <Link href="/produzione/impostazioni"
-            className="flex items-center gap-1.5 text-sm border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
-            Impostazioni
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        title="Programma Produzione"
+        description="Fogli di produzione per area di montaggio."
+        actions={
+          <>
+            <Button href="/spma/import">Import Planning</Button>
+            <Button
+              href="/produzione/conflitti"
+              className={hasUrgentDup ? '!bg-danger-soft !text-danger !border-transparent hover:!bg-red-200' : ''}
+            >
+              Duplicati
+            </Button>
+            <Button href="/produzione/sync" variant="primary">Sincronizza</Button>
+          </>
+        }
+      />
 
       {error && (
-        <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>
+        <div className="mb-4 p-3 bg-danger-soft text-danger rounded-ctl text-sm">{error}</div>
       )}
 
       {loading ? (
-        <p className="text-gray-400">Caricamento aree...</p>
+        <p className="text-muted">Caricamento aree...</p>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
           <Link
             href="/produzione/tutto"
-            className="bg-gray-900 rounded-xl p-5 text-center hover:bg-gray-800 transition-colors"
+            className="group flex items-center justify-between gap-3 bg-ink-800 rounded-card p-5 text-white shadow-card transition-all hover:bg-ink-950 hover:-translate-y-0.5"
           >
-            <p className="font-semibold text-white">Vedi tutto</p>
-            <p className="text-xs text-gray-300 mt-1">Foglio completo, senza filtro per area</p>
+            <span>
+              <span className="block font-semibold">Vedi tutto</span>
+              <span className="block text-xs text-stone-300 mt-1">Foglio completo, senza filtro per area</span>
+            </span>
+            <span aria-hidden className="flex items-center justify-center w-9 h-9 rounded-full bg-brand text-white shrink-0">→</span>
           </Link>
           {aree.map(area => (
             <Link
               key={area.id}
               href={`/produzione/${area.id}`}
-              className="bg-white rounded-xl border border-gray-200 p-5 text-center hover:shadow-md hover:border-blue-200 transition-all"
+              className="group flex items-center justify-between gap-3 bg-white rounded-card border border-line shadow-card p-5 transition-all hover:shadow-float hover:-translate-y-0.5"
             >
-              <p className="font-semibold text-gray-900">{area.description}</p>
+              <span className="font-semibold text-ink-900">{area.description}</span>
+              <span aria-hidden className="flex items-center justify-center w-9 h-9 rounded-full bg-stone-100 text-ink-800 shrink-0 transition-colors group-hover:bg-ink-800 group-hover:text-white">→</span>
             </Link>
           ))}
         </div>
