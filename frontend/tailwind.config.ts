@@ -23,13 +23,23 @@ const config: Config = {
           800: '#27272A',
           700: '#3F3F46',
         },
+        // Celeste (dalla foto di riferimento): evidenziazioni, stati attivi, info.
+        // Per il testo usare accent-ink: il celeste pieno non ha abbastanza contrasto.
+        accent: {
+          DEFAULT: '#8DB8F0',
+          soft:    '#E9F2FD',
+          ink:     '#2B5BA8',
+        },
         canvas: '#F4F4F2',
         line:   '#E7E5E4',
         muted:  '#636369',
         success: { DEFAULT: '#166534', soft: '#E4F4EA' },
         warning: { DEFAULT: '#92400E', soft: '#FEF1D6' },
         danger:  { DEFAULT: '#B42318', soft: '#FEE4E2' },
-        info:    { DEFAULT: '#1D4ED8', soft: '#E6EEFF' },
+        info:    { DEFAULT: '#2B5BA8', soft: '#E9F2FD' },
+      },
+      fontFamily: {
+        sans: ['var(--font-sans)', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'system-ui', 'sans-serif'],
       },
       borderRadius: {
         card: '20px',

@@ -6,7 +6,7 @@ const TONE: Record<Tone, string> = {
   success: 'bg-success-soft text-success',
   warning: 'bg-warning-soft text-warning',
   danger:  'bg-danger-soft text-danger',
-  info:    'bg-info-soft text-info',
+  info:    'bg-accent-soft text-accent-ink',
   neutral: 'bg-stone-100 text-stone-600',
   brand:   'bg-brand-soft text-brand-dark',
 };
@@ -15,7 +15,7 @@ const DOT: Record<Tone, string> = {
   success: 'bg-green-600',
   warning: 'bg-amber-500',
   danger:  'bg-red-600',
-  info:    'bg-blue-600',
+  info:    'bg-accent',
   neutral: 'bg-stone-400',
   brand:   'bg-brand',
 };

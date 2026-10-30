@@ -51,8 +51,8 @@ export function HomeCards() {
                         m.soon ? 'opacity-50 cursor-not-allowed' : 'hover:bg-stone-50'
                       }`}
                     >
-                      <span className={`flex items-center justify-center w-10 h-10 rounded-xl bg-stone-100 text-ink-800 shrink-0 transition-colors ${
-                        m.soon ? '' : 'group-hover:bg-ink-800 group-hover:text-white'
+                      <span className={`flex items-center justify-center w-10 h-10 rounded-xl bg-accent-soft text-accent-ink shrink-0 transition-colors ${
+                        m.soon ? '' : 'group-hover:bg-accent group-hover:text-ink-900'
                       }`}>
                         <Icon className="w-5 h-5" />
                       </span>

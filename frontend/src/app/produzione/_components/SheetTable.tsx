@@ -160,7 +160,7 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
         </thead>
         <tbody>
           {displayRows.map((row, idx) => (
-            <tr key={`${row.codice_articolo}-${row.commessa}`} className="bg-white hover:bg-stone-50 transition-colors">
+            <tr key={`${row.codice_articolo}-${row.commessa}`} className="bg-white hover:bg-accent-soft/50 transition-colors">
               <td className="sheet-td text-center">{idx + 1}</td>
               <td className="sheet-td">
                 <StatusBadge tone={row.fonte_ordine === 'confermato' ? 'success' : 'warning'}>

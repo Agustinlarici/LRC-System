@@ -64,7 +64,7 @@ export default function ProduzionePage() {
               <span className="block font-semibold">Vedi tutto</span>
               <span className="block text-xs text-stone-300 mt-1">Foglio completo, senza filtro per area</span>
             </span>
-            <span aria-hidden className="flex items-center justify-center w-9 h-9 rounded-full bg-brand text-white shrink-0">→</span>
+            <span aria-hidden className="flex items-center justify-center w-9 h-9 rounded-full bg-accent text-ink-900 shrink-0">→</span>
           </Link>
           {aree.map(area => (
             <Link
@@ -73,7 +73,7 @@ export default function ProduzionePage() {
               className="group flex items-center justify-between gap-3 bg-white rounded-card shadow-card p-5 transition-all hover:shadow-float hover:-translate-y-0.5"
             >
               <span className="font-semibold text-ink-900">{area.description}</span>
-              <span aria-hidden className="flex items-center justify-center w-9 h-9 rounded-full bg-stone-100 text-ink-800 shrink-0 transition-colors group-hover:bg-ink-800 group-hover:text-white">→</span>
+              <span aria-hidden className="flex items-center justify-center w-9 h-9 rounded-full bg-accent-soft text-accent-ink shrink-0 transition-colors group-hover:bg-accent group-hover:text-ink-900">→</span>
             </Link>
           ))}
         </div>

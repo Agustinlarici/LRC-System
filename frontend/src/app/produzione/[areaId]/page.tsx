@@ -17,7 +17,7 @@ const PAGE_SIZE = 500;
 function FilterField({ label, highlight, children }: { label: string; highlight?: boolean; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className={`text-xs font-medium ${highlight ? 'text-ink-900' : 'text-muted'}`}>{label}</label>
+      <label className={`text-xs font-medium ${highlight ? 'text-accent-ink' : 'text-muted'}`}>{label}</label>
       {children}
     </div>
   );
@@ -126,7 +126,7 @@ export default function ProduzioneAreaSheetPage() {
         back={{ label: 'Programma Produzione', href: '/produzione' }}
         title={area?.description ?? ''}
         badge={
-          <StatusBadge tone={storico ? 'neutral' : 'brand'}>
+          <StatusBadge tone={storico ? 'neutral' : 'info'}>
             {storico ? 'Storico ordini spediti' : 'Area di montaggio'}
           </StatusBadge>
         }
@@ -188,7 +188,7 @@ export default function ProduzioneAreaSheetPage() {
             <FilterField label="Righe da mostrare" highlight>
               <input id="fMax" value={fMax} onChange={e => setFMax(e.target.value)} type="number" min={1} placeholder="Tutte"
                 title="Numero massimo di righe da mostrare/stampare — vuoto = tutte"
-                className="input text-center font-semibold" />
+                className="input text-center font-semibold bg-accent-soft" />
             </FilterField>
           </div>
         </div>
@@ -202,7 +202,7 @@ export default function ProduzioneAreaSheetPage() {
         <div className="only-print mb-4 text-center">
           <h1 className="text-2xl font-bold text-gray-900">Programma Produzione</h1>
           <p className="text-gray-500">
-            {storico ? 'Storico ordini spediti' : 'Area di montaggio'}: <span className="text-brand font-medium">{area?.description}</span>
+            {storico ? 'Storico ordini spediti' : 'Area di montaggio'}: <span className="text-accent-ink font-medium">{area?.description}</span>
           </p>
         </div>
 
