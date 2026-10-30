@@ -157,7 +157,7 @@ describe.skipIf(!URL)('Componenti per modello — integrazione con database', ()
     const sub = async (commessa: string) => (await svc.matrice('F999XX')).righe.find((r: { commessa: string }) => r.commessa === commessa)!.sub['LIVR'];
     let m = await svc.matrice('F999XX');
     expect(m.nuove.find((n: { codice: string }) => n.codice === 'TLM15')).toMatchObject({ sub: true, simile_a: 'TLM16' });
-    expect((await sub('100082'))[0]).toMatchObject({ codice: 'TLM16', scritto: 'TLM15', avviso: 'scritta TLM15: forse TLM16? controlla' });
+    expect((await sub('100082'))[0]).toMatchObject({ codice: 'TLM16', scritto: 'TLM15', avviso: 'scritta TLM15 (suggerito TLM16)' });
 
     await svc.decidiSigla(op, 'F999XX', 'TLM15', true, false, true, 'TLM16');          // «e' un errore di TLM16»
     m = await svc.matrice('F999XX');

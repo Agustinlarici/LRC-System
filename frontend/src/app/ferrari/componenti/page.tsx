@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import Link from 'next/link';
-import { Cella, Errore, FerrariNav, VistaToggle } from '@/components/ferrari/Comuni';
+import { Cella, Errore, FerrariNav, SottoSigla, VistaToggle } from '@/components/ferrari/Comuni';
 
 interface Componente { nome: string; termini: string[] }
 interface Elenco {
@@ -15,7 +15,7 @@ interface Elenco {
 interface Voce {
   termine: string; codice: string; voce: string; testo: string; completo: string | null; rivedere: boolean;
   avviso: string | null;
-  sub: { codice: string; testo: string; avviso: string | null }[];
+  sub: { codice: string; testo: string; avviso: string | null; scritto?: string | null }[];
 }
 interface Risultati {
   componenti: string[];
@@ -121,12 +121,7 @@ export default function PerComponentePage() {
                         {v.rivedere && <span className="text-xs font-semibold text-amber-700" title="La IA non era sicura: va controllato sulla PC IA">⚠ da rivedere </span>}
                         {v.avviso && <div className="text-xs font-semibold text-amber-700">⚠ {v.avviso}</div>}
                         <Cella testo={v.testo} intero={v.completo ?? undefined} />
-                        {v.sub.map(x => (
-                          <div key={x.codice} className="mt-1 rounded-lg border-l-[3px] border-gray-300 bg-white/60 px-2 py-0.5 text-xs text-gray-600">
-                            {x.avviso && <div className="font-semibold text-amber-700">⚠ {x.avviso}</div>}
-                            <b>{x.codice}</b> {x.testo}
-                          </div>
-                        ))}
+                        {v.sub.map(x => <SottoSigla key={x.codice} x={x} modello={modello} onFatto={() => cerca(modello, q.trim(), comp)} onErrore={setErrore} />)}
                       </span>
                     </div>
                   ))}

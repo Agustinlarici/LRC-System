@@ -11,7 +11,8 @@ import {
   type EsempioConoscenza, type VoceComponente, type VoceDettaglio,
 } from './bundle.js';
 import { confronta } from './compare.js';
-import { parseScheda, SchedaError } from './parser.js';
+import { parseScheda, righeFoglio, SchedaError } from './parser.js';
+import { MIN_SCHEDE_RIFERIMENTO, riferimento, segna } from './anomalie.js';
 import type {
   AnalisiIa, AnalisiVm, Canonico, Conoscenza, ItemConfronto, RisultatoConfronto,
 } from './types.js';
@@ -135,7 +136,7 @@ async function incrementaVersioneConoscenza(tx: Tx): Promise<number> {
 // ─── Caricamento delle schede ─────────────────────────────────────────────────
 
 export interface EsitoCaricamento {
-  id: number; filename: string; stato: string; duplicato: boolean; sostituisce: number[]; stessa_commessa?: number[]; motivo?: string;
+  modello?: string | null; id: number; filename: string; stato: string; duplicato: boolean; sostituisce: number[]; stessa_commessa?: number[]; motivo?: string;
 }
 
 /**
@@ -180,6 +181,25 @@ async function caricaSchedaModo(user: Utente, filename: string, buf: Buffer, con
       }
 
       const h = canonico.header;
+      // un modello scritto male e gia' segnalato come errore si corregge da solo
+      const [al] = h.tipo_matricola.modello
+        ? await tx<{ giusto: string }[]>`SELECT giusto FROM ferrari_modello_alias WHERE sbagliato = ${h.tipo_matricola.modello.toUpperCase()}`
+        : [];
+      if (al) h.tipo_matricola.modello = al.giusto;
+      // righe toccate a mano nell'Excel: non si scartano in silenzio, si segnano (e si propone la correzione)
+      try {
+        const altre = h.tipo_matricola.modello
+          ? await tx<{ canonico: Canonico }[]>`
+              SELECT canonico FROM ferrari_file WHERE modello = ${h.tipo_matricola.modello} AND commessa IS DISTINCT FROM ${h.commessa}
+                AND stato NOT IN ('SOSTITUITO', 'QUARANTENA', 'RIFIUTATO') AND canonico IS NOT NULL`
+          : [];
+        const altreOpz = altre.map(a => a.canonico.opzioni);
+        const noti = new Set<string>([...altreOpz.flatMap(l => l.map(o => o.codice)), ...canonico.opzioni.map(o => o.codice),
+          ...(await tx<{ codice: string }[]>`SELECT DISTINCT codice FROM ferrari_sigla`).map(r => r.codice)]);
+        const insiemi = altreOpz.map(l => new Set(l.map(o => o.codice)));
+        const sempre = insiemi.length >= MIN_SCHEDE_RIFERIMENTO ? new Set([...insiemi[0]!].filter(c => insiemi.every(i => i.has(c)))) : new Set<string>();
+        segna(canonico.opzioni, righeFoglio(buf), noti, sempre, riferimento(altreOpz));
+      } catch { /* il controllo e' un di piu': non deve mai impedire di salvare la scheda */ }
       // due caricamenti insieme della stessa commessa: uno aspetta l'altro, cosi' la sostituzione vede la riga precedente
       await tx`SELECT pg_advisory_xact_lock(hashtext(${'ferrari:' + h.commessa}))`;
       const [f] = await tx<{ id: number }[]>`
@@ -210,7 +230,7 @@ async function caricaSchedaModo(user: Utente, filename: string, buf: Buffer, con
         SELECT id FROM ferrari_file WHERE commessa = ${h.commessa} AND id <> ${id} AND stato NOT IN ('SOSTITUITO', 'QUARANTENA')`;
 
       await audit(tx, user, 'file.caricato', 'file', id, { filename: nome, sha256: hash, commessa: h.commessa, modello: h.tipo_matricola.modello });
-      return { id, filename: nome, stato: statoIniziale, duplicato: false, sostituisce: vecchie.map(v => v.id), stessa_commessa: altre.map(a => a.id) };
+      return { id, modello: h.tipo_matricola.modello, filename: nome, stato: statoIniziale, duplicato: false, sostituisce: vecchie.map(v => v.id), stessa_commessa: altre.map(a => a.id) };
     });
   } catch (e) {
     // Due caricamenti simultanei dello stesso file: vince il primo
@@ -865,18 +885,19 @@ export async function matrice(modello?: string, q?: string, conRighe = true) {
   if (!scelto) return { modelli, modello: '', termini: [] as string[], nuove: [], sigle: [], righe: [], proposte };
 
   // Decisione del modello prevale su quella per tutti
-  const rows = await db<{ modello: string; codice: string; va: boolean; ordine: string; sub: boolean; alias: string | null }[]>`
-    SELECT modello, codice, va, ordine, sub, alias FROM ferrari_sigla WHERE modello IN (${TUTTI}, ${scelto}) ORDER BY ordine`;
-  const decisioni = new Map<string, { va: boolean; ordine: number; ambito: 'tutti' | 'modello'; sub: boolean; alias: string | null }>();
+  const rows = await db<{ modello: string; codice: string; va: boolean; ordine: string; sub: boolean; alias: string | null; nosigla: boolean; auto: boolean; padre: string | null }[]>`
+    SELECT modello, codice, va, ordine, sub, alias, nosigla, auto, padre FROM ferrari_sigla WHERE modello IN (${TUTTI}, ${scelto}) ORDER BY ordine`;
+  const decisioni = new Map<string, { va: boolean; ordine: number; ambito: 'tutti' | 'modello'; sub: boolean; alias: string | null; nosigla: boolean; auto: boolean; padre: string | null }>();
   for (const m of [TUTTI, scelto]) {
     for (const r of rows.filter(x => x.modello === m)) {
-      decisioni.set(r.codice, { va: r.va, ordine: Number(r.ordine), ambito: m === TUTTI ? 'tutti' : 'modello', sub: r.sub, alias: r.alias });
+      decisioni.set(r.codice, { va: r.va, ordine: Number(r.ordine), ambito: m === TUTTI ? 'tutti' : 'modello', sub: r.sub, alias: r.alias, nosigla: r.nosigla, auto: r.auto, padre: r.padre });
     }
   }
   const ordinate = [...decisioni.entries()].sort((a, b) => a[1].ordine - b[1].ordine);
   // un alias non e' una colonna ne' una sotto-sigla: e' solo «questo codice e' un errore di quell'altro»
   const termini = ordinate.filter(([, d]) => d.va && !d.sub && !d.alias).map(([c]) => c);
   const subOk = new Set(ordinate.filter(([, d]) => d.va && d.sub && !d.alias).map(([c]) => c));
+  const subPadre = new Map(ordinate.filter(([, d]) => d.va && d.sub && !d.alias && d.padre).map(([c, d]) => [c, d.padre!] as [string, string]));
   const ctx: CtxSigle = {
     alias: new Map(ordinate.filter(([, d]) => d.alias).map(([c, d]) => [c, d.alias!] as [string, string])),
     decisi: new Set(decisioni.keys()),
@@ -896,14 +917,16 @@ export async function matrice(modello?: string, q?: string, conRighe = true) {
   return {
     modelli, modello: scelto, termini,
     nuove: nuoveSigle(tutte, new Set(decisioni.keys()), noti),
-    sigle: ordinate.map(([codice, d]) => ({ codice, nome: nomi.get(codice) ?? '(parola cercata)', va: d.va, ambito: d.ambito, sub: d.sub, alias: d.alias })),
-    righe: conRighe ? costruisciMatrice(mostrate, termini, dettagli, subOk, ctx) : [],
+    sigle: ordinate.map(([codice, d]) => ({ codice, nome: nomi.get(codice) ?? '(parola cercata)', va: d.va, ambito: d.ambito, sub: d.sub, alias: d.alias, nosigla: d.nosigla, padre: d.padre, auto: d.auto })),
+    etichette: Object.fromEntries(termini.filter(t => nomi.has(t)).map(t => [t, nomi.get(t)!])),
+    righe: conRighe ? costruisciMatrice(mostrate, termini, dettagli, subOk, ctx, subPadre) : [],
     proposte,
   };
 }
 
 /** La sigla (o parola) va in tabella oppure no, per il modello o per tutti i modelli. */
-export async function decidiSigla(user: Utente, modello: string, codice: string, va: boolean, tutti: boolean, sub = false, alias: string | null = null) {
+export async function decidiSigla(user: Utente, modello: string, codice: string, va: boolean, tutti: boolean, sub = false, alias: string | null = null,
+  extra: { nosigla?: boolean; padre?: string | null; auto?: boolean } = {}) {
   const c = normalizzaSigla(codice);
   const al = alias ? normalizzaSigla(alias) : null;
   const m = tutti ? TUTTI : modello.trim().toUpperCase();
@@ -911,8 +934,10 @@ export async function decidiSigla(user: Utente, modello: string, codice: string,
   await db.begin(async raw => {
     const tx = raw as unknown as Tx;
     await tx`
-      INSERT INTO ferrari_sigla (modello, codice, va, sub, alias, creato_da) VALUES (${m}, ${c}, ${va}, ${sub}, ${al}, ${user.username})
-      ON CONFLICT (modello, codice) DO UPDATE SET va = EXCLUDED.va, sub = EXCLUDED.sub, alias = EXCLUDED.alias`;
+      INSERT INTO ferrari_sigla (modello, codice, va, sub, alias, nosigla, padre, auto, creato_da)
+      VALUES (${m}, ${c}, ${va && !extra.nosigla}, ${sub}, ${al}, ${extra.nosigla === true}, ${sub && extra.padre ? normalizzaSigla(extra.padre) : null}, ${extra.auto === true}, ${user.username})
+      ON CONFLICT (modello, codice) DO UPDATE SET va = EXCLUDED.va, sub = EXCLUDED.sub, alias = EXCLUDED.alias, nosigla = EXCLUDED.nosigla,
+                                                  padre = EXCLUDED.padre, auto = EXCLUDED.auto`;
     await tx`DELETE FROM ferrari_sigla_proposta WHERE modello = ${m} AND codice = ${c}`;   // decisa: la proposta e' superata
     await audit(tx, user, va ? 'sigla.va' : 'sigla.non_va', 'sigla', `${m}/${c}`, null);
   });

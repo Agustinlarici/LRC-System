@@ -20,6 +20,10 @@ export interface Opzione {
   valore:         string;
   nota:           string;
   blocchi_testo:  BloccoTesto[];
+  /** Controllo delle righe toccate a mano (vedi anomalie.ts): frasi, codice suggerito e avvisi dell'intera scheda. */
+  anomalie?:        string[];
+  suggerito?:       string | null;
+  scheda_anomalie?: { codice: string; riga: number | null; motivo: string }[];
 }
 
 export type LivelloAnomalia = 'info' | 'attenzione' | 'errore';

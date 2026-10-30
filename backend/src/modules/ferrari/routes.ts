@@ -11,7 +11,8 @@ import {
   type Utente,
 } from './service.js';
 
-import { applicaComponente, configurazioneSigle, decidiTutteDaDecidere, impostaSigla, STATI_IMPOSTABILI } from './impostazioni.js';
+import { applicaComponente, configurazioneSigle, decidiTutteDaDecidere, ereditaPerModello, impostaSigla, STATI_IMPOSTABILI } from './impostazioni.js';
+import { creaModello, modelloErroreDi, togliModello } from './modelli.js';
 import { leggiCartella, leggiConfig, salvaConfig, statoLettura, ultimeLetture } from './cartella.js';
 import { logger } from '../../lib/logger.js';
 import {
@@ -113,9 +114,18 @@ ferrariRoutes.get('/impostazioni/sigle', requireModule(VISTA), async (c) => c.js
 ferrariRoutes.post('/sigle/imposta', requireManage(VISTA), async (c) => {
   const b = await parseBody(c, z.object({
     codice: z.string().min(1).max(60), stato: z.enum(STATI_IMPOSTABILI),
-    modelli: z.union([z.literal('*'), z.array(z.string().min(1).max(30)).min(1).max(50)]), alias: z.string().max(60).nullish(),
+    modelli: z.union([z.literal('*'), z.array(z.string().min(1).max(30)).min(1).max(50)]), alias: z.string().max(60).nullish(), padre: z.string().max(60).nullish(),
   }));
-  return c.json({ modelli: await impostaSigla(utente(c), b.codice, b.stato, b.modelli, b.alias) });
+  return c.json({ modelli: await impostaSigla(utente(c), b.codice, b.stato, b.modelli, b.alias, b.padre) });
+});
+
+ferrariRoutes.post('/modelli', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ azione: z.enum(['crea', 'togli', 'errore']), modello: z.string().min(1).max(30), giusto: z.string().max(30).optional() }));
+  const u = utente(c);
+  if (b.azione === 'crea') await creaModello(u, b.modello);
+  else if (b.azione === 'togli') await togliModello(u, b.modello);
+  else await modelloErroreDi(u, b.modello, b.giusto ?? '');
+  return c.json({ ok: true });
 });
 
 ferrariRoutes.post('/sigle/da-decidere', requireManage(VISTA), async (c) => {
@@ -227,7 +237,9 @@ ferrariRoutes.post('/files', requireManage(VISTA), async (c) => {
       risultati.push({ filename: f.name, errore: 'File troppo grande (max 10 MB)' });
       continue;
     }
-    risultati.push(await caricaScheda(user, f.name, f.buf));
+    const r = await caricaScheda(user, f.name, f.buf);
+    if (!r.duplicato) await ereditaPerModello(r.modello).catch(() => 0);       // sigle gia' decise da altri modelli: si decidono da sole
+    risultati.push(r);
   }
   return c.json({ risultati });
 });

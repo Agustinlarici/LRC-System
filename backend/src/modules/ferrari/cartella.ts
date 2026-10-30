@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { db } from '../../db/client.js';
 import { isUncPath, listUncFolderWithMtime, readUncFile } from '../../lib/smb-writer.js';
 import { logger } from '../../lib/logger.js';
+import { ereditaPerModello } from './impostazioni.js';
 import { audit, caricaScheda, getConfig, setConfig, type Utente } from './service.js';
 
 const MAX_FILE = 10 * 1024 * 1024;
@@ -94,6 +95,7 @@ export async function leggiCartella(tipo: 'auto' | 'manuale', chi: string | null
           const r = await caricaScheda(UTENTE_AUTO, v.nome, buf);
           const [f] = await db<{ sha256: string; commessa: string | null }[]>`SELECT sha256, commessa FROM ferrari_file WHERE id = ${r.id}`;
           sha = f?.sha256 ?? null;
+          if (!r.duplicato) await ereditaPerModello(r.modello).catch(() => 0);
           d.commessa = f?.commessa ?? undefined;
           if (r.duplicato) { d.esito = 'duplicato'; esito.duplicati++; }
           else if (r.stato === 'QUARANTENA') { d.esito = 'quarantena'; d.motivo = r.motivo; esito.quarantena++; }

@@ -176,6 +176,11 @@ function parseHeader(valori: Partial<Record<Etichetta, RigaLetta>>, anomalie: An
   };
 }
 
+/** Le righe non vuote del primo foglio (numero di riga + celle), per i controlli sulle righe toccate a mano. */
+export function righeFoglio(buf: Buffer): { riga: number; celle: string[] }[] {
+  return leggiFoglio(buf).righe.map(r => ({ riga: r.riga, celle: r.celle }));
+}
+
 export function parseScheda(buf: Buffer, filename: string): Canonico {
   const format = formatFromMagic(buf);
   const sha256 = createHash('sha256').update(buf).digest('hex');

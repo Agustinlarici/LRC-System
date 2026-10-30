@@ -158,7 +158,7 @@ describe('tolleranza agli errori di scrittura (stessa regola della PC IA)', () =
   it('errore di una cifra: avviso; alias deciso: correzione; deciso come codice vero: niente avviso', () => {
     const livr = opz('LIVR', 'SI', ['LIVREA TLM15 SUGLI SPECCHI']);
     const acc = new Set(['TLM16']);
-    expect(sottosigleAccettate(livr, acc, ctx())[0]).toMatchObject({ codice: 'TLM16', scritto: 'TLM15', avviso: 'scritta TLM15: forse TLM16? controlla' });
+    expect(sottosigleAccettate(livr, acc, ctx())[0]).toMatchObject({ codice: 'TLM16', scritto: 'TLM15', avviso: 'scritta TLM15 (suggerito TLM16)' });
     expect(sottosigleAccettate(livr, acc, ctx({ TLM15: 'TLM16' }, ['TLM15']))[0]).toMatchObject({ codice: 'TLM16', avviso: 'scritta TLM15 (corretta in TLM16)' });
     expect(sottosigleAccettate(livr, new Set(['TLM15', 'TLM16']), ctx({}, ['TLM15']))[0]).toMatchObject({ codice: 'TLM15', avviso: null });
     expect(sottosigleAccettate(livr, acc, ctx({}, ['TLM15']))).toEqual([]);                           // deciso (anche «no»): non e' un sospetto
@@ -167,7 +167,7 @@ describe('tolleranza agli errori di scrittura (stessa regola della PC IA)', () =
   it('sigla di colonna scritta male, con alias, e codici veri simili che non si confondono', () => {
     const blc2 = [opz('BLC2', 'NERO DS 1250')];
     const cella = (c?: CtxSigle) => cellaTermine('BIC2', blc2, {}, c);
-    expect(cella(ctx())).toMatchObject({ testo: 'NERO DS 1250', avviso: 'scritta BLC2: forse BIC2? controlla' });
+    expect(cella(ctx())).toMatchObject({ testo: 'NERO DS 1250', avviso: 'scritta BLC2 (suggerito BIC2)' });
     expect(cella(ctx({ BLC2: 'BIC2' }, ['BLC2']))).toMatchObject({ testo: 'NERO DS 1250', avviso: 'scritta BLC2, corretta in BIC2' });
     expect(cella(ctx({}, ['BLC2']))).toMatchObject({ testo: '', opzione: null });                    // deciso come codice vero: colonna vuota
     const cexs = [opz('CEXS', 'SI')];

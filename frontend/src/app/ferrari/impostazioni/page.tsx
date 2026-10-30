@@ -7,22 +7,23 @@ import { useAuth } from '@/lib/auth';
 import { inviaFile, scaricaFile } from '@/lib/ferrari';
 import { Errore, FerrariNav } from '@/components/ferrari/Comuni';
 import { ImpostazioniCartella } from '@/components/ferrari/ImpostazioniCartella';
-import { ImpostazioniSigle } from '@/components/ferrari/ImpostazioniSigle';
+import { ImpostazioniSigle, type ConfigSigle } from '@/components/ferrari/ImpostazioniSigle';
+import { ImpostazioniModelli } from '@/components/ferrari/ImpostazioniModelli';
 import { ComponentiGestione } from '@/components/ferrari/ComponentiGestione';
 
-type Scheda = 'cartella' | 'sigle' | 'componenti' | 'avanzate';
+type Scheda = 'sigle' | 'modelli' | 'componenti' | 'cartella' | 'avanzate';
 const SCHEDE: { id: Scheda; label: string }[] = [
-  { id: 'cartella', label: 'Cartella Excel' }, { id: 'sigle', label: 'Sigle' }, { id: 'componenti', label: 'Componenti' }, { id: 'avanzate', label: 'Avanzate' },
+  { id: 'sigle', label: 'Sigle' }, { id: 'modelli', label: 'Modelli' }, { id: 'componenti', label: 'Componenti' }, { id: 'cartella', label: 'Cartella Excel' }, { id: 'avanzate', label: 'Avanzate' },
 ];
 interface Proposta { modello: string; codice: string; va: boolean; sub: boolean; alias: string | null; nome: string | null; conflitto: boolean; da: string | null }
-interface Contatori { da_decidere: Record<string, number>; proposte_sigle: Proposta[] }
+interface Contatori { da_decidere: Record<string, number>; proposte_sigle: Proposta[]; gestione_modelli: { nuovi: unknown[] } }
 
-const scheda = (h: string): Scheda => (SCHEDE.find(s => s.id === h.replace('#', ''))?.id ?? 'cartella');
+const scheda = (h: string): Scheda => (SCHEDE.find(s => s.id === h.replace('#', ''))?.id ?? 'sigle');
 
 export default function ImpostazioniPage() {
   const { canManage } = useAuth();
   const puoGestire = canManage('ferrari_schede');
-  const [tab, setTab] = useState<Scheda>('cartella');
+  const [tab, setTab] = useState<Scheda>('sigle');
   const [cont, setCont] = useState<Contatori | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -43,6 +44,7 @@ export default function ImpostazioniPage() {
   const apri = (t: Scheda) => { setTab(t); history.replaceState(null, '', `#${t}`); };
   const daDecidere = Object.values(cont?.da_decidere ?? {}).reduce((a, b) => a + b, 0);
   const proposte = cont?.proposte_sigle ?? [];
+  const modelliNuovi = cont?.gestione_modelli.nuovi.length ?? 0;
 
   async function risolvi(azione: string, p?: Proposta) {
     if (azione.endsWith('-tutte') && !confirm(`${azione.startsWith('accetta') ? 'Accettare' : 'Rifiutare'} tutte le modifiche della PC IA?`)) return;
@@ -71,7 +73,7 @@ export default function ImpostazioniPage() {
 
   return (
     <div>
-      <FerrariNav badge={puoGestire ? daDecidere + proposte.length : 0} />
+      <FerrariNav />
       <div className="mb-4">
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Programma Produzione</p>
         <h1 className="text-2xl font-bold text-gray-900">Impostazioni — schede</h1>
@@ -84,6 +86,7 @@ export default function ImpostazioniPage() {
             className={`px-4 py-1.5 text-sm rounded-lg border ${tab === s.id ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>
             {s.label}
             {s.id === 'sigle' && badge(daDecidere)}
+            {s.id === 'modelli' && badge(modelliNuovi)}
             {s.id === 'avanzate' && badge(proposte.length)}
           </button>
         ))}
@@ -93,9 +96,10 @@ export default function ImpostazioniPage() {
         <p className="rounded-lg border border-gray-200 bg-white px-4 py-6 text-sm text-gray-500">Non hai il permesso di modificare le impostazioni delle schede.</p>
       ) : (
         <>
-          {tab === 'cartella' && <ImpostazioniCartella />}
-          {tab === 'sigle' && <ImpostazioniSigle onCambia={contatori} />}
+          {tab === 'sigle' && <ImpostazioniSigle onCambia={(c: ConfigSigle) => setCont(c as unknown as Contatori)} />}
+          {tab === 'modelli' && <ImpostazioniModelli onCambia={contatori} />}
           {tab === 'componenti' && <ComponentiGestione />}
+          {tab === 'cartella' && <ImpostazioniCartella />}
           {tab === 'avanzate' && (
             <div className="space-y-4">
               <div className="rounded-xl border border-gray-200 bg-white p-5">

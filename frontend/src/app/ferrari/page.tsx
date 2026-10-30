@@ -5,24 +5,27 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { inviaFile } from '@/lib/ferrari';
-import { Cella, Errore, FerrariNav, VistaToggle } from '@/components/ferrari/Comuni';
+import { AnomalieRiga, Cella, Errore, FerrariNav, SottoSigla, VistaToggle } from '@/components/ferrari/Comuni';
 import { InfoCartella, type StatoCartella } from '@/components/ferrari/InfoCartella';
 
 interface Riga {
   id: number; commessa: string; modello: string | null; paese: string | null; stato: string;
   celle: Record<string, string>; testi: Record<string, string>; rivedere: Record<string, boolean>;
-  sub: Record<string, { codice: string; testo: string; avviso: string | null }[]>; avvisi: Record<string, string>;
+  sub: Record<string, { codice: string; testo: string; avviso: string | null; scritto?: string | null }[]>; avvisi: Record<string, string>;
+  anomalie: { codice: string; riga: number | null; motivo: string; suggerito: string | null }[];
 }
 interface Matrice {
   modelli: { modello: string; schede: number }[];
   modello: string;
   termini: string[];
+  etichette?: Record<string, string>;
   nuove: { codice: string }[];
   proposte: unknown[];
   righe: Riga[];
 }
 
 const DEFAULT_MAX = '200';
+const etichetta = (m: { etichette?: Record<string, string> }, t: string) => m.etichette?.[t] ? `${m.etichette[t]} (${t})` : t;
 const btnBase      = 'inline-flex items-center gap-1 text-sm font-medium px-3 py-2 rounded-lg transition-colors';
 const btnPrimary   = `${btnBase} bg-blue-600 text-white hover:bg-blue-700`;
 const btnSecondary = `${btnBase} bg-white border border-gray-200 text-gray-700 hover:bg-gray-50`;
@@ -128,7 +131,7 @@ export default function VederePage() {
       const out: Record<string, string | number> = { '#': i + 1, Commessa: r.commessa, Modello: r.modello ?? '' };
       for (const t of m.termini) {
         const sub = (r.sub?.[t] ?? []).map(s => `${s.codice}: ${s.testo}`);
-        out[t] = [r.celle[t] ?? '', ...sub].filter(Boolean).join('\n');
+        out[etichetta(m, t)] = [r.celle[t] ?? '', ...sub].filter(Boolean).join('\n');
       }
       return out;
     });
@@ -219,7 +222,15 @@ export default function VederePage() {
 
         {!m || m.modelli.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400">
-            Nessuna scheda ancora. {puoGestire ? 'Carica un Excel oppure scegli la cartella nelle Impostazioni.' : ''}
+            <b className="text-base text-gray-700">Benvenuto: non c&apos;è ancora nessuna scheda.</b>
+            {puoGestire && (
+              <ol className="mx-auto mt-3 max-w-md space-y-1 text-left text-sm">
+                <li><b>1.</b> Premi «Carica Excel» (o scegli la cartella nelle Impostazioni → Cartella Excel).</li>
+                <li><b>2.</b> Aspetta che la lettura finisca.</li>
+                <li><b>3.</b> Vai in Impostazioni (ingranaggio in alto a destra) → Sigle e scegli quali sigle vuoi come colonne.</li>
+                <li><b>4.</b> Torna qui: una riga per commessa e una colonna per sigla.</li>
+              </ol>
+            )}
           </div>
         ) : m.termini.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">
@@ -234,7 +245,7 @@ export default function VederePage() {
                 <tr className="bg-gray-100">
                   <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5">#</th>
                   <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">Commessa</th>
-                  {m.termini.map(t => <th key={t} className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">{t}</th>)}
+                  {m.termini.map(t => <th key={t} className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left min-w-[130px]">{etichetta(m, t)}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -243,18 +254,14 @@ export default function VederePage() {
                     <td className="border border-gray-200 px-2 py-1 text-center">{i + 1}</td>
                     <td className="border border-gray-200 px-2 py-1 font-mono font-semibold whitespace-nowrap">
                       <Link href={`/ferrari/${r.id}`} className="text-blue-700 hover:underline print:text-black">{r.commessa}</Link>
+                      <div className="d-print-none font-normal"><AnomalieRiga anomalie={r.anomalie} modello={m.modello} onFatto={() => carica(modello)} onErrore={setErrore} /></div>
                     </td>
                     {m.termini.map(t => (
                       <td key={t} className={`border border-gray-200 px-2 py-1 max-w-[260px] ${r.rivedere?.[t] ? 'shadow-[inset_3px_0_0_#f0a020]' : ''}`}>
                         {r.rivedere?.[t] && <div className="text-xs font-semibold text-amber-700" title="Da controllare">⚠ da rivedere</div>}
                         {r.avvisi?.[t] && <div className="text-xs font-semibold text-amber-700">⚠ {r.avvisi[t]}</div>}
                         <Cella testo={r.celle[t]} intero={r.testi[t]} />
-                        {r.sub?.[t]?.map(x => (
-                          <div key={x.codice} className="mt-1 rounded-lg border-l-[3px] border-gray-300 bg-white/60 px-2 py-0.5 text-xs text-gray-600">
-                            {x.avviso && <div className="font-semibold text-amber-700">⚠ {x.avviso}</div>}
-                            <b>{x.codice}</b> {x.testo}
-                          </div>
-                        ))}
+                        {r.sub?.[t]?.map(x => <SottoSigla key={x.codice} x={x} modello={m.modello} onFatto={() => carica(modello)} onErrore={setErrore} />)}
                       </td>
                     ))}
                   </tr>

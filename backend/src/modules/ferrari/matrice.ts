@@ -131,7 +131,7 @@ export function cellaTermine(
     for (const o of opzioni) {
       const c = o.codice.toUpperCase();
       if (!ctx.decisi.has(c) && !ctx.alias.has(c) && entroUno(c, t)) {
-        return { testo: cellaOpzione(o, dettagli[o.codice]), completo: testoLibero(o) || null, opzione: o, avviso: `scritta ${c}: forse ${t}? controlla` };
+        return { testo: cellaOpzione(o, dettagli[o.codice]), completo: testoLibero(o) || null, opzione: o, avviso: `scritta ${c} (suggerito ${t})` };
       }
     }
   }
@@ -143,6 +143,7 @@ export interface RigaMatrice {
   celle: Record<string, string>; testi: Record<string, string>; rivedere: Record<string, boolean>;
   sub: Record<string, SottoSiglaTrovata[]>;
   avvisi: Record<string, string>;
+  anomalie: { codice: string; riga: number | null; motivo: string; suggerito: string | null }[];
 }
 
 export interface SottoSiglaTrovata { codice: string; testo: string; avviso: string | null; scritto: string | null }
@@ -150,7 +151,7 @@ export interface SottoSiglaTrovata { codice: string; testo: string; avviso: stri
 /** Per un modello: una riga per commessa, una colonna per ogni sigla/parola scelta. */
 export function costruisciMatrice(
   schede: { id: number; stato: string; canonico: Canonico }[], termini: string[], dettagli?: DettagliPerCommessa, subOk: ReadonlySet<string> = new Set(),
-  ctx?: CtxSigle,
+  ctx?: CtxSigle, subPadre: ReadonlyMap<string, string> = new Map(),
 ): RigaMatrice[] {
   return schede.map(s => {
     const det = dettagliValidi(s.canonico.header.commessa ?? '', s.canonico.opzioni, dettagli);
@@ -165,8 +166,10 @@ export function costruisciMatrice(
       if (det.rivedere[t]) rivedere[t] = true;
       if (c.avviso) avvisi[t] = c.avviso;
       celle[t] = c.testo;
-      if (c.opzione && subOk.size > 0) {
-        const { resto, sub: dentro } = dividiSottoSigle(c.opzione, subOk, ctx, propri, det.testi[c.opzione.codice]);
+      // solo le sotto-sigle di questa voce (o di nessuna voce in particolare)
+      const subQui = new Set([...subOk].filter(x => (subPadre.get(x) ?? t) === t));
+      if (c.opzione && subQui.size > 0) {
+        const { resto, sub: dentro } = dividiSottoSigle(c.opzione, subQui, ctx, propri, det.testi[c.opzione.codice]);
         if (dentro.length > 0) {
           sub[t] = dentro;
           // cella dell'opzione: le parti passate alle sotto-sigle non si ripetono
@@ -175,9 +178,24 @@ export function costruisciMatrice(
       }
       if (c.completo) testi[t] = c.completo;
     }
+    // righe toccate a mano nell'Excel (vedi anomalie.ts): in tabella con la correzione proposta
+    const anomalie: RigaMatrice['anomalie'] = [];
+    for (const o of s.canonico.opzioni) {
+      for (const motivo of o.anomalie ?? []) {
+        const sugg = o.suggerito ?? null;
+        if (sugg && ctx && (ctx.alias.has(o.codice) || ctx.decisi.has(o.codice))) continue;   // gia' corretto (alias) o deciso («non e' una sigla»)
+        anomalie.push({ codice: o.codice, riga: o.riga ?? null, motivo, suggerito: sugg });
+        for (const t of new Set([o.codice, sugg])) if (t && termini.includes(t) && !avvisi[t]) avvisi[t] = `${o.codice}: ${motivo}`;
+      }
+      for (const a of o.scheda_anomalie ?? []) {
+        if (ctx && s.canonico.opzioni.some(x => ctx.alias.get(x.codice) === a.codice)) continue;   // il codice mancante e' stato riconosciuto con un alias
+        anomalie.push({ codice: a.codice, riga: a.riga, motivo: a.motivo, suggerito: null });
+        if (a.codice && termini.includes(a.codice) && !avvisi[a.codice]) avvisi[a.codice] = a.motivo;
+      }
+    }
     return {
       id: s.id, commessa: s.canonico.header.commessa ?? '', modello: s.canonico.header.tipo_matricola.modello,
-      paese: s.canonico.header.destinazione.paese, stato: s.stato, celle, testi, rivedere, sub, avvisi,
+      paese: s.canonico.header.destinazione.paese, stato: s.stato, celle, testi, rivedere, sub, avvisi, anomalie,
     };
   });
 }
@@ -230,8 +248,8 @@ export function sottosigleAccettate(
         else if (ctx && !ctx.decisi.has(t) && !propri.has(t)) {
           const vicini = ordinate.filter(s => s.length >= 4 && t.length >= 4 && entroUno(t, s))
             .sort((x, y) => Number(x.length !== t.length) - Number(y.length !== t.length) || (x < y ? -1 : 1));
-          if (vicini.length === 1) trovate.push({ pos: m.index!, codice: vicini[0]!, scritto: t, avviso: `scritta ${t}: forse ${vicini[0]}? controlla` });
-          else if (vicini.length > 1) trovate.push({ pos: m.index!, codice: t, scritto: t, avviso: `scritta ${t}: forse ${vicini.join(' o ')}? controlla` });
+          if (vicini.length === 1) trovate.push({ pos: m.index!, codice: vicini[0]!, scritto: t, avviso: `scritta ${t} (suggerito ${vicini[0]})` });
+          else if (vicini.length > 1) trovate.push({ pos: m.index!, codice: t, scritto: t, avviso: `scritta ${t} (suggeriti ${vicini.join(' o ')})` });
         }
       }
       for (const s of ordinate) {                              // scritti con spazi o trattini: «TL M5», «TLM-13»
