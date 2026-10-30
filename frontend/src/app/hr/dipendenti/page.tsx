@@ -107,6 +107,8 @@ export default function DipendentiPage() {
   const [avvisoFilter, setAvvisoFilter] = useState<'' | 'si' | 'no'>('');
   // Filtri delle altre colonne: testo (contiene), elenco (valore esatto) e intervalli di date (dal / al)
   const [showExtraFilters, setShowExtraFilters] = useState(false);
+  const [fMese, setFMese] = useState('');
+  const [fGiorno, setFGiorno] = useState('');
   const [fEmail, setFEmail] = useState('');
   const [fIndirizzo, setFIndirizzo] = useState('');
   const [fCitta, setFCitta] = useState('');
@@ -211,20 +213,19 @@ export default function DipendentiPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const extraActive = !!(fEmail || fIndirizzo || fCitta || fCap || fNomeOsti || fProv || fGruppo
-    || fNascitaDa || fNascitaA || fAssunzioneDa || fAssunzioneA || fCessazioneDa || fCessazioneA);
-  const extraOpen = showExtraFilters || extraActive;
+  // filtri aggiuntivi attivi: si vedono sul pulsante anche quando il pannello è chiuso
+  const extraCount = [fEmail, fIndirizzo, fCitta, fCap, fNomeOsti, fProv, fGruppo, fMese, fGiorno,
+    fNascitaDa || fNascitaA, fAssunzioneDa || fAssunzioneA, fCessazioneDa || fCessazioneA].filter(Boolean).length;
   const hasFilters = !!(fNominativo || fMatricola || fMansione || fResp || fSesso || fCategoria
     || fNazionalita || fLivello || fTipoContratto || funzioneFilter || repartoFilter || plantFilter
     || societaFilter || tagFilter || inProvaFilter || avvisoFilter || statoFilter !== 'attivo'
-    || fEmail || fIndirizzo || fCitta || fCap || fNomeOsti || fProv || fGruppo
-    || fNascitaDa || fNascitaA || fAssunzioneDa || fAssunzioneA || fCessazioneDa || fCessazioneA);
+    || extraCount > 0);
   function resetFilters() {
     setFNominativo(''); setFMatricola(''); setFMansione(''); setFResp('');
     setFSesso(''); setFCategoria(''); setFNazionalita(''); setFLivello(''); setFTipoContratto('');
     setFunzioneFilter(''); setRepartoFilter(''); setPlantFilter(''); setSocietaFilter('');
     setTagFilter(''); setInProvaFilter(''); setAvvisoFilter(''); setStatoFilter('attivo');
-    setFEmail(''); setFIndirizzo(''); setFCitta(''); setFCap(''); setFNomeOsti(''); setFProv(''); setFGruppo('');
+    setFMese(''); setFGiorno(''); setFEmail(''); setFIndirizzo(''); setFCitta(''); setFCap(''); setFNomeOsti(''); setFProv(''); setFGruppo('');
     setFNascitaDa(''); setFNascitaA(''); setFAssunzioneDa(''); setFAssunzioneA(''); setFCessazioneDa(''); setFCessazioneA('');
   }
   // `skip` esclude un filtro dal confronto: serve a calcolare le opzioni di quel menu
@@ -243,6 +244,9 @@ export default function DipendentiPage() {
       && (skip === 'prov' || !fProv || (e.provincia ?? '') === fProv)
       && (skip === 'gruppo' || !fGruppo || (e.gruppo_orario ?? '') === fGruppo)
       && inRange(e.data_nascita, fNascitaDa, fNascitaA)
+      && ((!fMese && !fGiorno) || (!!e.data_nascita
+        && (!fMese || Number(e.data_nascita.slice(5, 7)) === Number(fMese))
+        && (!fGiorno || Number(e.data_nascita.slice(8, 10)) === Number(fGiorno))))
       && inRange(e.data_assunzione, fAssunzioneDa, fAssunzioneA)
       && inRange(e.data_cessazione, fCessazioneDa, fCessazioneA)
       && (skip === 'mansione' || !fMansione || e.mansione === fMansione)
@@ -742,6 +746,7 @@ export default function DipendentiPage() {
           )}
         </div>
         {showFilters && (
+        <>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2 px-4 py-3 [&_.input]:py-1 [&_.input]:text-xs">
           <input value={fNominativo} onChange={e => setFNominativo(e.target.value)} placeholder="Nome e cognome" className="input text-sm min-w-0" />
           <input value={fMatricola} onChange={e => setFMatricola(e.target.value)} placeholder="Matricola" className="input text-sm min-w-0" />
@@ -808,12 +813,7 @@ export default function DipendentiPage() {
             <option value="">Stato</option>
             {statiShown.map(o => <option key={o.value} value={o.value} className="text-gray-900">{o.label}</option>)}
           </select>
-          <button type="button" onClick={() => setShowExtraFilters(v => !v)} aria-expanded={extraOpen}
-            className="input text-left text-gray-500 hover:text-gray-700 flex items-center justify-between gap-1">
-            <span>Altri filtri{extraActive ? ' •' : ''}</span>
-            <svg className={`w-3 h-3 transition-transform ${extraOpen ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor"><path d="M5.3 7.3a1 1 0 011.4 0L10 10.6l3.3-3.3a1 1 0 111.4 1.4l-4 4a1 1 0 01-1.4 0l-4-4a1 1 0 010-1.4z" /></svg>
-          </button>
-          {extraOpen && (
+          {showExtraFilters && (
             <>
               <input value={fEmail} onChange={e => setFEmail(e.target.value)} placeholder="Email" className="input text-sm min-w-0" />
               <input value={fIndirizzo} onChange={e => setFIndirizzo(e.target.value)} placeholder="Indirizzo" className="input text-sm min-w-0" />
@@ -828,6 +828,18 @@ export default function DipendentiPage() {
                 {gruppiOrari.map(v => <option key={v} value={v} className="text-gray-900">{v}</option>)}
               </select>
               <input value={fNomeOsti} onChange={e => setFNomeOsti(e.target.value)} placeholder="Nome Osti" className="input text-sm min-w-0" />
+              <div className="col-span-2 flex items-center gap-1 min-w-0">
+                <span className="text-xs text-gray-400 shrink-0 w-16">Compleanno</span>
+                <select value={fGiorno} onChange={e => setFGiorno(e.target.value)} title="Giorno" className={`input text-sm min-w-0 ${fGiorno ? '' : 'text-gray-400'}`}>
+                  <option value="">Giorno</option>
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map(d => <option key={d} value={d} className="text-gray-900">{d}</option>)}
+                </select>
+                <select value={fMese} onChange={e => setFMese(e.target.value)} title="Mese" className={`input text-sm min-w-0 ${fMese ? '' : 'text-gray-400'}`}>
+                  <option value="">Mese</option>
+                  {['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
+                    .map((m, i) => <option key={m} value={i + 1} className="text-gray-900">{m}</option>)}
+                </select>
+              </div>
               {([
                 ['Data nascita', fNascitaDa, setFNascitaDa, fNascitaA, setFNascitaA],
                 ['Assunzione', fAssunzioneDa, setFAssunzioneDa, fAssunzioneA, setFAssunzioneA],
@@ -843,6 +855,14 @@ export default function DipendentiPage() {
             </>
           )}
         </div>
+        <div className="flex justify-end px-4 pb-2 -mt-1">
+          <button type="button" onClick={() => setShowExtraFilters(v => !v)} aria-expanded={showExtraFilters}
+            className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1">
+            {showExtraFilters ? 'Mostra meno filtri' : `Mostra più filtri${extraCount ? ` (${extraCount} attivi)` : ''}`}
+            <svg className={`w-3 h-3 transition-transform ${showExtraFilters ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor"><path d="M5.3 7.3a1 1 0 011.4 0L10 10.6l3.3-3.3a1 1 0 111.4 1.4l-4 4a1 1 0 01-1.4 0l-4-4a1 1 0 010-1.4z" /></svg>
+          </button>
+        </div>
+        </>
         )}
       </div>
 
