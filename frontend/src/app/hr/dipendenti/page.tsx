@@ -6,10 +6,11 @@ import { useRouter } from 'next/navigation';
 import * as XLSX from 'xlsx';
 import { useAuth } from '@/lib/auth';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
-import { ImportExcelButton, type ImportExcelHandle, type ImportResult } from '@/components/ui/ImportExcelButton';
+import { ImportExcelButton, type ImportExcelHandle, type ImportResult, type ImportIssue } from '@/components/ui/ImportExcelButton';
+import { runOstiImport } from './ostiImport';
 import { NewEmployeeModal } from './NewEmployeeModal';
 import { TagsSettingsModal } from './TagsSettingsModal';
-import { usePromptDialog, useChoiceDialog, SKIP_ALL } from '@/components/ui/PromptDialog';
+import { usePromptDialog, useChoiceDialog, useConfirmDialog, SKIP_ALL } from '@/components/ui/PromptDialog';
 import { tagDotStyle } from '@/lib/tagColors';
 
 const BACKEND = typeof window !== 'undefined'
@@ -40,11 +41,11 @@ const STATO_FILTER_OPTIONS: { value: string; label: string }[] = [
 // Colonna ⚠ (avvisi dell'import) in testa, solo se almeno una riga in elenco ne ha uno
 const gridCols = (warn: boolean) => (warn ? '24px ' : '') + GRID_COLS;
 // Larghezza minima della tabella: somma delle colonne, così righe e intestazione hanno lo stesso sfondo
-const TABLE_MIN_WIDTH = 3100;
+const TABLE_MIN_WIDTH = 3280;
 const GRID_COLS = '28px minmax(130px,1fr) minmax(110px,1fr) 90px 56px minmax(100px,1fr) minmax(120px,1fr) '
   + 'minmax(100px,1fr) 92px minmax(170px,1.2fr) minmax(170px,1.2fr) minmax(110px,1fr) 60px 64px '
   + 'minmax(120px,1fr) minmax(110px,1fr) minmax(110px,1fr) minmax(120px,1fr) 80px '
-  + 'minmax(120px,1fr) minmax(110px,1fr) minmax(120px,1fr) 100px 100px 68px 118px';
+  + 'minmax(120px,1fr) minmax(110px,1fr) minmax(120px,1fr) minmax(150px,1.2fr) 100px 100px 68px 118px';
 
 // Intestazioni esattamente come nell'Excel STR — il parser CSV le trasforma in
 // minuscolo con underscore al posto degli spazi (mantiene apostrofi).
@@ -103,6 +104,22 @@ export default function DipendentiPage() {
   const [societaFilter, setSocietaFilter] = useState<number | ''>('');
   const [tagFilter, setTagFilter] = useState<number | ''>('');
   const [inProvaFilter, setInProvaFilter] = useState<'' | 'si' | 'no'>('');
+  const [avvisoFilter, setAvvisoFilter] = useState<'' | 'si' | 'no'>('');
+  // Filtri delle altre colonne: testo (contiene), elenco (valore esatto) e intervalli di date (dal / al)
+  const [showExtraFilters, setShowExtraFilters] = useState(false);
+  const [fEmail, setFEmail] = useState('');
+  const [fIndirizzo, setFIndirizzo] = useState('');
+  const [fCitta, setFCitta] = useState('');
+  const [fCap, setFCap] = useState('');
+  const [fNomeOsti, setFNomeOsti] = useState('');
+  const [fProv, setFProv] = useState('');
+  const [fGruppo, setFGruppo] = useState('');
+  const [fNascitaDa, setFNascitaDa] = useState('');
+  const [fNascitaA, setFNascitaA] = useState('');
+  const [fAssunzioneDa, setFAssunzioneDa] = useState('');
+  const [fAssunzioneA, setFAssunzioneA] = useState('');
+  const [fCessazioneDa, setFCessazioneDa] = useState('');
+  const [fCessazioneA, setFCessazioneA] = useState('');
   const [statoFilter,   setStatoFilter]   = useState<string>('attivo');
   const [showFilters,   setShowFilters]   = useState(true);
   const [showNew,       setShowNew]       = useState(false);
@@ -140,6 +157,7 @@ export default function DipendentiPage() {
 
   const { ask, dialog: promptDialog } = usePromptDialog();
   const { choose, dialog: choiceDialog } = useChoiceDialog();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
 
   // Intestazione "congelata" fuori dall'area che scorre in verticale (invece di
   // position:sticky, che su Chrome dentro un contenitore overflow con bordi arrotondati
@@ -193,25 +211,40 @@ export default function DipendentiPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const extraActive = !!(fEmail || fIndirizzo || fCitta || fCap || fNomeOsti || fProv || fGruppo
+    || fNascitaDa || fNascitaA || fAssunzioneDa || fAssunzioneA || fCessazioneDa || fCessazioneA);
+  const extraOpen = showExtraFilters || extraActive;
   const hasFilters = !!(fNominativo || fMatricola || fMansione || fResp || fSesso || fCategoria
     || fNazionalita || fLivello || fTipoContratto || funzioneFilter || repartoFilter || plantFilter
-    || societaFilter || tagFilter || inProvaFilter || statoFilter !== 'attivo');
+    || societaFilter || tagFilter || inProvaFilter || avvisoFilter || statoFilter !== 'attivo'
+    || fEmail || fIndirizzo || fCitta || fCap || fNomeOsti || fProv || fGruppo
+    || fNascitaDa || fNascitaA || fAssunzioneDa || fAssunzioneA || fCessazioneDa || fCessazioneA);
   function resetFilters() {
     setFNominativo(''); setFMatricola(''); setFMansione(''); setFResp('');
     setFSesso(''); setFCategoria(''); setFNazionalita(''); setFLivello(''); setFTipoContratto('');
     setFunzioneFilter(''); setRepartoFilter(''); setPlantFilter(''); setSocietaFilter('');
-    setTagFilter(''); setInProvaFilter(''); setStatoFilter('attivo');
+    setTagFilter(''); setInProvaFilter(''); setAvvisoFilter(''); setStatoFilter('attivo');
+    setFEmail(''); setFIndirizzo(''); setFCitta(''); setFCap(''); setFNomeOsti(''); setFProv(''); setFGruppo('');
+    setFNascitaDa(''); setFNascitaA(''); setFAssunzioneDa(''); setFAssunzioneA(''); setFCessazioneDa(''); setFCessazioneA('');
   }
   // `skip` esclude un filtro dal confronto: serve a calcolare le opzioni di quel menu
   // in base a tutti gli ALTRI filtri attivi.
   type FilterKey = 'sesso' | 'categoria' | 'societa' | 'nazionalita' | 'funzione' | 'reparto' | 'plant'
-    | 'mansione' | 'livello' | 'resp' | 'tipoContratto' | 'tag' | 'inProva' | 'stato';
+    | 'mansione' | 'livello' | 'resp' | 'tipoContratto' | 'tag' | 'inProva' | 'avviso' | 'stato' | 'prov' | 'gruppo';
   const matches = (e: HrEmployee, skip?: FilterKey) => {
     const has = (v: string | null | undefined, q: string) => !q.trim() || (v ?? '').toLowerCase().includes(q.trim().toLowerCase());
+    const inRange = (v: string | null | undefined, da: string, a: string) =>
+      (!da && !a) || (!!v && (!da || v.slice(0, 10) >= da) && (!a || v.slice(0, 10) <= a));
     // Nome e cognome in un solo filtro: ogni parola digitata deve comparire, in qualunque ordine
     const fullName = `${e.cognome} ${e.nome}`.toLowerCase();
     return fNominativo.trim().toLowerCase().split(/\s+/).filter(Boolean).every(w => fullName.includes(w))
       && has(e.matricola, fMatricola)
+      && has(e.email, fEmail) && has(e.indirizzo, fIndirizzo) && has(e.citta, fCitta) && has(e.cap, fCap) && has(e.nome_osti, fNomeOsti)
+      && (skip === 'prov' || !fProv || (e.provincia ?? '') === fProv)
+      && (skip === 'gruppo' || !fGruppo || (e.gruppo_orario ?? '') === fGruppo)
+      && inRange(e.data_nascita, fNascitaDa, fNascitaA)
+      && inRange(e.data_assunzione, fAssunzioneDa, fAssunzioneA)
+      && inRange(e.data_cessazione, fCessazioneDa, fCessazioneA)
       && (skip === 'mansione' || !fMansione || e.mansione === fMansione)
       && (skip === 'resp' || !fResp || e.capo_nome === fResp)
       && (skip === 'nazionalita' || !fNazionalita || e.nazionalita === fNazionalita)
@@ -223,6 +256,7 @@ export default function DipendentiPage() {
       && (skip === 'societa' || !societaFilter || e.contract_company_id === Number(societaFilter))
       && (skip === 'tag' || !tagFilter || e.tag_id === Number(tagFilter))
       && (skip === 'inProva' || !inProvaFilter || (inProvaFilter === 'si' ? e.in_prova : !e.in_prova))
+      && (skip === 'avviso' || !avvisoFilter || (avvisoFilter === 'si' ? !!e.import_warning : !e.import_warning))
       && (skip === 'funzione' || !funzioneFilter || (e.funzione_aziendale ?? '') === funzioneFilter)
       && (skip === 'reparto' || !repartoFilter || e.reparto_id === Number(repartoFilter))
       && (skip === 'stato' || !statoFilter || e.stato === statoFilter);
@@ -235,6 +269,8 @@ export default function DipendentiPage() {
   const distinctOf = (list: HrEmployee[], pick: (e: HrEmployee) => string | null | undefined, selected: string) =>
     Array.from(new Set([...list.map(pick).filter((v): v is string => !!v), ...(selected ? [selected] : [])])).sort((a, b) => a.localeCompare(b));
   const categorie = distinctOf(pool('categoria'), e => e.categoria, fCategoria);
+  const province = distinctOf(pool('prov'), e => e.provincia, fProv);
+  const gruppiOrari = distinctOf(pool('gruppo'), e => e.gruppo_orario, fGruppo);
   const nazionalita = distinctOf(pool('nazionalita'), e => e.nazionalita, fNazionalita);
   const funzioni = distinctOf(pool('funzione'), e => e.funzione_aziendale, funzioneFilter);
   const mansioni = distinctOf(pool('mansione'), e => e.mansione, fMansione);
@@ -252,6 +288,8 @@ export default function DipendentiPage() {
   const tagsShown = tags.filter(t => tagDisponibili.has(t.id) || t.id === Number(tagFilter));
   const provaPool = pool('inProva');
   const provaSi = provaPool.some(e => e.in_prova), provaNo = provaPool.some(e => !e.in_prova);
+  const avvisoPool = pool('avviso');
+  const avvisoSi = avvisoPool.some(e => e.import_warning), avvisoNo = avvisoPool.some(e => !e.import_warning);
   const statiDisponibili = new Set(pool('stato').map(e => e.stato));
   const statiShown = STATO_FILTER_OPTIONS.filter(o => statiDisponibili.has(o.value as HrEmployee['stato']) || o.value === statoFilter);
 
@@ -263,7 +301,8 @@ export default function DipendentiPage() {
       Città: e.citta ?? '', Provincia: e.provincia ?? '', CAP: e.cap ?? '',
       Funzione: e.funzione_aziendale ?? '', Reparto: e.reparto_name ?? '', Plant: e.plant_name ?? '',
       Mansione: e.mansione ?? '', Livello: e.livello ?? '', Responsabile: e.capo_nome ?? '',
-      'Tipo contratto': e.tipo_contratto ?? '', 'Gruppo orario': e.gruppo_orario ?? '', Assunzione: e.data_assunzione?.slice(0, 10) ?? '',
+      'Tipo contratto': e.tipo_contratto ?? '', 'Gruppo orario': e.gruppo_orario ?? '', 'Nome Osti': e.nome_osti ?? '',
+      'Taglia pantaloni': e.taglia_pantaloni ?? '', 'Taglia maglia': e.taglia_maglia ?? '', 'Taglia scarpe': e.taglia_scarpe ?? '', Assunzione: e.data_assunzione?.slice(0, 10) ?? '',
       Cessazione: e.data_cessazione?.slice(0, 10) ?? '', 'In prova': e.in_prova ? 'Sì' : '',
       Stato: STATO_LABEL[e.stato] ?? e.stato,
     }));
@@ -291,11 +330,19 @@ export default function DipendentiPage() {
   }
 
   async function importRows(rows: Record<string, string>[], variant?: string): Promise<ImportResult> {
+    if (variant === 'osti') {
+      const [empRes, depRes] = await Promise.all([
+        fetch(`${BACKEND}/api/hr/employees`, { credentials: 'include' }),
+        fetch(`${BACKEND}/api/hr/departments`, { credentials: 'include' }),
+      ]);
+      if (!empRes.ok || !depRes.ok) return { inserted: 0, skipped: 0, errors: 1, detail: 'Impossibile leggere dipendenti e reparti.' };
+      return runOstiImport(rows, { backend: BACKEND, employees: await empRes.json(), departments: await depRes.json(), confirm, onChanged: refreshEmployees });
+    }
     // 'storico': i cambiamenti compaiono nella timeline con la data di oggi.
     // 'sostituisci': i dati si aggiornano senza lasciare eventi, come se fossero sempre stati così.
     const historyQuery = variant === 'sostituisci' ? '?storico=0' : '';
     let inserted = 0, updated = 0, skipped = 0, errors = 0, warnings = 0;
-    const skippedRows: string[] = [];
+    const issues: ImportIssue[] = [];   // tabella "Vedi dettaglio" del risultato
     const today = new Date().toISOString().slice(0, 10);
 
     const deptByName    = new Map(departments.map(d => [d.name.toLowerCase(), d.id]));
@@ -362,7 +409,7 @@ export default function DipendentiPage() {
       // Riga senza nessun nome: non c'è nulla da collegare a una persona, va saltata davvero.
       if (parts.length === 0) {
         skipped++;
-        skippedRows.push('(riga vuota): nessun nome');
+        issues.push({ type: 'Saltato', name: '(riga vuota)', note: 'nessun nome' });
         continue;
       }
       // Dati incompleti/incerti (nome a una sola parola, data assunzione mancante o non
@@ -435,7 +482,7 @@ export default function DipendentiPage() {
         // Rieseguendo l'import con l'Excel corretto l'avviso si aggiorna (o si pulisce da solo).
         import_warning: rowWarnings.length ? rowWarnings.join(' | ') : null,
       };
-      if (rowWarnings.length) warnings++;
+      if (rowWarnings.length) { warnings++; issues.push({ type: 'Dati incompleti', name: `${cognome} ${nome}`, note: rowWarnings.join(' | ') }); }
 
       const existingId = (matricola && empByMatricola.get(matricola.toLowerCase()))
         || (cf && empByCF.get(cf))
@@ -444,7 +491,7 @@ export default function DipendentiPage() {
       let id: number | null = null;
       if (existingId) {
         const res = await patch(existingId, { ...fields, stato: cessato ? 'cessato' : 'attivo' });
-        if (res.ok) { updated++; id = existingId; } else errors++;
+        if (res.ok) { updated++; id = existingId; } else { errors++; issues.push({ type: 'Errore', name: `${cognome} ${nome}`, note: 'aggiornamento rifiutato dal server' }); }
       } else {
         const res = await fetch(`${BACKEND}/api/hr/employees`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
@@ -467,7 +514,7 @@ export default function DipendentiPage() {
               body: JSON.stringify({ event_type: 'maternita_paternita', event_date: parseItalianDate(maternita) ?? dataAssunzione, note: maternita }),
             });
           }
-        } else errors++;
+        } else { errors++; issues.push({ type: 'Errore', name: `${cognome} ${nome}`, note: 'creazione rifiutata dal server' }); }
       }
       if (id) links.push({ id, responsabile: row['responsabile']?.trim() ?? '', manager: row['manager']?.trim() ?? '', funzione: row['funzione_aziendale']?.trim() ?? '' });
     }
@@ -600,21 +647,18 @@ export default function DipendentiPage() {
       for (let cur: number | undefined = capo, n = 0; cur && n < 1000; cur = parent.get(cur), n++) if (cur === id) return true;
       return false;
     };
-    let loops = 0;
     for (const [id, capo_id] of chiefOf) {
-      if (wouldLoop(id, capo_id)) { loops++; continue; }
+      if (wouldLoop(id, capo_id)) { issues.push({ type: 'Ciclo ignorato', name: labelOf.get(id) ?? String(id), note: `responsabile ${labelOf.get(capo_id) ?? capo_id}: sarebbe responsabile di chi lo guida` }); continue; }
       const res = await patch(id, { capo_id });
       if (res.ok) parent.set(id, capo_id);
     }
 
+    for (const raw of ambiguous) issues.push({ type: 'Responsabile ambiguo', name: raw, note: 'più persone con questo cognome: nell\'Excel indica cognome e nome' });
+    for (const raw of missing) issues.push({ type: 'Responsabile non creato', name: raw, note: 'non esiste tra i dipendenti e non è stato creato' });
+
     return {
-      inserted, skipped, errors, warnings,
-      detail: `Nuovi: ${inserted} · già presenti e aggiornati: ${updated}${createdChiefs ? ` · responsabili creati: ${createdChiefs} (controlla la data di assunzione)` : ''}. Responsabile e manager si collegano per cognome (o cognome e nome)`
-        + (warnings ? ` Con dati incompleti ma caricati comunque (vedi colonna avvisi nella tabella): ${warnings}.` : '')
-        + (loops ? ` Collegamenti ignorati perché creavano un ciclo (A responsabile di B e B di A): ${loops}.` : '')
-        + (skippedRows.length ? ` Saltati (${skippedRows.length}): ${skippedRows.slice(0, 40).join(' | ')}${skippedRows.length > 40 ? ' …' : ''}.` : '')
-        + (ambiguous.size ? ` Responsabili ambigui (più persone con lo stesso cognome), non collegati: ${[...ambiguous].join(', ')} — nell'Excel indica cognome e nome.` : '')
-        + (missing.size ? `; non collegati perché non creati: ${[...missing].join(', ')}.` : '.'),
+      inserted, skipped, errors, warnings, issues,
+      detail: `Nuovi: ${inserted} · già presenti e aggiornati: ${updated}${createdChiefs ? ` · responsabili creati: ${createdChiefs} (controlla la data di assunzione)` : ''}.`,
     };
   }
 
@@ -666,6 +710,12 @@ export default function DipendentiPage() {
                       Importa da Excel — sostituisci tutto
                     </button>
                     <button type="button" role="menuitem"
+                      title="Elenco dipendenti di Osti (CSV): abbina per cognome e nome (o Nome Osti) e aggiorna le schede"
+                      onClick={() => { setShowMore(false); importRef.current?.open('osti'); }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-gray-50">
+                      Importa elenco Osti (CSV)
+                    </button>
+                    <button type="button" role="menuitem"
                       onClick={() => { setShowMore(false); router.push('/hr/dipendenti/foto-massiva'); }}
                       className="w-full text-left px-3 py-1.5 hover:bg-gray-50">Carica foto</button>
                   </>
@@ -692,7 +742,7 @@ export default function DipendentiPage() {
           )}
         </div>
         {showFilters && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 px-4 py-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2 px-4 py-3 [&_.input]:py-1 [&_.input]:text-xs">
           <input value={fNominativo} onChange={e => setFNominativo(e.target.value)} placeholder="Nome e cognome" className="input text-sm min-w-0" />
           <input value={fMatricola} onChange={e => setFMatricola(e.target.value)} placeholder="Matricola" className="input text-sm min-w-0" />
           <select value={fSesso} onChange={e => setFSesso(e.target.value)} className={`input text-sm min-w-0 ${fSesso ? '' : 'text-gray-400'}`}>
@@ -749,10 +799,49 @@ export default function DipendentiPage() {
             {(provaSi || inProvaFilter === 'si') && <option value="si" className="text-gray-900">Sì</option>}
             {(provaNo || inProvaFilter === 'no') && <option value="no" className="text-gray-900">No</option>}
           </select>
+          <select value={avvisoFilter} onChange={e => setAvvisoFilter(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${avvisoFilter ? '' : 'text-gray-400'}`}>
+            <option value="">Errori import</option>
+            {(avvisoSi || avvisoFilter === 'si') && <option value="si" className="text-gray-900">Con errori</option>}
+            {(avvisoNo || avvisoFilter === 'no') && <option value="no" className="text-gray-900">Senza errori</option>}
+          </select>
           <select value={statoFilter} onChange={e => setStatoFilter(e.target.value)} className={`input text-sm min-w-0 ${statoFilter ? '' : 'text-gray-400'}`}>
             <option value="">Stato</option>
             {statiShown.map(o => <option key={o.value} value={o.value} className="text-gray-900">{o.label}</option>)}
           </select>
+          <button type="button" onClick={() => setShowExtraFilters(v => !v)} aria-expanded={extraOpen}
+            className="input text-left text-gray-500 hover:text-gray-700 flex items-center justify-between gap-1">
+            <span>Altri filtri{extraActive ? ' •' : ''}</span>
+            <svg className={`w-3 h-3 transition-transform ${extraOpen ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor"><path d="M5.3 7.3a1 1 0 011.4 0L10 10.6l3.3-3.3a1 1 0 111.4 1.4l-4 4a1 1 0 01-1.4 0l-4-4a1 1 0 010-1.4z" /></svg>
+          </button>
+          {extraOpen && (
+            <>
+              <input value={fEmail} onChange={e => setFEmail(e.target.value)} placeholder="Email" className="input text-sm min-w-0" />
+              <input value={fIndirizzo} onChange={e => setFIndirizzo(e.target.value)} placeholder="Indirizzo" className="input text-sm min-w-0" />
+              <input value={fCitta} onChange={e => setFCitta(e.target.value)} placeholder="Città" className="input text-sm min-w-0" />
+              <select value={fProv} onChange={e => setFProv(e.target.value)} className={`input text-sm min-w-0 ${fProv ? '' : 'text-gray-400'}`}>
+                <option value="">Provincia</option>
+                {province.map(v => <option key={v} value={v} className="text-gray-900">{v}</option>)}
+              </select>
+              <input value={fCap} onChange={e => setFCap(e.target.value)} placeholder="CAP" className="input text-sm min-w-0" />
+              <select value={fGruppo} onChange={e => setFGruppo(e.target.value)} className={`input text-sm min-w-0 ${fGruppo ? '' : 'text-gray-400'}`}>
+                <option value="">Gruppo orario</option>
+                {gruppiOrari.map(v => <option key={v} value={v} className="text-gray-900">{v}</option>)}
+              </select>
+              <input value={fNomeOsti} onChange={e => setFNomeOsti(e.target.value)} placeholder="Nome Osti" className="input text-sm min-w-0" />
+              {([
+                ['Data nascita', fNascitaDa, setFNascitaDa, fNascitaA, setFNascitaA],
+                ['Assunzione', fAssunzioneDa, setFAssunzioneDa, fAssunzioneA, setFAssunzioneA],
+                ['Cessazione', fCessazioneDa, setFCessazioneDa, fCessazioneA, setFCessazioneA],
+              ] as [string, string, (v: string) => void, string, (v: string) => void][]).map(([label, da, setDa, a, setA]) => (
+                <div key={label} className="col-span-2 flex items-center gap-1 min-w-0">
+                  <span className="text-xs text-gray-400 shrink-0 w-16">{label}</span>
+                  <input type="date" value={da} onChange={e => setDa(e.target.value)} title={`${label}: dal`} className="input text-sm min-w-0" />
+                  <span className="text-xs text-gray-400">→</span>
+                  <input type="date" value={a} onChange={e => setA(e.target.value)} title={`${label}: al`} className="input text-sm min-w-0" />
+                </div>
+              ))}
+            </>
+          )}
         </div>
         )}
       </div>
@@ -767,7 +856,7 @@ export default function DipendentiPage() {
             <div>Società</div><div>Nazionalità</div>
             <div>Data nascita</div><div>Email</div><div>Indirizzo</div><div>Città</div><div>Prov.</div><div>CAP</div>
             <div>Funzione</div><div>Reparto</div><div>Plant</div>
-            <div>Mansione</div><div>Livello</div><div>Responsabile</div><div>Tipo contratto</div><div>Gruppo orario</div>
+            <div>Mansione</div><div>Livello</div><div>Responsabile</div><div>Tipo contratto</div><div>Gruppo orario</div><div>Nome Osti</div>
             <div>Assunzione</div><div>Cessazione</div><div className="text-center">Prova</div>
             <div className="text-center">Stato</div>
           </div>
@@ -856,6 +945,7 @@ export default function DipendentiPage() {
               <div className="text-sm text-gray-600 truncate">{e.capo_nome ?? '—'}</div>
               <div className="text-sm text-gray-600 truncate">{e.tipo_contratto ?? '—'}</div>
               <div className="text-sm text-gray-600 truncate">{e.gruppo_orario ?? '—'}</div>
+              <div className="text-sm text-gray-600 truncate" title={e.nome_osti ?? undefined}>{e.nome_osti ?? '—'}</div>
               <div className="text-sm text-gray-600 truncate">{e.data_assunzione?.slice(0, 10) ?? '—'}</div>
               <div className="text-sm text-gray-600 truncate">{e.data_cessazione?.slice(0, 10) ?? '—'}</div>
               <div className="text-center text-sm text-gray-600">{e.in_prova ? 'Sì' : '—'}</div>
@@ -870,6 +960,7 @@ export default function DipendentiPage() {
 
       {promptDialog}
       {choiceDialog}
+      {confirmDialog}
 
       {showMatricole && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setShowMatricole(false)}>
