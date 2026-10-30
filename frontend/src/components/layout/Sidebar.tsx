@@ -188,7 +188,7 @@ export function Sidebar() {
 
       {/* Logo */}
       <div className="flex items-center justify-center border-b border-white/10 h-14 px-4">
-        <img src="/logo.png" alt="STR" className="h-9 select-none object-contain" />
+        <img src="/logo-white.png" alt="STR" className="h-9 select-none object-contain" />
       </div>
 
       {/* Nav */}
