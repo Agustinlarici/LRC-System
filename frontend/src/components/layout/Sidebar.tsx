@@ -3,10 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { MODULE_GROUPS, modulesByGroup, settingsHrefFor } from '@/lib/modules';
+import { MODULE_GROUPS, modulesByGroup } from '@/lib/modules';
 import { useAuth } from '@/lib/auth';
 import type { ModuleKey } from '@/types';
-import { ICON_MAP, GROUP_ICON_MAP, IconSettings } from '@/components/icons/ModuleIcons';
+import { ICON_MAP, GROUP_ICON_MAP } from '@/components/icons/ModuleIcons';
 
 // ─── SVG Icons (sidebar chrome only) ───────────────────────────────────────────
 
@@ -168,14 +168,6 @@ export function Sidebar() {
     return false;
   }
 
-  // Impostazioni: stessa posizione in ogni pagina; punta a quelle del modulo corrente
-  // oppure, fuori dai moduli, a quelle di sistema (solo per chi può gestirle).
-  // Solo per IT (e admin): gli altri utenti non vedono la voce.
-  const isIt           = user?.role === 'it' || user?.role === 'admin';
-  const moduleSettings = settingsHrefFor(pathname);
-  const settingsHref   = !isIt ? null : (moduleSettings ?? (canManage('impostazioni') ? '/admin/system' : null));
-  const settingsActive = !!settingsHref && (pathname === settingsHref || pathname.startsWith(settingsHref + '/'));
-
   return (
     <aside className={`d-print-none relative min-h-full bg-ink-900 text-white flex flex-col shrink-0 transition-all duration-300 ${
       expanded ? 'w-56' : 'w-[68px]'
@@ -276,19 +268,8 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Footer — Impostazioni (sempre qui, in basso) + utente + esci */}
+      {/* Footer — utente + esci */}
       <div className="border-t border-white/10 px-2 py-3 space-y-0.5">
-        {settingsHref && (
-          <Link href={settingsHref} title="Impostazioni"
-            className={`relative flex items-center gap-3 px-2.5 py-2 rounded-xl text-sm transition-colors
-              ${expanded ? '' : 'justify-center'}
-              ${settingsActive ? 'bg-white/10 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}
-          >
-            {settingsActive && <ActiveMark />}
-            <IconSettings />
-            {expanded && <span className="truncate font-medium">Impostazioni</span>}
-          </Link>
-        )}
         {/* Utente corrente: un solo posto, in fondo al menu */}
         <div className={`flex items-center gap-3 px-2.5 py-2 ${expanded ? '' : 'justify-center'}`} title={user?.display_name}>
           <span className="flex items-center justify-center w-8 h-8 rounded-full bg-white/10 text-white text-xs font-semibold shrink-0">

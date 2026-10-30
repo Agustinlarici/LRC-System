@@ -36,6 +36,7 @@ export default function ProduzionePage() {
         actions={
           <>
             <Button href="/spma/import">Import Planning</Button>
+            <Button href="/produzione/impostazioni">Impostazioni</Button>
             <Button
               href="/produzione/conflitti"
               className={hasUrgentDup ? '!bg-danger-soft !text-danger !border-transparent hover:!bg-red-200' : ''}

@@ -190,24 +190,3 @@ export type ModuleGroup = typeof MODULE_GROUPS[number];
 
 export const modulesByGroup = (group: string) =>
   visibleModules.filter(m => m.group === group);
-
-// ─── Impostazioni per modulo ───────────────────────────────────────────────────
-// Prefisso di rotta → pagina impostazioni del modulo. Più specifici per primi.
-const MODULE_SETTINGS: [prefix: string, href: string][] = [
-  ['/monitor/resumen', '/monitor/resumen/impostazioni'],
-  ['/monitor',         '/monitor/impostazioni'],
-  ['/buffer',          '/buffer/impostazioni'],
-  ['/mappa',           '/mappa/impostazioni'],
-  ['/packing',         '/packing/impostazioni'],
-  ['/produzione',      '/produzione/impostazioni'],
-  ['/spma',            '/spma/impostazioni'],
-  ['/tickets',         '/tickets/impostazioni'],
-  ['/webddt',          '/webddt/impostazioni'],
-  ['/qualita',         '/qualita/impostazioni'],
-];
-
-/** Pagina impostazioni del modulo a cui appartiene `pathname`, se ne ha una. */
-export function settingsHrefFor(pathname: string): string | null {
-  const hit = MODULE_SETTINGS.find(([prefix]) => pathname === prefix || pathname.startsWith(prefix + '/'));
-  return hit ? hit[1] : null;
-}
