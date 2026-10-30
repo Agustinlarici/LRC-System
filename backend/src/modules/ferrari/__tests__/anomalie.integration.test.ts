@@ -22,6 +22,7 @@ describe.skipIf(!URL)('Righe toccate, stati delle sigle, modelli', () => {
   let svc: typeof import('../service.js');
   let imp: typeof import('../impostazioni.js');
   let mod: typeof import('../modelli.js');
+  let des: typeof import('../descrizioni.js');
   let db: typeof import('../../../db/client.js').db;
   const op = { id: 1, username: 'operatore' };
 
@@ -30,11 +31,12 @@ describe.skipIf(!URL)('Righe toccate, stati delle sigle, modelli', () => {
     svc = await import('../service.js');
     imp = await import('../impostazioni.js');
     mod = await import('../modelli.js');
+    des = await import('../descrizioni.js');
     db = (await import('../../../db/client.js')).db;
   });
   afterAll(async () => { await db?.end(); });
   beforeEach(async () => {
-    await db`TRUNCATE ferrari_modello_alias, ferrari_modello_noto, ferrari_dettaglio, ferrari_sigla_proposta, ferrari_sigla, ferrari_termine, ferrari_decisione, ferrari_confronto, ferrari_analisi, ferrari_codice, ferrari_componente, ferrari_audit, ferrari_file RESTART IDENTITY CASCADE`;
+    await db`TRUNCATE ferrari_sigla_descrizione, ferrari_modello_alias, ferrari_modello_noto, ferrari_dettaglio, ferrari_sigla_proposta, ferrari_sigla, ferrari_termine, ferrari_decisione, ferrari_confronto, ferrari_analisi, ferrari_codice, ferrari_componente, ferrari_audit, ferrari_file RESTART IDENTITY CASCADE`;
   });
 
   const carica = (commessa: number, righe: R[], modello = 'F999XX') =>
@@ -164,5 +166,49 @@ describe.skipIf(!URL)('Righe toccate, stati delle sigle, modelli', () => {
     await imp.impostaSigla(op, 'PAROLA', 'colonna', ['F999XX']);                     // una parola cercata non ha descrizione
     const m = await svc.matrice('F999XX');
     expect(m.etichette).toEqual({ BIC2: 'CARROZZERIA BICOLORE' });
+  });
+
+  it('«Si» a una sigla che le schede descrivono salva la descrizione e va in colonna', async () => {
+    await carica(1, [['BIC2', 'CARROZZERIA BICOLORE', 'NERO DS 1250']]);
+    expect((await svc.matrice('F999XX')).etichette).toEqual({});
+    await imp.impostaSigla(op, 'BIC2', 'colonna', ['F999XX']);
+    expect((await svc.matrice('F999XX')).etichette).toEqual({ BIC2: 'CARROZZERIA BICOLORE' });
+  });
+
+  it('leggere un elenco: tab, punto e virgola o spazio; intestazione e righe vuote ignorate', () => {
+    const r = des.leggiElenco('SIGLA\tDESCRIZIONE\nBIC2\tCARROZZERIA BICOLORE\n\nCEXS;RIVEST. SOTTOPORTA\nLIVR LIVREA SPECIALE\nbrad\nBIC2\tCARROZZERIA 2 COLORI\n');
+    expect(r.voci).toEqual([
+      { codice: 'BIC2', descrizione: 'CARROZZERIA 2 COLORI' }, { codice: 'CEXS', descrizione: 'RIVEST. SOTTOPORTA' },
+      { codice: 'LIVR', descrizione: 'LIVREA SPECIALE' }, { codice: 'BRAD', descrizione: '' },
+    ]);
+  });
+
+  it('caricamento massivo: le nuove entrano, le gia\' decise non si toccano, le descrizioni si salvano', async () => {
+    await carica(1, [['BIC2', 'CARROZZERIA BICOLORE', 'NERO DS 1250'], ['CEXS', 'RIVEST.SOTTOPORTA IN CARBONIO', 'SI']]);
+    await imp.impostaSigla(op, 'CEXS', 'no', ['F999XX']);
+    const r = await imp.importaElenco(op, 'BIC2\nCEXS\tRIVESTIMENTO\nTLM13\tLIVREA TLM13', 'colonna', '*');
+    expect(r).toMatchObject({ totale: 3, nuove: 2, gia_presenti: 1, descrizioni: 2, senza_descrizione: 1 });
+    const c = await imp.configurazioneSigle();
+    expect(c.sigle.find(x => x.codice === 'CEXS')!.stati['F999XX']!.stato).toBe('no');       // gia' decisa: non si tocca
+    expect(c.sigle.find(x => x.codice === 'CEXS')!.descrizione).toBe('RIVESTIMENTO');         // ma la descrizione si
+    expect(c.sigle.find(x => x.codice === 'TLM13')).toMatchObject({ tutti: 'colonna', descrizione: 'LIVREA TLM13' });
+    await expect(imp.importaElenco(op, '  \n', 'colonna', '*')).rejects.toThrow();
+  });
+
+  it('sigla caricata senza descrizione: l\'Excel la ha, la pagina la propone; si accetta o si rifiuta', async () => {
+    await carica(1, [['BIC2', 'CARROZZERIA BICOLORE', 'NERO DS 1250'], ['CEXS', 'RIVEST.SOTTOPORTA IN CARBONIO', 'SI']]);
+    await imp.importaElenco(op, 'BIC2\nCEXS', 'colonna', '*');
+    let c = await imp.configurazioneSigle();
+    expect(c.descrizioni_da_confermare).toBe(2);
+    expect(c.sigle.find(x => x.codice === 'BIC2')).toMatchObject({ descrizione: null, descrizione_proposta: 'CARROZZERIA BICOLORE' });
+    expect((await svc.matrice('F999XX')).descrizioni_proposte?.map(x => x.codice).sort()).toEqual(['BIC2', 'CEXS']);
+    expect((await svc.matrice('F999XX')).etichette).toEqual({});                                // finche' non si conferma non compare
+    expect(await des.aggiungiDaSchede(op, ['BIC2'])).toBe(1);
+    expect(await des.rifiutaDescrizioni(op, ['CEXS'])).toBe(1);
+    c = await imp.configurazioneSigle();
+    expect(c.descrizioni_da_confermare).toBe(0);
+    expect((await svc.matrice('F999XX')).etichette).toEqual({ BIC2: 'CARROZZERIA BICOLORE' });
+    await des.salvaDescrizioni(op, [{ codice: 'CEXS', descrizione: 'MIA DESCRIZIONE' }]);      // una descrizione scritta a mano vince sempre, anche dopo un «no»
+    expect((await svc.matrice('F999XX')).etichette?.['CEXS']).toBe('MIA DESCRIZIONE');
   });
 });

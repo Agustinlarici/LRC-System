@@ -10,13 +10,17 @@ interface StatoModello {
   stato: Stato; ambito: 'modello' | 'tutti' | null; alias: string | null; sub?: boolean; simile_a?: string | null; padre?: string | null;
   auto?: boolean; suggerimento?: string;
 }
-interface Voce { codice: string; nome: string; esempio: string; tutti: Stato | null; alias: string | null; stati: Record<string, StatoModello> }
+interface Voce {
+  codice: string; nome: string; esempio: string; tutti: Stato | null; alias: string | null;
+  descrizione: string | null; descrizione_proposta: string | null; stati: Record<string, StatoModello>;
+}
 export interface ConfigSigle {
   modelli: { modello: string; schede: number }[];
   sigle: Voce[];
   da_decidere: Record<string, number>;
   gestione_modelli: { nuovi: { modello: string }[] };
   proposte_sigle: unknown[];
+  descrizioni_da_confermare: number;
 }
 type Filtro = 'tutte' | 'da' | 'si' | 'no' | 'ns';
 
@@ -45,6 +49,9 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
   const [nuovo, setNuovo] = useState('');
   const [tipo, setTipo] = useState('colonna');
   const [scelti, setScelti] = useState<Record<string, string[]>>({});
+  const [elencoAperto, setElencoAperto] = useState(false);
+  const [testoElenco, setTestoElenco] = useState('');
+  const [tipoElenco, setTipoElenco] = useState<'colonna' | 'sub'>('colonna');
   const cambiaRef = useRef(onCambia);                         // il chiamante passa una funzione nuova a ogni render: non deve rifare la richiesta
   cambiaRef.current = onCambia;
 
@@ -92,6 +99,50 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
     await carica();
   }
 
+  // Caricamento massivo: un elenco di sigle (una per riga, con o senza descrizione), incollato o da file
+  async function leggiFile(f: File | undefined) {
+    if (!f) return;
+    try {
+      if (/\.xlsx?$/i.test(f.name)) {
+        const XLSX = await import('xlsx');
+        const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+        const righe = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[wb.SheetNames[0]!]!, { header: 1, blankrows: false });
+        setTestoElenco(righe.map(r => `${String(r[0] ?? '').trim()}\t${String(r[1] ?? '').trim()}`).filter(l => l.trim()).join('\n'));
+      } else {
+        setTestoElenco(await f.text());
+      }
+    } catch (e) { setErrore(`File non leggibile: ${(e as Error).message}`); }
+  }
+  async function caricaElenco() {
+    try {
+      const r = await api.post<{ totale: number; nuove: number; gia_presenti: number; descrizioni: number; senza_descrizione: number; ignorate: unknown[] }>(
+        '/api/ferrari/sigle/elenco', { testo: testoElenco, stato: tipoElenco, modelli: '*' });
+      setNota(`Elenco caricato: ${r.nuove} sigle nuove, ${r.gia_presenti} già presenti, ${r.descrizioni} descrizioni salvate`
+        + (r.senza_descrizione ? ` · ${r.senza_descrizione} senza descrizione (se le schede la hanno, te la propongo)` : '')
+        + (r.ignorate.length ? ` · ${r.ignorate.length} righe ignorate` : ''));
+      setTestoElenco('');
+      setElencoAperto(false);
+      setErrore(null);
+    } catch (e) { setErrore((e as Error).message); }
+    await carica();
+  }
+
+  // Descrizioni: accettare/rifiutare quella delle schede o scriverla a mano
+  async function descrizioni(azione: 'accetta' | 'rifiuta', codici: string[]) {
+    try {
+      await api.post('/api/ferrari/sigle/descrizioni', { azione, voci: codici.map(codice => ({ codice })) });
+    } catch (e) { setErrore((e as Error).message); }
+    await carica();
+  }
+  async function scriviDescrizione(s: Voce) {
+    const d = (prompt(`Descrizione di ${s.codice} (compare nella colonna come «DESCRIZIONE (${s.codice})»). Lascia vuoto per non cambiare.`, s.descrizione ?? s.descrizione_proposta ?? '') ?? '').trim();
+    if (!d) return;
+    try {
+      await api.post('/api/ferrari/sigle/descrizioni', { azione: 'imposta', voci: [{ codice: s.codice, descrizione: d }] });
+    } catch (e) { setErrore((e as Error).message); }
+    await carica();
+  }
+
   async function inBlocco(stato: 'colonna' | 'no') {
     if (!c) return;
     const lista = c.modelli.map(m => m.modello).filter(m => (c.da_decidere[m] ?? 0) > 0);
@@ -105,6 +156,7 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
     await carica();
   }
 
+  const proposteDesc = useMemo(() => (c?.sigle ?? []).filter(x => x.descrizione_proposta), [c]);
   const tutte = useMemo(() => (c?.sigle ?? []).filter(s => Object.keys(s.stati).length > 0), [c]);
   const conta = useMemo(() => {
     const k = { da: 0, si: 0, no: 0, ns: 0 };
@@ -146,6 +198,45 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
         <button className="btn-secondary !py-1" onClick={aggiungi}>Aggiungi sigla</button>
         {nota && <span className="text-xs text-gray-600">{nota}</span>}
       </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm">
+        <button className="font-medium text-blue-700 hover:underline" onClick={() => setElencoAperto(o => !o)}>{elencoAperto ? '▾' : '▸'} Carica un elenco di sigle con le descrizioni</button>
+        {elencoAperto && (
+          <div className="mt-2 space-y-2">
+            <p className="text-xs text-gray-500">Una sigla per riga, con la descrizione dopo un tab, un «;» o uno spazio (es. <code>BIC2 CARROZZERIA BICOLORE</code>). Puoi incollarlo oppure scegliere un file (.txt, .csv, .xlsx: sigla nella prima colonna, descrizione nella seconda). Senza descrizione va bene: quando un Excel la ha, ti chiedo se aggiungerla.</p>
+            <textarea className="input w-full font-mono text-xs" rows={6} value={testoElenco} onChange={e => setTestoElenco(e.target.value)} placeholder={'BIC2\tCARROZZERIA BICOLORE\nCEXS\tRIVEST.SOTTOPORTA IN CARBONIO\nTLM13'} />
+            <div className="flex flex-wrap items-center gap-2">
+              <input type="file" accept=".txt,.csv,.tsv,.xlsx,.xls" className="text-xs" onChange={e => leggiFile(e.target.files?.[0])} />
+              <select className="input !w-auto !py-1" value={tipoElenco} onChange={e => setTipoElenco(e.target.value as 'colonna' | 'sub')}>
+                <option value="colonna">Le sigle nuove vanno come Colonna</option><option value="sub">Le sigle nuove vanno come Sotto-sigla</option>
+              </select>
+              <button className="btn-primary !py-1" disabled={!testoElenco.trim()} onClick={caricaElenco}>Carica l&apos;elenco</button>
+              <span className="text-xs text-gray-500">Valgono per tutti i modelli. Quelle già decise non si toccano (si aggiorna solo la descrizione).</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {proposteDesc.length > 0 && (
+        <div className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <b>{proposteDesc.length} {proposteDesc.length === 1 ? 'sigla senza descrizione' : 'sigle senza descrizione'}</b>: le schede la hanno. Vuoi aggiungerla? Comparirà nella colonna, per esempio «CARROZZERIA BICOLORE (BIC2)».
+            <button className="btn-primary !py-0.5 text-xs" onClick={() => descrizioni('accetta', proposteDesc.map(x => x.codice))}>Aggiungi tutte</button>
+          </div>
+          <table className="mt-2 w-full"><tbody>
+            {proposteDesc.map(x => (
+              <tr key={x.codice} className="border-t border-sky-200">
+                <td className="py-1 pr-3 font-bold">{x.codice}</td><td className="py-1 pr-3">{x.descrizione_proposta}</td>
+                <td className="py-1 text-right whitespace-nowrap">
+                  <button className="btn-primary !py-0.5 text-xs mr-1" onClick={() => descrizioni('accetta', [x.codice])}>Aggiungi</button>
+                  <button className="btn-secondary !py-0.5 text-xs mr-1" onClick={() => scriviDescrizione(x)}>Scrivi la mia…</button>
+                  <button className="btn-secondary !py-0.5 text-xs" onClick={() => descrizioni('rifiuta', [x.codice])}>No</button>
+                </td>
+              </tr>
+            ))}
+          </tbody></table>
+        </div>
+      )}
 
       {conta.da > 0 ? (
         <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm">
@@ -193,6 +284,7 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
                     {x.padre && <span className="mr-1.5 rounded bg-amber-100 px-1.5 text-xs text-amber-800">dentro {x.padre}</span>}
                     {x.simile_a && <span className="mr-1.5 text-xs font-semibold text-amber-700">simile a {x.simile_a}</span>}
                     {s.nome}{s.esempio && <span className="text-xs text-gray-400"> · {s.esempio.slice(0, 70)}</span>}
+                    <button className="ml-1.5 text-xs text-gray-400 hover:text-blue-700" title="Scrivi o cambia la descrizione" onClick={() => scriviDescrizione(s)}>✎</button>
                   </td>
                   <td className="border-b border-gray-100 px-3 py-1.5 whitespace-nowrap">
                     {([['colonna', 'Sì', st === 'da_decidere' && x.sub ? 'sub' : 'colonna'], ['no', 'Non mi serve', 'no'], ['nonsigla', 'Non è una sigla', 'nonsigla']] as const).map(([id, label, valore]) => (

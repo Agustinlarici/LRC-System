@@ -25,6 +25,7 @@ import {
 import { collapse } from './text.js';
 import { costruisciMatrice, nuoveSigle, type CtxSigle, type DettagliPerCommessa } from './matrice.js';
 import { esportaComponenti, importaComponenti } from './componenti-base.js';
+import { descrizioniSalvate } from './descrizioni.js';
 
 type Tx = typeof db;
 
@@ -913,12 +914,15 @@ export async function matrice(modello?: string, q?: string, conRighe = true) {
   const cerca = q?.trim();
   const mostrate = (cerca ? tutte.filter(s => (s.canonico.header.commessa ?? '').includes(cerca)) : tutte).slice(0, 500);
   const commesse = mostrate.map(s => s.canonico.header.commessa ?? '').filter(Boolean);
+  const salvate = await descrizioniSalvate();
   const dettagli = conRighe ? await caricaDettagli(commesse) : new Map() as DettagliPerCommessa;
   return {
     modelli, modello: scelto, termini,
     nuove: nuoveSigle(tutte, new Set(decisioni.keys()), noti),
     sigle: ordinate.map(([codice, d]) => ({ codice, nome: nomi.get(codice) ?? '(parola cercata)', va: d.va, ambito: d.ambito, sub: d.sub, alias: d.alias, nosigla: d.nosigla, padre: d.padre, auto: d.auto })),
-    etichette: Object.fromEntries(termini.filter(t => nomi.has(t)).map(t => [t, nomi.get(t)!])),
+    etichette: Object.fromEntries(termini.filter(t => salvate.get(t)?.descrizione).map(t => [t, salvate.get(t)!.descrizione])),
+    // colonne senza descrizione per cui le schede ne hanno una: si PROPONE di aggiungerla (decide la persona)
+    descrizioni_proposte: termini.filter(t => !salvate.get(t)?.descrizione && !salvate.get(t)?.rifiutata && nomi.has(t) && nomi.get(t)).map(t => ({ codice: t, descrizione: nomi.get(t)! })),
     righe: conRighe ? costruisciMatrice(mostrate, termini, dettagli, subOk, ctx, subPadre) : [],
     proposte,
   };

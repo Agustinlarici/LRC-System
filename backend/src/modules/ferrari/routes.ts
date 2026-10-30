@@ -11,7 +11,8 @@ import {
   type Utente,
 } from './service.js';
 
-import { applicaComponente, configurazioneSigle, decidiTutteDaDecidere, ereditaPerModello, impostaSigla, STATI_IMPOSTABILI } from './impostazioni.js';
+import { applicaComponente, configurazioneSigle, decidiTutteDaDecidere, ereditaPerModello, importaElenco, impostaSigla, STATI_IMPOSTABILI } from './impostazioni.js';
+import { aggiungiDaSchede, rifiutaDescrizioni, salvaDescrizioni } from './descrizioni.js';
 import { creaModello, modelloErroreDi, togliModello } from './modelli.js';
 import { leggiCartella, leggiConfig, salvaConfig, statoLettura, ultimeLetture } from './cartella.js';
 import { logger } from '../../lib/logger.js';
@@ -117,6 +118,27 @@ ferrariRoutes.post('/sigle/imposta', requireManage(VISTA), async (c) => {
     modelli: z.union([z.literal('*'), z.array(z.string().min(1).max(30)).min(1).max(50)]), alias: z.string().max(60).nullish(), padre: z.string().max(60).nullish(),
   }));
   return c.json({ modelli: await impostaSigla(utente(c), b.codice, b.stato, b.modelli, b.alias, b.padre) });
+});
+
+// Caricamento massivo di sigle (una per riga, con o senza descrizione)
+ferrariRoutes.post('/sigle/elenco', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({
+    testo: z.string().min(1).max(300_000), stato: z.enum(['colonna', 'sub']),
+    modelli: z.union([z.literal('*'), z.array(z.string().min(1).max(30)).min(1).max(50)]),
+  }));
+  return c.json(await importaElenco(utente(c), b.testo, b.stato, b.modelli));
+});
+
+// Descrizioni delle sigle: scrivere/correggere, accettare quella proposta dalle schede, dire di no
+ferrariRoutes.post('/sigle/descrizioni', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({
+    azione: z.enum(['imposta', 'accetta', 'rifiuta']),
+    voci: z.array(z.object({ codice: z.string().min(1).max(60), descrizione: z.string().max(200).optional() })).min(1).max(2000),
+  }));
+  const u = utente(c);
+  if (b.azione === 'imposta') return c.json({ trattate: await salvaDescrizioni(u, b.voci.map(v => ({ codice: v.codice, descrizione: v.descrizione ?? '' }))) });
+  const codici = b.voci.map(v => v.codice);
+  return c.json({ trattate: b.azione === 'accetta' ? await aggiungiDaSchede(u, codici) : await rifiutaDescrizioni(u, codici) });
 });
 
 ferrariRoutes.post('/modelli', requireManage(VISTA), async (c) => {

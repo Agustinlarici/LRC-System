@@ -8,6 +8,7 @@ import { db } from '../../db/client.js';
 import { audit, decidiSigla, matrice, normalizzaSigla, TUTTI, togliDecisione, type Utente } from './service.js';
 import { listaComponenti, normModello, scriviComponente, stessoNome } from './componenti-base.js';
 import { elencoModelli } from './modelli.js';
+import { aggiungiDaSchede, descrizioniDalleSchede, descrizioniSalvate, leggiElenco, salvaDescrizioni } from './descrizioni.js';
 
 type Tx = typeof db;
 export type StatoSigla = 'colonna' | 'sub' | 'no' | 'alias' | 'nonsigla' | 'da_decidere';
@@ -18,6 +19,7 @@ const statoDi = (va: boolean, sub: boolean, alias: string | null, nosigla = fals
 
 export interface VoceSigla {
   codice: string; nome: string; esempio: string; tutti: StatoSigla | null; alias: string | null;
+  descrizione: string | null; descrizione_proposta: string | null;
   stati: Record<string, { stato: StatoSigla; ambito: 'modello' | 'tutti' | null; alias: string | null; sub?: boolean; simile_a?: string | null; padre?: string | null; auto?: boolean; suggerimento?: string }>;
 }
 
@@ -29,13 +31,15 @@ export async function configurazioneSigle() {
   const globali = await db<{ codice: string; va: boolean; sub: boolean; alias: string | null; nosigla: boolean }[]>`
     SELECT codice, va, sub, alias, nosigla FROM ferrari_sigla WHERE modello = ${TUTTI}`;
   const storia = await storiaSigle();
+  const salvate = await descrizioniSalvate();
+  const dalleSchede = await descrizioniDalleSchede();
   const ordine = new Map((await db<{ codice: string; o: string }[]>`SELECT codice, min(ordine)::text AS o FROM ferrari_sigla GROUP BY codice`)
     .map(r => [r.codice, Number(r.o)] as const));
 
   const sigle = new Map<string, VoceSigla>();
   const voce = (codice: string): VoceSigla => {
     let v = sigle.get(codice);
-    if (!v) { v = { codice, nome: '', esempio: '', tutti: null, alias: null, stati: {} }; sigle.set(codice, v); }
+    if (!v) { v = { codice, nome: '', esempio: '', tutti: null, alias: null, descrizione: null, descrizione_proposta: null, stati: {} }; sigle.set(codice, v); }
     return v;
   };
   const daDecidere: Record<string, number> = {};
@@ -65,9 +69,18 @@ export async function configurazioneSigle() {
     v.tutti = statoDi(g.va, g.sub, g.alias, g.nosigla);
     v.alias ||= g.alias;
   }
+  for (const v of sigle.values()) {
+    const sv = salvate.get(v.codice);
+    v.descrizione = sv?.descrizione || null;
+    if (v.descrizione) v.nome = v.descrizione;
+    // la descrizione che hanno le schede si propone solo per le sigle che sono davvero colonne o sotto-sigle
+    const inTabella = v.tutti === 'colonna' || v.tutti === 'sub' || Object.values(v.stati).some(x => x.stato === 'colonna' || x.stato === 'sub');
+    if (!v.descrizione && !sv?.rifiutata && inTabella && dalleSchede.get(v.codice)) v.descrizione_proposta = dalleSchede.get(v.codice)!;
+  }
   const lista = [...sigle.values()].sort((a, b) =>
     (ordine.has(a.codice) ? 0 : 1) - (ordine.has(b.codice) ? 0 : 1) || (ordine.get(a.codice) ?? 0) - (ordine.get(b.codice) ?? 0) || a.codice.localeCompare(b.codice));
-  return { modelli, sigle: lista, da_decidere: daDecidere, gestione_modelli: await elencoModelli(), proposte_sigle: proposte };
+  return { modelli, sigle: lista, da_decidere: daDecidere, gestione_modelli: await elencoModelli(), proposte_sigle: proposte,
+    descrizioni_da_confermare: lista.filter(v => v.descrizione_proposta).length };
 }
 
 interface Parere { va: boolean; sub: boolean; alias: string | null; nosigla: boolean; padre: string | null }
@@ -120,6 +133,8 @@ async function propaga(toccati: Set<string>) {
 
 export async function impostaSigla(user: Utente, codice: string, stato: StatoImpostabile, modelli: string[] | '*', alias?: string | null, padre?: string | null): Promise<number> {
   const n = await impostaSiglaBase(user, codice, stato, modelli, alias, padre);
+  // «Sì» a una sigla che le schede descrivono: la descrizione la vede la persona mentre decide, quindi si salva (se non ce n'e' gia' una)
+  if (stato === 'colonna' || stato === 'sub') await aggiungiDaSchede(user, [normalizzaSigla(codice)]).catch(() => 0);
   await propaga(new Set(Array.isArray(modelli) ? modelli.map(x => x.toUpperCase()) : []));
   return n;
 }
@@ -158,6 +173,7 @@ export async function decidiTutteDaDecidere(user: Utente, modello: string, stato
   const m = await matrice(modello, undefined, false);
   if (!m.modello) return 0;
   for (const n of m.nuove) await decidiSigla(user, m.modello, n.codice, stato === 'colonna', false, stato === 'colonna' && n.sub === true);
+  if (stato === 'colonna') await aggiungiDaSchede(user, m.nuove.map(n => n.codice)).catch(() => 0);
   return m.nuove.length;
 }
 
@@ -178,4 +194,24 @@ export async function applicaComponente(user: Utente, da: string, nome: string, 
     await audit(tx, user, 'componente.applicato', 'componente', `${d}/${sorgente.nome}`, { a });
     return n;
   });
+}
+
+/**
+ * Caricamento massivo: un elenco di sigle (una per riga, con o senza descrizione). Le sigle nuove entrano con lo stato scelto
+ * per i modelli indicati; quelle gia' decise non si toccano (si aggiorna solo la descrizione, se c'e').
+ * Senza descrizione: quando le schede la hanno, la pagina chiede se aggiungerla.
+ */
+export async function importaElenco(user: Utente, testo: string, stato: 'colonna' | 'sub', modelli: string[] | '*') {
+  const { voci, ignorate } = leggiElenco(testo);
+  if (voci.length === 0) throw new HTTPException(400, { message: 'Nessuna sigla nell\'elenco: scrivi una sigla per riga (con o senza descrizione)' });
+  const esistenti = new Set((await db<{ codice: string }[]>`SELECT DISTINCT codice FROM ferrari_sigla`).map(r => r.codice));
+  let nuove = 0;
+  for (const v of voci) {
+    if (esistenti.has(v.codice)) continue;
+    await impostaSiglaBase(user, v.codice, stato, modelli);
+    nuove++;
+  }
+  const descrizioni = await salvaDescrizioni(user, voci.filter(v => v.descrizione));
+  await propaga(new Set(Array.isArray(modelli) ? modelli.map(x => x.toUpperCase()) : []));
+  return { totale: voci.length, nuove, gia_presenti: voci.length - nuove, descrizioni, senza_descrizione: voci.filter(v => !v.descrizione).length, ignorate };
 }

@@ -19,6 +19,7 @@ interface Matrice {
   modello: string;
   termini: string[];
   etichette?: Record<string, string>;
+  descrizioni_proposte?: { codice: string; descrizione: string }[];
   nuove: { codice: string }[];
   proposte: unknown[];
   righe: Riga[];
@@ -140,7 +141,7 @@ export default function VederePage() {
     XLSX.writeFile(wb, `programma-produzione-schede-${m.modello}-${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
-  const daFare = (m?.nuove.length ?? 0) + (m?.proposte.length ?? 0);
+  const daFare = (m?.nuove.length ?? 0) + (m?.proposte.length ?? 0) + (m?.descrizioni_proposte?.length ?? 0);
 
   return (
     <div>
@@ -179,8 +180,9 @@ export default function VederePage() {
         {puoGestire && daFare > 0 && (
           <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm">
             {(m?.nuove.length ?? 0) > 0 && <><b>{m!.nuove.length}</b> sigle da decidere per {m!.modello}. </>}
+            {(m?.descrizioni_proposte?.length ?? 0) > 0 && <><b>{m!.descrizioni_proposte!.length}</b> colonne senza descrizione: le schede la hanno, vuoi aggiungerla? </>}
             {(m?.proposte.length ?? 0) > 0 && <><b>{m!.proposte.length}</b> modifiche dalla PC IA da accettare. </>}
-            <Link href="/ferrari/impostazioni" className="font-semibold text-blue-700 hover:underline">Vai alle Impostazioni →</Link>
+            <Link href="/ferrari/impostazioni#sigle" className="font-semibold text-blue-700 hover:underline">Vai alle Impostazioni →</Link>
           </div>
         )}
 

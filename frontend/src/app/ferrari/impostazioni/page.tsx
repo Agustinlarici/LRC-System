@@ -16,7 +16,7 @@ const SCHEDE: { id: Scheda; label: string }[] = [
   { id: 'sigle', label: 'Sigle' }, { id: 'modelli', label: 'Modelli' }, { id: 'componenti', label: 'Componenti' }, { id: 'cartella', label: 'Cartella Excel' }, { id: 'avanzate', label: 'Avanzate' },
 ];
 interface Proposta { modello: string; codice: string; va: boolean; sub: boolean; alias: string | null; nome: string | null; conflitto: boolean; da: string | null }
-interface Contatori { da_decidere: Record<string, number>; proposte_sigle: Proposta[]; gestione_modelli: { nuovi: unknown[] } }
+interface Contatori { da_decidere: Record<string, number>; proposte_sigle: Proposta[]; gestione_modelli: { nuovi: unknown[] }; descrizioni_da_confermare?: number }
 
 const scheda = (h: string): Scheda => (SCHEDE.find(s => s.id === h.replace('#', ''))?.id ?? 'sigle');
 
@@ -85,7 +85,7 @@ export default function ImpostazioniPage() {
           <button key={s.id} onClick={() => apri(s.id)}
             className={`px-4 py-1.5 text-sm rounded-lg border ${tab === s.id ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>
             {s.label}
-            {s.id === 'sigle' && badge(daDecidere)}
+            {s.id === 'sigle' && badge(daDecidere + (cont?.descrizioni_da_confermare ?? 0))}
             {s.id === 'modelli' && badge(modelliNuovi)}
             {s.id === 'avanzate' && badge(proposte.length)}
           </button>
