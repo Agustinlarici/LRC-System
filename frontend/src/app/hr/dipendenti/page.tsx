@@ -828,8 +828,9 @@ export default function DipendentiPage() {
                 {gruppiOrari.map(v => <option key={v} value={v} className="text-gray-900">{v}</option>)}
               </select>
               <input value={fNomeOsti} onChange={e => setFNomeOsti(e.target.value)} placeholder="Nome Osti" className="input text-sm min-w-0" />
-              <div className="col-span-2 flex items-center gap-1 min-w-0">
-                <span className="text-xs text-gray-400 shrink-0 w-16">Compleanno</span>
+              <div className="col-span-2 min-w-0">
+                <div className="text-xs font-medium text-gray-500 mb-1">Compleanno</div>
+                <div className="grid grid-cols-2 gap-2">
                 <select value={fGiorno} onChange={e => setFGiorno(e.target.value)} title="Giorno" className={`input text-sm min-w-0 ${fGiorno ? '' : 'text-gray-400'}`}>
                   <option value="">Giorno</option>
                   {Array.from({ length: 31 }, (_, i) => i + 1).map(d => <option key={d} value={d} className="text-gray-900">{d}</option>)}
@@ -839,17 +840,25 @@ export default function DipendentiPage() {
                   {['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
                     .map((m, i) => <option key={m} value={i + 1} className="text-gray-900">{m}</option>)}
                 </select>
+                </div>
               </div>
               {([
                 ['Data nascita', fNascitaDa, setFNascitaDa, fNascitaA, setFNascitaA],
                 ['Assunzione', fAssunzioneDa, setFAssunzioneDa, fAssunzioneA, setFAssunzioneA],
                 ['Cessazione', fCessazioneDa, setFCessazioneDa, fCessazioneA, setFCessazioneA],
               ] as [string, string, (v: string) => void, string, (v: string) => void][]).map(([label, da, setDa, a, setA]) => (
-                <div key={label} className="col-span-2 flex items-center gap-1 min-w-0">
-                  <span className="text-xs text-gray-400 shrink-0 w-16">{label}</span>
-                  <input type="date" value={da} onChange={e => setDa(e.target.value)} title={`${label}: dal`} className="input text-sm min-w-0" />
-                  <span className="text-xs text-gray-400">→</span>
-                  <input type="date" value={a} onChange={e => setA(e.target.value)} title={`${label}: al`} className="input text-sm min-w-0" />
+                <div key={label} className="col-span-2 min-w-0">
+                  <div className="text-xs font-medium text-gray-500 mb-1">{label}</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="flex items-center gap-1.5 text-xs text-gray-400 min-w-0">
+                      <span className="shrink-0">Dal</span>
+                      <input type="date" value={da} onChange={e => setDa(e.target.value)} className="input text-sm min-w-0" />
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs text-gray-400 min-w-0">
+                      <span className="shrink-0">Al</span>
+                      <input type="date" value={a} onChange={e => setA(e.target.value)} className="input text-sm min-w-0" />
+                    </label>
+                  </div>
                 </div>
               ))}
             </>
