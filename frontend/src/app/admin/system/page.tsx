@@ -44,8 +44,8 @@ const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATE
   { key: 'tickets_it',    label: 'Ticket IT — Dashboard',  category: 'IT' },
   { key: 'tickets_admin', label: 'Ticket IT — Admin',      category: 'IT' },
   { key: 'impostazioni',  label: 'Impostazioni',           category: 'IT' },
-  { key: 'ferrari_schede',      label: 'Schede Ferrari',                 category: 'IT' },
-  { key: 'ferrari_supervisore', label: 'Schede Ferrari — Supervisore',   category: 'IT' },
+  { key: 'ferrari_schede',      label: 'Programma produzione (schede)',               category: 'IT' },
+  { key: 'ferrari_supervisore', label: 'Programma produzione (schede) — Supervisore',   category: 'IT' },
 
   // ── Qualità ────────────────────────────────────────────────────────────────
   { key: 'qualita', label: 'Difetti', category: 'Qualità' },

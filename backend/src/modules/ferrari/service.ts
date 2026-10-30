@@ -138,7 +138,16 @@ export interface EsitoCaricamento {
   id: number; filename: string; stato: string; duplicato: boolean; sostituisce: number[]; stessa_commessa?: number[]; motivo?: string;
 }
 
-export async function caricaScheda(user: Utente, filename: string, buf: Buffer): Promise<EsitoCaricamento> {
+/**
+ * La VM lavora sempre senza IA: la scheda e' subito leggibile, non aspetta nessuna risposta della PC IA.
+ * (Il collegamento con la PC IA non e' attivo: resta pronto in caricaSchedaConIa, che non usa nessuna pagina.)
+ */
+export const caricaScheda = (user: Utente, filename: string, buf: Buffer) => caricaSchedaModo(user, filename, buf, false);
+export const caricaSchedaConIa = (user: Utente, filename: string, buf: Buffer) => caricaSchedaModo(user, filename, buf, true);
+
+async function caricaSchedaModo(user: Utente, filename: string, buf: Buffer, conIa: boolean): Promise<EsitoCaricamento> {
+  const statoIniziale = conIa ? 'IN_ATTESA_IA' : 'ACCETTATO_AUTO';
+  const iaStato = conIa ? 'in_attesa' : 'assente';
   const hash = sha256(buf);
   const nome = filename.replace(/[\\/]/g, '_').slice(0, 200) || 'scheda.xls';
 
@@ -176,7 +185,7 @@ export async function caricaScheda(user: Utente, filename: string, buf: Buffer):
       const [f] = await tx<{ id: number }[]>`
         INSERT INTO ferrari_file (filename, sha256, size_bytes, original, stato, ia_stato, commessa, modello, versione,
                                   mercato_codice, paese, matricola, canonico, caricato_da_id, caricato_da)
-        VALUES (${nome}, ${hash}, ${buf.length}, ${buf}, 'IN_ATTESA_IA', 'in_attesa', ${h.commessa},
+        VALUES (${nome}, ${hash}, ${buf.length}, ${buf}, ${statoIniziale}, ${iaStato}, ${h.commessa},
                 ${h.tipo_matricola.modello}, ${h.tipo_matricola.versione}, ${h.tipo_matricola.mercato_codice},
                 ${h.destinazione.paese}, ${h.tipo_matricola.matricola}, ${J(tx, canonico)}, ${user.id}, ${user.username})
         RETURNING id`;
@@ -201,7 +210,7 @@ export async function caricaScheda(user: Utente, filename: string, buf: Buffer):
         SELECT id FROM ferrari_file WHERE commessa = ${h.commessa} AND id <> ${id} AND stato NOT IN ('SOSTITUITO', 'QUARANTENA')`;
 
       await audit(tx, user, 'file.caricato', 'file', id, { filename: nome, sha256: hash, commessa: h.commessa, modello: h.tipo_matricola.modello });
-      return { id, filename: nome, stato: 'IN_ATTESA_IA', duplicato: false, sostituisce: vecchie.map(v => v.id), stessa_commessa: altre.map(a => a.id) };
+      return { id, filename: nome, stato: statoIniziale, duplicato: false, sostituisce: vecchie.map(v => v.id), stessa_commessa: altre.map(a => a.id) };
     });
   } catch (e) {
     // Due caricamenti simultanei dello stesso file: vince il primo
@@ -846,7 +855,7 @@ export async function caricaDettagli(commesse: string[]): Promise<DettagliPerCom
   return dettagli;
 }
 
-export async function matrice(modello?: string, q?: string) {
+export async function matrice(modello?: string, q?: string, conRighe = true) {
   const modelli = await db<{ modello: string; schede: number }[]>`
     SELECT modello, count(*)::int AS schede FROM ferrari_file
     WHERE stato NOT IN ('SOSTITUITO', 'QUARANTENA', 'RIFIUTATO') AND modello IS NOT NULL
@@ -883,12 +892,12 @@ export async function matrice(modello?: string, q?: string) {
   const cerca = q?.trim();
   const mostrate = (cerca ? tutte.filter(s => (s.canonico.header.commessa ?? '').includes(cerca)) : tutte).slice(0, 500);
   const commesse = mostrate.map(s => s.canonico.header.commessa ?? '').filter(Boolean);
-  const dettagli = await caricaDettagli(commesse);
+  const dettagli = conRighe ? await caricaDettagli(commesse) : new Map() as DettagliPerCommessa;
   return {
     modelli, modello: scelto, termini,
     nuove: nuoveSigle(tutte, new Set(decisioni.keys()), noti),
     sigle: ordinate.map(([codice, d]) => ({ codice, nome: nomi.get(codice) ?? '(parola cercata)', va: d.va, ambito: d.ambito, sub: d.sub, alias: d.alias })),
-    righe: costruisciMatrice(mostrate, termini, dettagli, subOk, ctx),
+    righe: conRighe ? costruisciMatrice(mostrate, termini, dettagli, subOk, ctx) : [],
     proposte,
   };
 }

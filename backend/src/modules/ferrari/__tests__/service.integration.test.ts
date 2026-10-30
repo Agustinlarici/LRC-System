@@ -61,9 +61,16 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
     }).zip;
   }
 
-  it('caricamento: salva l\'originale, analizza con la VM e mette la scheda in attesa della IA', async () => {
+  it('caricamento normale: la VM lavora sempre senza IA, la scheda e\' subito leggibile', async () => {
+    const r = await svc.caricaScheda(op, 'a.xls', xls(righeComplete()));
+    expect(r).toMatchObject({ stato: 'ACCETTATO_AUTO', duplicato: false });
+    expect((await svc.dettaglioFile(r.id)).file.ia_stato).toBe('assente');
+    expect((await svc.matrice('F999XX')).righe).toHaveLength(1);
+  });
+
+  it('caricamento con IA (collegamento non attivo): la scheda resta in attesa della IA', async () => {
     const buf = xls(righeComplete());
-    const r = await svc.caricaScheda(op, 'a.xls', buf);
+    const r = await svc.caricaSchedaConIa(op, 'a.xls', buf);
     expect(r).toMatchObject({ stato: 'IN_ATTESA_IA', duplicato: false });
     const d = await svc.dettaglioFile(r.id);
     expect(d.file.modello).toBe('F999XX');
@@ -75,40 +82,40 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
 
   it('lo stesso file due volte è un duplicato e non crea nulla', async () => {
     const buf = xls(righeComplete());
-    const a = await svc.caricaScheda(op, 'a.xls', buf);
-    const b = await svc.caricaScheda(op, 'altro-nome.xls', buf);
+    const a = await svc.caricaSchedaConIa(op, 'a.xls', buf);
+    const b = await svc.caricaSchedaConIa(op, 'altro-nome.xls', buf);
     expect(b).toMatchObject({ id: a.id, duplicato: true });
     const [{ n }] = await db<{ n: number }[]>`SELECT count(*)::int AS n FROM ferrari_file`;
     expect(n).toBe(1);
   });
 
   it('un file illeggibile finisce in quarantena', async () => {
-    const r = await svc.caricaScheda(op, 'rotto.xls', Buffer.from('non è un excel'));
+    const r = await svc.caricaSchedaConIa(op, 'rotto.xls', Buffer.from('non è un excel'));
     expect(r.stato).toBe('QUARANTENA');
     expect(r.motivo).toMatch(/Excel/);
   });
 
   it('una nuova versione della stessa commessa sostituisce la precedente', async () => {
-    const a = await svc.caricaScheda(op, 'v1.xls', xls(righeComplete()));
+    const a = await svc.caricaSchedaConIa(op, 'v1.xls', xls(righeComplete()));
     const rows2 = righeComplete();
     rows2.push(['CEXD', 'ESTRATTORE', 'SI']);
-    const b = await svc.caricaScheda(op, 'v2.xls', xls(rows2));
+    const b = await svc.caricaSchedaConIa(op, 'v2.xls', xls(rows2));
     expect(b.sostituisce).toEqual([a.id]);
     expect((await svc.dettaglioFile(a.id)).file.stato).toBe('SOSTITUITO');
     expect((await svc.dettaglioFile(a.id)).file.sostituito_da).toBe(b.id);
   });
 
   it('stessa commessa ma variante diversa: non si sostituisce, si segnala', async () => {
-    const a = await svc.caricaScheda(op, 'v1.xls', xls(righeComplete()));
+    const a = await svc.caricaSchedaConIa(op, 'v1.xls', xls(righeComplete()));
     const altra = toXlsBuffer([...schedaSemplice({ variante: 555 }), ['CXXX', 'Altro', 'SI']]);
-    const b = await svc.caricaScheda(op, 'altra.xls', altra);
+    const b = await svc.caricaSchedaConIa(op, 'altra.xls', altra);
     expect(b.sostituisce).toEqual([]);
     expect(b.stessa_commessa).toEqual([a.id]);
     expect((await svc.dettaglioFile(a.id)).file.stato).toBe('IN_ATTESA_IA');
   });
 
   it('rimandare alla IA: la scheda torna in attesa e le decisioni si riportano alla nuova risposta', async () => {
-    const { id } = await svc.caricaScheda(op, 'a.xls', xls(righeComplete()));
+    const { id } = await svc.caricaSchedaConIa(op, 'a.xls', xls(righeComplete()));
     const to = await svc.creaPacchettoToAi(op);
     await svc.importaRisultatoIa(sup, 'x.zip', await rispostaIa(to.zip));
     let d = await svc.dettaglioFile(id);
@@ -126,7 +133,7 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   });
 
   it('flusso completo: IA → revisione → proposte approvate con doppia firma → validazione', async () => {
-    const { id } = await svc.caricaScheda(op, 'a.xls', xls(righeComplete()));
+    const { id } = await svc.caricaSchedaConIa(op, 'a.xls', xls(righeComplete()));
     const to = await svc.creaPacchettoToAi(op);
     expect(to.schede).toBe(1);
     expect((await svc.dettaglioFile(id)).file.inviato_ia_at).not.toBeNull();
@@ -195,7 +202,7 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   it('con campionamento 0 % una scheda VERDE si accetta in automatico', async () => {
     // conoscenza minima: tutti i codici e le parole della scheda
     const base = righeComplete();
-    const { id } = await svc.caricaScheda(op, 'a.xls', xls(base));
+    const { id } = await svc.caricaSchedaConIa(op, 'a.xls', xls(base));
     const d0 = await svc.dettaglioFile(id);
     const vm = d0.vm!.risultato;
     for (const o of vm.opzioni) {
@@ -217,7 +224,7 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   });
 
   it('lo stesso pacchetto della IA non si importa due volte', async () => {
-    await svc.caricaScheda(op, 'a.xls', xls(righeComplete()));
+    await svc.caricaSchedaConIa(op, 'a.xls', xls(righeComplete()));
     const to = await svc.creaPacchettoToAi(op);
     const risposta = await rispostaIa(to.zip);
     await svc.importaRisultatoIa(sup, 'x.zip', risposta);
@@ -227,7 +234,7 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   });
 
   it('pacchetto firmato con un altro segreto → rifiutato e registrato', async () => {
-    await svc.caricaScheda(op, 'a.xls', xls(righeComplete()));
+    await svc.caricaSchedaConIa(op, 'a.xls', xls(righeComplete()));
     const to = await svc.creaPacchettoToAi(op);
     await expect(svc.importaRisultatoIa(sup, 'x.zip', await rispostaIa(to.zip, { secret: 'segreto-sbagliato' })))
       .rejects.toMatchObject({ status: 400 });
@@ -236,14 +243,14 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   });
 
   it('risposta a un invio sconosciuto → rifiutata', async () => {
-    await svc.caricaScheda(op, 'a.xls', xls(righeComplete()));
+    await svc.caricaSchedaConIa(op, 'a.xls', xls(righeComplete()));
     const to = await svc.creaPacchettoToAi(op);
     const z = await rispostaIa(to.zip, { inReplyTo: '11111111-1111-4111-8111-111111111111' });
     await expect(svc.importaRisultatoIa(sup, 'x.zip', z)).rejects.toMatchObject({ status: 400 });
   });
 
   it('risultato riferito a un altro file (hash diverso) → scartato per quella scheda', async () => {
-    await svc.caricaScheda(op, 'a.xls', xls(righeComplete()));
+    await svc.caricaSchedaConIa(op, 'a.xls', xls(righeComplete()));
     const to = await svc.creaPacchettoToAi(op);
     const z = await rispostaIa(to.zip, { mutate: r => { r.source_sha256 = 'a'.repeat(64); } });
     const imp = await svc.importaRisultatoIa(sup, 'x.zip', z);
@@ -252,8 +259,8 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   });
 
   it('schede non rientrate nella risposta risultano "mancanti"', async () => {
-    await svc.caricaScheda(op, 'a.xls', xls(righeComplete()));
-    await svc.caricaScheda(op, 'b.xls', xls(schedaPersonalizzata({ commessa: 100002 })));
+    await svc.caricaSchedaConIa(op, 'a.xls', xls(righeComplete()));
+    await svc.caricaSchedaConIa(op, 'b.xls', xls(schedaPersonalizzata({ commessa: 100002 })));
     const to = await svc.creaPacchettoToAi(op);
     const z = new PizZip(await rispostaIa(to.zip));
     // la IA ha risposto solo per la prima scheda: ricostruiamo il pacchetto
@@ -268,7 +275,7 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   });
 
   it('revisione senza IA: sempre ROSSO, richiede motivazione, mai automatica', async () => {
-    const { id } = await svc.caricaScheda(op, 'a.xls', xls(righeComplete()));
+    const { id } = await svc.caricaSchedaConIa(op, 'a.xls', xls(righeComplete()));
     const r = await svc.revisioneSenzaIa(op, id);
     expect(r).toMatchObject({ esito: 'ROSSO', stato: 'IN_REVISIONE' });
     const d = await svc.dettaglioFile(id);
@@ -280,7 +287,7 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   });
 
   it('una rianalisi non fa perdere le decisioni già prese sugli stessi elementi', async () => {
-    const { id } = await svc.caricaScheda(op, 'a.xls', xls(righeComplete()));
+    const { id } = await svc.caricaSchedaConIa(op, 'a.xls', xls(righeComplete()));
     await svc.revisioneSenzaIa(op, id);
     let d = await svc.dettaglioFile(id);
     const it = d.confronto!.risultato.items.find((i: { tipo: string }) => i.tipo === 'ia_assente');
@@ -297,7 +304,7 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   });
 
   it('blocco ottimistico: una decisione con "rev" vecchio viene rifiutata', async () => {
-    const { id } = await svc.caricaScheda(op, 'a.xls', xls(righeComplete()));
+    const { id } = await svc.caricaSchedaConIa(op, 'a.xls', xls(righeComplete()));
     await svc.revisioneSenzaIa(op, id);
     const d = await svc.dettaglioFile(id);
     const it = d.confronto!.risultato.items.find((i: { tipo: string }) => i.tipo === 'ia_assente');
@@ -307,14 +314,14 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   });
 
   it('non si può validare con elementi ancora aperti', async () => {
-    const { id } = await svc.caricaScheda(op, 'a.xls', xls(righeComplete()));
+    const { id } = await svc.caricaSchedaConIa(op, 'a.xls', xls(righeComplete()));
     await svc.revisioneSenzaIa(op, id);
     const d = await svc.dettaglioFile(id);
     await expect(svc.validaScheda(op, id, d.file.rev)).rejects.toMatchObject({ status: 409 });
   });
 
   it('i riferimenti alle immagini accettano solo "verificato_immagini"', async () => {
-    const { id } = await svc.caricaScheda(op, 'p.xls', xls(schedaPersonalizzata()));
+    const { id } = await svc.caricaSchedaConIa(op, 'p.xls', xls(schedaPersonalizzata()));
     await svc.revisioneSenzaIa(op, id);
     const d = await svc.dettaglioFile(id);
     const img = d.confronto!.risultato.items.find((i: { tipo: string }) => i.tipo === 'immagini');
@@ -324,7 +331,7 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   });
 
   it('rifiuto: serve il motivo e la scheda si chiude', async () => {
-    const { id } = await svc.caricaScheda(op, 'a.xls', xls(righeComplete()));
+    const { id } = await svc.caricaSchedaConIa(op, 'a.xls', xls(righeComplete()));
     const rev = (await svc.dettaglioFile(id)).file.rev;
     await expect(svc.rifiutaScheda(op, id, rev, '  ')).rejects.toMatchObject({ status: 400 });
     expect((await svc.rifiutaScheda(op, id, rev, 'Ferrari ha mandato il file sbagliato')).stato).toBe('RIFIUTATO');
@@ -332,7 +339,7 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   });
 
   it('storico: sola aggiunta (UPDATE/DELETE bloccati dal database) e catena valida', async () => {
-    await svc.caricaScheda(op, 'a.xls', xls(righeComplete()));
+    await svc.caricaSchedaConIa(op, 'a.xls', xls(righeComplete()));
     await expect(db`UPDATE ferrari_audit SET azione = 'x'`).rejects.toThrow(/sola aggiunta/);
     await expect(db`DELETE FROM ferrari_audit`).rejects.toThrow(/sola aggiunta/);
     await expect(db`DELETE FROM ferrari_file`).rejects.toThrow(/sola aggiunta/);
@@ -341,7 +348,7 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   });
 
   it('la catena di audit si accorge di una manomissione diretta nel database', async () => {
-    await svc.caricaScheda(op, 'a.xls', xls(righeComplete()));
+    await svc.caricaSchedaConIa(op, 'a.xls', xls(righeComplete()));
     await db`ALTER TABLE ferrari_audit DISABLE TRIGGER trg_ferrari_audit_append`;
     try {
       await db`UPDATE ferrari_audit SET username = 'qualcun altro' WHERE id = 1`;
@@ -353,9 +360,9 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
 
   it('tabella commesse: all\'inizio chiede, poi per modello o per tutti, valore trovato, ricerca', async () => {
     const bic2 = ['BIC2            ', 'CARROZZERIA BICOLORE          ', 'NERO DS 1250                  '];
-    await svc.caricaScheda(op, 'a.xls', toXlsBuffer([...schedaSemplice(), bic2]));
-    await svc.caricaScheda(op, 'b.xls', toXlsBuffer([...schedaPersonalizzata({ commessa: 100002 }), bic2]));
-    await svc.caricaScheda(op, 'c.xls', toXlsBuffer([...schedaSemplice({ commessa: 100003, modello: 'F888YY' }), bic2]));
+    await svc.caricaSchedaConIa(op, 'a.xls', toXlsBuffer([...schedaSemplice(), bic2]));
+    await svc.caricaSchedaConIa(op, 'b.xls', toXlsBuffer([...schedaPersonalizzata({ commessa: 100002 }), bic2]));
+    await svc.caricaSchedaConIa(op, 'c.xls', toXlsBuffer([...schedaSemplice({ commessa: 100003, modello: 'F888YY' }), bic2]));
 
     let m = await svc.matrice();
     expect(m.modelli.map((x: { modello: string }) => x.modello).sort()).toEqual(['F888YY', 'F999XX']);
@@ -427,7 +434,7 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   });
 
   it('dettagli: il riassunto della PC IA arriva nel pacchetto delle sigle, si aggiorna, si cancella e non torna indietro', async () => {
-    await svc.caricaScheda(op, 'p.xls', xls(schedaPersonalizzata({ commessa: 100077, modello: 'F999XX' })));
+    await svc.caricaSchedaConIa(op, 'p.xls', xls(schedaPersonalizzata({ commessa: 100077, modello: 'F999XX' })));
     await svc.decidiSigla(op, 'F999XX', 'LLOG', true, false);
     const testo = 'SCUDETTO LASERIZZATO COME DA IMMAGINE.';
     const secret = await svc.getSecret();
@@ -462,7 +469,7 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   it('caricamenti insieme della stessa commessa: resta una sola scheda attiva', async () => {
     const a = xls(schedaPersonalizzata({ commessa: 100088, modello: 'F999XX' }));
     const b = xls([...schedaPersonalizzata({ commessa: 100088, modello: 'F999XX' }), ['BIC2            ', 'CARROZZERIA BICOLORE          ', 'NERO DS 1250                  ']]);
-    await Promise.all([svc.caricaScheda(op, 'a.xls', a), svc.caricaScheda(op, 'b.xls', b)]);
+    await Promise.all([svc.caricaSchedaConIa(op, 'a.xls', a), svc.caricaSchedaConIa(op, 'b.xls', b)]);
     const attive = await db`SELECT id FROM ferrari_file WHERE commessa = '100088' AND stato NOT IN ('SOSTITUITO', 'QUARANTENA')`;
     expect(attive).toHaveLength(1);
   });
@@ -475,8 +482,8 @@ describe.skipIf(!URL)('Schede Ferrari — integrazione con database', () => {
   });
 
   it('ricerca e filtri', async () => {
-    await svc.caricaScheda(op, 'a.xls', xls(righeComplete()));
-    await svc.caricaScheda(op, 'b.xls', xls(schedaPersonalizzata({ commessa: 100002, modello: 'F888YY' })));
+    await svc.caricaSchedaConIa(op, 'a.xls', xls(righeComplete()));
+    await svc.caricaSchedaConIa(op, 'b.xls', xls(schedaPersonalizzata({ commessa: 100002, modello: 'F888YY' })));
     expect((await svc.listaFile({ modello: 'F888YY' })).totale).toBe(1);
     expect((await svc.listaFile({ codice: 'DEDI' })).totale).toBe(1);
     expect((await svc.listaFile({ q: '100001' })).righe[0]!.commessa).toBe('100001');

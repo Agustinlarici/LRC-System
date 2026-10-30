@@ -1,44 +1,59 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { inviaFile, scaricaFile } from '@/lib/ferrari';
-import { Cella, Errore, FerrariNav } from '@/components/ferrari/Comuni';
+import { inviaFile } from '@/lib/ferrari';
+import { Cella, Errore, FerrariNav, VistaToggle } from '@/components/ferrari/Comuni';
+import { InfoCartella, type StatoCartella } from '@/components/ferrari/InfoCartella';
 
+interface Riga {
+  id: number; commessa: string; modello: string | null; paese: string | null; stato: string;
+  celle: Record<string, string>; testi: Record<string, string>; rivedere: Record<string, boolean>;
+  sub: Record<string, { codice: string; testo: string; avviso: string | null }[]>; avvisi: Record<string, string>;
+}
 interface Matrice {
   modelli: { modello: string; schede: number }[];
   modello: string;
   termini: string[];
-  nuove: { codice: string; nome: string; esempio: string; sub?: boolean; padre?: string; simile_a?: string }[];
-  sigle: { codice: string; nome: string; va: boolean; ambito: 'modello' | 'tutti'; sub: boolean; alias: string | null }[];
-  proposte: { modello: string; codice: string; va: boolean; sub: boolean; alias: string | null; nome: string | null; conflitto: boolean; da: string | null }[];
-  righe: { id: number; commessa: string; modello: string | null; paese: string | null; stato: string;
-    celle: Record<string, string>; testi: Record<string, string>; rivedere: Record<string, boolean>;
-    sub: Record<string, { codice: string; testo: string; avviso: string | null }[]>; avvisi: Record<string, string> }[];
+  nuove: { codice: string }[];
+  proposte: unknown[];
+  righe: Riga[];
 }
 
-export default function CommessePage() {
+const DEFAULT_MAX = '200';
+const btnBase      = 'inline-flex items-center gap-1 text-sm font-medium px-3 py-2 rounded-lg transition-colors';
+const btnPrimary   = `${btnBase} bg-blue-600 text-white hover:bg-blue-700`;
+const btnSecondary = `${btnBase} bg-white border border-gray-200 text-gray-700 hover:bg-gray-50`;
+const inputClass   = 'border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+
+function Campo({ label, highlight, children }: { label: string; highlight?: boolean; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className={`text-xs font-medium ${highlight ? 'text-blue-700' : 'text-gray-400'}`}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+export default function VederePage() {
   const { canManage } = useAuth();
-  const puoCaricare = canManage('ferrari_schede');
-  const [q, setQ] = useState('');
+  const puoGestire = canManage('ferrari_schede');
   const [modello, setModello] = useState('');
-  const [nuovo, setNuovo] = useState('');
-  const [scelte, setScelte] = useState<Record<string, boolean | string>>({});   // sigle nuove: codice → va, oppure il codice di cui e' un errore (si salva in blocco)
-  const [nuovaSub, setNuovaSub] = useState('');
-  const [pertutti, setPertutti] = useState(false);
-  const [panello, setPanello] = useState(false);
   const [m, setM] = useState<Matrice | null>(null);
+  const [cartella, setCartella] = useState<StatoCartella | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [msg, setMsg] = useState<string[]>([]);
   const [occupato, setOccupato] = useState(false);
+  const [fCommessa, setFCommessa] = useState('');
+  const [fTesto, setFTesto] = useState('');
+  const [fMax, setFMax] = useState(DEFAULT_MAX);
   const inputRef = useRef<HTMLInputElement>(null);
-  const sigleRef = useRef<HTMLInputElement>(null);
 
-  const carica = useCallback(async (mod: string, testo: string) => {
+  const carica = useCallback(async (mod: string) => {
     try {
-      const r = await api.get<Matrice>(`/api/ferrari/matrice?modello=${encodeURIComponent(mod)}&q=${encodeURIComponent(testo)}`);
+      const r = await api.get<Matrice>(`/api/ferrari/matrice?modello=${encodeURIComponent(mod)}`);
       setM(r);
       setModello(r.modello);
       setErrore(null);
@@ -47,81 +62,32 @@ export default function CommessePage() {
     }
   }, []);
 
+  const caricaCartella = useCallback(async () => {
+    try { setCartella(await api.get<StatoCartella>('/api/ferrari/cartella')); } catch { /* la cartella e' un di piu': la tabella funziona anche senza */ }
+  }, []);
+
+  useEffect(() => { carica(''); caricaCartella(); }, [carica, caricaCartella]);
+
+  // mentre la cartella viene letta si controlla lo stato; a fine lettura la tabella si aggiorna da sola
+  const inCorso = !!cartella?.in_corso;
   useEffect(() => {
-    const t = setTimeout(() => carica(modello, q.trim()), 200);
-    return () => clearTimeout(t);
-    // il modello si aggiorna da solo con la risposta: si ricarica solo quando cambia la ricerca o lo scelgo io
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, carica]);
-
-  async function decidi(codice: string, va: boolean, tutti: boolean, sub = false) {
-    if (!codice.trim() || !modello) return;
-    try {
-      await api.post('/api/ferrari/sigle', { modello, codice, va, tutti, sub });
-      setNuovaSub('');
-      setNuovo('');
-      await carica(modello, q.trim());
-    } catch (e) {
-      setErrore((e as Error).message);
-    }
-  }
-
-  async function chiediDiNuovo(codice: string, tutti: boolean) {
-    try {
-      await api.delete(`/api/ferrari/sigle?modello=${encodeURIComponent(modello)}&codice=${encodeURIComponent(codice)}${tutti ? '&tutti=1' : ''}`);
-      await carica(modello, q.trim());
-    } catch (e) {
-      setErrore((e as Error).message);
-    }
-  }
-
-  async function risolvi(azione: 'accetta' | 'rifiuta' | 'accetta-tutte' | 'rifiuta-tutte', mod?: string, codice?: string) {
-    try {
-      await api.post('/api/ferrari/proposte', { azione, modello: mod, codice });
-      await carica(modello, q.trim());
-    } catch (e) {
-      setErrore((e as Error).message);
-    }
-  }
-
-  async function importaSigle(f: File | undefined) {
-    if (!f) return;
-    try {
-      const r = await inviaFile<{ nuove: number; conflitti: number; uguali: number; dettagli: number }>('/api/ferrari/sigle/importa', 'file', [f]);
-      setMsg([`Dalla PC IA: ${r.nuove} sigle nuove, ${r.conflitti} in conflitto, ${r.uguali} già uguali · ${r.dettagli} riassunti di testi lunghi`]);
-      await carica(modello, q.trim());
-    } catch (e) {
-      setErrore((e as Error).message);
-    } finally {
-      if (sigleRef.current) sigleRef.current.value = '';
-    }
-  }
-
-  async function salvaScelte() {
-    if (!modello) return;
-    try {
-      const subs = new Set(m?.nuove.filter(n => n.sub).map(n => n.codice));
-      for (const [codice, scelta] of Object.entries(scelte)) {
-        const alias = typeof scelta === 'string' ? scelta : null;
-        await api.post('/api/ferrari/sigle', { modello, codice, va: alias ? true : scelta, tutti: pertutti, sub: subs.has(codice), alias });
-      }
-      setScelte({});
-      setPertutti(false);
-      await carica(modello, q.trim());
-    } catch (e) {
-      setErrore((e as Error).message);
-    }
-  }
+    if (!inCorso) return;
+    const t = setInterval(async () => {
+      await caricaCartella();
+    }, 2000);
+    return () => clearInterval(t);
+  }, [inCorso, caricaCartella]);
+  const ultimaLettura = cartella?.letture[0]?.id;
+  useEffect(() => { if (ultimaLettura) carica(modello); /* nuova lettura: nuove commesse */ }, [ultimaLettura]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function invia(files: File[]) {
     if (files.length === 0) return;
     setOccupato(true);
     try {
-      const r = await inviaFile<{ risultati: { filename: string; stato?: string; duplicato?: boolean; motivo?: string; errore?: string }[] }>(
-        '/api/ferrari/files', 'files', files);
+      const r = await inviaFile<{ risultati: { filename: string; stato?: string; duplicato?: boolean; motivo?: string; errore?: string }[] }>('/api/ferrari/files', 'files', files);
       setMsg(r.risultati.map(x => x.errore ? `${x.filename}: ${x.errore}` : x.stato === 'QUARANTENA' ? `${x.filename}: non è una scheda (${x.motivo})`
         : x.duplicato ? `${x.filename}: già caricata` : `${x.filename}: caricata`));
-      await carica(modello, q.trim());
+      await carica(modello);
     } catch (e) {
       setErrore((e as Error).message);
     } finally {
@@ -130,211 +96,182 @@ export default function CommessePage() {
     }
   }
 
-  function scarica() {
-    if (!m) return;
-    // una cella che inizia con = + - @ sarebbe una formula per Excel: si neutralizza con un apice
-    const cella = (s: string) => `"${(/^[=+\-@\t\r]/.test(s) ? "'" + s : s).replace(/"/g, '""')}"`;
-    const righe = [['Commessa', 'Modello', ...m.termini].map(cella).join(';')];
-    for (const r of m.righe) righe.push([r.commessa, r.modello ?? '', ...m.termini.map(x => r.celle[x] ?? '')].map(cella).join(';'));
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob(['\ufeff' + righe.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
-    a.download = `schede_ferrari_${m.modello}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+  async function leggiCartella() {
+    try {
+      await api.post('/api/ferrari/cartella/leggi', {});
+      setErrore(null);
+      await caricaCartella();
+    } catch (e) {
+      setErrore((e as Error).message);
+    }
   }
+
+  const righe = useMemo(() => {
+    if (!m) return [];
+    const c = fCommessa.trim().toLowerCase();
+    const t = fTesto.trim().toLowerCase();
+    const filtrate = m.righe.filter(r => {
+      if (c && !r.commessa.toLowerCase().includes(c)) return false;
+      if (t && !m.termini.some(x => `${x} ${r.celle[x] ?? ''} ${(r.sub?.[x] ?? []).map(s => `${s.codice} ${s.testo}`).join(' ')}`.toLowerCase().includes(t))) return false;
+      return true;
+    });
+    const max = parseInt(fMax, 10);
+    return fMax.trim() && Number.isFinite(max) && max > 0 ? filtrate.slice(0, max) : filtrate;
+  }, [m, fCommessa, fTesto, fMax]);
+
+  const filtriAttivi = !!(fCommessa || fTesto || fMax !== DEFAULT_MAX);
+
+  async function esportaExcel() {
+    if (!m) return;
+    const XLSX = await import('xlsx');
+    const dati = righe.map((r, i) => {
+      const out: Record<string, string | number> = { '#': i + 1, Commessa: r.commessa, Modello: r.modello ?? '' };
+      for (const t of m.termini) {
+        const sub = (r.sub?.[t] ?? []).map(s => `${s.codice}: ${s.testo}`);
+        out[t] = [r.celle[t] ?? '', ...sub].filter(Boolean).join('\n');
+      }
+      return out;
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dati), 'Programma Produzione');
+    XLSX.writeFile(wb, `programma-produzione-schede-${m.modello}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
+  const daFare = (m?.nuove.length ?? 0) + (m?.proposte.length ?? 0);
 
   return (
     <div>
-      <div className="mb-4">
-        <h1 className="text-3xl font-bold text-gray-900">Schede Ferrari</h1>
-      </div>
-      <FerrariNav />
+      <FerrariNav badge={puoGestire ? daFare : 0} />
       <Errore messaggio={errore} />
 
-      {puoCaricare && (
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <input ref={inputRef} type="file" multiple accept=".xls,.xlsx" className="hidden" onChange={e => invia(Array.from(e.target.files ?? []))} />
-          <button className="btn-secondary" disabled={occupato} onClick={() => inputRef.current?.click()}>{occupato ? 'Caricamento…' : 'Carica Excel'}</button>
-          <input ref={sigleRef} type="file" accept=".zip" className="hidden" onChange={e => importaSigle(e.target.files?.[0])} />
-          <details className="relative">
-            <summary className="btn-secondary cursor-pointer list-none">PC IA ▾</summary>
-            <div className="absolute z-10 mt-1 flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-2 shadow-lg whitespace-nowrap">
-              <button className="btn-secondary"
-                onClick={() => scaricaFile('/api/ferrari/sigle/esporta', { nome: 'FERRARI_sigle_vm.zip' }).catch(e => setErrore((e as Error).message))}>Invia sigle alla PC IA</button>
-              <button className="btn-secondary" onClick={() => sigleRef.current?.click()}>Carica file dalla PC IA</button>
+      {/* ── Titolo, azioni e filtri in un'unica card, come il foglio di Programma Produzione ── */}
+      <div className="d-print-none bg-white rounded-xl border border-gray-200 p-5 mb-6 space-y-4">
+        <div className="flex items-start justify-between flex-wrap gap-3 pb-4 border-b border-gray-100">
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Programma Produzione</p>
+              {m?.modello && <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-600">{m.modello}</span>}
             </div>
-          </details>
-          <span className="text-xs text-gray-500">{msg.join(' · ')}</span>
+            <h1 className="text-2xl font-bold text-gray-900 mt-1">Programma produzione (schede)</h1>
+            <InfoCartella stato={cartella} />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <VistaToggle />
+            {puoGestire && (
+              <>
+                <input ref={inputRef} type="file" multiple accept=".xls,.xlsx" className="hidden" onChange={e => invia(Array.from(e.target.files ?? []))} />
+                <button className={btnSecondary} disabled={occupato} onClick={() => inputRef.current?.click()}>{occupato ? 'Caricamento…' : 'Carica Excel'}</button>
+                <button className={btnSecondary} disabled={inCorso || !cartella?.config.percorso} onClick={leggiCartella}
+                  title={cartella?.config.percorso ? `Legge ${cartella.config.percorso}` : 'Prima scegli la cartella nelle Impostazioni'}>
+                  {inCorso ? 'Lettura in corso…' : 'Leggi cartella ora'}
+                </button>
+              </>
+            )}
+            <button className={btnSecondary} disabled={!m || righe.length === 0} onClick={esportaExcel}>📥 Scarica Excel</button>
+            <button className={btnPrimary} onClick={() => window.print()}>🖨️ Stampa</button>
+          </div>
         </div>
-      )}
+        {msg.length > 0 && <p className="text-xs text-gray-500">{msg.join(' · ')}</p>}
 
-      <div className="flex flex-wrap items-center gap-3 mb-3">
-        <select className="input !w-auto" value={modello} onChange={e => { setModello(e.target.value); carica(e.target.value, q.trim()); }}>
-          {m?.modelli.map(x => <option key={x.modello} value={x.modello}>{x.modello} ({x.schede})</option>)}
-        </select>
-        <input className="input !w-64" placeholder="Cerca commessa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
-        <span className="text-sm text-gray-500">{m ? `${m.righe.length} commesse` : ''}</span>
-        <button className="btn-secondary ml-auto" disabled={!m || m.righe.length === 0} onClick={scarica}>Scarica per Excel</button>
+        {puoGestire && daFare > 0 && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm">
+            {(m?.nuove.length ?? 0) > 0 && <><b>{m!.nuove.length}</b> sigle da decidere per {m!.modello}. </>}
+            {(m?.proposte.length ?? 0) > 0 && <><b>{m!.proposte.length}</b> modifiche dalla PC IA da accettare. </>}
+            <Link href="/ferrari/impostazioni" className="font-semibold text-blue-700 hover:underline">Vai alle Impostazioni →</Link>
+          </div>
+        )}
+
+        <div>
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h2 className="text-sm font-semibold text-gray-700">Filtri</h2>
+            <div className="flex items-center gap-3">
+              <p className="text-xs text-gray-400">Mostrando <span className="font-medium text-gray-600">{righe.length}</span> di {m?.righe.length ?? 0} commesse</p>
+              {filtriAttivi && <button className={btnSecondary} onClick={() => { setFCommessa(''); setFTesto(''); setFMax(DEFAULT_MAX); }}>Cancella filtri</button>}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Campo label="Modello">
+              <select className={`${inputClass} bg-white`} value={modello} onChange={e => { setModello(e.target.value); carica(e.target.value); }}>
+                {m?.modelli.map(x => <option key={x.modello} value={x.modello}>{x.modello} ({x.schede})</option>)}
+              </select>
+            </Campo>
+            <Campo label="Commessa">
+              <input className={inputClass} value={fCommessa} onChange={e => setFCommessa(e.target.value)} placeholder="Es. 100001" />
+            </Campo>
+            <Campo label="Sigla / caratteristica">
+              <input className={inputClass} value={fTesto} onChange={e => setFTesto(e.target.value)} placeholder="Es. LIVR o Pelle nera" />
+            </Campo>
+            <Campo label="Righe da mostrare" highlight>
+              <input value={fMax} onChange={e => setFMax(e.target.value)} type="number" min={1} placeholder="Tutte"
+                title="Numero massimo di righe da mostrare/stampare — vuoto = tutte"
+                className="w-full border border-blue-200 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-blue-900 bg-blue-50 text-center focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            </Campo>
+          </div>
+        </div>
       </div>
 
-      {puoCaricare && m && m.proposte.length > 0 && (
-        <div className="mb-3 rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <b>Dalla PC IA: {m.proposte.length} modifiche</b>
-            <button className="btn-primary !py-0.5 text-xs" onClick={() => risolvi('accetta-tutte')}>Accetta tutte</button>
-            <button className="btn-secondary !py-0.5 text-xs" onClick={() => risolvi('rifiuta-tutte')}>Rifiuta tutte</button>
+      {/* ── Parte stampabile ── */}
+      <div className="print-a4" style={{ fontSize: '0.78rem' }}>
+        <div className="only-print mb-4 text-center">
+          <h1 className="text-2xl font-bold text-gray-900">Programma produzione (schede)</h1>
+          <p className="text-gray-500">Modello <span className="text-red-600 font-medium">{m?.modello}</span></p>
+        </div>
+
+        {!m || m.modelli.length === 0 ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400">
+            Nessuna scheda ancora. {puoGestire ? 'Carica un Excel oppure scegli la cartella nelle Impostazioni.' : ''}
           </div>
-          <table className="mt-2 w-full">
-            <tbody>
-              {m.proposte.map(p => (
-                <tr key={`${p.modello}/${p.codice}`} className="border-t border-sky-200">
-                  <td className="py-1 pr-3 font-semibold">{p.modello === '*' ? 'tutti i modelli' : p.modello}</td>
-                  <td className="py-1 pr-3"><b>{p.codice}</b> <span className="text-gray-500">{p.nome}</span>{p.sub && <span className="ml-2 text-xs bg-gray-100 text-gray-600 rounded px-1.5">sotto-sigla</span>}{p.alias && <span className="ml-2 text-xs bg-gray-100 text-gray-600 rounded px-1.5">= {p.alias}</span>}</td>
-                  <td className="py-1 pr-3">
-                    {p.va ? <span className="text-green-600 font-semibold">{p.sub ? 'va dentro la voce' : 'va in tabella'}</span> : <span className="text-gray-500">non va</span>}
-                    {p.conflitto && <span className="ml-2 text-xs bg-amber-100 text-amber-800 rounded px-1.5">tu: il contrario</span>}
-                  </td>
-                  <td className="py-1 text-right whitespace-nowrap">
-                    <button className="btn-primary !py-0.5 text-xs mr-1" onClick={() => risolvi('accetta', p.modello, p.codice)}>Accetta</button>
-                    <button className="btn-secondary !py-0.5 text-xs" onClick={() => risolvi('rifiuta', p.modello, p.codice)}>Rifiuta</button>
-                  </td>
+        ) : m.termini.length === 0 ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">
+            Nessuna sigla scelta per {m.modello}. {puoGestire && <Link href="/ferrari/impostazioni#sigle" className="text-blue-700 hover:underline">Scegli le sigle nelle Impostazioni</Link>}
+          </div>
+        ) : righe.length === 0 ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400">Nessuna commessa trovata</div>
+        ) : (
+          <div className="overflow-auto max-h-[75vh] print:max-h-none print:overflow-visible">
+            <table className="w-full text-sm border-separate border-spacing-0 operator-sheet">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5">#</th>
+                  <th className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">Commessa</th>
+                  {m.termini.map(t => <th key={t} className="sticky top-0 z-10 bg-gray-100 border border-gray-300 px-2 py-1.5 text-left">{t}</th>)}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {puoCaricare && m && m.nuove.length > 0 && (
-        <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm">
-          <div className="font-medium">Sigle nuove per <b>{m.modello}</b> ({m.nuove.length})</div>
-          <ul className="mt-2 max-h-72 overflow-y-auto divide-y divide-amber-200 bg-white rounded-lg border border-amber-200">
-            {m.nuove.map(n => (
-              <li key={n.codice} className="flex flex-wrap items-center gap-2 px-3 py-1.5">
-                <b className="w-16 shrink-0">{n.codice}</b>
-                <span className="flex-1 min-w-[10rem] truncate" title={`${n.nome} · esempio: ${n.esempio}`}>
-                  {n.sub && <span className="mr-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5">sotto-sigla</span>}
-                  {n.simile_a && <span className="mr-1.5 text-xs font-semibold text-amber-700">⚠ simile a {n.simile_a}: errore di scrittura?</span>}
-                  {n.nome} <span className="text-gray-400">· {n.esempio}</span>
-                </span>
-                <button className={`!py-0.5 text-xs ${scelte[n.codice] === true ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setScelte({ ...scelte, [n.codice]: true })}>Sì</button>
-                <button className={`!py-0.5 text-xs ${scelte[n.codice] === false ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setScelte({ ...scelte, [n.codice]: false })}>No</button>
-                {n.simile_a && (
-                  <button className={`!py-0.5 text-xs ${scelte[n.codice] === n.simile_a ? 'btn-primary' : 'btn-secondary'}`} title={`È un errore di scrittura di ${n.simile_a}`}
-                    onClick={() => setScelte({ ...scelte, [n.codice]: n.simile_a! })}>= {n.simile_a}</button>
-                )}
-              </li>
-            ))}
-          </ul>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <button className="btn-secondary !py-1" onClick={() => { if (m.nuove.length > 15 && !confirm(`Aggiungere ${m.nuove.length} colonne alla tabella?`)) return; setScelte(Object.fromEntries(m.nuove.map(n => [n.codice, true]))); }}>Tutte sì</button>
-            <button className="btn-secondary !py-1" onClick={() => setScelte(Object.fromEntries(m.nuove.map(n => [n.codice, false])))}>Tutte no</button>
-            <label className="flex items-center gap-1 ml-2">
-              <input type="checkbox" checked={pertutti} onChange={e => setPertutti(e.target.checked)} /> Vale per tutti i modelli
-            </label>
-            <button className="btn-primary !py-1 ml-auto" disabled={Object.keys(scelte).length === 0} onClick={salvaScelte}>
-              Salva ({Object.keys(scelte).length})
-            </button>
-          </div>
-        </div>
-      )}
-
-      {m && m.modello && (
-        <div className="flex flex-wrap items-center gap-2 mb-3">
-          {m.termini.map(t => (
-            <span key={t} className="inline-flex items-center gap-1.5 bg-white border border-gray-300 rounded-full pl-3 pr-2 py-0.5 text-sm">
-              <b>{t}</b>
-              {puoCaricare && <button className="text-gray-400 hover:text-red-600" title="Togli dalla tabella" onClick={() => decidi(t, false, false)}>✕</button>}
-            </span>
-          ))}
-          {puoCaricare && (
-            <input className="input !w-56 !py-1" placeholder="+ sigla o parola (es. BIC2)" value={nuovo}
-              onChange={e => setNuovo(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') decidi(nuovo, true, false); }} />
-          )}
-          <button className="btn-secondary !py-1 text-xs" onClick={() => setPanello(!panello)}>Tutte le sigle</button>
-        </div>
-      )}
-
-      {panello && m && (
-        <div className="mb-3 bg-white rounded-xl border border-gray-200 p-3 max-h-[40vh] overflow-auto text-sm">
-          {puoCaricare && (
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <input className="input !w-60 !py-1" placeholder="+ sotto-sigla (es. TLM13)" value={nuovaSub} onChange={e => setNuovaSub(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') decidi(nuovaSub, true, false, true); }} />
-              <button className="btn-secondary !py-1 text-xs" disabled={!nuovaSub.trim()} onClick={() => decidi(nuovaSub, true, false, true)}>Aggiungi</button>
-              <span className="text-xs text-gray-500">dentro i testi liberi: compare nella cella dell&apos;opzione che la contiene</span>
-            </div>
-          )}
-          {m.sigle.length === 0 ? <p className="text-gray-400">Nessuna decisione ancora</p> : (
-            <table className="w-full">
+              </thead>
               <tbody>
-                {m.sigle.map(s => (
-                  <tr key={s.codice} className="border-b border-gray-100">
-                    <td className="py-1 pr-3 font-semibold">{s.codice}</td>
-                    <td className="py-1 pr-3 text-gray-500">{s.sub && <span className="mr-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5">sotto-sigla</span>}{s.alias && <span className="mr-1.5 text-xs bg-gray-100 text-gray-600 rounded px-1.5">= {s.alias}</span>}{s.nome}</td>
-                    <td className={`py-1 pr-3 ${s.va ? 'text-green-600 font-semibold' : 'text-gray-400'}`}>
-                      {s.va ? 'va' : 'non va'} <span className="text-gray-400 font-normal">({s.ambito === 'tutti' ? 'tutti i modelli' : m.modello})</span>
+                {righe.map((r, i) => (
+                  <tr key={r.id} className="bg-white hover:bg-gray-50 align-top">
+                    <td className="border border-gray-200 px-2 py-1 text-center">{i + 1}</td>
+                    <td className="border border-gray-200 px-2 py-1 font-mono font-semibold whitespace-nowrap">
+                      <Link href={`/ferrari/${r.id}`} className="text-blue-700 hover:underline print:text-black">{r.commessa}</Link>
                     </td>
-                    <td className="py-1 text-right whitespace-nowrap">
-                      {puoCaricare && <>
-                        <button className="btn-secondary !py-0.5 text-xs mr-1" onClick={() => decidi(s.codice, !s.va, false, s.sub)}>{s.va ? 'Non va' : 'Va'}</button>
-                        <button className="btn-secondary !py-0.5 text-xs" onClick={() => chiediDiNuovo(s.codice, s.ambito === 'tutti')}>Chiedi di nuovo</button>
-                      </>}
-                    </td>
+                    {m.termini.map(t => (
+                      <td key={t} className={`border border-gray-200 px-2 py-1 max-w-[260px] ${r.rivedere?.[t] ? 'shadow-[inset_3px_0_0_#f0a020]' : ''}`}>
+                        {r.rivedere?.[t] && <div className="text-xs font-semibold text-amber-700" title="Da controllare">⚠ da rivedere</div>}
+                        {r.avvisi?.[t] && <div className="text-xs font-semibold text-amber-700">⚠ {r.avvisi[t]}</div>}
+                        <Cella testo={r.celle[t]} intero={r.testi[t]} />
+                        {r.sub?.[t]?.map(x => (
+                          <div key={x.codice} className="mt-1 rounded-lg border-l-[3px] border-gray-300 bg-white/60 px-2 py-0.5 text-xs text-gray-600">
+                            {x.avviso && <div className="font-semibold text-amber-700">⚠ {x.avviso}</div>}
+                            <b>{x.codice}</b> {x.testo}
+                          </div>
+                        ))}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
             </table>
-          )}
-        </div>
-      )}
-
-      <div className="bg-white rounded-xl border border-gray-200 overflow-auto max-h-[70vh]">
-        {!m || m.modelli.length === 0 ? (
-          <p className="text-center text-gray-400 py-10 text-sm">Carica un Excel per iniziare</p>
-        ) : m.termini.length === 0 ? (
-          <p className="text-gray-500 py-8 px-6 text-sm">
-            Scegli le sigle da mostrare.
-          </p>
-        ) : m.righe.length === 0 ? (
-          <p className="text-center text-gray-400 py-10 text-sm">Nessuna commessa trovata</p>
-        ) : (
-          <table className="text-sm border-separate border-spacing-0">
-            <thead>
-              <tr>
-                <th className="sticky top-0 left-0 z-30 bg-gray-50 border-b border-r-2 border-gray-200 px-3 py-2 text-left min-w-[130px]">Commessa</th>
-                {m.termini.map(t => (
-                  <th key={t} className="sticky top-0 z-20 bg-gray-50 border-b border-l border-gray-200 px-3 py-2 text-left font-semibold min-w-[120px]">{t}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {m.righe.map(r => (
-                <tr key={r.id} className="hover:bg-gray-50 align-top">
-                  <td className="sticky left-0 z-10 bg-white border-b border-r-2 border-gray-200 px-3 py-2 font-semibold">
-                    <Link href={`/ferrari/${r.id}`} className="text-blue-700 hover:underline">{r.commessa}</Link>
-                  </td>
-                  {m.termini.map(t => (
-                    <td key={t} className={`border-b border-l border-gray-100 px-3 py-2 max-w-[320px] ${r.rivedere?.[t] ? 'shadow-[inset_3px_0_0_#f0a020]' : ''}`}>
-                      {r.rivedere?.[t] && <div className="text-xs font-semibold text-amber-700" title="La IA non era sicura: va controllato sulla PC IA">⚠ da rivedere</div>}
-                      {r.avvisi?.[t] && <div className="text-xs font-semibold text-amber-700">⚠ {r.avvisi[t]}</div>}
-                      <Cella testo={r.celle[t]} intero={r.testi[t]} />
-                      {r.sub?.[t]?.map(x => (
-                        <div key={x.codice} className="mt-1 rounded-lg border-l-[3px] border-gray-300 bg-white/60 px-2 py-0.5 text-xs text-gray-600">
-                          {x.avviso && <div className="font-semibold text-amber-700">⚠ {x.avviso}</div>}
-                          <b>{x.codice}</b> {x.testo}
-                        </div>
-                      ))}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          </div>
         )}
       </div>
+
+      <style>{`
+        @media print {
+          @page { size: A4 landscape; margin: 10mm; }
+          .d-print-none { display: none !important; }
+          .operator-sheet { font-size: 8pt; }
+        }
+      `}</style>
     </div>
   );
 }

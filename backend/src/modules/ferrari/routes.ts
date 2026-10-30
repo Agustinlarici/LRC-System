@@ -11,6 +11,9 @@ import {
   type Utente,
 } from './service.js';
 
+import { applicaComponente, configurazioneSigle, decidiTutteDaDecidere, impostaSigla, STATI_IMPOSTABILI } from './impostazioni.js';
+import { leggiCartella, leggiConfig, salvaConfig, statoLettura, ultimeLetture } from './cartella.js';
+import { logger } from '../../lib/logger.js';
 import {
   cercaComponenti, copiaComponenti, eliminaComponente, elencoComponenti, risolviProposteComponenti, salvaComponente, suggerisciTermini,
 } from './componenti.js';
@@ -77,6 +80,53 @@ ferrariRoutes.get('/componenti/cerca', requireModule(VISTA), async (c) =>
 
 ferrariRoutes.get('/componenti/suggerisci', requireModule(VISTA), async (c) =>
   c.json({ suggerimenti: await suggerisciTermini(c.req.query('modello') ?? '', c.req.query('q')?.slice(0, 60) ?? '') }));
+
+// ─── Cartella degli Excel (lettura automatica di notte o a mano, senza IA) ────
+
+ferrariRoutes.get('/cartella', requireModule(VISTA), async (c) =>
+  c.json({ config: await leggiConfig(), in_corso: statoLettura(), letture: await ultimeLetture(10) }));
+
+ferrariRoutes.put('/cartella', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({
+    percorso: z.string().max(300).optional(), auto: z.boolean().optional(), ora: z.number().int().min(0).max(23).optional(),
+  }));
+  try {
+    return c.json(await salvaConfig(utente(c), b));
+  } catch (e) {
+    throw new HTTPException(400, { message: e instanceof Error ? e.message : 'Dati non validi' });
+  }
+});
+
+// Parte in background: leggere una cartella di rete puo' durare minuti. La pagina chiede lo stato con GET /cartella.
+ferrariRoutes.post('/cartella/leggi', requireManage(VISTA), async (c) => {
+  if (statoLettura()) throw new HTTPException(409, { message: 'Una lettura della cartella e\' gia\' in corso' });
+  if (!(await leggiConfig()).percorso) throw new HTTPException(400, { message: 'Cartella non configurata: scegli la cartella nelle Impostazioni' });
+  const chi = utente(c).username;
+  leggiCartella('manuale', chi).catch(e => logger.error(`[ferrari-cartella] ${e instanceof Error ? e.message : e}`));
+  return c.json({ avviata: true }, 202);
+});
+
+// ─── Impostazioni: sigle per tutti i modelli insieme ──────────────────────────
+
+ferrariRoutes.get('/impostazioni/sigle', requireModule(VISTA), async (c) => c.json(await configurazioneSigle()));
+
+ferrariRoutes.post('/sigle/imposta', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({
+    codice: z.string().min(1).max(60), stato: z.enum(STATI_IMPOSTABILI),
+    modelli: z.union([z.literal('*'), z.array(z.string().min(1).max(30)).min(1).max(50)]), alias: z.string().max(60).nullish(),
+  }));
+  return c.json({ modelli: await impostaSigla(utente(c), b.codice, b.stato, b.modelli, b.alias) });
+});
+
+ferrariRoutes.post('/sigle/da-decidere', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ modello: z.string().min(1).max(30), stato: z.enum(['colonna', 'no']) }));
+  return c.json({ decise: await decidiTutteDaDecidere(utente(c), b.modello, b.stato) });
+});
+
+ferrariRoutes.post('/componenti/applica', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ da: z.string().min(1).max(30), nome: z.string().min(1).max(60), a: z.array(z.string().min(1).max(30)).min(1).max(50) }));
+  return c.json({ scritti: await applicaComponente(utente(c), b.da, b.nome, b.a) });
+});
 
 ferrariRoutes.post('/componenti', requireManage(VISTA), async (c) => {
   const b = await parseBody(c, z.object({

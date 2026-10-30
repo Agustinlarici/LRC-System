@@ -5,6 +5,8 @@ e `LRC-System/docs/FERRARI-FLUSSO.md`: se cambia uno, cambia l'altro.
 
 ## 0. Uso quotidiano
 
+**VM (IT → Programma produzione (schede))**: lavora **sempre senza IA**; il collegamento con la PC IA non e' attivo. Due pagine: **Vedere** (tabella per sigle o per componente, filtri, Stampa, Scarica Excel) e **Impostazioni** (Cartella Excel, Sigle, Componenti, Avanzate). Gli Excel entrano da una **cartella di rete** scelta in Impostazioni → Cartella Excel: ogni notte (ora a scelta, al minuto 20) il programma la legge da solo e c'e' il pulsante «Leggi cartella ora» per farlo a mano; un file gia' letto non si rilegge se non cambia. Le sigle si decidono in Impostazioni → Sigle (stato per modello). Migrazioni: 0062–0070 (schede Ferrari, rinumerate dopo quelle HR) e 0071 (cartella).
+
 1. **Carichi** gli Excel di Ferrari (PC IA: `/ferrari`; VM: IT → Schede Ferrari → Commesse).
 2. **Sigle nuove**: compaiono in un elenco con Sì/No. Salvi tutte insieme; la casella «Vale per tutti i modelli» vale per quella tornata. La decisione del modello prevale su quella per tutti.
 3. **Tabella**: scegli il modello, cerchi la commessa. Colonne = sigle scelte (es. `BIC2`); cella = «Sì» o il valore (es. `NERO DS 1250`). «Scarica per Excel» esporta.
@@ -24,7 +26,7 @@ Regola della cella (identica nei due programmi): sigla = codice di un'opzione �
 
 8. **Errori di scrittura nelle sigle** (sempre con un avviso): un codice a un solo carattere di distanza da uno gia' accettato (TLM15 invece di TLM16, BLC2 invece di BIC2, due caratteri scambiati) si legge come il codice giusto, **con «⚠ forse TLM16? controlla»** nella cella e nell'elenco delle sigle nuove («⚠ simile a TLM16»). I codici scritti con spazi o trattini (`TL m5`, `TLM-13`) si riconoscono come TLM5 e TLM13, con avviso. Ogni volta una persona decide: **Sì** (e' un codice vero e diverso), **No**, oppure **= TLM16** («e' un errore di TLM16»: l'alias viene ricordato, la cella mostra «scritta TLM15 (corretta in TLM16)» e non si chiede piu'). Un codice **gia' deciso** (anche «no») non e' mai un sospetto, e due opzioni vere e vicine (CEXD e CEXS) restano due cose diverse. Solo per codici di almeno 4 caratteri. Le sotto-sigle si possono anche **aggiungere a mano** (campo «+ sotto-sigla» nel pannello «Tutte le sigle»). Gli alias viaggiano nello stesso zip. Sulla VM serve la migrazione `0068`.
 
-**Primo giorno** — PC IA: (1) Python + `pip install -r requirements.txt`; (2) Ollama con il modello di `config.txt`; (3) in `config.txt` metti `FERRARI_BUNDLE_SECRET` (lo stesso della VM: lo legge il supervisore in «Scambio con la IA»); (4) avvia `STR-AI-Web.bat` e apri `/ferrari`. La pagina e' accessibile solo da quel PC (per la rete: `FERRARI_LAN=1`). VM: serve il permesso `ferrari_schede`; la migrazione 0065 (`ferrari_dettaglio`) la applica `./deploy.sh update`.
+**Primo giorno** — PC IA: (1) Python + `pip install -r requirements.txt`; (2) Ollama con il modello di `config.txt`; (3) in `config.txt` metti `FERRARI_BUNDLE_SECRET` (lo stesso della VM: lo legge il supervisore in «Scambio con la IA»); (4) avvia `STR-AI-Web.bat` e apri `/ferrari`. La pagina e' accessibile solo da quel PC (per la rete: `FERRARI_LAN=1`). VM: serve il permesso `ferrari_schede`; la migrazione 0067 (`ferrari_dettaglio`) la applica `./deploy.sh update`.
 Tutto il resto di questo documento (pacchetti per revisione completa, confronto, conoscenza) e' **facoltativo**.
 
 ## 1. Principi

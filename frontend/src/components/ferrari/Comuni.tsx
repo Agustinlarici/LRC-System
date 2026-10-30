@@ -5,15 +5,6 @@ import { usePathname } from 'next/navigation';
 import type { Esito, StatoFile } from '@/lib/ferrari';
 import { STATI } from '@/lib/ferrari';
 
-const SCHEDE = [
-  { href: '/ferrari',            label: 'Commesse' },
-  { href: '/ferrari/componenti', label: 'Componenti' },
-  { href: '/ferrari/schede',     label: 'Revisione' },
-  { href: '/ferrari/scambio',    label: 'Scambio con la IA' },
-  { href: '/ferrari/conoscenza', label: 'Conoscenza' },
-  { href: '/ferrari/consulta',   label: 'Consulta' },
-];
-
 export function Cella({ testo, intero }: { testo?: string; intero?: string }) {
   if (!testo) return <span className="text-gray-300">—</span>;
   if (testo === 'Sì') return <span className="font-bold text-green-600" title={intero}>Sì</span>;
@@ -34,31 +25,34 @@ export function Cella({ testo, intero }: { testo?: string; intero?: string }) {
   );
 }
 
-export function FerrariNav() {
+/** Le due pagine di tutti i giorni: Vedere (tabella) e Impostazioni (cartella, sigle, componenti). Il resto sta in Impostazioni → Avanzate. */
+export function FerrariNav({ badge = 0 }: { badge?: number }) {
   const pathname = usePathname();
-  const attiva = (href: string) => {
-    if (href === '/ferrari') return pathname === '/ferrari';
-    if (href === '/ferrari/schede') return pathname.startsWith('/ferrari/schede') || /^\/ferrari\/\d+/.test(pathname);
-    return pathname.startsWith(href);
-  };
-  const avanzate = SCHEDE.slice(2);
-  const inAvanzate = avanzate.some(s => attiva(s.href));
+  const inImpostazioni = pathname.startsWith('/ferrari/impostazioni') || pathname.startsWith('/ferrari/schede') || pathname.startsWith('/ferrari/scambio')
+    || pathname.startsWith('/ferrari/conoscenza') || pathname.startsWith('/ferrari/consulta') || /^\/ferrari\/\d+/.test(pathname);
   const cls = (on: boolean) =>
     `px-4 py-2 text-sm font-medium rounded-t-lg -mb-px border-b-2 transition-colors ${
       on ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`;
   return (
-    <nav className="flex flex-wrap items-center gap-1 border-b border-gray-200 mb-6">
-      {SCHEDE.slice(0, 2).map(s => <Link key={s.href} href={s.href} className={cls(attiva(s.href))}>{s.label}</Link>)}
-      {/* il flusso a revisione completa non serve nell'uso quotidiano: resta raggiungibile da qui */}
-      <details className="relative" open={inAvanzate}>
-        <summary className={`${cls(inAvanzate)} cursor-pointer list-none`}>Avanzate</summary>
-        <div className="flex flex-wrap gap-1">
-          {avanzate.map(s => (
-            <Link key={s.href} href={s.href} className={cls(attiva(s.href))}>{s.label}</Link>
-          ))}
-        </div>
-      </details>
+    <nav className="d-print-none flex flex-wrap items-center gap-1 border-b border-gray-200 mb-6">
+      <Link href="/ferrari" className={cls(!inImpostazioni)}>Vedere</Link>
+      <Link href="/ferrari/impostazioni" className={cls(inImpostazioni)}>
+        Impostazioni
+        {badge > 0 && <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 text-[11px] font-bold text-white">{badge}</span>}
+      </Link>
     </nav>
+  );
+}
+
+/** Come si guarda la tabella: per sigle (colonne) o per componente (paraurti, spoiler...). */
+export function VistaToggle() {
+  const pathname = usePathname();
+  const cls = (on: boolean) => `px-3 py-1.5 text-sm rounded-lg border ${on ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`;
+  return (
+    <div className="d-print-none flex gap-2">
+      <Link href="/ferrari" className={cls(pathname === '/ferrari')}>Per sigle</Link>
+      <Link href="/ferrari/componenti" className={cls(pathname.startsWith('/ferrari/componenti'))}>Per componente</Link>
+    </div>
   );
 }
 
