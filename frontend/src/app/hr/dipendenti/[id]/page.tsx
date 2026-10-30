@@ -219,6 +219,7 @@ export default function EmployeeDetailPage() {
             <Field label="Data di nascita" value={employee.data_nascita ? `${fmtDate(employee.data_nascita)}${employee.eta != null ? ` (${employee.eta} anni)` : ''}` : null} />
             <Field label="Nazionalità" value={employee.nazionalita} />
             <Field label="Codice fiscale" value={employee.codice_fiscale} />
+            <Field label="Nome Osti" value={employee.nome_osti} />
             <Field label="Email" value={employee.email} />
             <Field label="Telefono" value={employee.telefono} />
             <Field label="Indirizzo (residenza)" value={employee.indirizzo} />
@@ -236,6 +237,12 @@ export default function EmployeeDetailPage() {
             <Field label="Data assunzione" value={fmtDate(employee.data_assunzione)} />
             <Field label="Anzianità" value={`${employee.anzianita_anni} ${employee.anzianita_anni === 1 ? 'anno' : 'anni'}`} />
             {employee.data_cessazione && <Field label="Fine contratto / cessazione" value={fmtDate(employee.data_cessazione)} />}
+          </InfoCard>
+
+          <InfoCard title="Vestiario">
+            <Field label="Taglia pantaloni" value={employee.taglia_pantaloni} />
+            <Field label="Taglia maglia" value={employee.taglia_maglia} />
+            <Field label="Taglia scarpe" value={employee.taglia_scarpe} />
           </InfoCard>
 
           <InfoCard title="Lavoro">

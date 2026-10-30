@@ -272,6 +272,7 @@ const employeeSelect = db`
   SELECT
     e.id, e.matricola, e.nome, e.cognome, e.sesso, e.data_nascita, e.codice_fiscale,
     e.nazionalita, e.email, e.telefono, e.indirizzo, e.citta, e.provincia, e.cap, e.gruppo_orario,
+    e.nome_osti, e.taglia_pantaloni, e.taglia_maglia, e.taglia_scarpe,
     e.l68, e.mansione, e.livello, e.categoria, e.tipo_contratto, e.funzione_aziendale,
     e.reparto_id, d.name AS reparto_name,
     e.plant_id, e.plant_ids,
@@ -384,6 +385,10 @@ const employeeFieldsSchema = z.object({
   provincia:            z.string().max(50).optional().nullable(),
   cap:                  z.string().max(10).optional().nullable(),
   gruppo_orario:        z.string().max(100).optional().nullable(),
+  nome_osti:            z.string().max(200).optional().nullable(),
+  taglia_pantaloni:     z.string().max(20).optional().nullable(),
+  taglia_maglia:        z.string().max(20).optional().nullable(),
+  taglia_scarpe:        z.string().max(20).optional().nullable(),
   mansione:            z.string().max(150).optional().nullable(),
   livello:              z.string().max(30).optional().nullable(),
   l68:                  z.boolean().optional(),
