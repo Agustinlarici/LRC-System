@@ -12,6 +12,7 @@ import { db } from './db/client.js';
 import { startRun, endRun, failRun, setNextRun } from './lib/sync-stats.js';
 import { logger } from './lib/logger.js';
 import { recepcionesEmitter } from './gateway/recepciones-emitter.js';
+import { letturaNotturna } from './modules/ferrari/cartella.js';
 import { pollOneDriveFolder } from './modules/spma/onedrive-watcher.js';
 
 function nextEvery10Min(): Date {
@@ -159,6 +160,16 @@ export function startScheduler() {
       }
     } catch (e) {
       logger.error(`[recepciones] Promemoria fallito: ${e instanceof Error ? e.message : e}`);
+    }
+  }, { timezone: 'Europe/Rome' });
+
+  // Ogni ora (al minuto 20) — schede produzione: legge la cartella degli Excel se e' attivo e se e' l'ora scelta nelle Impostazioni
+  cron.schedule('20 * * * *', async () => {
+    const ora = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
+    try {
+      await letturaNotturna(ora);
+    } catch (e) {
+      logger.error(`[scheduler] Lettura cartella schede fallita: ${e instanceof Error ? e.message : e}`);
     }
   }, { timezone: 'Europe/Rome' });
 

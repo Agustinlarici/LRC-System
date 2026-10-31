@@ -98,6 +98,11 @@ export const MODULES: ModuleConfig[] = [
     sidebar: 'IconTicket', hidden: false, moduleKey: 'tickets',
   },
   {
+    href: '/ferrari', label: 'Programma produzione (schede)', group: 'IT',
+    description: 'Validazione degli Excel di allestimento Ferrari: analisi con IA locale e VM, confronto e revisione',
+    sidebar: 'IconClipboard', hidden: false, moduleKey: 'ferrari_schede',
+  },
+  {
     href: '/admin/system', label: 'Sistema', group: 'IT',
     description: 'Utenti, permessi, reparti, configurazioni e stato del sistema',
     sidebar: 'IconMonitor', hidden: false, moduleKey: 'impostazioni',
