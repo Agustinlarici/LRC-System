@@ -1,11 +1,12 @@
 'use client';
 
 import { AnalisiOrganico } from '../AnalisiOrganico';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export default function LivelliMansioniPage() {
   return (
     <div className="space-y-4">
-      <h1 className="text-lg font-medium text-gray-900 d-print-none">Livelli per mansione</h1>
+      <PageHeader title="Livelli per mansione" back={{ label: 'Analisi HR', href: '/hr/analisi' }} />
       <AnalisiOrganico view="mansioni" />
     </div>
   );

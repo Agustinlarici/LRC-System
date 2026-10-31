@@ -77,30 +77,30 @@ export function TagsSettingsModal({ tags, onClose, onChanged }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-card shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="max-h-[90vh] overflow-y-auto p-6">
-          <h2 className="text-base font-medium text-gray-900 mb-4">Etichette dipendenti</h2>
+          <h2 className="text-base font-medium text-ink-900 mb-4">Etichette dipendenti</h2>
 
           <div className="space-y-2 mb-5">
-            {tags.length === 0 && <p className="text-sm text-gray-400">Nessuna etichetta creata.</p>}
+            {tags.length === 0 && <p className="text-sm text-muted">Nessuna etichetta creata.</p>}
             {tags.map(t => (
-              <div key={t.id} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border border-gray-200 ${t.is_active ? '' : 'opacity-50'}`}>
+              <div key={t.id} className={`flex items-center gap-2.5 px-3 py-2 rounded-ctl border border-line ${t.is_active ? '' : 'opacity-50'}`}>
                 <span className={`w-3 h-3 rounded-full shrink-0 ${tagDotStyle(t.color).className}`} style={tagDotStyle(t.color).style} />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-800 truncate">{t.name}</p>
-                  {t.description && <p className="text-xs text-gray-500 truncate">{t.description}</p>}
+                  <p className="text-sm font-medium text-ink-800 truncate">{t.name}</p>
+                  {t.description && <p className="text-xs text-muted truncate">{t.description}</p>}
                 </div>
-                <button type="button" onClick={() => startEdit(t)} className="text-xs text-blue-600 hover:text-blue-800 shrink-0">Modifica</button>
-                <button type="button" onClick={() => toggleActive(t)} className="text-xs text-gray-400 hover:text-gray-600 shrink-0">
+                <button type="button" onClick={() => startEdit(t)} className="text-xs text-accent-ink hover:underline shrink-0">Modifica</button>
+                <button type="button" onClick={() => toggleActive(t)} className="text-xs text-muted hover:text-muted shrink-0">
                   {t.is_active ? 'Disattiva' : 'Riattiva'}
                 </button>
-                <button type="button" onClick={() => remove(t)} className="text-xs text-red-400 hover:text-red-600 shrink-0">Elimina</button>
+                <button type="button" onClick={() => remove(t)} className="text-xs text-danger hover:text-danger shrink-0">Elimina</button>
               </div>
             ))}
           </div>
 
-          <form onSubmit={submit} className="space-y-3 border-t border-gray-100 pt-4">
-            <p className="text-sm font-medium text-gray-700">{editingId ? 'Modifica etichetta' : 'Nuova etichetta'}</p>
+          <form onSubmit={submit} className="space-y-3 border-t border-stone-100 pt-4">
+            <p className="text-sm font-medium text-ink-800">{editingId ? 'Modifica etichetta' : 'Nuova etichetta'}</p>
             <div><label className="label">Nome</label><input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="es. Da rivedere" /></div>
             <div><label className="label">Significato (facoltativo)</label><input className="input" value={description} onChange={e => setDescription(e.target.value)} placeholder="Spiega quando usarla" /></div>
             <div>
@@ -110,7 +110,7 @@ export function TagsSettingsModal({ tags, onClose, onChanged }: Props) {
                   <button
                     key={c.key} type="button" onClick={() => setColor(c.key)} title={c.label}
                     style={{ backgroundColor: c.dot }}
-                    className={`w-7 h-7 rounded-full ${color === c.key ? 'ring-2 ring-offset-2 ring-gray-400' : ''}`}
+                    className={`w-7 h-7 rounded-full ${color === c.key ? 'ring-2 ring-offset-2 ring-stone-400' : ''}`}
                   />
                 ))}
                 <div className="relative w-7 h-7">
@@ -119,7 +119,7 @@ export function TagsSettingsModal({ tags, onClose, onChanged }: Props) {
                     value={isCustomColor(color) ? color : '#94a3b8'}
                     onChange={ev => setColor(ev.target.value)}
                     title="Colore personalizzato"
-                    className={`w-7 h-7 rounded-full cursor-pointer border-0 p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-full [&::-webkit-color-swatch]:border-0 ${isCustomColor(color) ? 'ring-2 ring-offset-2 ring-gray-400' : ''}`}
+                    className={`w-7 h-7 rounded-full cursor-pointer border-0 p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:rounded-full [&::-webkit-color-swatch]:border-0 ${isCustomColor(color) ? 'ring-2 ring-offset-2 ring-stone-400' : ''}`}
                   />
                   <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-white text-sm font-bold [text-shadow:0_0_2px_rgba(0,0,0,0.6)]">+</span>
                 </div>

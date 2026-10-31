@@ -12,7 +12,7 @@ const BACKEND = typeof window !== 'undefined'
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
 // Stessa palette categorica usata nel resto del modulo HR
-const PALETTE = ['#2563eb', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
+const PALETTE = ['#B04FD0', '#2563eb', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
 const OTHER_COLOR = '#94a3b8';
 const NA = 'N/D';
 const TICK = { fontSize: 12, fill: '#374151' };
@@ -146,20 +146,20 @@ function DataTable({ head, rows, foot }: { head: string[]; rows: (string | numbe
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="sticky top-0 bg-white border-b border-gray-200 text-xs text-gray-400 uppercase tracking-wide">
+          <tr className="sticky top-0 bg-white border-b border-line text-xs text-muted uppercase tracking-wide">
             {head.map((h, i) => <th key={i} className={`py-2 px-2 font-medium ${i === 0 ? 'text-left' : 'text-right'}`}>{h}</th>)}
           </tr>
         </thead>
         <tbody>
           {rows.map((r, ri) => (
-            <tr key={ri} className="border-b border-gray-50">
-              {r.map((c, ci) => <td key={ci} className={`py-1.5 px-2 ${ci === 0 ? 'text-left text-gray-800' : 'text-right text-gray-600 tabular-nums'}`}>{c}</td>)}
+            <tr key={ri} className="border-b border-stone-50">
+              {r.map((c, ci) => <td key={ci} className={`py-1.5 px-2 ${ci === 0 ? 'text-left text-ink-800' : 'text-right text-muted tabular-nums'}`}>{c}</td>)}
             </tr>
           ))}
         </tbody>
         {foot && (
           <tfoot>
-            <tr className="border-t border-gray-300 font-semibold text-gray-800">
+            <tr className="border-t border-stone-300 font-semibold text-ink-800">
               {foot.map((c, ci) => <td key={ci} className={`py-2 px-2 ${ci === 0 ? 'text-left' : 'text-right tabular-nums'}`}>{c}</td>)}
             </tr>
           </tfoot>
@@ -169,7 +169,7 @@ function DataTable({ head, rows, foot }: { head: string[]; rows: (string | numbe
   );
 }
 
-const Empty = () => <p className="text-sm text-gray-400 text-center py-10">Nessun dato</p>;
+const Empty = () => <p className="text-sm text-muted text-center py-10">Nessun dato</p>;
 
 // Card con grafico o tabella (a seconda della vista globale), stampabile singolarmente
 function Card({ title, hint, chart, table, className = '', canPct = false, dense = false }: {
@@ -182,8 +182,8 @@ function Card({ title, hint, chart, table, className = '', canPct = false, dense
     <div className={`card print-card ${dense ? '!p-3' : ''} ${className}`}>
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className={`font-medium text-gray-700 ${dense ? 'text-sm' : 'text-base'}`}>{title}</p>
-          {hint && <p className="text-xs text-gray-400 mb-2">{hint}</p>}
+          <p className={`font-medium text-ink-800 ${dense ? 'text-sm' : 'text-base'}`}>{title}</p>
+          {hint && <p className="text-xs text-muted mb-2">{hint}</p>}
         </div>
         <div className="flex gap-1.5 d-print-none shrink-0">
           {canPct && mode === 'chart' && (
@@ -262,8 +262,8 @@ function Donut({ data, colorFor, onSelect, active }: { data: Count[]; colorFor: 
           </PieChart>
         </ResponsiveContainer>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <span className="text-base font-semibold text-gray-800 leading-none">{total}</span>
-          <span className="text-[9px] text-gray-400 mt-0.5 leading-none">persone</span>
+          <span className="text-base font-semibold text-ink-800 leading-none">{total}</span>
+          <span className="text-[9px] text-muted mt-0.5 leading-none">persone</span>
         </div>
       </div>
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
@@ -271,8 +271,8 @@ function Donut({ data, colorFor, onSelect, active }: { data: Count[]; colorFor: 
           <div key={d.name} className={`flex items-center gap-1.5 text-xs ${onSelect && isClickable(d.name) ? 'cursor-pointer hover:opacity-70' : ''} ${active?.length && !active.includes(d.name) ? 'opacity-40' : ''}`}
             onClick={onSelect && isClickable(d.name) ? () => onSelect(d.name) : undefined}>
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: colorFor(d.name) }} />
-            <span className="truncate flex-1 text-gray-700">{d.name}</span>
-            <span className="text-gray-500 tabular-nums shrink-0">{d.value} · {pct(d.value, total)}</span>
+            <span className="truncate flex-1 text-ink-800">{d.name}</span>
+            <span className="text-muted tabular-nums shrink-0">{d.value} · {pct(d.value, total)}</span>
           </div>
         ))}
       </div>
@@ -329,20 +329,20 @@ function MultiFilter({ label, options, value, onChange }: {
   return (
     <div className="relative">
       <button type="button" onClick={() => setOpen(o => !o)}
-        className={`text-sm px-3 py-1.5 rounded-lg border flex items-center gap-1.5 ${value.length ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-300 text-gray-600'} hover:border-blue-400`}>
-        {label}{value.length > 0 && <span className="bg-blue-600 text-white text-[10px] rounded-full px-1.5">{value.length}</span>}
+        className={`text-sm px-3 py-1.5 rounded-ctl border flex items-center gap-1.5 ${value.length ? 'bg-accent-soft border-accent text-accent-ink' : 'bg-white border-stone-300 text-muted'} hover:border-accent`}>
+        {label}{value.length > 0 && <span className="bg-ink-800 text-white text-[10px] rounded-full px-1.5">{value.length}</span>}
         <span className="text-[10px]">▾</span>
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute z-20 mt-1 w-64 max-h-72 overflow-auto bg-white border border-gray-200 rounded-lg shadow-lg p-1.5">
-            {options.length === 0 && <p className="text-xs text-gray-400 p-2">Nessun valore</p>}
+          <div className="absolute z-20 mt-1 w-64 max-h-72 overflow-auto bg-white border border-line rounded-ctl shadow-lg p-1.5">
+            {options.length === 0 && <p className="text-xs text-muted p-2">Nessun valore</p>}
             {options.map(o => (
-              <label key={o.name} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer text-sm text-gray-700">
+              <label key={o.name} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-stone-50 cursor-pointer text-sm text-ink-800">
                 <input type="checkbox" checked={value.includes(o.name)} onChange={() => toggle(o.name)} />
                 <span className="flex-1 truncate">{o.name}</span>
-                <span className="text-xs text-gray-400">{o.value}</span>
+                <span className="text-xs text-muted">{o.value}</span>
               </label>
             ))}
             {value.length > 0 && (
@@ -358,9 +358,9 @@ function MultiFilter({ label, options, value, onChange }: {
 function Kpi({ label, value, sub, tone }: { label: string; value: React.ReactNode; sub?: string; tone?: 'warn' }) {
   return (
     <div className="card print-card p-2.5">
-      <p className="text-[9px] font-medium text-gray-400 uppercase tracking-wide leading-tight">{label}</p>
-      <p className={`text-lg font-semibold leading-none mt-1 ${tone === 'warn' ? 'text-amber-600' : 'text-gray-900'}`}>{value}</p>
-      {sub && <p className="text-[10px] text-gray-400 mt-1 truncate">{sub}</p>}
+      <p className="text-[9px] font-medium text-muted uppercase tracking-wide leading-tight">{label}</p>
+      <p className={`text-lg font-semibold leading-none mt-1 ${tone === 'warn' ? 'text-warning' : 'text-ink-900'}`}>{value}</p>
+      {sub && <p className="text-[10px] text-muted mt-1 truncate">{sub}</p>}
     </div>
   );
 }
@@ -451,7 +451,7 @@ export function AnalisiOrganico({ view = 'main' }: { view?: 'main' | 'mansioni' 
   const peopleRows = useMemo(() => [...active].sort((a, b) =>
     a.cognome.localeCompare(b.cognome, 'it') || a.nome.localeCompare(b.nome, 'it')), [active]);
 
-  if (loading) return <p className="text-sm text-gray-400 text-center py-10">Caricamento…</p>;
+  if (loading) return <p className="text-sm text-muted text-center py-10">Caricamento…</p>;
 
   const totActive = active.length;
   const determinati = active.filter(e => isDeterminato(e.tipo_contratto)).length;
@@ -535,8 +535,8 @@ export function AnalisiOrganico({ view = 'main' }: { view?: 'main' | 'mansioni' 
         <style>{`@media print { @page { size: A4 landscape; margin: 8mm; } }`}</style>
         {/* Intestazione visibile solo in stampa: titolo, data e filtri applicati */}
         <div className="only-print">
-          <p className="text-lg font-semibold text-gray-900">Analisi HR</p>
-          <p className="text-xs text-gray-500">
+          <p className="text-lg font-semibold text-ink-900">Analisi HR</p>
+          <p className="text-xs text-muted">
             Stampato il {fmtDate(today)} · {totActive} persone {scope === 'cessati' ? 'cessate' : 'attive'}
             {activeFilters.length ? ` · Filtri: ${activeFilters.map(d => `${DIM_LABEL[d]} = ${filters[d]!.join(', ')}`).join(' · ')}` : ' · Nessun filtro'}
           </p>
@@ -545,31 +545,31 @@ export function AnalisiOrganico({ view = 'main' }: { view?: 'main' | 'mansioni' 
         {/* Barra unica: filtri (a scomparsa) a sinistra, vista e stampa a destra */}
         <div className="flex items-center gap-2 flex-wrap d-print-none">
           <button type="button" onClick={() => setShowFilters(s => !s)}
-            className={`text-sm px-3 py-1.5 rounded-lg border flex items-center gap-1.5 transition-colors ${showFilters || activeFilters.length ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-300 text-gray-600 hover:border-blue-400'}`}>
+            className={`text-sm px-3 py-1.5 rounded-ctl border flex items-center gap-1.5 transition-colors ${showFilters || activeFilters.length ? 'bg-accent-soft border-accent text-accent-ink' : 'bg-white border-stone-300 text-muted hover:border-accent'}`}>
             Filtri
-            {activeFilters.length > 0 && <span className="bg-blue-600 text-white text-[10px] rounded-full px-1.5">{activeFilters.length}</span>}
+            {activeFilters.length > 0 && <span className="bg-ink-800 text-white text-[10px] rounded-full px-1.5">{activeFilters.length}</span>}
             <span className="text-[10px]">{showFilters ? '▴' : '▾'}</span>
           </button>
           {activeFilters.map(dim => (
             <button key={dim} type="button" onClick={() => setFilters(f => ({ ...f, [dim]: [] }))} title="Rimuovi filtro"
-              className="text-xs px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100">
+              className="text-xs px-2.5 py-1 rounded-full bg-accent-soft border border-accent text-accent-ink hover:bg-accent-soft">
               {DIM_LABEL[dim]}: <b>{filters[dim]!.join(', ')}</b> ×
             </button>
           ))}
-          {activeFilters.length > 0 && <button type="button" onClick={() => setFilters({})} className="text-sm px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100">Azzera</button>}
+          {activeFilters.length > 0 && <button type="button" onClick={() => setFilters({})} className="text-sm px-3 py-1.5 rounded-ctl text-muted hover:bg-stone-100">Azzera</button>}
           <div className="ml-auto flex items-center gap-2">
-            <div className="flex rounded-lg overflow-hidden border border-gray-300">
+            <div className="flex rounded-ctl overflow-hidden border border-stone-300">
               {(['attivi', 'cessati'] as const).map(s => (
                 <button key={s} type="button" onClick={() => { setScope(s); setFilters({}); }}
-                  className={`text-sm px-3 py-1.5 ${scope === s ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                  className={`text-sm px-3 py-1.5 ${scope === s ? 'bg-ink-800 text-white' : 'bg-white text-muted hover:bg-stone-50'}`}>
                   {s === 'attivi' ? 'Attivi' : 'Cessati'}
                 </button>
               ))}
             </div>
-            <div className="flex rounded-lg overflow-hidden border border-gray-300">
+            <div className="flex rounded-ctl overflow-hidden border border-stone-300">
               {(['chart', 'table'] as Mode[]).map(m => (
                 <button key={m} type="button" onClick={() => setMode(m)}
-                  className={`text-sm px-3 py-1.5 ${mode === m ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                  className={`text-sm px-3 py-1.5 ${mode === m ? 'bg-ink-800 text-white' : 'bg-white text-muted hover:bg-stone-50'}`}>
                   {m === 'chart' ? 'Grafici' : 'Tabelle'}
                 </button>
               ))}

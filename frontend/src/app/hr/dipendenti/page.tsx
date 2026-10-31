@@ -12,6 +12,10 @@ import { NewEmployeeModal } from './NewEmployeeModal';
 import { TagsSettingsModal } from './TagsSettingsModal';
 import { usePromptDialog, useChoiceDialog, useConfirmDialog, SKIP_ALL } from '@/components/ui/PromptDialog';
 import { tagDotStyle } from '@/lib/tagColors';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { StatusBadge, type Tone } from '@/components/ui/StatusBadge';
+import { SkeletonTable } from '@/components/ui/Skeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -23,12 +27,8 @@ const STATO_LABEL: Record<string, string> = {
   attivo: 'Attivo', aspettativa: 'Aspettativa', malattia: 'Malattia',
   maternita_paternita: 'Maternità/Paternità', cessato: 'Cessato',
 };
-const STATO_COLOR: Record<string, string> = {
-  attivo: 'bg-green-50 text-green-700 border-green-200',
-  aspettativa: 'bg-amber-50 text-amber-700 border-amber-200',
-  malattia: 'bg-red-50 text-red-700 border-red-200',
-  maternita_paternita: 'bg-purple-50 text-purple-700 border-purple-200',
-  cessato: 'bg-gray-100 text-gray-500 border-gray-200',
+const STATO_TONE: Record<string, Tone> = {
+  attivo: 'success', aspettativa: 'warning', malattia: 'danger', maternita_paternita: 'info', cessato: 'neutral',
 };
 // Stati selezionabili nel filtro: "aspettativa"/"malattia" restano nel database solo
 // per chi li aveva già (nessuna migrazione automatica), non sono più impostabili.
@@ -668,23 +668,14 @@ export default function DipendentiPage() {
 
   return (
     <div className="space-y-4" onClick={() => { if (tagMenuFor !== null) setTagMenuFor(null); if (showMore) setShowMore(false); }}>
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-medium text-gray-900">Dipendenti</h1>
-          {!loading && (
-            <span className="text-sm font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-3 py-1">
-              {visible.length} {visible.length === 1 ? 'dipendente selezionato' : 'dipendenti selezionati'}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-        {manage && (
-          <>
-            <button onClick={openMatricole} className="btn-secondary text-sm">Prossima matricola</button>
-            <button onClick={() => setShowTags(true)} className="btn-secondary text-sm">Etichette</button>
-            <button onClick={() => setShowNew(true)} className="btn-primary text-sm">+ Nuovo dipendente</button>
-          </>
+      <PageHeader
+        title="Dipendenti"
+        badge={!loading && (
+          <span className="text-sm font-semibold text-accent-ink bg-accent-soft border border-accent rounded-full px-3 py-1">
+            {visible.length} {visible.length === 1 ? 'dipendente selezionato' : 'dipendenti selezionati'}
+          </span>
         )}
+        actions={<>
           <div className="relative">
             <button
               type="button" aria-haspopup="menu" aria-expanded={showMore} title="Altre azioni"
@@ -695,54 +686,61 @@ export default function DipendentiPage() {
               <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" /></svg>
             </button>
             {showMore && (
-              <div role="menu" className="absolute right-0 top-full mt-1 z-30 w-72 bg-white border border-gray-200 rounded-lg shadow-lg py-1 text-sm">
+              <div role="menu" className="absolute right-0 top-full mt-1 z-30 w-72 bg-white border border-line rounded-ctl shadow-lg py-1 text-sm">
                 <button type="button" role="menuitem" disabled={loading || visible.length === 0}
                   onClick={() => { setShowMore(false); exportExcel(); }}
-                  className="w-full text-left px-3 py-1.5 hover:bg-gray-50 disabled:text-gray-300 disabled:hover:bg-transparent">Esporta Excel</button>
+                  className="w-full text-left px-3 py-1.5 hover:bg-stone-50 disabled:text-stone-300 disabled:hover:bg-transparent">Esporta Excel</button>
                 {manage && (
                   <>
                     <button type="button" role="menuitem"
                       title={`Da Excel: File → Salva con nome → CSV UTF-8. Colonne attese: ${IMPORT_COLUMNS.join(', ')}`}
                       onClick={() => { setShowMore(false); importRef.current?.open('storico'); }}
-                      className="w-full text-left px-3 py-1.5 hover:bg-gray-50">
+                      className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
                       Importa da Excel — registra i cambiamenti
                     </button>
                     <button type="button" role="menuitem"
                       title={`Da Excel: File → Salva con nome → CSV UTF-8. Colonne attese: ${IMPORT_COLUMNS.join(', ')}`}
                       onClick={() => { setShowMore(false); importRef.current?.open('sostituisci'); }}
-                      className="w-full text-left px-3 py-1.5 hover:bg-gray-50">
+                      className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
                       Importa da Excel — sostituisci tutto
                     </button>
                     <button type="button" role="menuitem"
                       title="Elenco dipendenti di Osti (CSV): abbina per cognome e nome (o Nome Osti) e aggiorna le schede"
                       onClick={() => { setShowMore(false); importRef.current?.open('osti'); }}
-                      className="w-full text-left px-3 py-1.5 hover:bg-gray-50">
+                      className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
                       Importa elenco Osti (CSV)
                     </button>
                     <button type="button" role="menuitem"
                       onClick={() => { setShowMore(false); router.push('/hr/dipendenti/foto-massiva'); }}
-                      className="w-full text-left px-3 py-1.5 hover:bg-gray-50">Carica foto</button>
+                      className="w-full text-left px-3 py-1.5 hover:bg-stone-50">Carica foto</button>
                   </>
                 )}
               </div>
             )}
           </div>
-        </div>
-      </div>
+          {manage && (
+            <>
+              <button onClick={openMatricole} className="btn-secondary text-sm">Prossima matricola</button>
+              <button onClick={() => setShowTags(true)} className="btn-secondary text-sm">Etichette</button>
+              <button onClick={() => setShowNew(true)} className="btn-primary text-sm">+ Nuovo dipendente</button>
+            </>
+          )}
+        </>}
+      />
 
       {manage && <ImportExcelButton ref={importRef} hideButton columns={IMPORT_COLUMNS} processRows={importRows} onDone={load} />}
 
       <div className="card p-0 overflow-hidden">
-        <div className={`flex items-center justify-between px-4 py-2.5 bg-gray-50 ${showFilters ? 'border-b border-gray-100' : ''}`}>
+        <div className={`flex items-center justify-between px-4 py-2.5 bg-stone-50 ${showFilters ? 'border-b border-stone-100' : ''}`}>
           <button type="button" onClick={() => setShowFilters(v => !v)} aria-expanded={showFilters}
-            className="flex items-center gap-1.5 text-xs font-medium text-gray-500 uppercase tracking-wide hover:text-gray-700">
+            className="flex items-center gap-1.5 text-xs font-medium text-muted uppercase tracking-wide hover:text-ink-800">
             <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 011-1h12a1 1 0 01.8 1.6L12 11v5a1 1 0 01-1.45.9l-2-1A1 1 0 018 15v-4L3.2 4.6A1 1 0 013 4z" /></svg>
             Filtri
-            {hasFilters && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" title="Filtri attivi" />}
+            {hasFilters && <span className="w-1.5 h-1.5 rounded-full bg-accent" title="Filtri attivi" />}
             <svg className={`w-3 h-3 transition-transform ${showFilters ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor"><path d="M5.3 7.3a1 1 0 011.4 0L10 10.6l3.3-3.3a1 1 0 111.4 1.4l-4 4a1 1 0 01-1.4 0l-4-4a1 1 0 010-1.4z" /></svg>
           </button>
           {hasFilters && (
-            <button onClick={resetFilters} className="text-xs text-gray-400 hover:text-gray-600">Pulisci filtri</button>
+            <button onClick={resetFilters} className="text-xs text-muted hover:text-muted">Pulisci filtri</button>
           )}
         </div>
         {showFilters && (
@@ -750,95 +748,95 @@ export default function DipendentiPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 px-4 py-3">
           <input value={fNominativo} onChange={e => setFNominativo(e.target.value)} placeholder="Nome e cognome" className="input text-sm min-w-0" />
           <input value={fMatricola} onChange={e => setFMatricola(e.target.value)} placeholder="Matricola" className="input text-sm min-w-0" />
-          <select value={fSesso} onChange={e => setFSesso(e.target.value)} className={`input text-sm min-w-0 ${fSesso ? '' : 'text-gray-400'}`}>
+          <select value={fSesso} onChange={e => setFSesso(e.target.value)} className={`input text-sm min-w-0 ${fSesso ? '' : 'text-muted'}`}>
             <option value="">Sesso</option>
-            {(sessoDisponibili.has('M') || fSesso === 'M') && <option value="M" className="text-gray-900">M</option>}
-            {(sessoDisponibili.has('F') || fSesso === 'F') && <option value="F" className="text-gray-900">F</option>}
+            {(sessoDisponibili.has('M') || fSesso === 'M') && <option value="M" className="text-ink-900">M</option>}
+            {(sessoDisponibili.has('F') || fSesso === 'F') && <option value="F" className="text-ink-900">F</option>}
           </select>
-          <select value={fCategoria} onChange={e => setFCategoria(e.target.value)} className={`input text-sm min-w-0 ${fCategoria ? '' : 'text-gray-400'}`}>
+          <select value={fCategoria} onChange={e => setFCategoria(e.target.value)} className={`input text-sm min-w-0 ${fCategoria ? '' : 'text-muted'}`}>
             <option value="">Categoria</option>
-            {categorie.map(c => <option key={c} value={c} className="text-gray-900">{c}</option>)}
+            {categorie.map(c => <option key={c} value={c} className="text-ink-900">{c}</option>)}
           </select>
-          <select value={societaFilter} onChange={e => setSocietaFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${societaFilter ? '' : 'text-gray-400'}`}>
+          <select value={societaFilter} onChange={e => setSocietaFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${societaFilter ? '' : 'text-muted'}`}>
             <option value="">Società contratto</option>
-            {companiesShown.map(c => <option key={c.id} value={c.id} className="text-gray-900">{c.name}</option>)}
+            {companiesShown.map(c => <option key={c.id} value={c.id} className="text-ink-900">{c.name}</option>)}
           </select>
-          <select value={fNazionalita} onChange={e => setFNazionalita(e.target.value)} className={`input text-sm min-w-0 ${fNazionalita ? '' : 'text-gray-400'}`}>
+          <select value={fNazionalita} onChange={e => setFNazionalita(e.target.value)} className={`input text-sm min-w-0 ${fNazionalita ? '' : 'text-muted'}`}>
             <option value="">Nazionalità</option>
-            {nazionalita.map(v => <option key={v} value={v} className="text-gray-900">{v}</option>)}
+            {nazionalita.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
           </select>
-          <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className={`input text-sm min-w-0 ${funzioneFilter ? '' : 'text-gray-400'}`}>
+          <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className={`input text-sm min-w-0 ${funzioneFilter ? '' : 'text-muted'}`}>
             <option value="">Funzione</option>
-            {funzioni.map(f => <option key={f} value={f} className="text-gray-900">{f}</option>)}
+            {funzioni.map(f => <option key={f} value={f} className="text-ink-900">{f}</option>)}
           </select>
-          <select value={repartoFilter} onChange={e => setRepartoFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${repartoFilter ? '' : 'text-gray-400'}`}>
+          <select value={repartoFilter} onChange={e => setRepartoFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${repartoFilter ? '' : 'text-muted'}`}>
             <option value="">Reparto</option>
-            {departmentsShown.map(d => <option key={d.id} value={d.id} className="text-gray-900">{d.name}</option>)}
+            {departmentsShown.map(d => <option key={d.id} value={d.id} className="text-ink-900">{d.name}</option>)}
           </select>
-          <select value={plantFilter} onChange={e => setPlantFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${plantFilter ? '' : 'text-gray-400'}`}>
+          <select value={plantFilter} onChange={e => setPlantFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${plantFilter ? '' : 'text-muted'}`}>
             <option value="">Plant</option>
-            {plantsShown.map(p => <option key={p.id} value={p.id} className="text-gray-900">{p.name}</option>)}
+            {plantsShown.map(p => <option key={p.id} value={p.id} className="text-ink-900">{p.name}</option>)}
           </select>
-          <select value={fMansione} onChange={e => setFMansione(e.target.value)} className={`input text-sm min-w-0 ${fMansione ? '' : 'text-gray-400'}`}>
+          <select value={fMansione} onChange={e => setFMansione(e.target.value)} className={`input text-sm min-w-0 ${fMansione ? '' : 'text-muted'}`}>
             <option value="">Mansione</option>
-            {mansioni.map(v => <option key={v} value={v} className="text-gray-900">{v}</option>)}
+            {mansioni.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
           </select>
-          <select value={fLivello} onChange={e => setFLivello(e.target.value)} className={`input text-sm min-w-0 ${fLivello ? '' : 'text-gray-400'}`}>
+          <select value={fLivello} onChange={e => setFLivello(e.target.value)} className={`input text-sm min-w-0 ${fLivello ? '' : 'text-muted'}`}>
             <option value="">Livello</option>
-            {livelli.map(v => <option key={v} value={v} className="text-gray-900">{v}</option>)}
+            {livelli.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
           </select>
-          <select value={fResp} onChange={e => setFResp(e.target.value)} className={`input text-sm min-w-0 ${fResp ? '' : 'text-gray-400'}`}>
+          <select value={fResp} onChange={e => setFResp(e.target.value)} className={`input text-sm min-w-0 ${fResp ? '' : 'text-muted'}`}>
             <option value="">Responsabile</option>
-            {responsabili.map(v => <option key={v} value={v} className="text-gray-900">{v}</option>)}
+            {responsabili.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
           </select>
-          <select value={fTipoContratto} onChange={e => setFTipoContratto(e.target.value)} className={`input text-sm min-w-0 ${fTipoContratto ? '' : 'text-gray-400'}`}>
+          <select value={fTipoContratto} onChange={e => setFTipoContratto(e.target.value)} className={`input text-sm min-w-0 ${fTipoContratto ? '' : 'text-muted'}`}>
             <option value="">Tipo contratto</option>
-            {tipiContratto.map(t => <option key={t} value={t} className="text-gray-900">{t}</option>)}
+            {tipiContratto.map(t => <option key={t} value={t} className="text-ink-900">{t}</option>)}
           </select>
-          <select value={tagFilter} onChange={e => setTagFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${tagFilter ? '' : 'text-gray-400'}`}>
+          <select value={tagFilter} onChange={e => setTagFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${tagFilter ? '' : 'text-muted'}`}>
             <option value="">Etichetta</option>
-            {tagsShown.map(t => <option key={t.id} value={t.id} className="text-gray-900">{t.name}</option>)}
+            {tagsShown.map(t => <option key={t.id} value={t.id} className="text-ink-900">{t.name}</option>)}
           </select>
-          <select value={inProvaFilter} onChange={e => setInProvaFilter(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${inProvaFilter ? '' : 'text-gray-400'}`}>
+          <select value={inProvaFilter} onChange={e => setInProvaFilter(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${inProvaFilter ? '' : 'text-muted'}`}>
             <option value="">In prova</option>
-            {(provaSi || inProvaFilter === 'si') && <option value="si" className="text-gray-900">Sì</option>}
-            {(provaNo || inProvaFilter === 'no') && <option value="no" className="text-gray-900">No</option>}
+            {(provaSi || inProvaFilter === 'si') && <option value="si" className="text-ink-900">Sì</option>}
+            {(provaNo || inProvaFilter === 'no') && <option value="no" className="text-ink-900">No</option>}
           </select>
-          <select value={avvisoFilter} onChange={e => setAvvisoFilter(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${avvisoFilter ? '' : 'text-gray-400'}`}>
+          <select value={avvisoFilter} onChange={e => setAvvisoFilter(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${avvisoFilter ? '' : 'text-muted'}`}>
             <option value="">Errori import</option>
-            {(avvisoSi || avvisoFilter === 'si') && <option value="si" className="text-gray-900">Con errori</option>}
-            {(avvisoNo || avvisoFilter === 'no') && <option value="no" className="text-gray-900">Senza errori</option>}
+            {(avvisoSi || avvisoFilter === 'si') && <option value="si" className="text-ink-900">Con errori</option>}
+            {(avvisoNo || avvisoFilter === 'no') && <option value="no" className="text-ink-900">Senza errori</option>}
           </select>
-          <select value={statoFilter} onChange={e => setStatoFilter(e.target.value)} className={`input text-sm min-w-0 ${statoFilter ? '' : 'text-gray-400'}`}>
+          <select value={statoFilter} onChange={e => setStatoFilter(e.target.value)} className={`input text-sm min-w-0 ${statoFilter ? '' : 'text-muted'}`}>
             <option value="">Stato</option>
-            {statiShown.map(o => <option key={o.value} value={o.value} className="text-gray-900">{o.label}</option>)}
+            {statiShown.map(o => <option key={o.value} value={o.value} className="text-ink-900">{o.label}</option>)}
           </select>
           {showExtraFilters && (
             <>
               <input value={fEmail} onChange={e => setFEmail(e.target.value)} placeholder="Email" className="input text-sm min-w-0" />
               <input value={fIndirizzo} onChange={e => setFIndirizzo(e.target.value)} placeholder="Indirizzo" className="input text-sm min-w-0" />
               <input value={fCitta} onChange={e => setFCitta(e.target.value)} placeholder="Città" className="input text-sm min-w-0" />
-              <select value={fProv} onChange={e => setFProv(e.target.value)} className={`input text-sm min-w-0 ${fProv ? '' : 'text-gray-400'}`}>
+              <select value={fProv} onChange={e => setFProv(e.target.value)} className={`input text-sm min-w-0 ${fProv ? '' : 'text-muted'}`}>
                 <option value="">Provincia</option>
-                {province.map(v => <option key={v} value={v} className="text-gray-900">{v}</option>)}
+                {province.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
               </select>
               <input value={fCap} onChange={e => setFCap(e.target.value)} placeholder="CAP" className="input text-sm min-w-0" />
-              <select value={fGruppo} onChange={e => setFGruppo(e.target.value)} className={`input text-sm min-w-0 ${fGruppo ? '' : 'text-gray-400'}`}>
+              <select value={fGruppo} onChange={e => setFGruppo(e.target.value)} className={`input text-sm min-w-0 ${fGruppo ? '' : 'text-muted'}`}>
                 <option value="">Gruppo orario</option>
-                {gruppiOrari.map(v => <option key={v} value={v} className="text-gray-900">{v}</option>)}
+                {gruppiOrari.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
               </select>
               <input value={fNomeOsti} onChange={e => setFNomeOsti(e.target.value)} placeholder="Nome Osti" className="input text-sm min-w-0" />
               <div className="col-span-2 min-w-0">
-                <div className="text-xs font-medium text-gray-500 mb-1">Compleanno</div>
+                <div className="text-xs font-medium text-muted mb-1">Compleanno</div>
                 <div className="grid grid-cols-2 gap-2">
-                <select value={fGiorno} onChange={e => setFGiorno(e.target.value)} title="Giorno" className={`input text-sm min-w-0 ${fGiorno ? '' : 'text-gray-400'}`}>
+                <select value={fGiorno} onChange={e => setFGiorno(e.target.value)} title="Giorno" className={`input text-sm min-w-0 ${fGiorno ? '' : 'text-muted'}`}>
                   <option value="">Giorno</option>
-                  {Array.from({ length: 31 }, (_, i) => i + 1).map(d => <option key={d} value={d} className="text-gray-900">{d}</option>)}
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map(d => <option key={d} value={d} className="text-ink-900">{d}</option>)}
                 </select>
-                <select value={fMese} onChange={e => setFMese(e.target.value)} title="Mese" className={`input text-sm min-w-0 ${fMese ? '' : 'text-gray-400'}`}>
+                <select value={fMese} onChange={e => setFMese(e.target.value)} title="Mese" className={`input text-sm min-w-0 ${fMese ? '' : 'text-muted'}`}>
                   <option value="">Mese</option>
                   {['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
-                    .map((m, i) => <option key={m} value={i + 1} className="text-gray-900">{m}</option>)}
+                    .map((m, i) => <option key={m} value={i + 1} className="text-ink-900">{m}</option>)}
                 </select>
                 </div>
               </div>
@@ -848,13 +846,13 @@ export default function DipendentiPage() {
                 ['Cessazione', fCessazioneDa, setFCessazioneDa, fCessazioneA, setFCessazioneA],
               ] as [string, string, (v: string) => void, string, (v: string) => void][]).map(([label, da, setDa, a, setA]) => (
                 <div key={label} className="col-span-2 min-w-0">
-                  <div className="text-xs font-medium text-gray-500 mb-1">{label}</div>
+                  <div className="text-xs font-medium text-muted mb-1">{label}</div>
                   <div className="grid grid-cols-2 gap-2">
-                    <label className="flex items-center gap-1.5 text-xs text-gray-400 min-w-0">
+                    <label className="flex items-center gap-1.5 text-xs text-muted min-w-0">
                       <span className="shrink-0">Dal</span>
                       <input type="date" value={da} onChange={e => setDa(e.target.value)} className="input text-sm min-w-0" />
                     </label>
-                    <label className="flex items-center gap-1.5 text-xs text-gray-400 min-w-0">
+                    <label className="flex items-center gap-1.5 text-xs text-muted min-w-0">
                       <span className="shrink-0">Al</span>
                       <input type="date" value={a} onChange={e => setA(e.target.value)} className="input text-sm min-w-0" />
                     </label>
@@ -866,7 +864,7 @@ export default function DipendentiPage() {
         </div>
         <div className="flex justify-end px-4 pb-2 -mt-1">
           <button type="button" onClick={() => setShowExtraFilters(v => !v)} aria-expanded={showExtraFilters}
-            className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1">
+            className="text-xs text-accent-ink hover:underline flex items-center gap-1">
             {showExtraFilters ? 'Mostra meno filtri' : `Mostra più filtri${extraCount ? ` (${extraCount} attivi)` : ''}`}
             <svg className={`w-3 h-3 transition-transform ${showExtraFilters ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor"><path d="M5.3 7.3a1 1 0 011.4 0L10 10.6l3.3-3.3a1 1 0 111.4 1.4l-4 4a1 1 0 01-1.4 0l-4-4a1 1 0 010-1.4z" /></svg>
           </button>
@@ -877,7 +875,7 @@ export default function DipendentiPage() {
 
       <div ref={tableRef} className="card p-0 overflow-hidden">
         <div ref={headerScrollRef} className="overflow-x-hidden">
-          <div className="grid gap-x-3 px-4 py-2.5 bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-400 uppercase tracking-wide"
+          <div className="grid gap-x-3 px-4 py-2.5 bg-stone-50 border-b border-line text-xs font-medium text-muted uppercase tracking-wide"
             style={{ gridTemplateColumns: gridCols(showWarnCol), minWidth: TABLE_MIN_WIDTH }}>
             {showWarnCol && <div />}
             <div />
@@ -893,9 +891,9 @@ export default function DipendentiPage() {
         <div ref={bodyScrollRef} onScroll={syncHeaderScroll} className="hr-table-scroll overflow-auto" style={{ maxHeight: bodyMaxHeight }}>
         <div style={{ minWidth: TABLE_MIN_WIDTH }}>
           {loading ? (
-            <p className="text-sm text-gray-400 text-center py-12">Caricamento…</p>
+            <SkeletonTable rows={8} cols={6} />
           ) : visible.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-12">Nessun dipendente trovato</p>
+            <EmptyState title="Nessun dipendente trovato" hint="Prova a cambiare o azzerare i filtri." />
           ) : visible.map(e => (
             // Riga cliccabile ma NON un <a>: dentro un link il browser trascina invece di selezionare il testo,
             // e il copia/incolla dalla tabella non funziona. Se c'è testo selezionato, il click non apre la scheda.
@@ -906,7 +904,7 @@ export default function DipendentiPage() {
                 if (ev.ctrlKey || ev.metaKey) window.open(href, '_blank'); else router.push(href);
               }}
               onKeyDown={ev => { if (ev.key === 'Enter') router.push(`/hr/dipendenti/${e.id}`); }}
-              className="relative z-0 grid gap-x-3 px-4 py-3 border-b border-gray-50 last:border-b-0 bg-white hover:bg-gray-50 transition-colors items-center cursor-pointer select-text"
+              className="relative z-0 grid gap-x-3 px-4 py-3 border-b border-stone-50 last:border-b-0 bg-white hover:bg-stone-50 transition-colors items-center cursor-pointer select-text"
               style={{ gridTemplateColumns: gridCols(showWarnCol) }}
             >
               {showWarnCol && (
@@ -915,7 +913,7 @@ export default function DipendentiPage() {
                     <button
                       type="button" title={`${e.import_warning}${manage ? ' — clicca per segnare come risolto' : ''}`}
                       onClick={ev => { if (!manage) return; ev.preventDefault(); ev.stopPropagation(); clearImportWarning(e.id); }}
-                      className="text-amber-500"
+                      className="text-warning"
                     >
                       ⚠
                     </button>
@@ -941,11 +939,11 @@ export default function DipendentiPage() {
                   <div
                     onClick={ev => { ev.preventDefault(); ev.stopPropagation(); }}
                     style={{ top: tagMenuPos.top, left: tagMenuPos.left }}
-                    className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 w-44 text-sm"
+                    className="fixed z-50 bg-white border border-line rounded-ctl shadow-lg py-1 w-44 text-sm"
                   >
-                    <button type="button" onClick={() => setEmployeeTag(e.id, null)} className="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-gray-500">Nessuna</button>
+                    <button type="button" onClick={() => setEmployeeTag(e.id, null)} className="w-full text-left px-3 py-1.5 hover:bg-stone-50 text-muted">Nessuna</button>
                     {tags.filter(t => t.is_active).map(t => (
-                      <button key={t.id} type="button" onClick={() => setEmployeeTag(e.id, t.id)} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-gray-50">
+                      <button key={t.id} type="button" onClick={() => setEmployeeTag(e.id, t.id)} className="w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-stone-50">
                         <span className={`w-2.5 h-2.5 rounded-full ${tagDotStyle(t.color).className}`} style={tagDotStyle(t.color).style} />{t.name}
                       </button>
                     ))}
@@ -953,33 +951,33 @@ export default function DipendentiPage() {
                   document.body
                 )}
               </div>
-              <div className="text-sm font-medium text-gray-800 truncate">{e.cognome}</div>
-              <div className="text-sm text-gray-800 truncate">{e.nome}</div>
-              <div className="text-sm text-gray-600 truncate">{e.matricola ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.sesso ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.categoria ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.contract_company_name ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.nazionalita ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.data_nascita?.slice(0, 10) ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate" title={e.email ?? undefined}>{e.email ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate" title={e.indirizzo ?? undefined}>{e.indirizzo ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.citta ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.provincia ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.cap ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.funzione_aziendale ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.reparto_name ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.plant_name ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.mansione ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.livello ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.capo_nome ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.tipo_contratto ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.gruppo_orario ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate" title={e.nome_osti ?? undefined}>{e.nome_osti ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.data_assunzione?.slice(0, 10) ?? '—'}</div>
-              <div className="text-sm text-gray-600 truncate">{e.data_cessazione?.slice(0, 10) ?? '—'}</div>
-              <div className="text-center text-sm text-gray-600">{e.in_prova ? 'Sì' : '—'}</div>
+              <div className="text-sm font-medium text-ink-800 truncate">{e.cognome}</div>
+              <div className="text-sm text-ink-800 truncate">{e.nome}</div>
+              <div className="text-sm text-muted truncate">{e.matricola ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.sesso ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.categoria ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.contract_company_name ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.nazionalita ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.data_nascita?.slice(0, 10) ?? '—'}</div>
+              <div className="text-sm text-muted truncate" title={e.email ?? undefined}>{e.email ?? '—'}</div>
+              <div className="text-sm text-muted truncate" title={e.indirizzo ?? undefined}>{e.indirizzo ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.citta ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.provincia ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.cap ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.funzione_aziendale ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.reparto_name ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.plant_name ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.mansione ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.livello ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.capo_nome ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.tipo_contratto ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.gruppo_orario ?? '—'}</div>
+              <div className="text-sm text-muted truncate" title={e.nome_osti ?? undefined}>{e.nome_osti ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.data_assunzione?.slice(0, 10) ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.data_cessazione?.slice(0, 10) ?? '—'}</div>
+              <div className="text-center text-sm text-muted">{e.in_prova ? 'Sì' : '—'}</div>
               <div className="text-center">
-                <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${STATO_COLOR[e.stato]}`}>{STATO_LABEL[e.stato]}</span>
+                <StatusBadge tone={STATO_TONE[e.stato] ?? 'neutral'}>{STATO_LABEL[e.stato]}</StatusBadge>
               </div>
             </div>
           ))}
@@ -993,18 +991,18 @@ export default function DipendentiPage() {
 
       {showMatricole && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setShowMatricole(false)}>
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={ev => ev.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-              <h2 className="text-base font-medium text-gray-900">Prossima matricola</h2>
-              <button onClick={() => setShowMatricole(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+          <div className="bg-white rounded-card shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col" onClick={ev => ev.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-stone-100">
+              <h2 className="text-base font-medium text-ink-900">Prossima matricola</h2>
+              <button onClick={() => setShowMatricole(false)} className="text-muted hover:text-muted text-lg leading-none">×</button>
             </div>
             <div className="overflow-auto px-5 py-3">
               {!matricoleBands ? (
-                <p className="text-sm text-gray-400 py-6 text-center">Caricamento…</p>
+                <p className="text-sm text-muted py-6 text-center">Caricamento…</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-xs text-gray-400 uppercase tracking-wide text-left">
+                    <tr className="text-xs text-muted uppercase tracking-wide text-left">
                       <th className="py-1.5 font-medium">Fascia</th>
                       <th className="py-1.5 font-medium">Ultima usata</th>
                       <th className="py-1.5 font-medium">Prossima</th>
@@ -1012,20 +1010,20 @@ export default function DipendentiPage() {
                   </thead>
                   <tbody>
                     {matricoleBands.map(b => (
-                      <tr key={b.label} className="border-t border-gray-50">
-                        <td className="py-2 text-gray-600"><span className="font-medium text-gray-800">{b.label}</span> <span className="text-gray-400">{b.from} – {b.to}</span></td>
-                        <td className="py-2 text-gray-600">{b.last ?? '—'}</td>
+                      <tr key={b.label} className="border-t border-stone-50">
+                        <td className="py-2 text-muted"><span className="font-medium text-ink-800">{b.label}</span> <span className="text-muted">{b.from} – {b.to}</span></td>
+                        <td className="py-2 text-muted">{b.last ?? '—'}</td>
                         <td className="py-2">
                           {b.next === null
-                            ? <span className="text-xs text-red-600">fascia esaurita</span>
-                            : <span className="font-semibold text-gray-900">{b.next}</span>}
+                            ? <span className="text-xs text-danger">fascia esaurita</span>
+                            : <span className="font-semibold text-ink-900">{b.next}</span>}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               )}
-              <p className="text-xs text-gray-400 mt-3">Calcolata sull&apos;ultima matricola numerica di ogni plant, includendo i dipendenti cessati.</p>
+              <p className="text-xs text-muted mt-3">Calcolata sull&apos;ultima matricola numerica di ogni plant, includendo i dipendenti cessati.</p>
             </div>
           </div>
         </div>

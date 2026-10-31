@@ -4,6 +4,9 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { EmployeeAvatar } from '@/components/hr/EmployeeAvatar';
 import type { HrOrgNode, HrCapoPair } from '@/types';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { SkeletonTable } from '@/components/ui/Skeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -11,7 +14,7 @@ const BACKEND = typeof window !== 'undefined'
 
 // Stessa palette usata in Analisi HR/Evoluzione — un colore stabile per funzione aziendale,
 // così una persona ha lo stesso colore ovunque nel modulo HR.
-const PALETTE = ['#2563eb', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
+const PALETTE = ['#B04FD0', '#2563eb', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
 
 // Un "nodo" può rappresentare due persone insieme: una coppia di co-responsabili
 // configurata esplicitamente (stesso team), mostrate affiancate in un unico box
@@ -128,7 +131,7 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
   if (node.grid) {
     return (
       <li>
-        <div className="org-node inline-grid bg-gray-200 border-2 border-gray-200 rounded-md shadow-sm overflow-hidden gap-px" style={{ gridTemplateColumns: `repeat(${Math.min(GRID_COLS, node.people.length)}, 78px)` }}>
+        <div className="org-node inline-grid bg-stone-200 border-2 border-line rounded-md shadow-sm overflow-hidden gap-px" style={{ gridTemplateColumns: `repeat(${Math.min(GRID_COLS, node.people.length)}, 78px)` }}>
           {node.people.map(p => {
             const isMatch = matches.has(p.id);
             const isSelected = selectedId === p.id;
@@ -137,14 +140,14 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
                 key={p.id}
                 onClick={() => onSelect(p.id)}
                 title={p.mansione ?? undefined}
-                className={`flex flex-col items-center gap-0.5 px-1 py-1.5 cursor-pointer bg-white hover:bg-gray-50 ${isSelected ? 'ring-2 ring-inset ring-blue-300' : ''}`}
+                className={`flex flex-col items-center gap-0.5 px-1 py-1.5 cursor-pointer bg-white hover:bg-stone-50 ${isSelected ? 'ring-2 ring-inset ring-accent/40' : ''}`}
               >
                 <EmployeeAvatar id={p.id} nome={p.nome} cognome={p.cognome} photoVersion={p.photo_version} className="w-7 h-7 text-[10px]" background={colorFor(p)} outline={isSelected ? '2px solid #3b82f6' : isMatch ? '2px solid #f59e0b' : undefined} />
                 <div className="text-center leading-tight w-full">
-                  <p className={`text-[11px] font-medium break-words ${isMatch ? 'text-amber-700' : 'text-gray-800'}`}>{p.cognome}</p>
-                  <p className="text-[10px] text-gray-500 break-words">{p.nome}</p>
+                  <p className={`text-[11px] font-medium break-words ${isMatch ? 'text-warning' : 'text-ink-800'}`}>{p.cognome}</p>
+                  <p className="text-[10px] text-muted break-words">{p.nome}</p>
                 </div>
-                {p.stato !== 'attivo' && <span className="text-[10px] text-amber-600 font-medium">{p.stato}</span>}
+                {p.stato !== 'attivo' && <span className="text-[10px] text-warning font-medium">{p.stato}</span>}
               </div>
             );
           })}
@@ -156,9 +159,9 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
   if (node.mansione !== undefined) {
     return (
       <li>
-        <div className="org-node inline-flex flex-col bg-white border-2 border-gray-200 rounded-md shadow-sm w-[130px] text-left">
-          <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-wide px-2 py-1 border-b border-gray-200 bg-gray-50 rounded-t break-words">
-            {node.mansione} <span className="text-gray-400 font-normal">({node.people.length})</span>
+        <div className="org-node inline-flex flex-col bg-white border-2 border-line rounded-md shadow-sm w-[130px] text-left">
+          <p className="text-[10px] font-semibold text-muted uppercase tracking-wide px-2 py-1 border-b border-line bg-stone-50 rounded-t break-words">
+            {node.mansione} <span className="text-muted font-normal">({node.people.length})</span>
           </p>
           <div className="py-1">
             {node.people.map(p => {
@@ -167,10 +170,10 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
                 <div
                   key={p.id}
                   onClick={() => onSelect(p.id)}
-                  className={`flex items-center gap-1.5 px-2 py-0.5 cursor-pointer hover:bg-gray-50 ${isSelected ? 'bg-blue-50' : ''}`}
+                  className={`flex items-center gap-1.5 px-2 py-0.5 cursor-pointer hover:bg-stone-50 ${isSelected ? 'bg-accent-soft' : ''}`}
                 >
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ background: colorFor(p) }} />
-                  <span className={`text-[11px] leading-tight break-words ${matches.has(p.id) ? 'text-amber-700 font-medium' : 'text-gray-800'}`}>
+                  <span className={`text-[11px] leading-tight break-words ${matches.has(p.id) ? 'text-warning font-medium' : 'text-ink-800'}`}>
                     {p.cognome} {p.nome}
                   </span>
                 </div>
@@ -192,7 +195,7 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
       <div className="relative">
         <div
           title={node.people.map(p => p.mansione).filter(Boolean).join(' · ') || undefined}
-          className={`org-node inline-flex bg-white border-2 border-gray-200 rounded-md shadow-sm transition-all hover:shadow-md
+          className={`org-node inline-flex bg-white border-2 border-line rounded-md shadow-sm transition-all hover:shadow-md
             ${isCluster ? '' : 'flex-col items-center px-1 py-1.5 w-[78px] gap-0.5'}`}
         >
           {node.people.map((p, i) => {
@@ -203,15 +206,15 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
                 key={p.id}
                 onClick={() => onSelect(p.id)}
                 className={`flex flex-col items-center gap-0.5 cursor-pointer rounded
-                  ${isCluster ? `px-1 py-1.5 w-[78px] ${i > 0 ? 'border-l border-gray-200' : ''}` : ''}
-                  ${isSelected ? 'ring-2 ring-blue-200' : ''}`}
+                  ${isCluster ? `px-1 py-1.5 w-[78px] ${i > 0 ? 'border-l border-line' : ''}` : ''}
+                  ${isSelected ? 'ring-2 ring-accent/40' : ''}`}
               >
                 <EmployeeAvatar id={p.id} nome={p.nome} cognome={p.cognome} photoVersion={p.photo_version} className="w-7 h-7 text-[10px]" background={colorFor(p)} outline={isSelected ? '2px solid #3b82f6' : isMatch ? '2px solid #f59e0b' : undefined} />
                 <div className="text-center leading-tight w-full">
-                  <p className={`text-[11px] font-medium break-words ${isMatch ? 'text-amber-700' : 'text-gray-800'}`}>{p.cognome}</p>
-                  <p className="text-[10px] text-gray-500 break-words">{p.nome}</p>
+                  <p className={`text-[11px] font-medium break-words ${isMatch ? 'text-warning' : 'text-ink-800'}`}>{p.cognome}</p>
+                  <p className="text-[10px] text-muted break-words">{p.nome}</p>
                 </div>
-                {p.stato !== 'attivo' && <span className="text-[10px] text-amber-600 font-medium">{p.stato}</span>}
+                {p.stato !== 'attivo' && <span className="text-[10px] text-warning font-medium">{p.stato}</span>}
               </div>
             );
           })}
@@ -221,8 +224,8 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
           <button
             onClick={(e) => { e.stopPropagation(); toggle(nodeId); }}
             title={isOpen ? 'Comprimi' : `Espandi (${childrenCount})`}
-            className="absolute top-full mt-0.5 left-1/2 -translate-x-1/2 z-20 w-6 h-6 rounded-full bg-white border border-gray-300 text-[11px] font-medium cursor-pointer
-              flex items-center justify-center text-gray-500 hover:border-blue-400 hover:text-blue-600 shadow-sm transition-colors"
+            className="absolute top-full mt-0.5 left-1/2 -translate-x-1/2 z-20 w-6 h-6 rounded-full bg-white border border-stone-300 text-[11px] font-medium cursor-pointer
+              flex items-center justify-center text-muted hover:border-accent hover:text-accent-ink shadow-sm transition-colors"
           >
             {isOpen ? '−' : childrenCount}
           </button>
@@ -401,31 +404,29 @@ export default function OrganigrammaPage() {
           <img
             src={`${BACKEND}/api/hr/employees/${selected.id}/photo?v=${selected.photo_version}`}
             alt={`${selected.cognome} ${selected.nome}`}
-            className="max-w-full max-h-full rounded-lg shadow-2xl object-contain"
+            className="max-w-full max-h-full rounded-ctl shadow-2xl object-contain"
             onClick={e => e.stopPropagation()}
           />
         </div>
       )}
-      <div className="d-print-none flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-lg font-medium text-gray-900">Organigramma</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Struttura organizzativa: dipendente → responsabile → manager → direzione</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={handlePrint} className="btn-primary text-xs">Stampa</button>
-          <div className="flex items-center rounded-md border border-gray-300 overflow-hidden text-xs" role="group" aria-label="Vista organigramma">
+      <PageHeader
+        title="Organigramma"
+        description="Struttura organizzativa: dipendente → responsabile → manager → direzione"
+        actions={<>
+          <div className="flex items-center rounded-ctl border border-stone-300 overflow-hidden text-xs" role="group" aria-label="Vista organigramma">
             {([[false, 'Per persona'], [true, 'Per mansione']] as const).map(([val, label]) => (
               <button
                 key={label}
                 onClick={() => setByMansione(val)}
-                className={`px-3 py-1.5 transition-colors ${byMansione === val ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                className={`px-3 py-1.5 transition-colors ${byMansione === val ? 'bg-ink-800 text-white' : 'bg-white text-muted hover:bg-stone-50'}`}
               >
                 {label}
               </button>
             ))}
           </div>
-        </div>
-      </div>
+          <button onClick={handlePrint} className="btn-primary text-sm">Stampa</button>
+        </>}
+      />
 
       <div className="flex items-center gap-2 flex-wrap d-print-none">
         <input type="text" placeholder="Cerca una persona…" value={search} onChange={e => setSearch(e.target.value)} className="input text-sm w-64 h-9 py-0" />
@@ -437,12 +438,12 @@ export default function OrganigrammaPage() {
         <button onClick={() => setLevel(1)} className="btn-secondary text-xs h-9 py-0">Comprimi tutto</button>
         <div className="flex items-center gap-1">
           <button onClick={() => setLevel(Math.max(1, shownLevel - 1))} disabled={shownLevel <= 1} title="Comprimi un livello" className="btn-secondary text-xs h-9 py-0 disabled:opacity-40">− Livello</button>
-          <span className="text-xs text-gray-500 tabular-nums px-1">{shownLevel} / {maxLevel}</span>
+          <span className="text-xs text-muted tabular-nums px-1">{shownLevel} / {maxLevel}</span>
           <button onClick={() => setLevel(Math.min(maxLevel, shownLevel + 1))} disabled={shownLevel >= maxLevel} title="Espandi un livello in più" className="btn-secondary text-xs h-9 py-0 disabled:opacity-40">+ Livello</button>
         </div>
 
         {funzioni.length > 0 && (
-          <div className="flex items-center gap-3 flex-wrap ml-auto text-[11px] text-gray-500">
+          <div className="flex items-center gap-3 flex-wrap ml-auto text-[11px] text-muted">
             {funzioni.map(f => (
               <span key={f} className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: deptColorMap.get(f) }} />
@@ -455,18 +456,18 @@ export default function OrganigrammaPage() {
 
       <div>
         <div className="only-print mb-3">
-          <h1 className="text-base font-semibold text-gray-900">
+          <h1 className="text-base font-semibold text-ink-900">
             Organigramma{funzioneFilter ? ` — ${funzioneFilter}` : ''}{search.trim() ? ` — Ricerca: "${search.trim()}"` : ''}
           </h1>
-          <p className="text-[11px] text-gray-500">
+          <p className="text-[11px] text-muted">
             {[funzioneFilter && `Funzione: ${funzioneFilter}`, search.trim() && `Persona: ${search.trim()}`, byMansione && 'Vista per mansione'].filter(Boolean).join(' · ')}
           </p>
         </div>
         <div className="card overflow-x-auto overflow-y-hidden py-6 org-print-area">
           {loading ? (
-            <p className="text-sm text-gray-400 text-center py-12">Caricamento…</p>
+            <SkeletonTable rows={8} cols={6} />
           ) : tree.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-12">Nessun dipendente trovato</p>
+            <EmptyState title="Nessun dipendente trovato" />
           ) : (
             <ul ref={treeRef} className="org-tree mx-auto w-max org-print-zoom">
               {tree.map(n => (
@@ -477,7 +478,7 @@ export default function OrganigrammaPage() {
         </div>
 
         {selected && (
-          <aside className="fixed top-0 right-0 h-full w-full sm:w-96 bg-white border-l border-gray-200 shadow-2xl z-40 overflow-y-auto p-5 d-print-none">
+          <aside className="fixed top-0 right-0 h-full w-full sm:w-96 bg-white border-l border-line shadow-2xl z-40 overflow-y-auto p-5 d-print-none">
             <div className="flex justify-end mb-3">
               <button onClick={() => setSelectedId(null)} className="btn-secondary text-sm">Chiudi ×</button>
             </div>
@@ -491,19 +492,19 @@ export default function OrganigrammaPage() {
                   <EmployeeAvatar id={selected.id} nome={selected.nome} cognome={selected.cognome} photoVersion={selected.photo_version} className="w-14 h-14 text-base" background={colorFor(selected)} />
                 )}
                 <div>
-                  <p className="text-base font-medium text-gray-900">{selected.cognome} {selected.nome}</p>
-                  <p className="text-xs text-gray-400">{selected.mansione ?? 'Mansione non specificata'} {selected.funzione_aziendale ? `· ${selected.funzione_aziendale}` : ''}</p>
+                  <p className="text-base font-medium text-ink-900">{selected.cognome} {selected.nome}</p>
+                  <p className="text-xs text-muted">{selected.mansione ?? 'Mansione non specificata'} {selected.funzione_aziendale ? `· ${selected.funzione_aziendale}` : ''}</p>
                 </div>
               </div>
               <Link href={`/hr/dipendenti/${selected.id}`} className="btn-secondary text-sm inline-block">Vedi scheda completa →</Link>
 
               {coCapi.length > 0 && (
                 <div>
-                  <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-1.5">Co-responsabile</p>
+                  <p className="text-[11px] font-medium text-muted uppercase tracking-wide mb-1.5">Co-responsabile</p>
                   <div className="space-y-1">
                     {coCapi.map(s => (
                       <button key={s.id} onClick={() => setSelectedId(s.id)} className="btn-secondary text-xs flex items-center gap-1.5 w-full text-left">
-                        {s.cognome} {s.nome} {s.mansione && <span className="text-xs text-gray-400">— {s.mansione}</span>}
+                        {s.cognome} {s.nome} {s.mansione && <span className="text-xs text-muted">— {s.mansione}</span>}
                       </button>
                     ))}
                   </div>
@@ -512,13 +513,13 @@ export default function OrganigrammaPage() {
 
               {superiors.length > 0 && (
                 <div>
-                  <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-1.5">Catena superiori</p>
+                  <p className="text-[11px] font-medium text-muted uppercase tracking-wide mb-1.5">Catena superiori</p>
                   <div className="space-y-1">
                     {superiors.map((s, i) => (
                       <div key={s.id} className="flex items-center gap-1.5 text-sm">
-                        <span className="text-gray-300">{'  '.repeat(i)}↑</span>
+                        <span className="text-stone-300">{'  '.repeat(i)}↑</span>
                         <button onClick={() => setSelectedId(s.id)} className="btn-secondary text-xs">{s.cognome} {s.nome}</button>
-                        {s.mansione && <span className="text-xs text-gray-400">— {s.mansione}</span>}
+                        {s.mansione && <span className="text-xs text-muted">— {s.mansione}</span>}
                       </div>
                     ))}
                   </div>
@@ -526,16 +527,16 @@ export default function OrganigrammaPage() {
               )}
 
               <div>
-                <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-1.5">
+                <p className="text-[11px] font-medium text-muted uppercase tracking-wide mb-1.5">
                   Team diretto ({directReports.length})
                 </p>
                 {directReports.length === 0 ? (
-                  <p className="text-xs text-gray-400">Nessun riporto diretto</p>
+                  <p className="text-xs text-muted">Nessun riporto diretto</p>
                 ) : (
                   <div className="space-y-1">
                     {directReports.map(r => (
                       <button key={r.id} onClick={() => setSelectedId(r.id)} className="btn-secondary text-xs flex items-center gap-1.5 w-full text-left">
-                        <span>↳</span> {r.cognome} {r.nome} {r.mansione && <span className="text-xs text-gray-400">— {r.mansione}</span>}
+                        <span>↳</span> {r.cognome} {r.nome} {r.mansione && <span className="text-xs text-muted">— {r.mansione}</span>}
                       </button>
                     ))}
                   </div>

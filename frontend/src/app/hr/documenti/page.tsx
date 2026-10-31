@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from '@/lib/auth';
 import type { HrDocument, HrDocumentPlaceholder, HrEmployee, HrEventType } from '@/types';
 import { useToast } from '@/components/ui/Toast';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { SkeletonTable } from '@/components/ui/Skeleton';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -93,28 +95,26 @@ export default function DocumentiPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-lg font-medium text-gray-900">Documenti</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Lettere e modelli: scaricali vuoti o compilali per un dipendente</p>
-        </div>
-        {manage && <button onClick={() => setShowConfig(true)} className="btn-secondary text-sm">Gestisci documenti</button>}
-      </div>
+      <PageHeader
+        title="Documenti"
+        description="Lettere e modelli: scaricali vuoti o compilali per un dipendente"
+        actions={manage && <button onClick={() => setShowConfig(true)} className="btn-secondary text-sm">Gestisci documenti</button>}
+      />
 
       {loading ? (
-        <p className="text-sm text-gray-400 text-center py-12">Caricamento…</p>
+        <SkeletonTable rows={8} cols={6} />
       ) : (
         <>
           {manage && missing > 0 && (
-            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            <p className="text-xs text-warning bg-warning-soft border border-warning/30 rounded-ctl px-3 py-2">
               {missing} {missing === 1 ? 'documento è' : 'documenti sono'} ancora senza file: caricalo da &quot;Gestisci documenti&quot;.
             </p>
           )}
 
           {modelli.length === 0 && consultazione.length === 0 ? (
             <div className="card text-center py-12">
-              <p className="text-sm text-gray-400">Nessun documento pronto.</p>
-              {manage && <p className="text-xs text-gray-400 mt-1">Usa &quot;Gestisci documenti&quot; per caricare i modelli.</p>}
+              <p className="text-sm text-muted">Nessun documento pronto.</p>
+              {manage && <p className="text-xs text-muted mt-1">Usa &quot;Gestisci documenti&quot; per caricare i modelli.</p>}
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -123,8 +123,8 @@ export default function DocumentiPage() {
                 return (
                   <div key={d.id} className="card flex flex-col gap-3">
                     <div>
-                      <h2 className="font-semibold text-gray-800">{d.name}</h2>
-                      {d.description && <p className="text-xs text-gray-400 mt-1">{d.description}</p>}
+                      <h2 className="font-semibold text-ink-800">{d.name}</h2>
+                      {d.description && <p className="text-xs text-muted mt-1">{d.description}</p>}
                     </div>
                     <div className="flex items-center gap-2 mt-auto flex-wrap">
                       {manage && <button disabled={busy} onClick={() => setGenerating(d)} className="btn-primary text-sm">Genera per dipendente</button>}
@@ -138,14 +138,14 @@ export default function DocumentiPage() {
 
           {consultazione.length > 0 && (
             <div className="card p-0 overflow-hidden">
-              <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide">Documenti di consultazione</div>
+              <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-100 text-xs font-medium text-muted uppercase tracking-wide">Documenti di consultazione</div>
               {consultazione.map(d => (
-                <div key={d.id} className="flex items-center justify-between gap-4 px-4 py-3 border-b border-gray-100 last:border-b-0">
+                <div key={d.id} className="flex items-center justify-between gap-4 px-4 py-3 border-b border-stone-100 last:border-b-0">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-800">{d.name}</p>
-                    {d.description && <p className="text-xs text-gray-400 mt-0.5">{d.description}</p>}
+                    <p className="text-sm font-medium text-ink-800">{d.name}</p>
+                    {d.description && <p className="text-xs text-muted mt-0.5">{d.description}</p>}
                   </div>
-                  <button disabled={busyId === d.id} onClick={() => download(d, 'file')} className="text-sm text-blue-600 hover:text-blue-800 whitespace-nowrap">Scarica</button>
+                  <button disabled={busyId === d.id} onClick={() => download(d, 'file')} className="text-sm text-accent-ink hover:underline whitespace-nowrap">Scarica</button>
                 </div>
               ))}
             </div>
@@ -261,12 +261,12 @@ function ConfigModal({ docs, onChanged, onClose }: { docs: HrDocument[]; onChang
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
         <div className="card w-full max-w-5xl max-h-[95vh] overflow-y-auto space-y-4 relative" onClick={e => e.stopPropagation()}>
           <button type="button" onClick={onClose} aria-label="Chiudi"
-            className="absolute top-3 right-3 text-gray-400 hover:text-gray-700 text-xl leading-none w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">×</button>
+            className="absolute top-3 right-3 text-muted hover:text-ink-800 text-xl leading-none w-8 h-8 flex items-center justify-center rounded-full hover:bg-stone-100">×</button>
 
           <div className="pr-8 flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <p className="text-sm font-semibold text-gray-700">Gestisci documenti</p>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-sm font-semibold text-ink-800">Gestisci documenti</p>
+              <p className="text-xs text-muted mt-1">
                 Carica il file Word di ogni modello con i segnaposto tra graffe, ad esempio {'{nome}'} o {'{data_decorrenza}'}.
               </p>
             </div>
@@ -279,17 +279,17 @@ function ConfigModal({ docs, onChanged, onClose }: { docs: HrDocument[]; onChang
           <input ref={fileInput} type="file" className="hidden" onChange={onFileChosen} />
 
           {showGuide && (
-            <div className="space-y-3 bg-gray-50 border border-gray-200 rounded-lg p-3">
-              <p className="text-xs text-gray-500">Clicca un segnaposto per copiarlo, poi incollalo nel file Word. Il resto del testo e il logo restano come sono.</p>
+            <div className="space-y-3 bg-stone-50 border border-line rounded-ctl p-3">
+              <p className="text-xs text-muted">Clicca un segnaposto per copiarlo, poi incollalo nel file Word. Il resto del testo e il logo restano come sono.</p>
               {(['anagrafica', 'evento', 'retribuzione'] as const).map(g => (
                 <div key={g}>
-                  <p className="text-xs font-semibold text-gray-600 mb-1.5">{GROUP_LABEL[g]}</p>
+                  <p className="text-xs font-semibold text-muted mb-1.5">{GROUP_LABEL[g]}</p>
                   <div className="flex flex-wrap gap-2">
                     {placeholders.filter(p => p.group === g).map(p => (
                       <button key={p.key} type="button" onClick={() => copyTag(p.key)} title={p.label}
-                        className="text-xs bg-white hover:bg-blue-50 border border-gray-200 rounded px-2 py-1 text-gray-700">
+                        className="text-xs bg-white hover:bg-accent-soft border border-line rounded px-2 py-1 text-ink-800">
                         <span className="font-mono">{`{${p.key}}`}</span>
-                        <span className="text-gray-400"> · {p.label}</span>
+                        <span className="text-muted"> · {p.label}</span>
                       </button>
                     ))}
                   </div>
@@ -298,32 +298,32 @@ function ConfigModal({ docs, onChanged, onClose }: { docs: HrDocument[]; onChang
             </div>
           )}
 
-          <div className="border border-gray-200 rounded-lg overflow-hidden">
-            {docs.length === 0 ? <p className="text-sm text-gray-400 text-center py-8">Nessun documento</p> : docs.map(d => {
+          <div className="border border-line rounded-ctl overflow-hidden">
+            {docs.length === 0 ? <p className="text-sm text-muted text-center py-8">Nessun documento</p> : docs.map(d => {
               const busy = busyId === d.id;
               return (
-                <div key={d.id} className={`flex items-center gap-4 px-4 py-3 border-b border-gray-100 last:border-b-0 flex-wrap ${d.is_active ? '' : 'opacity-50'}`}>
+                <div key={d.id} className={`flex items-center gap-4 px-4 py-3 border-b border-stone-100 last:border-b-0 flex-wrap ${d.is_active ? '' : 'opacity-50'}`}>
                   <div className="min-w-0 flex-1 basis-64">
-                    <p className="text-sm font-medium text-gray-800">
+                    <p className="text-sm font-medium text-ink-800">
                       {d.name}
-                      <span className="ml-2 text-[10px] font-medium uppercase tracking-wide text-gray-400">{d.kind === 'modello' ? 'Modello' : 'Consultazione'}</span>
+                      <span className="ml-2 text-[10px] font-medium uppercase tracking-wide text-muted">{d.kind === 'modello' ? 'Modello' : 'Consultazione'}</span>
                     </p>
-                    <p className="text-xs mt-1 text-gray-500">
+                    <p className="text-xs mt-1 text-muted">
                       {d.has_file
                         ? <>{d.file_name} · {fmtSize(d.file_size)} · caricato {fmtDate(d.uploaded_at)}{d.uploaded_by_name ? ` da ${d.uploaded_by_name}` : ''}</>
-                        : <span className="text-amber-600">File non ancora caricato</span>}
+                        : <span className="text-warning">File non ancora caricato</span>}
                       {d.kind === 'modello' && d.has_file && <> · {d.placeholders.length} segnaposto</>}
-                      {d.event_type && <> · proposto su: <span className="text-gray-700">{EVENT_LABEL[d.event_type] ?? d.event_type}</span></>}
+                      {d.event_type && <> · proposto su: <span className="text-ink-800">{EVENT_LABEL[d.event_type] ?? d.event_type}</span></>}
                     </p>
                   </div>
                   <div className="flex items-center gap-3 whitespace-nowrap flex-wrap">
-                    <button disabled={busy} onClick={() => pickFile(d)} className="text-xs text-blue-600 hover:text-blue-800">
+                    <button disabled={busy} onClick={() => pickFile(d)} className="text-xs text-accent-ink hover:underline">
                       {busy ? 'Attendi…' : d.has_file ? 'Sostituisci file' : 'Carica file'}
                     </button>
-                    {d.has_file && <button onClick={() => downloadOriginal(d)} className="text-xs text-blue-600 hover:text-blue-800">Originale</button>}
-                    <button onClick={() => openEdit(d)} className="text-xs text-gray-500 hover:text-gray-800">Modifica</button>
-                    <button onClick={() => toggleActive(d)} className="text-xs text-gray-500 hover:text-gray-800">{d.is_active ? 'Disattiva' : 'Attiva'}</button>
-                    <button onClick={() => remove(d)} className="text-xs text-red-400 hover:text-red-600">Elimina</button>
+                    {d.has_file && <button onClick={() => downloadOriginal(d)} className="text-xs text-accent-ink hover:underline">Originale</button>}
+                    <button onClick={() => openEdit(d)} className="text-xs text-muted hover:text-ink-800">Modifica</button>
+                    <button onClick={() => toggleActive(d)} className="text-xs text-muted hover:text-ink-800">{d.is_active ? 'Disattiva' : 'Attiva'}</button>
+                    <button onClick={() => remove(d)} className="text-xs text-danger hover:text-danger">Elimina</button>
                   </div>
                 </div>
               );
@@ -335,7 +335,7 @@ function ConfigModal({ docs, onChanged, onClose }: { docs: HrDocument[]; onChang
       {formOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setFormOpen(false)}>
           <form onSubmit={submitForm} className="card w-full max-w-md space-y-3" onClick={e => e.stopPropagation()}>
-            <p className="text-sm font-semibold text-gray-700">{editing ? 'Modifica documento' : 'Nuovo documento'}</p>
+            <p className="text-sm font-semibold text-ink-800">{editing ? 'Modifica documento' : 'Nuovo documento'}</p>
             <div><label className="label">Nome</label>
               <input className="input text-sm" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} autoFocus />
             </div>
@@ -418,28 +418,28 @@ function GenerateModal({ doc, onClose }: { doc: HrDocument; onClose: () => void 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="card w-full max-w-lg max-h-[90vh] overflow-y-auto space-y-3" onClick={e => e.stopPropagation()}>
         <div>
-          <p className="text-sm font-semibold text-gray-700">Genera: {doc.name}</p>
-          <p className="text-xs text-gray-400 mt-0.5">Scegli il dipendente. Puoi completare i campi qui sotto; quelli lasciati vuoti restano come riga ________ da riempire a mano.</p>
+          <p className="text-sm font-semibold text-ink-800">Genera: {doc.name}</p>
+          <p className="text-xs text-muted mt-0.5">Scegli il dipendente. Puoi completare i campi qui sotto; quelli lasciati vuoti restano come riga ________ da riempire a mano.</p>
         </div>
 
         <div>
           <label className="label">Dipendente</label>
           <input className="input text-sm" placeholder="Cerca per cognome, nome o matricola…" value={search} onChange={e => setSearch(e.target.value)} autoFocus />
-          <div className="border border-gray-200 rounded-lg mt-2 max-h-44 overflow-y-auto">
-            {filtered.length === 0 ? <p className="text-xs text-gray-400 text-center py-4">Nessun risultato</p> : filtered.map(e => (
+          <div className="border border-line rounded-ctl mt-2 max-h-44 overflow-y-auto">
+            {filtered.length === 0 ? <p className="text-xs text-muted text-center py-4">Nessun risultato</p> : filtered.map(e => (
               <button key={e.id} type="button" onClick={() => choose(e.id)}
-                className={`w-full text-left px-3 py-1.5 text-sm border-b border-gray-50 last:border-b-0 hover:bg-gray-50 ${e.id === employeeId ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}>
-                {e.cognome} {e.nome}{e.matricola ? <span className="text-gray-400"> · {e.matricola}</span> : null}
+                className={`w-full text-left px-3 py-1.5 text-sm border-b border-stone-50 last:border-b-0 hover:bg-stone-50 ${e.id === employeeId ? 'bg-accent-soft text-accent-ink' : 'text-ink-800'}`}>
+                {e.cognome} {e.nome}{e.matricola ? <span className="text-muted"> · {e.matricola}</span> : null}
               </button>
             ))}
           </div>
         </div>
 
         {employeeId != null && (
-          <div className="space-y-2 border-t border-gray-100 pt-3">
-            <p className="text-xs text-gray-500">Documento per <b>{selected ? `${selected.cognome} ${selected.nome}` : ''}</b></p>
-            {loadingPreview ? <p className="text-xs text-gray-400">Caricamento…</p> : fields.length === 0
-              ? <p className="text-xs text-gray-400">Questo modello non ha campi da verificare: usa solo i dati della scheda.</p>
+          <div className="space-y-2 border-t border-stone-100 pt-3">
+            <p className="text-xs text-muted">Documento per <b>{selected ? `${selected.cognome} ${selected.nome}` : ''}</b></p>
+            {loadingPreview ? <p className="text-xs text-muted">Caricamento…</p> : fields.length === 0
+              ? <p className="text-xs text-muted">Questo modello non ha campi da verificare: usa solo i dati della scheda.</p>
               : fields.map((f, i) => (
                 <div key={f.key}><label className="label">{f.label}</label>
                   <input className="input text-sm" value={f.value} placeholder="(vuoto → ________)"
