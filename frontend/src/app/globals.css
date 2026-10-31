@@ -11,8 +11,8 @@
 /* Tema HR: viola/rosa al posto del celeste (stessi ruoli: evidenziazione, focus, testo accent-ink). */
 .theme-hr {
   --accent:      218 184 238;  /* #DAB8EE */
-  --accent-soft: 247 240 252;  /* #F7F0FC */
-  --accent-ink:  126 55 156;   /* #7E379C */
+  --accent-soft: 249 235 252;  /* #F9EBFC */
+  --accent-ink:  134 40 160;   /* #8628A0 */
 }
 
 body {
