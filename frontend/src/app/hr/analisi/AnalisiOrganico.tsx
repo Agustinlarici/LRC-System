@@ -12,7 +12,7 @@ const BACKEND = typeof window !== 'undefined'
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
 // Stessa palette categorica usata nel resto del modulo HR
-const PALETTE = ['#B04FD0', '#2563eb', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
+const PALETTE = ['#C896E4', '#2563eb', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
 const OTHER_COLOR = '#94a3b8';
 const NA = 'N/D';
 const TICK = { fontSize: 12, fill: '#374151' };

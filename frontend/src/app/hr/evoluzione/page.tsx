@@ -13,7 +13,7 @@ const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
-const PALETTE = ['#B04FD0', '#2563eb', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
+const PALETTE = ['#C896E4', '#2563eb', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
 type Period = '6' | '12' | '60' | '120' | 'all' | 'custom';
 const PERIOD_OPTIONS: { key: Period; label: string }[] = [
   { key: '6', label: '6 mesi' }, { key: '12', label: '12 mesi' }, { key: '60', label: '5 anni' },
@@ -163,7 +163,7 @@ export default function EvoluzioneAziendalePage() {
                 <XAxis dataKey="month" minTickGap={24} tick={{ fontSize: 12, fill: '#374151' }} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#374151' }} />
                 <Tooltip />
-                <Line type="monotone" dataKey="Totale dipendenti" stroke="#B04FD0" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+                <Line type="monotone" dataKey="Totale dipendenti" stroke="#C896E4" strokeWidth={2.5} dot={false} isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>

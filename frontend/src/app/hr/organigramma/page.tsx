@@ -14,7 +14,7 @@ const BACKEND = typeof window !== 'undefined'
 
 // Stessa palette usata in Analisi HR/Evoluzione — un colore stabile per funzione aziendale,
 // così una persona ha lo stesso colore ovunque nel modulo HR.
-const PALETTE = ['#B04FD0', '#2563eb', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
+const PALETTE = ['#C896E4', '#2563eb', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
 
 // Un "nodo" può rappresentare due persone insieme: una coppia di co-responsabili
 // configurata esplicitamente (stesso team), mostrate affiancate in un unico box
