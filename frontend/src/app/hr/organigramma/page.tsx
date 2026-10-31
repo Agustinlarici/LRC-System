@@ -14,7 +14,7 @@ const BACKEND = typeof window !== 'undefined'
 
 // Stessa palette usata in Analisi HR/Evoluzione — un colore stabile per funzione aziendale,
 // così una persona ha lo stesso colore ovunque nel modulo HR.
-const PALETTE = ['#C896E4', '#2563eb', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
+const PALETTE = ['#C896E4', '#8FB4EC', '#F2C879', '#8ED1B2', '#F2A6C8', '#8FD3E0', '#F5B58A', '#A7A9EA', '#BCDC84', '#EE9B98'];
 
 // Un "nodo" può rappresentare due persone insieme: una coppia di co-responsabili
 // configurata esplicitamente (stesso team), mostrate affiancate in un unico box
@@ -142,7 +142,7 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
                 title={p.mansione ?? undefined}
                 className={`flex flex-col items-center gap-0.5 px-1 py-1.5 cursor-pointer bg-white hover:bg-stone-50 ${isSelected ? 'ring-2 ring-inset ring-accent/40' : ''}`}
               >
-                <EmployeeAvatar id={p.id} nome={p.nome} cognome={p.cognome} photoVersion={p.photo_version} className="w-7 h-7 text-[10px]" background={colorFor(p)} outline={isSelected ? '2px solid #3b82f6' : isMatch ? '2px solid #f59e0b' : undefined} />
+                <EmployeeAvatar id={p.id} nome={p.nome} cognome={p.cognome} photoVersion={p.photo_version} className="w-7 h-7 text-[10px]" background={colorFor(p)} outline={isSelected ? '2px solid #3b82f6' : isMatch ? '2px solid #F2C879' : undefined} />
                 <div className="text-center leading-tight w-full">
                   <p className={`text-[11px] font-medium break-words ${isMatch ? 'text-warning' : 'text-ink-800'}`}>{p.cognome}</p>
                   <p className="text-[10px] text-muted break-words">{p.nome}</p>
@@ -209,7 +209,7 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
                   ${isCluster ? `px-1 py-1.5 w-[78px] ${i > 0 ? 'border-l border-line' : ''}` : ''}
                   ${isSelected ? 'ring-2 ring-accent/40' : ''}`}
               >
-                <EmployeeAvatar id={p.id} nome={p.nome} cognome={p.cognome} photoVersion={p.photo_version} className="w-7 h-7 text-[10px]" background={colorFor(p)} outline={isSelected ? '2px solid #3b82f6' : isMatch ? '2px solid #f59e0b' : undefined} />
+                <EmployeeAvatar id={p.id} nome={p.nome} cognome={p.cognome} photoVersion={p.photo_version} className="w-7 h-7 text-[10px]" background={colorFor(p)} outline={isSelected ? '2px solid #3b82f6' : isMatch ? '2px solid #F2C879' : undefined} />
                 <div className="text-center leading-tight w-full">
                   <p className={`text-[11px] font-medium break-words ${isMatch ? 'text-warning' : 'text-ink-800'}`}>{p.cognome}</p>
                   <p className="text-[10px] text-muted break-words">{p.nome}</p>

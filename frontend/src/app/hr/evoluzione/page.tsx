@@ -13,7 +13,7 @@ const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
-const PALETTE = ['#C896E4', '#2563eb', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
+const PALETTE = ['#C896E4', '#8FB4EC', '#F2C879', '#8ED1B2', '#F2A6C8', '#8FD3E0', '#F5B58A', '#A7A9EA', '#BCDC84', '#EE9B98'];
 type Period = '6' | '12' | '60' | '120' | 'all' | 'custom';
 const PERIOD_OPTIONS: { key: Period; label: string }[] = [
   { key: '6', label: '6 mesi' }, { key: '12', label: '12 mesi' }, { key: '60', label: '5 anni' },
@@ -178,8 +178,8 @@ export default function EvoluzioneAziendalePage() {
                   <XAxis dataKey="month" minTickGap={24} tick={{ fontSize: 11, fill: '#374151' }} />
                   <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#374151' }} />
                   <Tooltip />
-                  <Bar dataKey="Assunzioni" fill="#10b981" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="Cessazioni" fill="#ef4444" radius={[0, 0, 3, 3]} />
+                  <Bar dataKey="Assunzioni" fill="#8ED1B2" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="Cessazioni" fill="#EE9B98" radius={[0, 0, 3, 3]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -194,8 +194,8 @@ export default function EvoluzioneAziendalePage() {
                   <YAxis tick={{ fontSize: 12, fill: '#374151' }} />
                   <Tooltip />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Line type="monotone" dataKey="Età media" stroke="#f59e0b" strokeWidth={2} dot={false} isAnimationActive={false} />
-                  <Line type="monotone" dataKey="Anzianità media" stroke="#2563eb" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="Età media" stroke="#F2C879" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="Anzianità media" stroke="#8FB4EC" strokeWidth={2} dot={false} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
