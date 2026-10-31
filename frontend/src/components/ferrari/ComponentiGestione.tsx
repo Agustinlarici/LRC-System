@@ -120,10 +120,10 @@ export function ComponentiGestione({ onCambia }: { onCambia?: () => void }) {
 
   return (
     <div>
-      <p className="mb-3 text-sm text-gray-500">Un componente (es. Paraurti posteriore) è un nome con le sigle o parole che lo compongono, per modello. In «Per componente» cerchi commessa + componente.</p>
+      <p className="mb-3 text-sm text-muted">Un componente (es. Paraurti posteriore) è un nome con le sigle o parole che lo compongono, per modello. In «Per componente» cerchi commessa + componente.</p>
       <Errore messaggio={errore} />
       {el && el.proposte.length > 0 && (
-        <div className="mb-3 rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm">
+        <div className="mb-3 rounded-card border border-sky-300 bg-accent-soft px-4 py-3 text-sm">
           <div className="flex flex-wrap items-center gap-2">
             <b>Dalla PC IA: {el.proposte.length} componenti</b>
             <button className="btn-primary !py-0.5 text-xs" onClick={() => proposta('accetta-tutte')}>Accetta tutti</button>
@@ -131,8 +131,8 @@ export function ComponentiGestione({ onCambia }: { onCambia?: () => void }) {
           </div>
           {el.proposte.map(p => (
             <div key={`${p.modello}/${p.nome}`} className="mt-1.5 flex flex-wrap items-center gap-2">
-              <b>{p.modello}</b> {p.nome}: <span className="text-gray-600">{p.termini.join(', ') || '—'}</span>
-              {p.conflitto && <span className="text-xs bg-amber-100 text-amber-800 rounded px-1.5">tu: diverso</span>}
+              <b>{p.modello}</b> {p.nome}: <span className="text-ink-700">{p.termini.join(', ') || '—'}</span>
+              {p.conflitto && <span className="text-xs bg-warning-soft text-warning rounded px-1.5">tu: diverso</span>}
               <button className="btn-primary !py-0.5 text-xs" onClick={() => proposta('accetta', p)}>Accetta</button>
               <button className="btn-secondary !py-0.5 text-xs" onClick={() => proposta('rifiuta', p)}>Rifiuta</button>
             </div>
@@ -141,7 +141,7 @@ export function ComponentiGestione({ onCambia }: { onCambia?: () => void }) {
       )}
 
       {el && (
-        <div className="mb-4 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm">
+        <div className="mb-4 rounded-card border border-line bg-white px-4 py-3 text-sm">
           <div className="flex flex-wrap items-center gap-2 mb-2">
             <select className="input !w-auto !py-1" value={modello} onChange={e => { setAnche(null); caricaElenco(e.target.value); }}>
               {el.modelli.map(x => <option key={x.modello} value={x.modello}>{x.modello} ({x.schede})</option>)}
@@ -151,7 +151,7 @@ export function ComponentiGestione({ onCambia }: { onCambia?: () => void }) {
               onKeyDown={e => { if (e.key === 'Enter' && nuovoNome.trim()) { salva(nuovoNome.trim(), []); setNuovoNome(''); } }} />
             <button className="btn-primary !py-1" disabled={!nuovoNome.trim()} onClick={() => { salva(nuovoNome.trim(), []); setNuovoNome(''); }}>Aggiungi</button>
             {altri.length > 0 && (
-              <span className="ml-auto flex items-center gap-2 text-gray-500">
+              <span className="ml-auto flex items-center gap-2 text-muted">
                 Copia da
                 <select className="input !w-auto !py-1" value={daModello || altri[0]!.modello} onChange={e => setDaModello(e.target.value)}>
                   {altri.map(m => <option key={m.modello}>{m.modello}</option>)}
@@ -160,9 +160,9 @@ export function ComponentiGestione({ onCambia }: { onCambia?: () => void }) {
               </span>
             )}
           </div>
-          {el.componenti.length === 0 && <p className="text-gray-400">Nessun componente per {modello}: scrivi un nome (es. Paraurti posteriore) e premi «Aggiungi».</p>}
+          {el.componenti.length === 0 && <p className="text-muted">Nessun componente per {modello}: scrivi un nome (es. Paraurti posteriore) e premi «Aggiungi».</p>}
           {el.componenti.map(c => (
-            <div key={c.nome} className="border-t border-gray-200 py-2">
+            <div key={c.nome} className="border-t border-line py-2">
               <div className="flex items-center gap-2">
                 <b>{c.nome}</b>
                 <button className="btn-secondary !py-0.5 text-xs" onClick={() => rinomina(c)}>Rinomina</button>
@@ -170,7 +170,7 @@ export function ComponentiGestione({ onCambia }: { onCambia?: () => void }) {
                 {altri.length > 0 && <button className="btn-secondary !py-0.5 text-xs" onClick={() => setAnche(anche?.nome === c.nome ? null : { nome: c.nome, scelti: [] })}>Anche in altri modelli…</button>}
               </div>
               {anche?.nome === c.nome && (
-                <div className="mt-1 flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 px-3 py-1.5">
+                <div className="mt-1 flex flex-wrap items-center gap-3 rounded-ctl bg-stone-50 px-3 py-1.5">
                   {altri.map(m => (
                     <label key={m.modello} className="flex items-center gap-1">
                       <input type="checkbox" checked={anche.scelti.includes(m.modello)}
@@ -182,9 +182,9 @@ export function ComponentiGestione({ onCambia }: { onCambia?: () => void }) {
               )}
               <div className="mt-1 flex flex-wrap items-center gap-1">
                 {c.termini.map(t => (
-                  <span key={t} className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-0.5">
+                  <span key={t} className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-2.5 py-0.5">
                     {t}
-                    <button className="text-gray-400 hover:text-red-600" title="Togli" onClick={() => salva(c.nome, c.termini.filter(x => x !== t))}><IconaChiudi /></button>
+                    <button className="text-muted hover:text-danger" title="Togli" onClick={() => salva(c.nome, c.termini.filter(x => x !== t))}><IconaChiudi /></button>
                   </span>
                 ))}
                 <span className="relative">
@@ -192,9 +192,9 @@ export function ComponentiGestione({ onCambia }: { onCambia?: () => void }) {
                     onChange={e => scrivi(c.nome, e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') aggiungi(c, e.currentTarget.value); if (e.key === 'Escape') setAgg(null); }} />
                   {agg?.nome === c.nome && agg.sug.length > 0 && (
-                    <div className="absolute z-10 left-0 top-full mt-1 min-w-[22rem] rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
+                    <div className="absolute z-10 left-0 top-full mt-1 min-w-[22rem] rounded-card border border-line bg-white p-1 shadow-lg">
                       {agg.sug.map(s => (
-                        <button key={`${s.tipo}/${s.termine}`} className="block w-full text-left rounded-lg px-2.5 py-1.5 hover:bg-red-50"
+                        <button key={`${s.tipo}/${s.termine}`} className="block w-full text-left rounded-ctl px-2.5 py-1.5 hover:bg-danger-soft"
                           onClick={() => aggiungi(c, s.termine)}>
                           {s.tipo === 'sigla' ? <><b>{s.termine}</b> — {s.nome}</> : <>Parola «<b>{s.termine}</b>» (cerca nel testo)</>}
                         </button>

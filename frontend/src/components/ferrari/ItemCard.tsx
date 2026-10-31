@@ -124,46 +124,46 @@ export function ItemCard({ item, ultima, abilitato, fileId, rev, modello, opzion
 
   if (!aperta && !ultima) {
     return (
-      <div className="rounded-lg border border-amber-300 bg-amber-50/40 px-3 py-1.5 text-sm flex flex-wrap items-center gap-x-3">
+      <div className="rounded-ctl border border-amber-300 bg-warning-soft/40 px-3 py-1.5 text-sm flex flex-wrap items-center gap-x-3">
         <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-amber-400 text-amber-950">{item.livello}</span>
-        <span className="text-gray-700">{item.descrizione}</span>
-        {abilitato && <button className="ml-auto text-xs text-blue-600 hover:underline" onClick={() => setAperta(true)}>Definisci</button>}
+        <span className="text-ink-700">{item.descrizione}</span>
+        {abilitato && <button className="ml-auto text-xs text-accent-ink hover:underline" onClick={() => setAperta(true)}>Definisci</button>}
       </div>
     );
   }
 
-  const bordo = item.livello === 'ROSSO' ? 'border-red-300 bg-red-50/40' : 'border-amber-300 bg-amber-50/40';
+  const bordo = item.livello === 'ROSSO' ? 'border-red-300 bg-danger-soft/40' : 'border-amber-300 bg-warning-soft/40';
 
   if (ultima && !modifica) {
     return (
-      <div className="rounded-lg border border-green-200 bg-green-50/50 px-3 py-2 text-sm flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="inline-flex items-center gap-1 text-green-700 font-medium"><IconaOk /> {DECISIONE_LABEL[ultima.decisione]}</span>
-        <span className="text-gray-600">{TIPO_LABEL[item.tipo] ?? item.tipo}: {item.descrizione}</span>
-        {ultima.valore_dopo?.valore && <span className="text-gray-800 font-medium">{ultima.valore_dopo.tipo} = {ultima.valore_dopo.valore}</span>}
-        {ultima.valore_dopo?.significato && <span className="text-gray-800 font-medium">{ultima.valore_dopo.significato}</span>}
-        {ultima.motivo && <span className="text-gray-500 italic">“{ultima.motivo}”</span>}
-        <span className="text-xs text-gray-400 ml-auto">{ultima.username} · {fmtData(ultima.creata_at)}</span>
-        {abilitato && <button className="text-xs text-blue-600 hover:underline" onClick={() => setModifica(true)}>Cambia</button>}
+      <div className="rounded-ctl border border-green-200 bg-success-soft/50 px-3 py-2 text-sm flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="inline-flex items-center gap-1 text-success font-medium"><IconaOk /> {DECISIONE_LABEL[ultima.decisione]}</span>
+        <span className="text-ink-700">{TIPO_LABEL[item.tipo] ?? item.tipo}: {item.descrizione}</span>
+        {ultima.valore_dopo?.valore && <span className="text-ink-900 font-medium">{ultima.valore_dopo.tipo} = {ultima.valore_dopo.valore}</span>}
+        {ultima.valore_dopo?.significato && <span className="text-ink-900 font-medium">{ultima.valore_dopo.significato}</span>}
+        {ultima.motivo && <span className="text-muted italic">“{ultima.motivo}”</span>}
+        <span className="text-xs text-muted ml-auto">{ultima.username} · {fmtData(ultima.creata_at)}</span>
+        {abilitato && <button className="text-xs text-accent-ink hover:underline" onClick={() => setModifica(true)}>Cambia</button>}
       </div>
     );
   }
 
   return (
-    <div className={`rounded-lg border px-3 py-3 text-sm ${bordo}`}>
+    <div className={`rounded-ctl border px-3 py-3 text-sm ${bordo}`}>
       <div className="flex flex-wrap items-start gap-2 mb-2">
         <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${item.livello === 'ROSSO' ? 'bg-red-600 text-white' : 'bg-amber-400 text-amber-950'}`}>{item.livello}</span>
-        <span className="font-medium text-gray-900">{TIPO_LABEL[item.tipo] ?? item.tipo}</span>
-        <span className="text-gray-700">{item.descrizione}</span>
+        <span className="font-medium text-ink-900">{TIPO_LABEL[item.tipo] ?? item.tipo}</span>
+        <span className="text-ink-700">{item.descrizione}</span>
       </div>
 
       {(item.vm || item.ia) && item.tipo !== 'sconosciuto_vm' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2 text-xs">
-          {item.vm && <div className="rounded bg-white border border-gray-200 px-2 py-1"><span className="font-semibold text-blue-700">VM</span> {Object.entries(item.vm).map(([k, v]) => `${k}: ${String(v)}`).join(' · ')}</div>}
-          {item.ia && <div className="rounded bg-white border border-gray-200 px-2 py-1"><span className="font-semibold text-emerald-700">IA</span> {Object.entries(item.ia).map(([k, v]) => `${k}: ${String(v)}`).join(' · ')}</div>}
+          {item.vm && <div className="rounded bg-white border border-line px-2 py-1"><span className="font-semibold text-accent-ink">VM</span> {Object.entries(item.vm).map(([k, v]) => `${k}: ${String(v)}`).join(' · ')}</div>}
+          {item.ia && <div className="rounded bg-white border border-line px-2 py-1"><span className="font-semibold text-success">IA</span> {Object.entries(item.ia).map(([k, v]) => `${k}: ${String(v)}`).join(' · ')}</div>}
         </div>
       )}
 
-      {!abilitato ? <p className="text-xs text-gray-500">Non risolto.</p> : (
+      {!abilitato ? <p className="text-xs text-muted">Non risolto.</p> : (
         <div className="space-y-2">
           <div className="flex flex-wrap gap-x-4 gap-y-1">
             {ammesse.map(d => (
@@ -203,7 +203,7 @@ export function ItemCard({ item, ultima, abilitato, fileId, rev, modello, opzion
           )}
 
           {puoProporre && (
-            <div className="flex flex-wrap items-center gap-3 rounded bg-white border border-gray-200 px-3 py-2">
+            <div className="flex flex-wrap items-center gap-3 rounded bg-white border border-line px-3 py-2">
               <label className="inline-flex items-center gap-1.5">
                 <input type="checkbox" checked={proponi} onChange={e => setProponi(e.target.checked)} />
                 <span>Proponi come regola per il futuro</span>
@@ -214,7 +214,7 @@ export function ItemCard({ item, ultima, abilitato, fileId, rev, modello, opzion
                   <option value="MODELLO" disabled={!modello}>Vale solo per il modello {modello ?? ''}</option>
                 </select>
               )}
-              <span className="text-xs text-gray-400">Diventa valida solo dopo l&apos;approvazione del supervisore.</span>
+              <span className="text-xs text-muted">Diventa valida solo dopo l&apos;approvazione del supervisore.</span>
             </div>
           )}
 

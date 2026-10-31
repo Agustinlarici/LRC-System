@@ -6,7 +6,8 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
 import { fmtData, inviaFile, scaricaFile, type FileRiga } from '@/lib/ferrari';
-import { Errore, FerrariNav } from '@/components/ferrari/Comuni';
+import { Errore, } from '@/components/ferrari/Comuni';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 interface BundleRiga {
   bundle_id: string; tipo: 'to-ai' | 'from-ai' | 'knowledge'; direzione: 'out' | 'in'; batch_id: string | null;
@@ -96,24 +97,22 @@ export default function ScambioPage() {
 
   return (
     <div>
-      <div className="mb-4">
-        <h1 className="text-3xl font-bold text-gray-900">Scambio con la PC IA</h1>
-        <p className="mt-1 text-gray-500">
-          La PC IA non è nel dominio: i file viaggiano in pacchetti firmati (.zip) che si copiano a mano (USB, cartella o OneDrive).
-        </p>
-      </div>
-      <FerrariNav />
+      <PageHeader
+        back={{ label: 'Programma produzione (schede)', href: '/ferrari' }}
+        title="Scambio con la PC IA"
+        description="La PC IA non è nel dominio: i file viaggiano in pacchetti firmati (.zip) che si copiano a mano (USB, cartella o OneDrive)."
+      />
       <Errore messaggio={errore} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <section className="card">
-          <h2 className="font-semibold text-gray-900 mb-1">1. Invia alla IA</h2>
-          <p className="text-sm text-gray-500 mb-3">
+          <h2 className="font-semibold text-ink-900 mb-1">1. Invia alla IA</h2>
+          <p className="text-sm text-muted mb-3">
             Il pacchetto contiene le schede ricevute e la conoscenza approvata. Copialo nella cartella <code>inbox</code> della PC IA.
           </p>
           <div className="text-sm mb-3">
-            <span className="text-2xl font-bold text-gray-900">{daInviare.length}</span> schede da inviare
-            {inviate.length > 0 && <span className="text-gray-500"> · {inviate.length} già inviate, senza risposta</span>}
+            <span className="text-2xl font-bold text-ink-900">{daInviare.length}</span> schede da inviare
+            {inviate.length > 0 && <span className="text-muted"> · {inviate.length} già inviate, senza risposta</span>}
           </div>
           {puoOperare && (
             <div className="flex flex-wrap gap-2">
@@ -131,8 +130,8 @@ export default function ScambioPage() {
         </section>
 
         <section className="card">
-          <h2 className="font-semibold text-gray-900 mb-1">2. Importa la risposta della IA</h2>
-          <p className="text-sm text-gray-500 mb-3">
+          <h2 className="font-semibold text-ink-900 mb-1">2. Importa la risposta della IA</h2>
+          <p className="text-sm text-muted mb-3">
             Carica il file <code>from-ai</code> prodotto dalla PC IA. Viene controllata la firma, l&apos;hash di ogni file e che risponda a un invio noto.
             Lo stesso pacchetto non si importa due volte.
           </p>
@@ -149,23 +148,23 @@ export default function ScambioPage() {
 
       {esitoImport && (
         <section className="card mb-8">
-          <h2 className="font-semibold text-gray-900 mb-3">Esito dell&apos;importazione</h2>
+          <h2 className="font-semibold text-ink-900 mb-3">Esito dell&apos;importazione</h2>
           <table className="w-full text-sm">
             <tbody>
               {esitoImport.report.map(r => (
-                <tr key={r.file_id} className="border-b border-gray-100">
+                <tr key={r.file_id} className="border-b border-stone-100">
                   <td className="py-1.5 pr-4">
-                    {r.id ? <Link className="text-blue-700 hover:underline" href={`/ferrari/${r.id}`}>Scheda #{r.id}</Link> : r.file_id}
+                    {r.id ? <Link className="text-accent-ink hover:underline" href={`/ferrari/${r.id}`}>Scheda #{r.id}</Link> : r.file_id}
                   </td>
                   <td className="py-1.5 pr-4">{r.esito ?? '—'}</td>
                   <td className="py-1.5 pr-4">{r.stato ?? '—'}</td>
-                  <td className="py-1.5 text-red-600">{r.errore}</td>
+                  <td className="py-1.5 text-danger">{r.errore}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           {esitoImport.mancanti.length > 0 && (
-            <p className="mt-3 text-sm text-amber-700">
+            <p className="mt-3 text-sm text-warning">
               Senza risposta nel pacchetto: {esitoImport.mancanti.map(id => `#${id}`).join(', ')} (restano in attesa).
             </p>
           )}
@@ -174,17 +173,17 @@ export default function ScambioPage() {
 
       {inviate.length > 0 && (
         <section className="card mb-8">
-          <h2 className="font-semibold text-gray-900 mb-1">Inviate, in attesa di risposta</h2>
-          <p className="text-sm text-gray-500 mb-3">
+          <h2 className="font-semibold text-ink-900 mb-1">Inviate, in attesa di risposta</h2>
+          <p className="text-sm text-muted mb-3">
             Se la IA non è disponibile si può procedere con la sola VM: la scheda finisce in revisione e non viene mai accettata in automatico.
           </p>
           <table className="w-full text-sm">
             <tbody>
               {inviate.map(f => (
-                <tr key={f.id} className="border-b border-gray-100">
-                  <td className="py-1.5 pr-4"><Link className="text-blue-700 hover:underline" href={`/ferrari/${f.id}`}>{f.commessa ?? f.filename}</Link></td>
-                  <td className="py-1.5 pr-4 text-gray-500">{f.modello}</td>
-                  <td className="py-1.5 pr-4 text-gray-500">inviata {fmtData(f.inviato_ia_at)}</td>
+                <tr key={f.id} className="border-b border-stone-100">
+                  <td className="py-1.5 pr-4"><Link className="text-accent-ink hover:underline" href={`/ferrari/${f.id}`}>{f.commessa ?? f.filename}</Link></td>
+                  <td className="py-1.5 pr-4 text-muted">{f.modello}</td>
+                  <td className="py-1.5 pr-4 text-muted">inviata {fmtData(f.inviato_ia_at)}</td>
                   <td className="py-1.5 text-right">
                     {puoOperare && (
                       <button className="btn-secondary text-xs" disabled={occupato !== null} onClick={() => soloVm(f.id)}>Rivedi senza IA</button>
@@ -198,8 +197,8 @@ export default function ScambioPage() {
       )}
 
       <section className="card mb-8">
-        <h2 className="font-semibold text-gray-900 mb-1">Conoscenza per la IA</h2>
-        <p className="text-sm text-gray-500 mb-3">
+        <h2 className="font-semibold text-ink-900 mb-1">Conoscenza per la IA</h2>
+        <p className="text-sm text-muted mb-3">
           Ogni pacchetto verso la IA già include la conoscenza approvata. Questo pacchetto serve solo per aggiornarla senza inviare schede.
         </p>
         <div className="flex flex-wrap gap-2 items-center">
@@ -212,19 +211,19 @@ export default function ScambioPage() {
         </div>
         {segreto && (
           <div className="mt-3 text-sm">
-            <p className="text-gray-500 mb-1">
+            <p className="text-muted mb-1">
               Da inserire come <code>FERRARI_BUNDLE_SECRET</code> nel <code>config.txt</code> della PC IA. Non va mai nei pacchetti né nel repository.
             </p>
-            <code className="block bg-gray-100 rounded px-3 py-2 break-all select-all">{segreto}</code>
+            <code className="block bg-stone-100 rounded px-3 py-2 break-all select-all">{segreto}</code>
           </div>
         )}
       </section>
 
-      <h2 className="font-semibold text-gray-900 mb-3">Storico pacchetti</h2>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto mb-8">
+      <h2 className="font-semibold text-ink-900 mb-3">Storico pacchetti</h2>
+      <div className="bg-white rounded-card border border-line overflow-x-auto mb-8">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-200 bg-gray-50 text-gray-500">
+            <tr className="border-b border-line bg-stone-50 text-muted">
               <th className="py-2.5 px-4 text-left font-medium">Tipo</th>
               <th className="py-2.5 px-4 text-left font-medium">Identificativo</th>
               <th className="py-2.5 px-4 text-right font-medium">Schede</th>
@@ -234,16 +233,16 @@ export default function ScambioPage() {
           </thead>
           <tbody>
             {bundle.length === 0 ? (
-              <tr><td colSpan={5} className="text-center text-gray-400 py-6">Nessun pacchetto</td></tr>
+              <tr><td colSpan={5} className="text-center text-muted py-6">Nessun pacchetto</td></tr>
             ) : bundle.map(b => (
-              <tr key={b.bundle_id} className="border-b border-gray-100">
-                <td className="py-2 px-4">{TIPO_LABEL[b.tipo]} <span className="text-xs text-gray-400">({b.direzione === 'out' ? 'uscita' : 'entrata'})</span></td>
-                <td className="py-2 px-4 font-mono text-xs text-gray-500">{b.bundle_id}</td>
+              <tr key={b.bundle_id} className="border-b border-stone-100">
+                <td className="py-2 px-4">{TIPO_LABEL[b.tipo]} <span className="text-xs text-muted">({b.direzione === 'out' ? 'uscita' : 'entrata'})</span></td>
+                <td className="py-2 px-4 font-mono text-xs text-muted">{b.bundle_id}</td>
                 <td className="py-2 px-4 text-right">{b.file_ids.length || '—'}</td>
-                <td className="py-2 px-4 text-gray-500 whitespace-nowrap">{fmtData(b.creato_at)}<div className="text-xs">{b.creato_da}</div></td>
+                <td className="py-2 px-4 text-muted whitespace-nowrap">{fmtData(b.creato_at)}<div className="text-xs">{b.creato_da}</div></td>
                 <td className="py-2 px-4 text-right">
                   {b.scaricabile && (
-                    <button className="text-blue-600 hover:underline text-xs"
+                    <button className="text-accent-ink hover:underline text-xs"
                       onClick={() => esegui(b.bundle_id, () => scaricaFile(`/api/ferrari/bundle/${b.bundle_id}/download`, { nome: `${b.bundle_id}.zip` }))}>
                       Scarica
                     </button>
@@ -257,13 +256,13 @@ export default function ScambioPage() {
 
       {rifiutati.length > 0 && (
         <>
-          <h2 className="font-semibold text-gray-900 mb-3">Pacchetti rifiutati</h2>
-          <div className="bg-white rounded-xl border border-red-200 divide-y divide-gray-100 mb-8">
+          <h2 className="font-semibold text-ink-900 mb-3">Pacchetti rifiutati</h2>
+          <div className="bg-white rounded-card border border-danger/30 divide-y divide-stone-100 mb-8">
             {rifiutati.map(r => (
               <div key={r.id} className="px-4 py-2 text-sm">
                 <span className="font-medium">{r.filename ?? 'sconosciuto'}</span>
-                <span className="text-gray-400"> · {fmtData(r.creato_at)} · {r.utente}</span>
-                <div className="text-red-600">{r.motivo}</div>
+                <span className="text-muted"> · {fmtData(r.creato_at)} · {r.utente}</span>
+                <div className="text-danger">{r.motivo}</div>
               </div>
             ))}
           </div>

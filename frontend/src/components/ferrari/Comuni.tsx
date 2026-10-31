@@ -4,64 +4,53 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { Esito, StatoFile } from '@/lib/ferrari';
 import { STATI } from '@/lib/ferrari';
-import { IconaIndietro } from './Icone';
+import { StatusBadge, type Tone } from '@/components/ui/StatusBadge';
 
 export function Cella({ testo, intero }: { testo?: string; intero?: string }) {
-  if (!testo) return <span className="text-gray-300">—</span>;
-  if (testo === 'Sì') return <span className="font-bold text-green-600" title={intero}>Sì</span>;
-  if (testo === 'Extra campionario') return <span className="font-bold text-amber-700" title={intero}>Extra campionario</span>;
+  if (!testo) return <span className="text-stone-300">—</span>;
+  if (testo === 'Sì') return <span className="font-bold text-success" title={intero}>Sì</span>;
+  if (testo === 'Extra campionario') return <span className="font-bold text-warning" title={intero}>Extra campionario</span>;
   let testa: React.ReactNode = null;
   let corpo = testo;
-  if (testo.startsWith('Sì — ')) { testa = <span className="font-bold text-green-600">Sì </span>; corpo = testo.slice(5); }
-  else if (testo.startsWith('Extra campionario — ')) { testa = <span className="font-bold text-amber-700">Extra campionario </span>; corpo = testo.slice(20); }
+  if (testo.startsWith('Sì — ')) { testa = <span className="font-bold text-success">Sì </span>; corpo = testo.slice(5); }
+  else if (testo.startsWith('Extra campionario — ')) { testa = <span className="font-bold text-warning">Extra campionario </span>; corpo = testo.slice(20); }
   // più pezzi distinti (es. due livree): uno per riga
   const pezzi = corpo.split(' | ');
   return (
     <span title={intero}>
       {testa}
       {pezzi.length > 1
-        ? pezzi.map((p, i) => <div key={i} className={i > 0 ? 'mt-1 border-t border-dashed border-gray-200 pt-1' : ''}>{p}</div>)
+        ? pezzi.map((p, i) => <div key={i} className={i > 0 ? 'mt-1 border-t border-dashed border-line pt-1' : ''}>{p}</div>)
         : corpo}
     </span>
-  );
-}
-
-/** Pagine delle Impostazioni (e le altre avanzate): un semplice «indietro», come le altre impostazioni della VM. */
-export function FerrariNav() {
-  const pathname = usePathname();
-  if (pathname === '/ferrari' || pathname.startsWith('/ferrari/componenti')) return null;
-  return (
-    <div className="d-print-none mb-2">
-      <Link href="/ferrari" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><IconaIndietro /> Programma produzione (schede)</Link>
-    </div>
   );
 }
 
 /** Come si guarda la tabella: per sigle (colonne) o per componente (paraurti, spoiler...). Pestanas come nelle altre pagine. */
 export function VistaToggle() {
   const pathname = usePathname();
-  const cls = (on: boolean) => `px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${on ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`;
+  const cls = (on: boolean) => `whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${on ? 'bg-ink-800 text-white' : 'text-muted hover:bg-stone-100 hover:text-ink-900'}`;
   return (
-    <div className="d-print-none mb-4 flex gap-1 border-b border-gray-200">
+    <div className="d-print-none mb-6 inline-flex gap-1 rounded-full bg-white p-1 shadow-card">
       <Link href="/ferrari" className={cls(pathname === '/ferrari')}>Per sigle</Link>
       <Link href="/ferrari/componenti" className={cls(pathname.startsWith('/ferrari/componenti'))}>Per componente</Link>
     </div>
   );
 }
 
-const STATO_CLS: Record<StatoFile, string> = {
-  QUARANTENA:     'bg-red-100 text-red-800',
-  IN_ATTESA_IA:   'bg-sky-100 text-sky-800',
-  IN_REVISIONE:   'bg-amber-100 text-amber-800',
-  ACCETTATO_AUTO: 'bg-emerald-100 text-emerald-800',
-  VALIDATO:       'bg-green-100 text-green-800',
-  RIFIUTATO:      'bg-gray-200 text-gray-700',
-  SOSTITUITO:     'bg-gray-100 text-gray-500',
+const STATO_TONE: Record<StatoFile, Tone> = {
+  QUARANTENA:     'danger',
+  IN_ATTESA_IA:   'info',
+  IN_REVISIONE:   'warning',
+  ACCETTATO_AUTO: 'success',
+  VALIDATO:       'success',
+  RIFIUTATO:      'neutral',
+  SOSTITUITO:     'neutral',
 };
 
 export function StatoBadge({ stato }: { stato: StatoFile }) {
   const label = STATI.find(s => s.value === stato)?.label ?? stato;
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${STATO_CLS[stato] ?? 'bg-gray-100'}`}>{label}</span>;
+  return <StatusBadge tone={STATO_TONE[stato] ?? 'neutral'}>{label}</StatusBadge>;
 }
 
 const ESITO_CLS: Record<Esito, string> = {
@@ -69,9 +58,9 @@ const ESITO_CLS: Record<Esito, string> = {
 };
 
 export function EsitoDot({ esito, mostraTesto = true }: { esito: Esito | null; mostraTesto?: boolean }) {
-  if (!esito) return <span className="text-gray-300">—</span>;
+  if (!esito) return <span className="text-stone-300">—</span>;
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-700">
+    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-700">
       <span className={`inline-block w-2.5 h-2.5 rounded-full ${ESITO_CLS[esito]}`} />
       {mostraTesto && esito}
     </span>
@@ -80,7 +69,7 @@ export function EsitoDot({ esito, mostraTesto = true }: { esito: Esito | null; m
 
 export function Errore({ messaggio }: { messaggio: string | null }) {
   if (!messaggio) return null;
-  return <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{messaggio}</div>;
+  return <div className="mb-4 rounded-ctl bg-danger-soft border border-danger/30 text-danger text-sm px-4 py-2">{messaggio}</div>;
 }
 
 type Correzione = 'alias' | 'altro' | 'no' | 'nonsigla';
@@ -100,7 +89,7 @@ export async function correggiCodice(modello: string, scritto: string, giusto: s
   return true;
 }
 
-const btnFix = 'rounded-full border border-gray-300 bg-white px-2 py-0 text-xs hover:bg-gray-50';
+const btnFix = 'rounded-full border border-line bg-white px-2 py-0 text-xs hover:bg-stone-50';
 
 /** Un errore di scrittura dentro un testo (es. TLM15 al posto di TLM16) con i pulsanti per correggerlo. */
 export function SottoSigla({ x, modello, onFatto, onErrore }: {
@@ -109,9 +98,9 @@ export function SottoSigla({ x, modello, onFatto, onErrore }: {
   const correggibile = !!x.scritto && /^[A-Z0-9]{3,8}$/.test(x.scritto) && !/corretta in/.test(x.avviso ?? '');
   const vai = (az: Correzione) => correggiCodice(modello, x.scritto!, x.codice, az).then(ok => ok && onFatto()).catch(e => onErrore((e as Error).message));
   return (
-    <div className="mt-1 rounded-lg border-l-[3px] border-gray-300 bg-white/60 px-2 py-0.5 text-xs text-gray-600">
+    <div className="mt-1 rounded-ctl border-l-[3px] border-line bg-white/60 px-2 py-0.5 text-xs text-ink-700">
       {x.avviso && (
-        <div className="font-semibold text-amber-700">
+        <div className="font-semibold text-warning">
           {x.avviso}
           {correggibile && (
             <span className="ml-1.5 inline-flex flex-wrap gap-1 font-normal">
@@ -137,7 +126,7 @@ export function AnomalieRiga({ anomalie, modello, onFatto, onErrore }: {
   return (
     <div className="mt-1 space-y-1">
       {anomalie.map((a, i) => (
-        <div key={i} className="text-xs font-semibold text-amber-700">
+        <div key={i} className="text-xs font-semibold text-warning">
           {a.riga ? `Riga ${a.riga} · ` : ''}{a.codice && <b>{a.codice}</b>}{a.codice ? ': ' : ''}{a.motivo}
           {a.suggerito && (
             <span className="ml-1.5 inline-flex flex-wrap gap-1 font-normal">

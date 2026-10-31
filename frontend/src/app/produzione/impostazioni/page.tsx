@@ -8,6 +8,8 @@ import type {
   ProdItemAttributeLabel, ProdArticleInfo, ProdArticleAssignment, ProdCategoryOrder,
 } from '@/types';
 import { ExcelImportButton } from '../_components/ExcelImportButton';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Tabs } from '@/components/ui/Tabs';
 
 type Tab = 'Aree' | 'Categoria - Area' | 'Regole Parole Chiave' | 'Colori' | 'Attributi BC' | 'Caratteristiche Manuali' | 'Ordine Categorie';
 const TABS: Tab[] = ['Aree', 'Categoria - Area', 'Regole Parole Chiave', 'Colori', 'Attributi BC', 'Caratteristiche Manuali', 'Ordine Categorie'];
@@ -44,21 +46,21 @@ function TabAree() {
     load();
   }
 
-  if (loading) return <p className="text-gray-400">Caricamento...</p>;
+  if (loading) return <p className="text-muted">Caricamento...</p>;
 
   return (
     <div>
-      <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 mb-4 text-xs text-blue-800 space-y-1">
+      <div className="bg-accent-soft rounded-ctl p-3 mb-4 text-xs text-accent-ink space-y-1">
         <p>Scrivi solo il nome dell&apos;area: è quello che vedi in grande, sia nella card sia nell&apos;intestazione del foglio (es. &quot;F171 Paraurto Posteriore&quot;).</p>
         <p>Per assegnare codici articolo a un&apos;area, vai alla tab &quot;Categoria - Area&quot; — puoi usare lì lo stesso nome, non serve un codice a parte.</p>
       </div>
 
       <div className="flex gap-2 mb-4">
         <input value={descr} onChange={e => setDescr(e.target.value)} placeholder="Nome area (es. F171 Paraurto Posteriore)"
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="input flex-1"
           onKeyDown={e => e.key === 'Enter' && addArea()} />
         <button onClick={addArea} disabled={busy || !descr.trim()}
-          className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          className="btn-primary">
           Aggiungi
         </button>
       </div>
@@ -67,12 +69,12 @@ function TabAree() {
         <ExcelImportButton endpoint="/api/prod/aree/import-excel" onDone={load} label="Carica aree da Excel (Codice, Descrizione)" />
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
-        {aree.length === 0 && <p className="text-sm text-gray-400 py-4 text-center">Nessuna area</p>}
+      <div className="bg-white rounded-card shadow-card divide-y divide-stone-100">
+        {aree.length === 0 && <p className="text-sm text-muted py-4 text-center">Nessuna area</p>}
         {aree.map(a => (
           <div key={a.id} className="px-4 py-3 flex items-center justify-between">
-            <p className="font-medium text-gray-800">{a.description}</p>
-            <button onClick={() => delArea(a.id)} className="text-xs text-red-500 hover:text-red-700">Elimina</button>
+            <p className="font-medium text-ink-900">{a.description}</p>
+            <button onClick={() => delArea(a.id)} className="text-xs text-danger hover:text-danger">Elimina</button>
           </div>
         ))}
       </div>
@@ -170,11 +172,11 @@ function TabCategoriaArea() {
     }
   }
 
-  if (loading) return <p className="text-gray-400">Caricamento...</p>;
+  if (loading) return <p className="text-muted">Caricamento...</p>;
 
   return (
     <div>
-      <p className="text-xs text-gray-500 mb-3">
+      <p className="text-xs text-muted mb-3">
         Ogni codice articolo ha una <strong>categoria</strong> (per il motore di rimpiazzo &quot;vince
         l&apos;ultimo&quot; — se due articoli della stessa categoria arrivano per la stessa commessa, il
         foglio ne mostra uno solo: un ordine Confermato batte sempre un Forecast, a parità di fonte
@@ -183,8 +185,8 @@ function TabCategoriaArea() {
         un&apos;<strong>area</strong> (dove compare nel foglio) — completamente indipendenti tra loro.
       </p>
 
-      <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 mb-4">
-        <p className="text-xs text-blue-800 mb-2">
+      <div className="bg-accent-soft rounded-ctl p-3 mb-4">
+        <p className="text-xs text-accent-ink mb-2">
           <strong>Carica veloce:</strong> un solo file con Codice Articolo, Categoria e Area
           (entrambe opzionali) — assegna tutto in un colpo solo. Le aree devono già esistere (tab &quot;Aree&quot;).
         </p>
@@ -195,21 +197,21 @@ function TabCategoriaArea() {
         />
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
-        <p className="text-sm font-medium text-gray-700 mb-2">Aggiungi / modifica un codice</p>
+      <div className="bg-white border border-line rounded-card p-4 mb-4">
+        <p className="text-sm font-medium text-ink-700 mb-2">Aggiungi / modifica un codice</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <input value={codice} onChange={e => setCodice(e.target.value)} placeholder="Codice Articolo"
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="input" />
           <input value={categoria} onChange={e => setCategoria(e.target.value)} placeholder="Categoria (es. PARAURTI)"
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="input" />
           <select value={areaId} onChange={e => setAreaId(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            className="input">
             <option value="">— Nessuna area —</option>
             {areas.map(a => <option key={a.id} value={a.id}>{a.description}</option>)}
           </select>
         </div>
         <button onClick={addRow} disabled={busy || !codice.trim()}
-          className="mt-2 bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          className="mt-2 btn-primary">
           Salva
         </button>
       </div>
@@ -217,28 +219,28 @@ function TabCategoriaArea() {
       <div className="flex justify-end mb-2">
         <button onClick={delAllFiltered} disabled={!hasFilter || bulkBusy}
           title={hasFilter ? '' : 'Imposta almeno un filtro per abilitare la cancellazione in blocco'}
-          className="text-sm text-red-600 border border-red-200 px-3 py-2 rounded-lg hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap">
+          className="btn-secondary !text-danger whitespace-nowrap">
           {bulkBusy ? 'Eliminazione...' : 'Elimina tutti i filtrati'}
         </button>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      <div className="bg-white rounded-card shadow-card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-200 bg-gray-50 text-gray-500">
+            <tr className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
               <th className="py-2.5 px-4 text-left font-medium">Codice Articolo</th>
               <th className="py-2.5 px-4 text-left font-medium">Categoria</th>
               <th className="py-2.5 px-4 text-left font-medium">Area</th>
               <th className="py-2.5 px-4" />
             </tr>
-            <tr className="border-b border-gray-200 bg-gray-50">
+            <tr className="border-b border-line">
               <th className="px-4 pb-2">
                 <input value={fCodice} onChange={e => onFilterChange({ codice: e.target.value })} placeholder="Filtra..."
-                  className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="input !px-2.5 !py-1.5 !text-xs font-normal min-w-[6.5rem]" />
               </th>
               <th className="px-4 pb-2">
                 <select value={fCategoria} onChange={e => onFilterChange({ categoria: e.target.value })}
-                  className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  className="input !px-2.5 !py-1.5 !text-xs font-normal min-w-[6.5rem]">
                   <option value="">— Tutte —</option>
                   <option value={EMPTY_FILTER_VALUE}>(vuoto)</option>
                   {categorie.map(cat => <option key={cat} value={cat}>{cat}</option>)}
@@ -246,7 +248,7 @@ function TabCategoriaArea() {
               </th>
               <th className="px-4 pb-2">
                 <select value={fArea} onChange={e => onFilterChange({ area: e.target.value })}
-                  className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  className="input !px-2.5 !py-1.5 !text-xs font-normal min-w-[6.5rem]">
                   <option value="">— Tutte —</option>
                   <option value={EMPTY_FILTER_VALUE}>(vuoto)</option>
                   {areas.map(a => <option key={a.id} value={a.description}>{a.description}</option>)}
@@ -257,22 +259,22 @@ function TabCategoriaArea() {
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={4} className="text-center text-gray-400 py-6">Nessun codice trovato</td></tr>
+              <tr><td colSpan={4} className="text-center text-muted py-6">Nessun codice trovato</td></tr>
             )}
             {rows.map(r => (
-              <tr key={r.codice_articolo} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr key={r.codice_articolo} className="border-b border-stone-100 hover:bg-accent-soft/50">
                 <td className="py-2 px-4 font-mono">{r.codice_articolo}</td>
-                <td className="py-2 px-4">{r.categoria ?? <span className="text-gray-300">–</span>}</td>
-                <td className="py-2 px-4">{r.area_description ?? <span className="text-gray-300">–</span>}</td>
+                <td className="py-2 px-4">{r.categoria ?? <span className="text-stone-300">–</span>}</td>
+                <td className="py-2 px-4">{r.area_description ?? <span className="text-stone-300">–</span>}</td>
                 <td className="py-2 px-4 text-right">
-                  <button onClick={() => delRow(r.codice_articolo)} className="text-xs text-red-500 hover:text-red-700">Elimina</button>
+                  <button onClick={() => delRow(r.codice_articolo)} className="text-xs text-danger hover:text-danger">Elimina</button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
         {rows.length === 500 && (
-          <p className="text-xs text-gray-400 px-4 py-2 border-t border-gray-100">
+          <p className="text-xs text-muted px-4 py-2 border-t border-stone-100">
             Mostrando i primi 500 risultati — usa la ricerca per affinare.
           </p>
         )}
@@ -424,13 +426,13 @@ function TabRegole() {
     }
   }
 
-  if (loading) return <p className="text-gray-400">Caricamento...</p>;
+  if (loading) return <p className="text-muted">Caricamento...</p>;
 
   return (
     <div className="space-y-4">
-      <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+      <div className="bg-white border border-line rounded-card p-4 space-y-3">
         <div>
-          <p className="text-xs text-gray-500 mb-1.5">Come vuoi cercare nella descrizione dell&apos;articolo?</p>
+          <p className="text-xs text-muted mb-1.5">Come vuoi cercare nella descrizione dell&apos;articolo?</p>
           <div className="flex gap-4 text-sm">
             <label className="flex items-center gap-1.5 cursor-pointer">
               <input type="radio" checked={modo === 'simple'} onChange={() => setModo('simple')} /> Una sola parola
@@ -444,18 +446,18 @@ function TabRegole() {
         <div className="grid grid-cols-3 gap-2">
           <input value={prefisso} onChange={e => setPrefisso(e.target.value)} placeholder="Per quali commesse (vuoto = tutte)"
             title="Es. FL per applicare la regola solo alle commesse che iniziano con FL. Vuoto = si applica a tutte."
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="input" />
           <input value={categoria} onChange={e => setCategoria(e.target.value)} placeholder="Categoria (es. PARAURTI)"
             title="Il gruppo/componente a cui appartiene questa regola"
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="input" />
           <input value={caratt} onChange={e => setCaratt(e.target.value)} placeholder="Cosa scrivere se trova la parola"
             title="Il testo che compare nel foglio quando la regola trova un riscontro (es. Pelle nera)"
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="input" />
         </div>
 
         {modo === 'simple' ? (
           <input value={parolaCh} onChange={e => setParolaCh(e.target.value)} placeholder="Parola da cercare nella descrizione"
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="input" />
         ) : (
           <div className="space-y-2">
             <label className="flex items-center gap-1.5 text-sm cursor-pointer">
@@ -464,28 +466,28 @@ function TabRegole() {
             </label>
             <div className="grid grid-cols-3 gap-2">
               <input value={ancora} onChange={e => setAncora(e.target.value)} placeholder="Prima parola da cercare"
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                className="input" />
               {cercaColore ? (
-                <div className="border border-dashed border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-400 flex items-center">
+                <div className="border border-dashed border-line rounded-ctl px-3 py-2 text-sm text-muted flex items-center">
                   un colore qualsiasi
                 </div>
               ) : (
                 <input value={obiettivo} onChange={e => setObiettivo(e.target.value)} placeholder="Seconda parola da cercare"
-                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="input" />
               )}
               <input value={distanza} onChange={e => setDistanza(e.target.value)} type="number" min={1} placeholder="Distanza massima (caratteri)"
                 title="Quanto lontano può essere la seconda parola dalla prima, in numero di caratteri"
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                className="input" />
             </div>
           </div>
         )}
 
         <input value={note} onChange={e => setNote(e.target.value)} placeholder="Note (es. LIVREA A SCELTA - VEDERE FIGURINO)"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          className="input" />
 
         <div className="flex items-center gap-2">
           <button onClick={add} disabled={busy}
-            className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+            className="btn-primary">
             Aggiungi regola
           </button>
           <ExcelImportButton
@@ -499,15 +501,15 @@ function TabRegole() {
       <div className="flex justify-end">
         <button onClick={delAllFiltered} disabled={!hasFilter || bulkBusy || filteredRules.length === 0}
           title={hasFilter ? '' : 'Imposta almeno un filtro per abilitare la cancellazione in blocco'}
-          className="text-sm text-red-600 border border-red-200 px-3 py-2 rounded-lg hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap">
+          className="btn-secondary !text-danger whitespace-nowrap">
           {bulkBusy ? 'Eliminazione...' : 'Elimina tutti i filtrati'}
         </button>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      <div className="bg-white rounded-card shadow-card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-200 bg-gray-50 text-gray-500">
+            <tr className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
               <th className="py-2.5 px-4 text-left font-medium">Per commesse</th>
               <th className="py-2.5 px-4 text-left font-medium">Categoria</th>
               <th className="py-2.5 px-4 text-left font-medium">Cosa scrive</th>
@@ -521,31 +523,31 @@ function TabRegole() {
               <th className="py-2.5 px-4 text-center font-medium">Attiva</th>
               <th className="py-2.5 px-4" />
             </tr>
-            <tr className="border-b border-gray-200 bg-gray-50">
+            <tr className="border-b border-line">
               <th className="px-4 pb-2">
                 <select value={fPrefisso} onChange={e => setFPrefisso(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  className="input !px-2.5 !py-1.5 !text-xs font-normal min-w-[6.5rem]">
                   <option value="">— Tutti —</option>
                   {prefissoOptions.map(v => <option key={v} value={v}>{v}</option>)}
                 </select>
               </th>
               <th className="px-4 pb-2">
                 <select value={fCategoria} onChange={e => setFCategoria(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  className="input !px-2.5 !py-1.5 !text-xs font-normal min-w-[6.5rem]">
                   <option value="">— Tutte —</option>
                   {categoriaOptions.map(v => <option key={v} value={v}>{v}</option>)}
                 </select>
               </th>
               <th className="px-4 pb-2">
                 <select value={fCaratt} onChange={e => setFCaratt(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  className="input !px-2.5 !py-1.5 !text-xs font-normal min-w-[6.5rem]">
                   <option value="">— Tutte —</option>
                   {carattOptions.map(v => <option key={v} value={v}>{v}</option>)}
                 </select>
               </th>
               <th className="px-4 pb-2">
                 <select value={fModo} onChange={e => setFModo(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  className="input !px-2.5 !py-1.5 !text-xs font-normal min-w-[6.5rem]">
                   <option value="">— Tutti —</option>
                   <option value="simple">Una parola</option>
                   <option value="proximity">Due parole vicine</option>
@@ -558,7 +560,7 @@ function TabRegole() {
               <th className="px-4 pb-2" />
               <th className="px-4 pb-2">
                 <select value={fNote} onChange={e => setFNote(e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs font-normal bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  className="input !px-2.5 !py-1.5 !text-xs font-normal min-w-[6.5rem]">
                   <option value="">— Tutte —</option>
                   {noteOptions.map(v => <option key={v} value={v}>{v}</option>)}
                 </select>
@@ -569,13 +571,13 @@ function TabRegole() {
           </thead>
           <tbody>
             {filteredRules.length === 0 && (
-              <tr><td colSpan={12} className="text-center text-gray-400 py-6">Nessuna regola</td></tr>
+              <tr><td colSpan={12} className="text-center text-muted py-6">Nessuna regola</td></tr>
             )}
             {filteredRules.map(r => {
               if (editRow && editRow.id === r.id) {
-                const cell = 'w-full border border-blue-300 rounded px-1.5 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-400';
+                const cell = 'input !px-1.5 !py-1 !text-xs';
                 return (
-                  <tr key={r.id} className="border-b border-gray-100 bg-blue-50">
+                  <tr key={r.id} className="border-b border-stone-100 bg-accent-soft">
                     <td className="py-2 px-2">
                       <input value={editRow.prefisso} onChange={e => updateEditRow({ prefisso: e.target.value })}
                         placeholder="tutte" className={cell} />
@@ -595,30 +597,30 @@ function TabRegole() {
                     <td className="py-2 px-2">
                       {editRow.modo === 'simple' ? (
                         <input value={editRow.parolaCh} onChange={e => updateEditRow({ parolaCh: e.target.value })} className={cell} />
-                      ) : <span className="text-gray-300">–</span>}
+                      ) : <span className="text-stone-300">–</span>}
                     </td>
                     <td className="py-2 px-2">
                       {editRow.modo === 'proximity' ? (
                         <input value={editRow.ancora} onChange={e => updateEditRow({ ancora: e.target.value })} className={cell} />
-                      ) : <span className="text-gray-300">–</span>}
+                      ) : <span className="text-stone-300">–</span>}
                     </td>
                     <td className="py-2 px-2">
                       {editRow.modo === 'proximity' && !editRow.cercaColore ? (
                         <input value={editRow.obiettivo} onChange={e => updateEditRow({ obiettivo: e.target.value })} className={cell} />
                       ) : editRow.modo === 'proximity' ? (
-                        <span className="italic text-gray-400 text-xs">colore</span>
-                      ) : <span className="text-gray-300">–</span>}
+                        <span className="italic text-muted text-xs">colore</span>
+                      ) : <span className="text-stone-300">–</span>}
                     </td>
                     <td className="py-2 px-2">
                       {editRow.modo === 'proximity' ? (
                         <input value={editRow.distanza} onChange={e => updateEditRow({ distanza: e.target.value })}
                           type="number" min={1} className={cell} />
-                      ) : <span className="text-gray-300">–</span>}
+                      ) : <span className="text-stone-300">–</span>}
                     </td>
                     <td className="py-2 px-2 text-center">
                       {editRow.modo === 'proximity' ? (
                         <input type="checkbox" checked={editRow.cercaColore} onChange={e => updateEditRow({ cercaColore: e.target.checked })} />
-                      ) : <span className="text-gray-300">–</span>}
+                      ) : <span className="text-stone-300">–</span>}
                     </td>
                     <td className="py-2 px-2">
                       <input value={editRow.note} onChange={e => updateEditRow({ note: e.target.value })} className={cell} />
@@ -627,38 +629,38 @@ function TabRegole() {
                       <input type="checkbox" checked={r.active} onChange={() => toggleActive(r)} />
                     </td>
                     <td className="py-2 px-4 text-right whitespace-nowrap">
-                      <button onClick={saveEditRow} disabled={editBusy} className="text-xs text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded mr-2 disabled:opacity-50">
+                      <button onClick={saveEditRow} disabled={editBusy} className="btn-primary !px-3 !py-1 !text-xs mr-2">
                         Salva
                       </button>
-                      <button onClick={() => setEditRow(null)} className="text-xs text-gray-500 hover:text-gray-700">Annulla</button>
+                      <button onClick={() => setEditRow(null)} className="text-xs text-muted hover:text-ink-700">Annulla</button>
                     </td>
                   </tr>
                 );
               }
               return (
-                <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="py-2 px-4 font-mono">{r.prefisso_commessa || <span className="italic text-gray-400">tutte</span>}</td>
+                <tr key={r.id} className="border-b border-stone-100 hover:bg-accent-soft/50">
+                  <td className="py-2 px-4 font-mono">{r.prefisso_commessa || <span className="italic text-muted">tutte</span>}</td>
                   <td className="py-2 px-4">{r.categoria}</td>
                   <td className="py-2 px-4">{r.caratteristica_derivata}</td>
-                  <td className="py-2 px-4 text-gray-500">{modoLabel(r.modo)}</td>
-                  <td className="py-2 px-4 text-gray-500">{r.parola_chiave ?? <span className="text-gray-300">–</span>}</td>
-                  <td className="py-2 px-4 text-gray-500">{r.parola_ancora ?? <span className="text-gray-300">–</span>}</td>
-                  <td className="py-2 px-4 text-gray-500">
+                  <td className="py-2 px-4 text-muted">{modoLabel(r.modo)}</td>
+                  <td className="py-2 px-4 text-muted">{r.parola_chiave ?? <span className="text-stone-300">–</span>}</td>
+                  <td className="py-2 px-4 text-muted">{r.parola_ancora ?? <span className="text-stone-300">–</span>}</td>
+                  <td className="py-2 px-4 text-muted">
                     {r.modo === 'proximity' && r.obiettivo_da_colori
                       ? <span className="italic">qualsiasi colore attivo</span>
-                      : r.parola_obiettivo ?? <span className="text-gray-300">–</span>}
+                      : r.parola_obiettivo ?? <span className="text-stone-300">–</span>}
                   </td>
-                  <td className="py-2 px-4 text-gray-500">{r.distanza_max_caratteri ?? <span className="text-gray-300">–</span>}</td>
-                  <td className="py-2 px-4 text-center text-gray-500">
-                    {r.modo === 'proximity' ? (r.obiettivo_da_colori ? 'Sì' : 'No') : <span className="text-gray-300">–</span>}
+                  <td className="py-2 px-4 text-muted">{r.distanza_max_caratteri ?? <span className="text-stone-300">–</span>}</td>
+                  <td className="py-2 px-4 text-center text-muted">
+                    {r.modo === 'proximity' ? (r.obiettivo_da_colori ? 'Sì' : 'No') : <span className="text-stone-300">–</span>}
                   </td>
-                  <td className="py-2 px-4 text-gray-500 max-w-[200px] truncate" title={r.note ?? ''}>{r.note ?? '–'}</td>
+                  <td className="py-2 px-4 text-muted max-w-[200px] truncate" title={r.note ?? ''}>{r.note ?? '–'}</td>
                   <td className="py-2 px-4 text-center">
                     <input type="checkbox" checked={r.active} onChange={() => toggleActive(r)} />
                   </td>
                   <td className="py-2 px-4 text-right whitespace-nowrap">
-                    <button onClick={() => startEditRow(r)} className="text-xs text-blue-600 hover:text-blue-800 mr-3">Modifica</button>
-                    <button onClick={() => del(r.id)} className="text-xs text-red-500 hover:text-red-700">Elimina</button>
+                    <button onClick={() => startEditRow(r)} className="text-xs text-accent-ink hover:text-accent-ink mr-3">Modifica</button>
+                    <button onClick={() => del(r.id)} className="text-xs text-danger hover:text-danger">Elimina</button>
                   </td>
                 </tr>
               );
@@ -738,28 +740,28 @@ function TabColori() {
     } finally { setRangeBusy(false); }
   }
 
-  if (loading) return <p className="text-gray-400">Caricamento...</p>;
+  if (loading) return <p className="text-muted">Caricamento...</p>;
 
   return (
     <div className="space-y-4">
-      <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
-        <p className="text-xs text-blue-800 mb-2">
+      <div className="bg-accent-soft rounded-ctl p-3">
+        <p className="text-xs text-accent-ink mb-2">
           Range di caratteri della descrizione in cui cercare le parole chiave colore — <strong>uguale per tutte</strong>.
           Se trova più colori nella stessa descrizione, vince quello con priorità più bassa (vedi tabella sotto).
         </p>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-600">Dal carattere</span>
+          <span className="text-sm text-ink-700">Dal carattere</span>
           <input value={rangeStart} onChange={e => setRangeStart(e.target.value)} type="number" min={0}
-            className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <span className="text-sm text-gray-600">al carattere</span>
+            className="input !w-20 !px-2.5 !py-1.5" />
+          <span className="text-sm text-ink-700">al carattere</span>
           <input value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} type="number" min={1}
-            className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="input !w-20 !px-2.5 !py-1.5" />
           <button onClick={saveRange} disabled={rangeBusy}
-            className="bg-blue-600 text-white px-3 py-1.5 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+            className="bg-ink-800 text-white px-3 py-1.5 text-sm rounded-ctl hover:bg-ink-950 disabled:opacity-50 transition-colors">
             Salva
           </button>
           {settings && (
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-muted">
               (attuale: {settings.searchStart}–{settings.searchEnd})
             </span>
           )}
@@ -768,25 +770,25 @@ function TabColori() {
 
       <div className="flex gap-2">
         <input value={keyword} onChange={e => setKeyword(e.target.value)} placeholder="Parola chiave"
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          className="input flex-1" />
         <input value={color} onChange={e => setColor(e.target.value)} placeholder="Colore"
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="input flex-1"
           onKeyDown={e => e.key === 'Enter' && add()} />
         <input value={priority} onChange={e => setPriority(e.target.value)} type="number" placeholder="Priorità" title="Priorità (0 = massima, vince sulle altre)"
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="border border-line rounded-ctl px-3 py-2 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-accent/30"
           onKeyDown={e => e.key === 'Enter' && add()} />
         <button onClick={add} disabled={busy}
-          className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          className="btn-primary">
           Aggiungi
         </button>
       </div>
 
       <ExcelImportButton endpoint="/api/prod/color-keywords/import-excel" onDone={load} label="Carica da Excel (Parola Chiave, Colore, Priorità opzionale)" />
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      <div className="bg-white rounded-card shadow-card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-200 bg-gray-50 text-gray-500">
+            <tr className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
               <th className="py-2.5 px-4 text-left font-medium">Parola chiave</th>
               <th className="py-2.5 px-4 text-left font-medium">Colore</th>
               <th className="py-2.5 px-4 text-left font-medium">Priorità</th>
@@ -796,21 +798,21 @@ function TabColori() {
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={5} className="text-center text-gray-400 py-6">Nessuna parola chiave</td></tr>
+              <tr><td colSpan={5} className="text-center text-muted py-6">Nessuna parola chiave</td></tr>
             )}
             {rows.map(r => (
-              <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr key={r.id} className="border-b border-stone-100 hover:bg-accent-soft/50">
                 <td className="py-2 px-4">{r.keyword}</td>
                 <td className="py-2 px-4">{r.color}</td>
                 <td className="py-2 px-4">
                   <input type="number" defaultValue={r.priority} onBlur={e => savePriority(r, e.target.value)}
-                    className="border border-gray-200 rounded-lg px-2 py-1 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="border border-line rounded-ctl px-2 py-1 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-accent/30" />
                 </td>
                 <td className="py-2 px-4 text-center">
                   <input type="checkbox" checked={r.active} onChange={() => toggleActive(r)} />
                 </td>
                 <td className="py-2 px-4 text-right">
-                  <button onClick={() => del(r.id)} className="text-xs text-red-500 hover:text-red-700">Elimina</button>
+                  <button onClick={() => del(r.id)} className="text-xs text-danger hover:text-danger">Elimina</button>
                 </td>
               </tr>
             ))}
@@ -845,21 +847,21 @@ function TabAttributi() {
     load();
   }
 
-  if (loading) return <p className="text-gray-400">Caricamento...</p>;
+  if (loading) return <p className="text-muted">Caricamento...</p>;
 
   return (
     <div>
-      <p className="text-sm text-gray-500 mb-4">
+      <p className="text-sm text-muted mb-4">
         Tutti gli Item Attribute ID trovati in Business Central vengono importati automaticamente
         (sincronizzazione &quot;Attributi BC&quot;). Qui assegni il nome di categoria da mostrare nel foglio di lavoro.
       </p>
       <div className="mb-4">
         <ExcelImportButton endpoint="/api/prod/item-attribute-labels/import-excel" onDone={load} label="Carica da Excel (Item Attribute ID, Nome Categoria)" />
       </div>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      <div className="bg-white rounded-card shadow-card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-200 bg-gray-50 text-gray-500">
+            <tr className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
               <th className="py-2.5 px-4 text-left font-medium">Item Attribute ID</th>
               <th className="py-2.5 px-4 text-left font-medium">Nome categoria</th>
               <th className="py-2.5 px-4 text-center font-medium">Attivo</th>
@@ -868,23 +870,23 @@ function TabAttributi() {
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={4} className="text-center text-gray-400 py-6">Nessun attributo sincronizzato ancora</td></tr>
+              <tr><td colSpan={4} className="text-center text-muted py-6">Nessun attributo sincronizzato ancora</td></tr>
             )}
             {rows.map(r => (
-              <tr key={r.item_attribute_id} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr key={r.item_attribute_id} className="border-b border-stone-100 hover:bg-accent-soft/50">
                 <td className="py-2 px-4 font-mono">{r.item_attribute_id}</td>
                 <td className="py-2 px-4">
                   <input
                     value={edits[r.item_attribute_id] ?? r.categoria_label}
                     onChange={e => setEdits(prev => ({ ...prev, [r.item_attribute_id]: e.target.value }))}
-                    className="border border-gray-200 rounded-lg px-2 py-1 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="border border-line rounded-ctl px-2 py-1 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-accent/30"
                   />
                 </td>
                 <td className="py-2 px-4 text-center">
                   <input type="checkbox" checked={r.active} onChange={() => toggleActive(r)} />
                 </td>
                 <td className="py-2 px-4 text-right">
-                  <button onClick={() => save(r.item_attribute_id)} className="text-xs text-blue-600 hover:text-blue-800">Salva</button>
+                  <button onClick={() => save(r.item_attribute_id)} className="text-xs text-accent-ink hover:text-accent-ink">Salva</button>
                 </td>
               </tr>
             ))}
@@ -928,28 +930,28 @@ function TabManuali() {
     load();
   }
 
-  if (loading) return <p className="text-gray-400">Caricamento...</p>;
+  if (loading) return <p className="text-muted">Caricamento...</p>;
 
   return (
     <div className="space-y-4">
-      <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
-        <p className="text-xs text-gray-500">
+      <div className="bg-white border border-line rounded-card p-4 space-y-2">
+        <p className="text-xs text-muted">
           Categoria e caratteristiche possono contenere più valori separati da virgola —
           si applicano a tutte le commesse dell&apos;articolo.
         </p>
         <div className="grid grid-cols-2 gap-2">
           <input value={codice} onChange={e => setCodice(e.target.value)} placeholder="Codice articolo"
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="input" />
           <input value={modello} onChange={e => setModello(e.target.value)} placeholder="Modello (opzionale)"
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="input" />
         </div>
         <input value={categoria} onChange={e => setCategoria(e.target.value)} placeholder="Categoria/e (separate da virgola)"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          className="input" />
         <input value={caratt} onChange={e => setCaratt(e.target.value)} placeholder="Caratteristica/che (separate da virgola)"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          className="input" />
         <div className="flex items-center gap-2">
           <button onClick={add} disabled={busy}
-            className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+            className="btn-primary">
             Aggiungi
           </button>
           <ExcelImportButton
@@ -960,10 +962,10 @@ function TabManuali() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      <div className="bg-white rounded-card shadow-card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-200 bg-gray-50 text-gray-500">
+            <tr className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
               <th className="py-2.5 px-4 text-left font-medium">Codice</th>
               <th className="py-2.5 px-4 text-left font-medium">Modello</th>
               <th className="py-2.5 px-4 text-left font-medium">Categoria</th>
@@ -973,16 +975,16 @@ function TabManuali() {
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={5} className="text-center text-gray-400 py-6">Nessuna caratteristica manuale</td></tr>
+              <tr><td colSpan={5} className="text-center text-muted py-6">Nessuna caratteristica manuale</td></tr>
             )}
             {rows.map(r => (
-              <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr key={r.id} className="border-b border-stone-100 hover:bg-accent-soft/50">
                 <td className="py-2 px-4 font-mono">{r.codice_articolo}</td>
                 <td className="py-2 px-4">{r.modello ?? '–'}</td>
                 <td className="py-2 px-4">{r.categoria ?? '–'}</td>
                 <td className="py-2 px-4">{r.caratteristiche_manuali ?? '–'}</td>
                 <td className="py-2 px-4 text-right">
-                  <button onClick={() => del(r.id)} className="text-xs text-red-500 hover:text-red-700">Elimina</button>
+                  <button onClick={() => del(r.id)} className="text-xs text-danger hover:text-danger">Elimina</button>
                 </td>
               </tr>
             ))}
@@ -1030,30 +1032,30 @@ function TabOrdineCategorie() {
     } finally { setBusy(false); }
   }
 
-  if (loading) return <p className="text-gray-400">Caricamento...</p>;
+  if (loading) return <p className="text-muted">Caricamento...</p>;
 
   return (
     <div>
-      <p className="text-xs text-gray-500 mb-3">
+      <p className="text-xs text-muted mb-3">
         Usa le freccette per metterle nell&apos;ordine in cui vuoi vederle come colonne nel foglio, poi salva.
         Le categorie senza un ordine impostato restano in fondo, in ordine alfabetico.
       </p>
 
-      <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100 mb-4">
-        {categorie.length === 0 && <p className="text-sm text-gray-400 py-4 text-center">Nessuna categoria trovata ancora</p>}
+      <div className="bg-white rounded-card shadow-card divide-y divide-stone-100 mb-4">
+        {categorie.length === 0 && <p className="text-sm text-muted py-4 text-center">Nessuna categoria trovata ancora</p>}
         {categorie.map((c, i) => (
           <div key={c.categoria} className="px-4 py-2.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400 w-6 text-right">{i + 1}</span>
-              <span className={`font-medium ${c.categoria === 'X.EXTRA' ? 'text-gray-500' : 'text-gray-800'}`}>{c.categoria}</span>
+              <span className="text-xs text-muted w-6 text-right">{i + 1}</span>
+              <span className={`font-medium ${c.categoria === 'X.EXTRA' ? 'text-muted' : 'text-ink-900'}`}>{c.categoria}</span>
             </div>
             <div className="flex gap-1">
               <button onClick={() => move(i, -1)} disabled={i === 0}
-                className="text-sm px-2 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">
+                className="btn-secondary !px-2.5 !py-1 disabled:opacity-30">
                 ↑
               </button>
               <button onClick={() => move(i, 1)} disabled={i === categorie.length - 1}
-                className="text-sm px-2 py-1 rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed">
+                className="btn-secondary !px-2.5 !py-1 disabled:opacity-30">
                 ↓
               </button>
             </div>
@@ -1063,10 +1065,10 @@ function TabOrdineCategorie() {
 
       <div className="flex items-center gap-3">
         <button onClick={salva} disabled={busy || categorie.length === 0}
-          className="bg-blue-600 text-white px-4 py-2 text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          className="btn-primary">
           {busy ? 'Salvataggio...' : 'Salva ordine'}
         </button>
-        {saved && <span className="text-sm text-green-600">Ordine salvato</span>}
+        {saved && <span className="text-sm text-success">Ordine salvato</span>}
       </div>
     </div>
   );
@@ -1079,24 +1081,13 @@ export default function ProduzioneImpostazioniPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <Link href="/produzione" className="inline-flex items-center gap-1 text-sm font-medium px-3 py-2 rounded-lg transition-colors bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 mb-3">← Programma Produzione</Link>
-        <h1 className="text-3xl font-bold text-gray-900 mt-2">Impostazioni</h1>
-      </div>
+      <PageHeader
+        back={{ label: 'Programma Produzione', href: '/produzione' }}
+        title="Impostazioni"
+        description="Aree, categorie, parole chiave e colori del foglio di produzione."
+      />
 
-      <div className="flex gap-1 mb-6 border-b border-gray-200 overflow-x-auto">
-        {TABS.map(t => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-              tab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
+      <Tabs tabs={TABS} value={tab} onChange={setTab} />
 
       {tab === 'Aree' && <TabAree />}
       {tab === 'Categoria - Area' && <TabCategoriaArea />}

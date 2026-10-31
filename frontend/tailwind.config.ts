@@ -1,5 +1,8 @@
 import type { Config } from 'tailwindcss';
 
+// Design tokens STR. Il rosso del logo (#E00010) è solo l'accento di marca
+// (voce attiva, dettagli); l'azione primaria è grigio scuro, come la sidebar.
+// Il "pericolo" usa un rosso più spento (danger) per non confondersi col brand.
 const config: Config = {
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
@@ -7,7 +10,46 @@ const config: Config = {
     './src/app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        brand: {
+          DEFAULT: '#E00010',
+          dark:    '#B8000D',
+          soft:    '#FDECEE',
+        },
+        ink: {
+          950: '#141416',
+          900: '#1C1C1F',
+          800: '#27272A',
+          700: '#3F3F46',
+        },
+        // Celeste (dalla foto di riferimento): evidenziazioni, stati attivi, info.
+        // Per il testo usare accent-ink: il celeste pieno non ha abbastanza contrasto.
+        accent: {
+          DEFAULT: '#8DB8F0',
+          soft:    '#E9F2FD',
+          ink:     '#2B5BA8',
+        },
+        canvas: '#F4F4F2',
+        line:   '#E7E5E4',
+        muted:  '#636369',
+        success: { DEFAULT: '#166534', soft: '#E4F4EA' },
+        warning: { DEFAULT: '#92400E', soft: '#FEF1D6' },
+        danger:  { DEFAULT: '#B42318', soft: '#FEE4E2' },
+        info:    { DEFAULT: '#2B5BA8', soft: '#E9F2FD' },
+      },
+      fontFamily: {
+        sans: ['var(--font-sans)', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'system-ui', 'sans-serif'],
+      },
+      borderRadius: {
+        card: '20px',
+        ctl:  '12px',
+      },
+      boxShadow: {
+        card:  '0 1px 2px rgba(20, 20, 22, 0.04)',
+        float: '0 8px 24px rgba(20, 20, 22, 0.10)',
+      },
+    },
   },
   plugins: [],
 };

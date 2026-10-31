@@ -23,7 +23,7 @@ export function InfoCartella({ stato }: { stato: StatoCartella | null }) {
   const { config, in_corso, letture } = stato;
   const ultima = letture.find(l => l.finito_at);
   return (
-    <p className="mt-1 text-xs text-gray-500">
+    <p className="mt-1 text-xs text-muted">
       {!config.percorso ? 'Cartella degli Excel non ancora scelta (Impostazioni, Cartella Excel).'
         : in_corso ? 'Lettura della cartella in corso…'
         : ultima ? `Ultima lettura ${quando(ultima.finito_at)} (${ultima.tipo === 'auto' ? 'automatica' : 'manuale'}): ${riassunto(ultima)}`

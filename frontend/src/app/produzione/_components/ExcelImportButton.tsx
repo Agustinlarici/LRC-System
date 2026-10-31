@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
+import { Button } from '@/components/ui/Button';
 
 interface ImportResult {
   total_rows: number;
@@ -49,19 +50,15 @@ export function ExcelImportButton({ endpoint, onDone, label = 'Carica Excel' }: 
   return (
     <div className="inline-block">
       <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={onFileChange} />
-      <button
-        onClick={() => inputRef.current?.click()}
-        disabled={loading}
-        className="text-sm border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
-      >
-        {loading ? 'Importazione...' : `📥 ${label}`}
-      </button>
+      <Button onClick={() => inputRef.current?.click()} disabled={loading}>
+        {loading ? 'Importazione...' : label}
+      </Button>
 
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-1 text-xs text-danger">{error}</p>}
       {result && (
-        <p className="mt-1 text-xs text-gray-500">
-          Lette: {result.total_rows} · Caricate: <span className="text-green-600">{result.upserted}</span>
-          {result.skipped > 0 && <> · Saltate: <span className="text-yellow-600">{result.skipped}</span></>}
+        <p className="mt-1 text-xs text-muted">
+          Lette: {result.total_rows} · Caricate: <span className="text-success">{result.upserted}</span>
+          {result.skipped > 0 && <> · Saltate: <span className="text-warning">{result.skipped}</span></>}
           {result.warnings.length > 0 && (
             <details className="mt-0.5">
               <summary className="cursor-pointer text-orange-600">{result.warnings.length} avvisi</summary>

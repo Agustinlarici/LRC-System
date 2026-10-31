@@ -1,29 +1,17 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import type { ProdArea, ProdSheetRow } from '@/types';
 import { SheetTable } from '../_components/SheetTable';
+import { FilterField } from '../_components/FilterField';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Button } from '@/components/ui/Button';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { SkeletonTable } from '@/components/ui/Skeleton';
 
 const PAGE_SIZE = 500;
-
-const btnBase      = 'inline-flex items-center gap-1 text-sm font-medium px-3 py-2 rounded-lg transition-colors';
-const btnPrimary   = `${btnBase} bg-blue-600 text-white hover:bg-blue-700`;
-const btnSecondary = `${btnBase} bg-white border border-gray-200 text-gray-700 hover:bg-gray-50`;
-const btnDark      = `${btnBase} bg-gray-700 text-white hover:bg-gray-800`;
-
-// Wrapper con label sopra ogni campo filtro — così tutti i controlli hanno la
-// stessa altezza/allineamento invece di mischiare input "nudi" e con label.
-function FilterField({ label, highlight, children }: { label: string; highlight?: boolean; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label className={`text-xs font-medium ${highlight ? 'text-blue-700' : 'text-gray-400'}`}>{label}</label>
-      {children}
-    </div>
-  );
-}
 
 // Limite righe mostrate/stampate di default — evita di mandare in stampa
 // 500 righe per sbaglio quando non c'è nessun altro filtro attivo.
@@ -112,65 +100,47 @@ export default function ProduzioneAreaSheetPage() {
     return fMax.trim() && Number.isFinite(max) && max > 0 ? filtered.slice(0, max) : filtered;
   }, [rows, fCommessa, fCodice, fOrigine, fStato, fColore, fCaratt, fMax]);
 
-  const selectClass = 'border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500';
-  const inputClass  = 'border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+  const selectClass = 'input';
+  const inputClass  = 'input';
 
   if (loading) {
-    return <p className="text-gray-400 pt-10 text-center">Caricamento in corso...</p>;
+    return <SkeletonTable rows={10} cols={8} />;
   }
   if (error) {
-    return <div className="p-4 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>;
+    return <div className="p-4 bg-danger-soft text-danger rounded-ctl text-sm">{error}</div>;
   }
 
   return (
     <div>
-      {/* ── Header + filtri: un'unica card, così tutto sopra la tabella è
-          allineato in modo coerente invece di due blocchi separati. ────── */}
-      <div className="d-print-none bg-white rounded-xl border border-gray-200 p-5 mb-6 space-y-4">
-        {/* Titolo area + azioni */}
-        <div className="flex items-start justify-between flex-wrap gap-3 pb-4 border-b border-gray-100">
-          <div>
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Programma Produzione</p>
-              <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full ${
-                storico ? 'bg-gray-100 text-gray-600' : 'bg-red-50 text-red-600'
-              }`}>
-                {storico ? 'Storico ordini spediti' : 'Area di montaggio'}
-              </span>
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900 mt-1">{area?.description}</h1>
-          </div>
-          <div className="flex gap-2">
-            <Link href="/produzione" className={btnSecondary}>← Programma Produzione</Link>
-            <button
-              onClick={() => setStorico(s => !s)}
-              className={storico ? btnDark : btnSecondary}
-            >
+      <PageHeader
+        back={{ label: 'Programma Produzione', href: '/produzione' }}
+        title={area?.description ?? ''}
+        badge={
+          <StatusBadge tone={storico ? 'neutral' : 'info'}>
+            {storico ? 'Storico ordini spediti' : 'Area di montaggio'}
+          </StatusBadge>
+        }
+        actions={
+          <>
+            <Button onClick={() => setStorico(s => !s)}>
               {storico ? '← Torna al foglio' : 'Vedi storico'}
-            </button>
-            <button
-              onClick={() => window.print()}
-              className={btnPrimary}
-            >
-              🖨️ Stampa
-            </button>
-          </div>
-        </div>
+            </Button>
+            <Button variant="primary" onClick={() => window.print()}>Stampa</Button>
+          </>
+        }
+      />
 
+      <div className="bg-white rounded-card shadow-card overflow-hidden print:shadow-none print:rounded-none print:overflow-visible">
+      <div className="d-print-none p-5 border-b border-line">
         {/* Filtri */}
         <div>
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <h2 className="text-sm font-semibold text-gray-700">Filtri</h2>
-            <div className="flex items-center gap-3">
-              <p className="text-xs text-gray-400">
-                Mostrando <span className="font-medium text-gray-600">{filteredRows.length}</span> di {rows.length} righe
-              </p>
-              {hasActiveFilters && (
-                <button onClick={resetFiltri} className={btnSecondary}>
-                  Cancella filtri
-                </button>
-              )}
-            </div>
+            <p className="text-sm text-muted">
+              <span className="font-semibold text-ink-900">{filteredRows.length}</span> di {rows.length} righe
+            </p>
+            {hasActiveFilters && (
+              <Button variant="ghost" onClick={resetFiltri}>Cancella filtri</Button>
+            )}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
             <FilterField label="Commessa">
@@ -208,7 +178,7 @@ export default function ProduzioneAreaSheetPage() {
             <FilterField label="Righe da mostrare" highlight>
               <input id="fMax" value={fMax} onChange={e => setFMax(e.target.value)} type="number" min={1} placeholder="Tutte"
                 title="Numero massimo di righe da mostrare/stampare — vuoto = tutte"
-                className="w-full border border-blue-200 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-blue-900 bg-blue-50 text-center focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                className="input text-center font-semibold !bg-accent-soft" />
             </FilterField>
           </div>
         </div>
@@ -222,12 +192,13 @@ export default function ProduzioneAreaSheetPage() {
         <div className="only-print mb-4 text-center">
           <h1 className="text-2xl font-bold text-gray-900">Programma Produzione</h1>
           <p className="text-gray-500">
-            {storico ? 'Storico ordini spediti' : 'Area di montaggio'}: <span className="text-red-600 font-medium">{area?.description}</span>
+            {storico ? 'Storico ordini spediti' : 'Area di montaggio'}: <span className="text-accent-ink font-medium">{area?.description}</span>
           </p>
         </div>
 
         <SheetTable rows={filteredRows} />
 
+      </div>
       </div>
     </div>
   );

@@ -6,6 +6,7 @@ import { Sidebar } from './Sidebar';
 import { ToastProvider } from '@/components/ui/Toast';
 import { useAuth } from '@/lib/auth';
 import type { ModuleKey } from '@/types';
+import { isKioskPath } from '@/lib/kiosk';
 
 // ─── Route → module mapping ───────────────────────────────────────────────────
 
@@ -42,7 +43,7 @@ function AccessDenied() {
     <div className="flex-1 h-full flex items-center justify-center">
       <div className="text-center max-w-sm">
         <div className="text-5xl mb-4">🔒</div>
-        <h1 className="text-xl font-bold text-gray-800 mb-2">Accesso negato</h1>
+        <h1 className="text-xl font-semibold text-ink-900 mb-2">Accesso negato</h1>
         <p className="text-sm text-gray-500">
           Non hai i permessi per accedere a questo modulo.<br />
           Contatta l'amministratore.
@@ -56,9 +57,9 @@ function AccessDenied() {
 
 function LoadingShell() {
   return (
-    <div className="w-full min-h-screen flex items-center justify-center bg-slate-50">
+    <div className="w-full min-h-screen flex items-center justify-center bg-canvas">
       <div className="flex flex-col items-center gap-3">
-        <div className="w-10 h-10 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin" />
+        <div className="w-10 h-10 border-4 border-gray-200 border-t-ink-800 rounded-full animate-spin" />
         <p className="text-sm text-gray-400">Caricamento…</p>
       </div>
     </div>
@@ -76,6 +77,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isFullscreen = pathname === '/login' || pathname === '/device-pair' || pathname === '/cambio-password';
   const isTablet     = pathname.endsWith('/tablet') || pathname.startsWith('/qualita/tablet/');
   const isMonitor    = /^\/monitor\/\d+/.test(pathname);
+
+  // Schermate kiosk: stile originale (vedi lib/kiosk.ts e .legacy-ui in globals.css)
+  useEffect(() => {
+    document.documentElement.classList.toggle('legacy-ui', isKioskPath(pathname));
+  }, [pathname]);
 
   // Redirect to login if not authenticated (after loading)
   useEffect(() => {
@@ -135,13 +141,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <ToastProvider>
       <Sidebar />
-      <div className="flex-1 min-w-0 h-full bg-zinc-900 p-1.5 print:p-0 print:bg-white print:h-auto">
-        <main className="h-full overflow-auto bg-white rounded-2xl shadow-sm print:overflow-visible print:w-full print:rounded-none print:shadow-none">
-          {hasAccess
-            ? <div className="p-6">{children}</div>
-            : <AccessDenied />
-          }
-        </main>
+      <div className="flex-1 min-w-0 h-full bg-ink-900 p-2 print:p-0 print:bg-white print:h-auto">
+        <div className="h-full flex flex-col bg-canvas rounded-3xl overflow-hidden print:overflow-visible print:w-full print:rounded-none print:h-auto print:bg-white">
+          <main className="flex-1 min-h-0 overflow-auto print:overflow-visible">
+            {hasAccess
+              ? <div className="p-6 pb-8 print:p-6">{children}</div>
+              : <AccessDenied />
+            }
+          </main>
+        </div>
       </div>
     </ToastProvider>
   );
