@@ -6,22 +6,12 @@ import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import type { ProdArea, ProdSheetRow } from '@/types';
 import { SheetTable } from '../_components/SheetTable';
+import { FilterField } from '../_components/FilterField';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 
 const PAGE_SIZE = 500;
-
-// Wrapper con label sopra ogni campo filtro — così tutti i controlli hanno la
-// stessa altezza/allineamento invece di mischiare input "nudi" e con label.
-function FilterField({ label, highlight, children }: { label: string; highlight?: boolean; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label className={`text-xs font-medium ${highlight ? 'text-accent-ink' : 'text-muted'}`}>{label}</label>
-      {children}
-    </div>
-  );
-}
 
 // Limite righe mostrate/stampate di default — evita di mandare in stampa
 // 500 righe per sbaglio quando non c'è nessun altro filtro attivo.
@@ -188,7 +178,7 @@ export default function ProduzioneAreaSheetPage() {
             <FilterField label="Righe da mostrare" highlight>
               <input id="fMax" value={fMax} onChange={e => setFMax(e.target.value)} type="number" min={1} placeholder="Tutte"
                 title="Numero massimo di righe da mostrare/stampare — vuoto = tutte"
-                className="input text-center font-semibold bg-accent-soft" />
+                className="input text-center font-semibold !bg-accent-soft" />
             </FilterField>
           </div>
         </div>
