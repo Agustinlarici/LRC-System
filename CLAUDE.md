@@ -56,8 +56,7 @@ shellcheck -S warning scripts/backup/*.sh scripts/monitor/*.sh deploy.sh   # se 
 Il design è unificato con token e componenti. **Non usare colori Tailwind diretti** (`gray-*`,
 `blue-*`, `red-*`...) né `rounded-lg/xl` nelle pagine nuove o migrate: usare i token.
 
-- **Token** in `frontend/tailwind.config.ts`: `brand` (rosso STR: solo marchio, voce attiva del
-  menu, contatori), `ink` (grigio scuro = azione primaria, come il menu), `accent` (celeste:
+- **Token** in `frontend/tailwind.config.ts`: `brand` (rosso STR: solo marchio e contatori; la voce attiva del menu è celeste `accent`), `ink` (grigio scuro = azione primaria, come il menu), `accent` (celeste:
   evidenziazioni, focus, info; per il testo `accent-ink`), `canvas`, `line`, `muted` (testo
   secondario), `success/warning/danger/info`, raggi `rounded-card`/`rounded-ctl`, ombre
   `shadow-card`/`shadow-float`. Il rosso STR **non** indica errori: per quelli c'è `danger`.

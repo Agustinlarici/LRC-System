@@ -1,7 +1,7 @@
 import type { Config } from 'tailwindcss';
 
 // Design tokens STR. Il rosso del logo (#E00010) è solo l'accento di marca
-// (voce attiva, dettagli); l'azione primaria è grigio scuro, come la sidebar.
+// (marchio, contatori); l'azione primaria è grigio scuro, come la sidebar.
 // Il "pericolo" usa un rosso più spento (danger) per non confondersi col brand.
 const config: Config = {
   content: [
