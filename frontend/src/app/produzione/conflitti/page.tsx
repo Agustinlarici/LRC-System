@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { api } from '@/lib/api';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Button } from '@/components/ui/Button';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import type { ProdComponentConflict, ProdComponentConflictCandidate } from '@/types';
 
 // Per un Forecast, la "Recency" mostrata è il file_mtime grezzo (stessa
@@ -66,49 +68,41 @@ export default function ProduzioneConflittiPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <Link href="/produzione" className="inline-flex items-center gap-1 text-sm font-medium px-3 py-2 rounded-lg transition-colors bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 mb-3">← Programma Produzione</Link>
-        <h1 className="text-3xl font-bold text-gray-900 mt-2">Componenti duplicati da verificare in Dynamics</h1>
-        <p className="mt-1 text-gray-500">
-          Più di un articolo della stessa categoria componente per la stessa commessa —
-          probabile duplicato in Business Central (o forecast EDI) da chiudere/correggere a mano.
-          Il foglio di lavoro mostra già solo l&apos;articolo in uso (evidenziato qui sotto).
-          Le righe in rosso indicano codici diversi registrati/scansionati lo stesso giorno —
-          il caso più probabile di doppione da controllare per primo.
-        </p>
-      </div>
+      <PageHeader
+        back={{ label: 'Programma Produzione', href: '/produzione' }}
+        title="Duplicati da verificare"
+        description="Più articoli della stessa categoria componente per la stessa commessa: probabile duplicato in Business Central (o forecast EDI) da chiudere o correggere a mano. Il foglio mostra già solo l'articolo in uso. Le righe rosse indicano codici diversi registrati lo stesso giorno: da controllare per primi."
+      />
 
       {loading ? (
-        <p className="text-gray-400">Caricamento...</p>
+        <p className="text-muted">Caricamento...</p>
       ) : error ? (
-        <div className="p-4 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>
+        <div className="p-4 bg-danger-soft text-danger rounded-ctl text-sm">{error}</div>
       ) : conflicts.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400">
-          Nessun duplicato trovato. 🎉
+        <div className="bg-white rounded-card shadow-card p-12 text-center text-muted">
+          Nessun duplicato trovato.
         </div>
       ) : (
         <div className="space-y-4">
           {sortedConflicts.map((c, i) => (
-            <div key={i} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+            <div key={i} className="bg-white rounded-card shadow-card overflow-hidden">
+              <div className="px-5 py-3 border-b border-line flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-gray-800">{c.categoria}</span>
-                  <span className="text-gray-400">·</span>
-                  <span className="font-mono text-gray-600">Commessa {c.commessa}</span>
+                  <span className="font-semibold text-ink-900">{c.categoria}</span>
+                  <span className="text-muted">·</span>
+                  <span className="font-mono text-ink-700">Commessa {c.commessa}</span>
                   {c.overridden && (
-                    <span className="text-xs text-blue-700 bg-blue-100 px-2 py-0.5 rounded font-medium">Scelta manuale</span>
+                    <StatusBadge tone="info">Scelta manuale</StatusBadge>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
                   {c.overridden && (
-                    <button onClick={() => tornaAutomatico(c)} disabled={busyKey === `${c.categoria}|${c.commessa}`}
-                      className="text-xs text-gray-500 hover:text-gray-700 underline disabled:opacity-50">
+                    <Button variant="ghost" onClick={() => tornaAutomatico(c)} disabled={busyKey === `${c.categoria}|${c.commessa}`}
+                      className="!px-2 !py-1 !text-xs">
                       Torna automatico
-                    </button>
+                    </Button>
                   )}
-                  <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded font-medium">
-                    {c.candidates.length} articoli trovati
-                  </span>
+                  <StatusBadge tone="warning">{c.candidates.length} articoli trovati</StatusBadge>
                 </div>
               </div>
               <table className="w-full text-sm table-fixed">
@@ -123,7 +117,7 @@ export default function ProduzioneConflittiPage() {
                   <col className="w-[15%]" />
                 </colgroup>
                 <thead>
-                  <tr className="text-gray-500 border-b border-gray-100">
+                  <tr className="text-[11px] uppercase tracking-wider text-muted border-b border-stone-100">
                     <th className="py-2 px-4 text-left font-medium">Codice</th>
                     <th className="py-2 px-4 text-left font-medium">Descrizione</th>
                     <th className="py-2 px-4 text-left font-medium">Descrizione aggiuntiva</th>
@@ -138,8 +132,8 @@ export default function ProduzioneConflittiPage() {
                   {c.candidates.map((cand, j) => (
                     <tr
                       key={j}
-                      className={`border-b border-gray-50 last:border-0 ${
-                        cand.stesso_giorno_altro_codice ? 'bg-red-50' : cand.is_winner ? 'bg-green-50' : ''
+                      className={`border-b border-stone-100 last:border-0 ${
+                        cand.stesso_giorno_altro_codice ? 'bg-danger-soft' : cand.is_winner ? 'bg-success-soft/60' : ''
                       }`}
                       title={cand.stesso_giorno_altro_codice
                         ? 'Un altro codice articolo di questo gruppo ha la stessa data di registrazione/scansione'
@@ -148,42 +142,40 @@ export default function ProduzioneConflittiPage() {
                       <td className="py-2 px-4 font-mono truncate" title={cand.codice_articolo}>
                         {cand.codice_articolo}
                         {cand.stesso_giorno_altro_codice && (
-                          <span className="ml-1.5 text-red-600" title="Stesso giorno di un altro codice articolo">⚠</span>
+                          <span className="ml-1.5 text-danger" title="Stesso giorno di un altro codice articolo">⚠</span>
                         )}
                       </td>
-                      <td className="py-2 px-4 text-gray-600 truncate" title={cand.descrizione ?? undefined}>
+                      <td className="py-2 px-4 text-ink-700 truncate" title={cand.descrizione ?? undefined}>
                         {cand.descrizione ?? '–'}
                       </td>
-                      <td className="py-2 px-4 text-gray-600 truncate" title={cand.descrizione_estesa ?? undefined}>
+                      <td className="py-2 px-4 text-ink-700 truncate" title={cand.descrizione_estesa ?? undefined}>
                         {cand.descrizione_estesa ?? '–'}
                       </td>
                       <td className="py-2 px-4">
-                        <span className={`inline-block text-xs px-2 py-0.5 rounded font-medium ${
-                          cand.fonte_ordine === 'confermato' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                        }`}>
+                        <StatusBadge tone={cand.fonte_ordine === 'confermato' ? 'success' : 'warning'}>
                           {cand.fonte_ordine === 'confermato' ? 'Confermato' : 'Forecast'}
-                        </span>
+                        </StatusBadge>
                       </td>
-                      <td className="py-2 px-4 text-gray-500 truncate" title={cand.edi_source_file ?? undefined}>
-                        {cand.edi_source_file ?? <span className="text-gray-300">–</span>}
+                      <td className="py-2 px-4 text-muted truncate" title={cand.edi_source_file ?? undefined}>
+                        {cand.edi_source_file ?? <span className="text-stone-300">–</span>}
                       </td>
-                      <td className={`py-2 px-4 truncate ${cand.stesso_giorno_altro_codice ? 'text-red-700 font-medium' : 'text-gray-500'}`}>
+                      <td className={`py-2 px-4 truncate ${cand.stesso_giorno_altro_codice ? 'text-danger font-medium' : 'text-muted'}`}>
                         {fmtRecency(cand)}
                       </td>
                       <td className="py-2 px-4 text-center">
-                        {cand.is_winner ? '✅' : <span className="text-gray-300">—</span>}
+                        {cand.is_winner ? '✓' : <span className="text-stone-300">—</span>}
                       </td>
                       <td className="py-2 px-4 text-center">
                         {cand.is_winner ? (
-                          <span className="text-gray-300">—</span>
+                          <span className="text-stone-300">—</span>
                         ) : (
-                          <button
+                          <Button
                             onClick={() => scegli(c, cand.codice_articolo)}
                             disabled={busyKey === `${c.categoria}|${c.commessa}`}
-                            className="text-xs text-blue-600 border border-blue-200 px-2 py-1 rounded hover:bg-blue-50 disabled:opacity-50"
+                            className="!px-3 !py-1 !text-xs"
                           >
                             Usa questo
-                          </button>
+                          </Button>
                         )}
                       </td>
                     </tr>
