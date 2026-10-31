@@ -260,3 +260,37 @@ th.sheet-sticky { z-index: 15; background-color: #fff; }
   .org-print-zoom { zoom: var(--print-zoom, 1); }
   .org-tree li, .org-node { break-inside: avoid; }
 }
+
+/* ─── Schermate kiosk: aspetto ORIGINALE ────────────────────────────────────────
+   html.legacy-ui è impostato per andon, mappa fullscreen, modalità tablet e pairing
+   (vedi lib/kiosk.ts). Qui si ripristinano font e classi globali com'erano prima del
+   nuovo design, così queste schermate non cambiano. */
+html.legacy-ui body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  color: #0f172a;
+  background: #f8fafc;
+  -webkit-font-smoothing: auto;
+}
+html.legacy-ui .btn-primary,
+html.legacy-ui .btn-secondary,
+html.legacy-ui .btn-danger {
+  display: inline-block; gap: 0; font-size: 1rem; line-height: 1.5rem; border: 0; transform: none;
+  justify-content: normal; align-items: normal;
+}
+html.legacy-ui .btn-primary { @apply bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed; }
+html.legacy-ui .btn-secondary { @apply bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-4 py-2 rounded-lg transition-colors; }
+html.legacy-ui .btn-danger { @apply bg-red-500 hover:bg-red-600 text-white font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50; }
+html.legacy-ui .btn-primary:active, html.legacy-ui .btn-secondary:active, html.legacy-ui .btn-danger:active { transform: none; }
+html.legacy-ui .card { @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6; }
+html.legacy-ui .input {
+  @apply w-full bg-transparent border border-gray-300 rounded-lg px-3 py-2 text-sm
+         focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+  transition: none;
+}
+html.legacy-ui .input:focus { background: transparent; box-shadow: 0 0 0 2px #3b82f6; }
+html.legacy-ui .label { @apply block text-sm font-medium text-gray-700 mb-1; }
+html.legacy-ui .badge-pending   { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800; }
+html.legacy-ui .badge-confirmed { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800; }
+html.legacy-ui .badge-sent      { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800; }
+html.legacy-ui .badge-skipped   { @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700; }
+html.legacy-ui .skeleton { @apply bg-gray-200 rounded animate-pulse; }

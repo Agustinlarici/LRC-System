@@ -6,6 +6,7 @@ import { Sidebar } from './Sidebar';
 import { ToastProvider } from '@/components/ui/Toast';
 import { useAuth } from '@/lib/auth';
 import type { ModuleKey } from '@/types';
+import { isKioskPath } from '@/lib/kiosk';
 
 // ─── Route → module mapping ───────────────────────────────────────────────────
 
@@ -76,6 +77,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isFullscreen = pathname === '/login' || pathname === '/device-pair' || pathname === '/cambio-password';
   const isTablet     = pathname.endsWith('/tablet') || pathname.startsWith('/qualita/tablet/');
   const isMonitor    = /^\/monitor\/\d+/.test(pathname);
+
+  // Schermate kiosk: stile originale (vedi lib/kiosk.ts e .legacy-ui in globals.css)
+  useEffect(() => {
+    document.documentElement.classList.toggle('legacy-ui', isKioskPath(pathname));
+  }, [pathname]);
 
   // Redirect to login if not authenticated (after loading)
   useEffect(() => {

@@ -3,6 +3,7 @@ import localFont from 'next/font/local';
 import '@/app/globals.css';
 import { AuthProvider } from '@/lib/auth';
 import { AppShell } from '@/components/layout/AppShell';
+import { KIOSK_PATTERN } from '@/lib/kiosk';
 
 // Outfit (OFL) incluso nel progetto: nessun download da Google, funziona anche offline.
 const sans = localFont({
@@ -22,7 +23,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="it" className={`h-full ${sans.variable}`}>
+    <html lang="it" className={`h-full ${sans.variable}`} suppressHydrationWarning>
+      <head>
+        {/* Prima del primo disegno: le schermate kiosk (andon, tablet...) restano con lo stile originale */}
+        <script dangerouslySetInnerHTML={{ __html: `if(new RegExp(${JSON.stringify(KIOSK_PATTERN)}).test(location.pathname))document.documentElement.classList.add('legacy-ui')` }} />
+      </head>
       <body className="h-full flex font-sans">
         <AuthProvider>
           <AppShell>{children}</AppShell>
