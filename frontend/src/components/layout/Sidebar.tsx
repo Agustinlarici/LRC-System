@@ -78,6 +78,7 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/admin/monitor/motivi':    'monitor_motivi',
   '/qualita':                 'qualita',
   '/produzione':              'programma_produzione',
+  '/ferrari':                 'ferrari_schede',
   '/hr':                      'hr',
   '/hr/dipendenti':           'hr',
   '/hr/scadenze':             'hr',

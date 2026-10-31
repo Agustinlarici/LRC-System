@@ -31,6 +31,7 @@ function getModuleForPath(pathname: string): { key: ModuleKey | ModuleKey[]; nee
   if (pathname.startsWith('/qualita/impostazioni'))  return { key: 'qualita', needsManage: true };
   if (pathname.startsWith('/qualita'))               return { key: 'qualita' };
   if (pathname.startsWith('/produzione'))            return { key: 'programma_produzione' };
+  if (pathname.startsWith('/ferrari'))               return { key: 'ferrari_schede' };
   return null;
 }
 
