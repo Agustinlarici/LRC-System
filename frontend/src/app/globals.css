@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Colore che evidenzia (celeste). Un modulo lo cambia con una classe tema. */
+  --accent:      141 184 240;  /* #8DB8F0 */
+  --accent-soft: 233 242 253;  /* #E9F2FD */
+  --accent-ink:  43 91 168;    /* #2B5BA8 */
+}
+/* Tema HR: viola/rosa al posto del celeste (stessi ruoli: evidenziazione, focus, testo accent-ink). */
+.theme-hr {
+  --accent:      201 130 230;  /* #C982E6 */
+  --accent-soft: 249 235 252;  /* #F9EBFC */
+  --accent-ink:  134 40 160;   /* #8628A0 */
+}
+
 body {
   color: #18181b;
   background: theme('colors.canvas');

@@ -25,10 +25,12 @@ const config: Config = {
         },
         // Celeste (dalla foto di riferimento): evidenziazioni, stati attivi, info.
         // Per il testo usare accent-ink: il celeste pieno non ha abbastanza contrasto.
+        // I valori vengono da variabili CSS (globals.css): il default è il celeste; un modulo può
+        // cambiarlo con una classe tema (es. .theme-hr = viola/rosa) senza toccare i componenti.
         accent: {
-          DEFAULT: '#8DB8F0',
-          soft:    '#E9F2FD',
-          ink:     '#2B5BA8',
+          DEFAULT: 'rgb(var(--accent) / <alpha-value>)',
+          soft:    'rgb(var(--accent-soft) / <alpha-value>)',
+          ink:     'rgb(var(--accent-ink) / <alpha-value>)',
         },
         canvas: '#F4F4F2',
         line:   '#E7E5E4',

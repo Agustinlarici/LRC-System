@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import type { HrEmployee } from '@/types';
 import { resizePhoto, rankCandidates, matchLevel, type MatchLevel, type PhotoCandidate } from '@/lib/hrPhoto';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -27,9 +27,9 @@ interface Row {
 }
 
 const LEVEL_STYLE: Record<MatchLevel, string> = {
-  green: 'bg-green-50 text-green-700 border-green-200',
-  yellow: 'bg-amber-50 text-amber-700 border-amber-200',
-  red: 'bg-red-50 text-red-700 border-red-200',
+  green: 'bg-success-soft text-success border-success/30',
+  yellow: 'bg-warning-soft text-warning border-warning/30',
+  red: 'bg-danger-soft text-danger border-danger/30',
 };
 const LEVEL_LABEL: Record<MatchLevel, string> = { green: 'Sicuro', yellow: 'Da verificare', red: 'Nessun abbinamento' };
 
@@ -148,16 +148,14 @@ export default function FotoMassivaPage() {
   };
   const visible = rows.filter(r => filter === 'all' || r.level === filter);
 
-  if (!manage) return <p className="text-sm text-gray-500 text-center py-16">Non hai i permessi per caricare le foto.</p>;
+  if (!manage) return <p className="text-sm text-muted text-center py-16">Non hai i permessi per caricare le foto.</p>;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <Link href="/hr/dipendenti" className="text-xs text-gray-400 hover:text-gray-600">← Dipendenti</Link>
-          <h1 className="text-lg font-medium text-gray-900">Carica foto in blocco</h1>
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        title="Carica foto in blocco"
+        back={{ label: 'Dipendenti', href: '/hr/dipendenti' }}
+        actions={<>
           <label className="btn-secondary text-sm cursor-pointer">
             Scegli cartella
             <input type="file" className="hidden" multiple disabled={running || loading}
@@ -169,23 +167,23 @@ export default function FotoMassivaPage() {
             <input type="file" className="hidden" multiple accept="image/*,.pdf" disabled={running || loading}
               onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
           </label>
-        </div>
-      </div>
+        </>}
+      />
 
       {rows.length === 0 ? (
-        <div className="card text-sm text-gray-500 space-y-1">
+        <div className="card text-sm text-muted space-y-1">
           <p>Scegli la cartella con le foto: il nome del file (es. <b>ROSSI MARIO.jpg</b> o <b>Mario Rossi.jpeg</b>) si abbina al dipendente, in qualsiasi ordine e anche con piccoli errori di battitura.</p>
           <p>Prima del caricamento puoi controllare e correggere ogni abbinamento. Le foto vengono ridimensionate a 700 px.</p>
-          {loading && <p className="text-gray-400">Caricamento dipendenti…</p>}
+          {loading && <p className="text-muted">Caricamento dipendenti…</p>}
         </div>
       ) : (
         <>
           <div className="flex items-center gap-2 flex-wrap text-sm">
             {([['all', `Tutte (${rows.length})`], ['green', `Sicure (${counts.green})`], ['yellow', `Da verificare (${counts.yellow})`], ['red', `Senza abbinamento (${counts.red})`]] as const).map(([k, label]) => (
               <button key={k} type="button" onClick={() => setFilter(k)}
-                className={`px-3 py-1 rounded-full border text-xs ${filter === k ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}>{label}</button>
+                className={`px-3 py-1 rounded-full border text-xs ${filter === k ? 'bg-accent-soft border-accent text-accent-ink font-medium' : 'border-line text-muted hover:bg-stone-50'}`}>{label}</button>
             ))}
-            <label className="flex items-center gap-2 text-xs text-gray-600 ml-auto">
+            <label className="flex items-center gap-2 text-xs text-muted ml-auto">
               <input type="checkbox" checked={overwrite} onChange={e => setOverwrite(e.target.checked)} disabled={running} />
               Sostituisci le foto già presenti
             </label>
@@ -196,14 +194,14 @@ export default function FotoMassivaPage() {
           </div>
 
           {(counts.done > 0 || counts.error > 0 || counts.skipped > 0) && (
-            <p className="text-sm text-gray-600">
-              Caricate: <b className="text-green-700">{counts.done}</b>
-              {counts.error > 0 && <> · Errori: <b className="text-red-700">{counts.error}</b></>}
+            <p className="text-sm text-muted">
+              Caricate: <b className="text-success">{counts.done}</b>
+              {counts.error > 0 && <> · Errori: <b className="text-danger">{counts.error}</b></>}
               {counts.skipped > 0 && <> · Saltate: <b>{counts.skipped}</b></>}
             </p>
           )}
 
-          <div className="card !p-0 divide-y divide-gray-100">
+          <div className="card !p-0 divide-y divide-stone-100">
             {visible.map(r => {
               const reason = r.status === 'idle' ? skipReason(r) : null;
               const options = r.candidates.map(c => byId.get(c.id)).filter((e): e is HrEmployee => !!e);
@@ -211,10 +209,10 @@ export default function FotoMassivaPage() {
                 <div key={r.key} className="flex items-center gap-3 p-3">
                   {r.url
                     // eslint-disable-next-line @next/next/no-img-element
-                    ? <img src={r.url} alt="" loading="lazy" className="w-12 h-12 rounded-full object-cover bg-gray-100 shrink-0" />
-                    : <div className="w-12 h-12 rounded-full bg-gray-100 text-[10px] text-gray-400 flex items-center justify-center shrink-0">N/D</div>}
+                    ? <img src={r.url} alt="" loading="lazy" className="w-12 h-12 rounded-full object-cover bg-stone-100 shrink-0" />
+                    : <div className="w-12 h-12 rounded-full bg-stone-100 text-[10px] text-muted flex items-center justify-center shrink-0">N/D</div>}
                   <div className="w-64 min-w-0">
-                    <p className="text-sm text-gray-800 truncate" title={r.file.name}>{r.file.name}</p>
+                    <p className="text-sm text-ink-800 truncate" title={r.file.name}>{r.file.name}</p>
                     <span className={`inline-block mt-0.5 text-[11px] border rounded-full px-2 ${LEVEL_STYLE[r.level]}`}>{LEVEL_LABEL[r.level]}</span>
                   </div>
                   <select
@@ -232,11 +230,11 @@ export default function FotoMassivaPage() {
                     </optgroup>
                   </select>
                   <div className="w-44 text-xs text-right shrink-0">
-                    {r.status === 'done' && <span className="text-green-700">Caricata ✓</span>}
-                    {r.status === 'uploading' && <span className="text-gray-400">Caricamento…</span>}
-                    {r.status === 'error' && <span className="text-red-600">{r.message}</span>}
-                    {r.status === 'skipped' && <span className="text-gray-500">Saltata: {r.message}</span>}
-                    {r.status === 'idle' && reason && <span className="text-gray-400">{reason}</span>}
+                    {r.status === 'done' && <span className="text-success">Caricata ✓</span>}
+                    {r.status === 'uploading' && <span className="text-muted">Caricamento…</span>}
+                    {r.status === 'error' && <span className="text-danger">{r.message}</span>}
+                    {r.status === 'skipped' && <span className="text-muted">Saltata: {r.message}</span>}
+                    {r.status === 'idle' && reason && <span className="text-muted">{reason}</span>}
                   </div>
                 </div>
               );

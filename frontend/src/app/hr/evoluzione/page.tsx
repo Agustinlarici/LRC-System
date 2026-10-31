@@ -6,12 +6,14 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import type { HrEvolutionPoint } from '@/types';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { SkeletonTable } from '@/components/ui/Skeleton';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
-const PALETTE = ['#2563eb', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
+const PALETTE = ['#B04FD0', '#2563eb', '#f59e0b', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#ef4444'];
 type Period = '6' | '12' | '60' | '120' | 'all' | 'custom';
 const PERIOD_OPTIONS: { key: Period; label: string }[] = [
   { key: '6', label: '6 mesi' }, { key: '12', label: '12 mesi' }, { key: '60', label: '5 anni' },
@@ -34,16 +36,16 @@ function StackTooltip({ active, payload, label }: any) {
   const shown = rows.slice(0, 8);
   const rest = rows.slice(8).reduce((s: number, r: any) => s + r.value, 0);
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2 text-xs w-56">
-      <p className="font-medium text-gray-700 mb-1">{label} <span className="text-gray-400 font-normal">· totale {total}</span></p>
+    <div className="bg-white border border-line rounded-ctl shadow-md px-3 py-2 text-xs w-56">
+      <p className="font-medium text-ink-800 mb-1">{label} <span className="text-muted font-normal">· totale {total}</span></p>
       {shown.map((r: any) => (
         <div key={r.dataKey} className="flex items-center gap-2 py-0.5">
           <span className="w-2 h-2 rounded-full shrink-0" style={{ background: r.color }} />
-          <span className="truncate flex-1 text-gray-600">{r.name}</span>
-          <span className="tabular-nums text-gray-800">{r.value}</span>
+          <span className="truncate flex-1 text-muted">{r.name}</span>
+          <span className="tabular-nums text-ink-800">{r.value}</span>
         </div>
       ))}
-      {rest > 0 && <p className="text-gray-400 mt-1">altre {rows.length - 8} funzioni · {rest}</p>}
+      {rest > 0 && <p className="text-muted mt-1">altre {rows.length - 8} funzioni · {rest}</p>}
     </div>
   );
 }
@@ -106,72 +108,70 @@ export default function EvoluzioneAziendalePage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-lg font-medium text-gray-900">Evoluzione Aziendale</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Com&apos;è cambiata l&apos;azienda nel tempo</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-gray-500">Periodo:</span>
+      <PageHeader
+        title="Evoluzione Aziendale"
+        description="Com&apos;è cambiata l&apos;azienda nel tempo"
+        actions={<>
+          <span className="text-xs text-muted">Periodo:</span>
           {PERIOD_OPTIONS.map(o => (
             <button key={o.key} onClick={() => setPeriod(o.key)}
-              className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-colors ${period === o.key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              className={`px-2.5 py-1 text-xs rounded-ctl font-medium transition-colors ${period === o.key ? 'bg-ink-800 text-white' : 'bg-stone-100 text-muted hover:bg-stone-200'}`}
             >{o.label}</button>
           ))}
           {custom && (
             <>
-              <label className="text-xs text-gray-500">Dal</label>
+              <label className="text-xs text-muted">Dal</label>
               <input type="date" value={from} max={to || undefined} onChange={e => setFrom(e.target.value)} className="input text-sm w-auto py-1" />
-              <label className="text-xs text-gray-500">Al</label>
+              <label className="text-xs text-muted">Al</label>
               <input type="date" value={to} min={from || undefined} onChange={e => setTo(e.target.value)} className="input text-sm w-auto py-1" />
             </>
           )}
-        </div>
-      </div>
+        </>}
+      />
 
       {loading && data.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-16">Caricamento…</p>
+        <SkeletonTable rows={8} cols={6} />
       ) : (
         <>
           {netChange != null && (
             <div>
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="card p-3">
-                  <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Organico {custom ? 'a fine periodo' : 'oggi'}</p>
-                  <p className="text-2xl font-semibold leading-none mt-1.5 text-gray-900">{last?.total_employees ?? '—'}</p>
+                  <p className="text-[10px] font-medium text-muted uppercase tracking-wide">Organico {custom ? 'a fine periodo' : 'oggi'}</p>
+                  <p className="text-2xl font-semibold leading-none mt-1.5 text-ink-900">{last?.total_employees ?? '—'}</p>
                 </div>
                 <div className="card p-3">
-                  <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Variazione nel periodo</p>
-                  <p className={`text-2xl font-semibold leading-none mt-1.5 ${netChange > 0 ? 'text-green-600' : netChange < 0 ? 'text-red-500' : 'text-gray-900'}`}>
+                  <p className="text-[10px] font-medium text-muted uppercase tracking-wide">Variazione nel periodo</p>
+                  <p className={`text-2xl font-semibold leading-none mt-1.5 ${netChange > 0 ? 'text-success' : netChange < 0 ? 'text-danger' : 'text-ink-900'}`}>
                     {netChange > 0 ? '+' : ''}{netChange}
                   </p>
                 </div>
                 <div className="card p-3">
-                  <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Anzianità media {custom ? 'a fine periodo' : 'oggi'}</p>
-                  <p className="text-2xl font-semibold leading-none mt-1.5 text-gray-900">{last?.avg_seniority_years ?? '—'}</p>
+                  <p className="text-[10px] font-medium text-muted uppercase tracking-wide">Anzianità media {custom ? 'a fine periodo' : 'oggi'}</p>
+                  <p className="text-2xl font-semibold leading-none mt-1.5 text-ink-900">{last?.avg_seniority_years ?? '—'}</p>
                 </div>
               </div>
             </div>
           )}
 
           <div className="card">
-            <p className="text-base font-medium text-gray-700 mb-1">Organico nel tempo</p>
-            <p className="text-xs text-gray-400 mb-2">Numero totale di dipendenti attivi, mese per mese.</p>
+            <p className="text-base font-medium text-ink-800 mb-1">Organico nel tempo</p>
+            <p className="text-xs text-muted mb-2">Numero totale di dipendenti attivi, mese per mese.</p>
             <ResponsiveContainer width="100%" height={240}>
               <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="month" minTickGap={24} tick={{ fontSize: 12, fill: '#374151' }} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#374151' }} />
                 <Tooltip />
-                <Line type="monotone" dataKey="Totale dipendenti" stroke="#2563eb" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+                <Line type="monotone" dataKey="Totale dipendenti" stroke="#B04FD0" strokeWidth={2.5} dot={false} isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="card">
-              <p className="text-base font-medium text-gray-700 mb-1">Assunzioni e cessazioni</p>
-              <p className="text-xs text-gray-400 mb-2">Movimenti mensili di personale.</p>
+              <p className="text-base font-medium text-ink-800 mb-1">Assunzioni e cessazioni</p>
+              <p className="text-xs text-muted mb-2">Movimenti mensili di personale.</p>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -185,8 +185,8 @@ export default function EvoluzioneAziendalePage() {
             </div>
 
             <div className="card">
-              <p className="text-base font-medium text-gray-700 mb-1">Età e anzianità medie</p>
-              <p className="text-xs text-gray-400 mb-2">Evoluzione della composizione anagrafica dell&apos;organico.</p>
+              <p className="text-base font-medium text-ink-800 mb-1">Età e anzianità medie</p>
+              <p className="text-xs text-muted mb-2">Evoluzione della composizione anagrafica dell&apos;organico.</p>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -195,17 +195,17 @@ export default function EvoluzioneAziendalePage() {
                   <Tooltip />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Line type="monotone" dataKey="Età media" stroke="#f59e0b" strokeWidth={2} dot={false} isAnimationActive={false} />
-                  <Line type="monotone" dataKey="Anzianità media" stroke="#8b5cf6" strokeWidth={2} dot={false} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="Anzianità media" stroke="#2563eb" strokeWidth={2} dot={false} isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
 
           <div className="card">
-            <p className="text-base font-medium text-gray-700 mb-1">Struttura organizzativa nel tempo</p>
-            <p className="text-xs text-gray-400 mb-2">Come si è evoluta la distribuzione dell&apos;organico tra le funzioni aziendali.</p>
+            <p className="text-base font-medium text-ink-800 mb-1">Struttura organizzativa nel tempo</p>
+            <p className="text-xs text-muted mb-2">Come si è evoluta la distribuzione dell&apos;organico tra le funzioni aziendali.</p>
             {deptChartData.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-12">Nessun dato disponibile</p>
+              <p className="text-sm text-muted text-center py-12">Nessun dato disponibile</p>
             ) : (
               <ResponsiveContainer width="100%" height={280}>
                 <AreaChart data={deptChartData} margin={{ top: 8, right: 16, bottom: 0, left: -16 }}>

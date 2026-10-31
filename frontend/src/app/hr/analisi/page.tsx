@@ -1,11 +1,12 @@
 'use client';
 
 import { AnalisiOrganico } from './AnalisiOrganico';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export default function AnalisiHRPage() {
   return (
     <div className="space-y-4">
-      <h1 className="text-lg font-medium text-gray-900">Analisi HR</h1>
+      <PageHeader title="Analisi HR" description="Organico, età, anzianità e distribuzioni" />
       <AnalisiOrganico />
     </div>
   );
