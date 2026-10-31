@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { compareCategorie } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { EmptyState } from '@/components/ui/EmptyState';
 import type { ProdSheetRow, ProdSheetCategoria, ProdCategoryOrder } from '@/types';
 
 // Un'unica riga per commessa: unisce le categorie/caratteristiche di tutti
@@ -69,6 +70,17 @@ function raggruppaPerCommessa(rows: ProdSheetRow[], categoryOrderMap: Map<string
 
 export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
   const [raggruppa, setRaggruppa] = useState(false);
+  // Densità della tabella: si ricorda nel browser (utile per chi lavora ogni giorno con tante righe)
+  const [compatta, setCompatta] = useState(false);
+  useEffect(() => {
+    try { setCompatta(localStorage.getItem('sheet-compatta') === '1'); } catch { /* opzionale */ }
+  }, []);
+  function toggleCompatta() {
+    setCompatta(c => {
+      try { localStorage.setItem('sheet-compatta', c ? '0' : '1'); } catch { /* opzionale */ }
+      return !c;
+    });
+  }
   const [categoryOrderMap, setCategoryOrderMap] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
@@ -123,29 +135,30 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
 
   if (rows.length === 0) {
     return (
-      <div className="p-12 text-center text-muted">
-        Nessun ordine con data di ingresso in linea trovato.
-      </div>
+      <EmptyState title="Nessun ordine trovato" hint="Non ci sono ordini con data di ingresso in linea per questi filtri." />
     );
   }
 
   return (
     <div>
       <div className="d-print-none px-5 py-3 flex justify-end gap-2 border-b border-line">
+        <Button variant={compatta ? 'primary' : 'secondary'} onClick={toggleCompatta} title="Righe più basse per vedere più ordini insieme">
+          {compatta ? '✓ Vista compatta' : 'Vista compatta'}
+        </Button>
         <Button onClick={esportaExcel}>Scarica Excel</Button>
         <Button variant={raggruppa ? 'primary' : 'secondary'} onClick={() => setRaggruppa(g => !g)}>
           {raggruppa ? '✓ Raggruppato per commessa' : 'Raggruppa per commessa'}
         </Button>
       </div>
 
-      <div className="overflow-auto max-h-[68vh] print:max-h-none print:overflow-visible">
+      <div className={`overflow-auto max-h-[68vh] print:max-h-none print:overflow-visible ${compatta ? 'sheet-compact' : ''}`}>
         <table className="w-full text-sm border-separate border-spacing-0 operator-sheet">
         <thead>
           <tr>
             <th className="sheet-th text-center">#</th>
             <th className="sheet-th">Origine</th>
             <th className="sheet-th">Stato</th>
-            <th className="sheet-th">Commessa</th>
+            <th className="sheet-th sheet-sticky">Commessa</th>
             <th className="sheet-th">Codice</th>
             <th className="sheet-th">Descrizione</th>
             <th className="sheet-th whitespace-nowrap">Ingresso Linea</th>
@@ -160,7 +173,7 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
         </thead>
         <tbody>
           {displayRows.map((row, idx) => (
-            <tr key={`${row.codice_articolo}-${row.commessa}`} className="bg-white hover:bg-accent-soft/50 transition-colors">
+            <tr key={`${row.codice_articolo}-${row.commessa}`} className="bg-white hover:bg-[#F3F8FE] transition-colors">
               <td className="sheet-td text-center">{idx + 1}</td>
               <td className="sheet-td">
                 <StatusBadge tone={row.fonte_ordine === 'confermato' ? 'success' : 'warning'}>
@@ -172,7 +185,7 @@ export function SheetTable({ rows }: { rows: ProdSheetRow[] }) {
                   <StatusBadge tone="neutral">Spedito</StatusBadge>
                 ) : <span className="text-stone-300">–</span>}
               </td>
-              <td className="sheet-td font-mono">{row.commessa}</td>
+              <td className="sheet-td sheet-sticky font-mono font-medium text-ink-900">{row.commessa}</td>
               <td className="sheet-td font-mono whitespace-pre-line">{row.codice_articolo}</td>
               <td className="sheet-td min-w-[180px] max-w-[260px] whitespace-pre-line break-words" title={row.descrizione ?? ''}>
                 {row.descrizione ?? <span className="text-stone-300">–</span>}

@@ -47,11 +47,11 @@ export function HomeCards() {
                       href={m.soon ? '#' : m.href}
                       aria-disabled={m.soon || undefined}
                       title={m.description}
-                      className={`group flex items-center gap-3.5 rounded-2xl px-3 py-3 transition-colors ${
+                      className={`group nudge flex items-center gap-3.5 rounded-2xl px-3 py-3 transition-colors ${
                         m.soon ? 'opacity-50 cursor-not-allowed' : 'hover:bg-stone-50'
                       }`}
                     >
-                      <span className={`flex items-center justify-center w-10 h-10 rounded-xl bg-accent-soft text-accent-ink shrink-0 transition-colors ${
+                      <span className={`nudge-icon flex items-center justify-center w-10 h-10 rounded-xl bg-accent-soft text-accent-ink shrink-0 transition-colors ${
                         m.soon ? '' : 'group-hover:bg-accent group-hover:text-ink-900'
                       }`}>
                         <Icon className="w-5 h-5" />

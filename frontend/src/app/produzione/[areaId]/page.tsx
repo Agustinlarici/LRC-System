@@ -9,6 +9,7 @@ import { FilterField } from '../_components/FilterField';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { SkeletonTable } from '@/components/ui/Skeleton';
 
 const PAGE_SIZE = 500;
 
@@ -103,7 +104,7 @@ export default function ProduzioneAreaSheetPage() {
   const inputClass  = 'input';
 
   if (loading) {
-    return <p className="text-muted pt-10 text-center">Caricamento in corso...</p>;
+    return <SkeletonTable rows={10} cols={8} />;
   }
   if (error) {
     return <div className="p-4 bg-danger-soft text-danger rounded-ctl text-sm">{error}</div>;

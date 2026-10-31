@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { Cella, Errore, SottoSigla, VistaToggle } from '@/components/ferrari/Comuni';
 import { IconaAvviso } from '@/components/ferrari/Icone';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { IconSettings } from '@/components/icons/ModuleIcons';
 
 interface Componente { nome: string; termini: string[] }
 interface Elenco {
@@ -68,7 +69,7 @@ export default function PerComponentePage() {
         actions={
           <>
             <button className="btn-secondary" onClick={() => window.print()}>Stampa</button>
-            {puoModificare && <Link href="/ferrari/impostazioni#componenti" className="btn-secondary">Impostazioni</Link>}
+            {puoModificare && <Link href="/ferrari/impostazioni#componenti" className="btn-secondary group-gear"><IconSettings className="gear h-4 w-4" />Impostazioni</Link>}
           </>
         }
       />

@@ -18,16 +18,16 @@ export function SkeletonCard() {
 
 export function SkeletonTable({ rows = 5, cols = 4 }: { rows?: number; cols?: number }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div className="bg-white rounded-card shadow-card overflow-hidden">
       {/* Header */}
-      <div className="flex gap-4 px-4 py-3 bg-gray-50 border-b border-gray-200">
+      <div className="flex gap-4 px-4 py-3 border-b border-line">
         {Array.from({ length: cols }).map((_, i) => (
           <Skeleton key={i} className="h-4" style={{ width: `${60 + (i % 3) * 20}px` } as React.CSSProperties} />
         ))}
       </div>
       {/* Rows */}
       {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="flex gap-4 px-4 py-3 border-b border-gray-100 last:border-0">
+        <div key={i} className="flex gap-4 px-4 py-3 border-b border-stone-100 last:border-0">
           {Array.from({ length: cols }).map((_, j) => (
             <Skeleton key={j} className="h-4" style={{ width: `${50 + ((i + j) % 4) * 25}px` } as React.CSSProperties} />
           ))}

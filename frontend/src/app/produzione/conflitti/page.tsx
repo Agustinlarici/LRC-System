@@ -5,6 +5,8 @@ import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { SkeletonTable } from '@/components/ui/Skeleton';
 import type { ProdComponentConflict, ProdComponentConflictCandidate } from '@/types';
 
 // Per un Forecast, la "Recency" mostrata è il file_mtime grezzo (stessa
@@ -75,12 +77,12 @@ export default function ProduzioneConflittiPage() {
       />
 
       {loading ? (
-        <p className="text-muted">Caricamento...</p>
+        <SkeletonTable rows={4} cols={6} />
       ) : error ? (
         <div className="p-4 bg-danger-soft text-danger rounded-ctl text-sm">{error}</div>
       ) : conflicts.length === 0 ? (
-        <div className="bg-white rounded-card shadow-card p-12 text-center text-muted">
-          Nessun duplicato trovato.
+        <div className="bg-white rounded-card shadow-card">
+          <EmptyState title="Nessun duplicato trovato" hint="Tutti i componenti hanno un solo articolo per commessa." />
         </div>
       ) : (
         <div className="space-y-4">

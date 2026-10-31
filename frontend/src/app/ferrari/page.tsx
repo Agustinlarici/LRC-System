@@ -8,6 +8,7 @@ import { inviaFile } from '@/lib/ferrari';
 import { AnomalieRiga, Cella, Errore, SottoSigla, VistaToggle } from '@/components/ferrari/Comuni';
 import { InfoCartella, type StatoCartella } from '@/components/ferrari/InfoCartella';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { IconSettings } from '@/components/icons/ModuleIcons';
 
 interface Riga {
   id: number; commessa: string; modello: string | null;
@@ -142,8 +143,8 @@ export default function VederePage() {
             <button className={btnLink} disabled={!m || righe.length === 0} onClick={esportaExcel}>Scarica Excel</button>
             <button className={btnLink} onClick={() => window.print()}>Stampa</button>
             {puoGestire && (
-              <Link href="/ferrari/impostazioni" className={btnLink}>
-                Impostazioni
+              <Link href="/ferrari/impostazioni" className={`${btnLink} group-gear`}>
+              <IconSettings className="gear h-4 w-4" />                Impostazioni
                 {daFare > 0 && <span className="rounded-full bg-brand px-1.5 text-[11px] font-bold leading-4 text-white">{daFare}</span>}
               </Link>
             )}

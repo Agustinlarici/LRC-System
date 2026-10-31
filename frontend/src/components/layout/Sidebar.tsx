@@ -209,12 +209,12 @@ export function Sidebar() {
 
         {/* Home */}
         <Link href="/" title="Home"
-          className={`relative flex items-center gap-3 px-2.5 py-2.5 rounded-xl text-sm transition-colors
+          className={`nudge relative flex items-center gap-3 px-2.5 py-2.5 rounded-xl text-sm transition-colors
             ${expanded ? '' : 'justify-center'}
             ${isActive('/') ? 'bg-white/10 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}
         >
           {isActive('/') && <ActiveMark />}
-          <IconHome />
+          <span className="nudge-icon flex"><IconHome /></span>
           {expanded && <span className="truncate font-medium">Home</span>}
         </Link>
 
@@ -252,11 +252,11 @@ export function Sidebar() {
                         const active = isActive(m.href);
                         return (
                           <Link key={m.href} href={m.href} title={m.label}
-                            className={`relative flex items-center gap-3 pl-5 pr-2.5 py-2 rounded-xl text-sm transition-colors
+                            className={`nudge relative flex items-center gap-3 pl-5 pr-2.5 py-2 rounded-xl text-sm transition-colors
                               ${active ? 'bg-white/10 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}
                           >
                             {active && <ActiveMark />}
-                            <Icon />
+                            <span className="nudge-icon flex"><Icon /></span>
                             <span className="truncate font-medium flex-1">{m.label}</span>
                             {m.href === '/hr/scadenze' && <CountBadge n={deadlineCount} />}
                           </Link>

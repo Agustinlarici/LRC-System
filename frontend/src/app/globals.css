@@ -40,6 +40,31 @@ body {
 .badge-sent      { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-info-soft text-info; }
 .badge-skipped   { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-stone-100 text-stone-600; }
 
+/* ─── Microinterazioni ─────────────────────────────────────────────────────────
+   Brevi (< 200 ms), solo dove c'è un mouse (hover) e mai se l'utente ha chiesto
+   meno movimento. Su tablet/andon non cambiano nulla. */
+.btn-primary, .btn-secondary, .btn-danger { @apply active:scale-[0.97]; }
+
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.animate-pageIn { animation: pageIn 0.18s ease-out both; }
+
+@media (hover: hover) {
+  .group-gear .gear       { transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .group-gear:hover .gear { transform: rotate(75deg); }
+  .nudge .nudge-x         { transition: transform 0.18s ease-out; }
+  .nudge:hover .nudge-x   { transform: translateX(3px); }
+  .nudge .nudge-icon       { transition: transform 0.18s ease-out; }
+  .nudge:hover .nudge-icon { transform: scale(1.1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-pageIn, .group-gear .gear, .nudge .nudge-x, .nudge .nudge-icon { animation: none !important; transition: none !important; }
+  .group-gear:hover .gear, .nudge:hover .nudge-x, .nudge:hover .nudge-icon { transform: none !important; }
+  .btn-primary, .btn-secondary, .btn-danger { transform: none !important; }
+}
+
 /* Tabella fogli Programma Produzione: a schermo righe pulite con sola linea
    orizzontale; in stampa torna la griglia a bordi pieni di prima, identica. */
 .sheet-th {
@@ -49,7 +74,13 @@ body {
 .sheet-td {
   @apply border-b border-stone-100 px-4 py-2.5;
 }
+/* Colonna Commessa fissa quando si scorre in orizzontale; modo compatto */
+.sheet-sticky { position: sticky; left: 0; z-index: 5; background-color: inherit; box-shadow: 1px 0 0 theme('colors.line'); }
+th.sheet-sticky { z-index: 15; background-color: #fff; }
+.sheet-compact .sheet-th { padding-top: 0.4rem; padding-bottom: 0.4rem; }
+.sheet-compact .sheet-td { padding-top: 0.25rem; padding-bottom: 0.25rem; font-size: 0.8125rem; }
 @media print {
+  .sheet-sticky { position: static; box-shadow: none; }
   .sheet-th { background: #f3f4f6; border: 1px solid #d1d5db; padding: 0.375rem 0.5rem;
               font-size: inherit; text-transform: none; letter-spacing: normal; color: inherit; }
   .sheet-td { border: 1px solid #e5e7eb; padding: 0.25rem 0.5rem; }
@@ -57,7 +88,7 @@ body {
 
 /* Skeleton shimmer */
 .skeleton {
-  @apply bg-gray-200 rounded animate-pulse;
+  @apply bg-stone-200/80 rounded animate-pulse;
 }
 
 /* Tabelle larghe e lunghe con scroll sia verticale che orizzontale nello stesso

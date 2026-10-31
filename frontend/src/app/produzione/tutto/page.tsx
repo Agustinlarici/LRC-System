@@ -8,6 +8,8 @@ import { FilterField } from '../_components/FilterField';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { CountUp } from '@/components/ui/CountUp';
+import { SkeletonTable } from '@/components/ui/Skeleton';
 
 const PAGE_SIZE = 500;
 
@@ -24,7 +26,7 @@ function StatCard({ label, value, accent }: { label: string; value: number; acce
   return (
     <div className="bg-white rounded-card shadow-card px-5 py-4">
       <p className="text-xs font-medium text-muted">{label}</p>
-      <p className={`text-2xl font-semibold mt-1 ${accent ?? 'text-ink-900'}`}>{value}</p>
+      <p className={`text-2xl font-semibold mt-1 ${accent ?? 'text-ink-900'}`}><CountUp value={value} /></p>
     </div>
   );
 }
@@ -198,7 +200,7 @@ export default function ProduzioneTuttoPage() {
           </div>
 
           {loading ? (
-            <p className="text-muted text-center p-12">Caricamento in corso...</p>
+            <div className="p-5"><SkeletonTable rows={8} cols={8} /></div>
           ) : error ? (
             <div className="m-5 p-4 bg-danger-soft text-danger rounded-ctl text-sm">{error}</div>
           ) : (
