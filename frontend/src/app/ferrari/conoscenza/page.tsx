@@ -7,7 +7,8 @@ import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
 import { usePromptDialog } from '@/components/ui/PromptDialog';
 import { TIPI_COMPONENTE_LABEL, fmtData } from '@/lib/ferrari';
-import { Errore, FerrariNav } from '@/components/ferrari/Comuni';
+import { Errore, } from '@/components/ferrari/Comuni';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 interface Base { id: number; modello: string | null; stato: string; proposto_da: string; proposto_at: string; deciso_da: string | null; deciso_at: string | null; motivo: string | null; file_origine_id: number | null; versione_in: number | null }
 interface Codice extends Base { codice: string; significato: string; categoria: string | null }
@@ -128,21 +129,19 @@ export default function ConoscenzaPage() {
 
   return (
     <div>
-      <div className="mb-4">
-        <h1 className="text-3xl font-bold text-gray-900">Conoscenza</h1>
-        <p className="mt-1 text-gray-500">
-          Codici e componenti del testo libero che la VM e la IA conoscono. Una regola vale solo dopo l&apos;approvazione di un supervisore.
-          {dati && <> Versione attuale: <strong>{dati.versione}</strong>.</>}
-        </p>
-      </div>
-      <FerrariNav />
+      <PageHeader
+        back={{ label: 'Programma produzione (schede)', href: '/ferrari' }}
+        title="Conoscenza"
+        description={<>Codici e componenti del testo libero che la VM e la IA conoscono. Una regola vale solo dopo l&apos;approvazione di un supervisore.
+          {dati && <> Versione attuale: <strong>{dati.versione}</strong>.</>}</>}
+      />
       <Errore messaggio={errore} />
 
       <div className="flex flex-wrap gap-2 mb-5">
         {([['proposte', `Da approvare (${proposteCodici.length + proposteComp.length})`], ['approvate', `Approvate (${appCodici.length + appComp.length})`],
           ['aggiungi', 'Aggiungi codici'], ['impostazioni', 'Impostazioni']] as [Vista, string][]).map(([v, l]) => (
           <button key={v} onClick={() => setVista(v)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${vista === v ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
+            className={`px-3 py-1.5 rounded-ctl text-sm font-medium ${vista === v ? 'bg-ink-800 text-white' : 'bg-white border border-line text-ink-700 hover:bg-stone-50'}`}>
             {l}
           </button>
         ))}
@@ -150,7 +149,7 @@ export default function ConoscenzaPage() {
 
       {vista === 'proposte' && (
         <div className="space-y-6">
-          {!supervisore && <p className="text-sm text-gray-500">Solo il supervisore può approvare o rifiutare. Qui puoi vedere cosa è in attesa.</p>}
+          {!supervisore && <p className="text-sm text-muted">Solo il supervisore può approvare o rifiutare. Qui puoi vedere cosa è in attesa.</p>}
           <Tabella titolo="Codici proposti" vuoto={proposteCodici.length === 0}
             azioni={supervisore && (
               <div className="flex gap-2">
@@ -159,13 +158,13 @@ export default function ConoscenzaPage() {
               </div>
             )}>
             {proposteCodici.map(c => (
-              <tr key={c.id} className="border-b border-gray-100">
+              <tr key={c.id} className="border-b border-stone-100">
                 <td className="py-2 px-3 w-8">{supervisore && <input type="checkbox" checked={selCodici.has(c.id)} onChange={() => toggle(selCodici, c.id, setSelCodici)} />}</td>
                 <td className="py-2 px-3 font-mono font-medium">{c.codice}</td>
-                <td className="py-2 px-3">{c.significato}{c.categoria && <span className="text-gray-400"> · {c.categoria}</span>}</td>
-                <td className="py-2 px-3 text-gray-500">{ambito(c.modello)}</td>
-                <td className="py-2 px-3 text-gray-500 text-xs">{c.proposto_da}<br />{fmtData(c.proposto_at)}{mio(c) && <span className="text-amber-600"> (tua)</span>}</td>
-                <td className="py-2 px-3 text-xs">{c.file_origine_id && <Link className="text-blue-600 hover:underline" href={`/ferrari/${c.file_origine_id}`}>scheda #{c.file_origine_id}</Link>}</td>
+                <td className="py-2 px-3">{c.significato}{c.categoria && <span className="text-muted"> · {c.categoria}</span>}</td>
+                <td className="py-2 px-3 text-muted">{ambito(c.modello)}</td>
+                <td className="py-2 px-3 text-muted text-xs">{c.proposto_da}<br />{fmtData(c.proposto_at)}{mio(c) && <span className="text-warning"> (tua)</span>}</td>
+                <td className="py-2 px-3 text-xs">{c.file_origine_id && <Link className="text-accent-ink hover:underline" href={`/ferrari/${c.file_origine_id}`}>scheda #{c.file_origine_id}</Link>}</td>
               </tr>
             ))}
           </Tabella>
@@ -178,17 +177,17 @@ export default function ConoscenzaPage() {
               </div>
             )}>
             {proposteComp.map(c => (
-              <tr key={c.id} className="border-b border-gray-100">
+              <tr key={c.id} className="border-b border-stone-100">
                 <td className="py-2 px-3 w-8">{supervisore && <input type="checkbox" checked={selComp.has(c.id)} onChange={() => toggle(selComp, c.id, setSelComp)} />}</td>
                 <td className="py-2 px-3 font-medium">{c.pattern}</td>
                 <td className="py-2 px-3">{TIPI_COMPONENTE_LABEL[c.tipo] ?? c.tipo}{c.tipo !== 'NEUTRO' && <> = <strong>{c.valore}</strong></>}</td>
-                <td className="py-2 px-3 text-gray-500">{ambito(c.modello)}</td>
-                <td className="py-2 px-3 text-gray-500 text-xs">{c.proposto_da}<br />{fmtData(c.proposto_at)}{mio(c) && <span className="text-amber-600"> (tua)</span>}</td>
-                <td className="py-2 px-3 text-xs">{c.file_origine_id && <Link className="text-blue-600 hover:underline" href={`/ferrari/${c.file_origine_id}`}>scheda #{c.file_origine_id}</Link>}</td>
+                <td className="py-2 px-3 text-muted">{ambito(c.modello)}</td>
+                <td className="py-2 px-3 text-muted text-xs">{c.proposto_da}<br />{fmtData(c.proposto_at)}{mio(c) && <span className="text-warning"> (tua)</span>}</td>
+                <td className="py-2 px-3 text-xs">{c.file_origine_id && <Link className="text-accent-ink hover:underline" href={`/ferrari/${c.file_origine_id}`}>scheda #{c.file_origine_id}</Link>}</td>
               </tr>
             ))}
           </Tabella>
-          {config.four_eyes !== 'false' && <p className="text-xs text-gray-400">Doppia firma attiva: chi propone una regola non può approvarla.</p>}
+          {config.four_eyes !== 'false' && <p className="text-xs text-muted">Doppia firma attiva: chi propone una regola non può approvarla.</p>}
         </div>
       )}
 
@@ -196,25 +195,25 @@ export default function ConoscenzaPage() {
         <div className="space-y-6">
           <Tabella titolo="Codici approvati" vuoto={appCodici.length === 0}>
             {appCodici.map(c => (
-              <tr key={c.id} className="border-b border-gray-100">
+              <tr key={c.id} className="border-b border-stone-100">
                 <td className="py-2 px-3 w-8" />
                 <td className="py-2 px-3 font-mono font-medium">{c.codice}</td>
                 <td className="py-2 px-3">{c.significato}</td>
-                <td className="py-2 px-3 text-gray-500">{ambito(c.modello)}</td>
-                <td className="py-2 px-3 text-gray-500 text-xs">v{c.versione_in} · {c.deciso_da}</td>
-                <td className="py-2 px-3 text-right">{supervisore && <button className="text-xs text-red-600 hover:underline" disabled={occupato} onClick={() => decidi('codice', [c.id], 'revoca')}>Revoca</button>}</td>
+                <td className="py-2 px-3 text-muted">{ambito(c.modello)}</td>
+                <td className="py-2 px-3 text-muted text-xs">v{c.versione_in} · {c.deciso_da}</td>
+                <td className="py-2 px-3 text-right">{supervisore && <button className="text-xs text-danger hover:underline" disabled={occupato} onClick={() => decidi('codice', [c.id], 'revoca')}>Revoca</button>}</td>
               </tr>
             ))}
           </Tabella>
           <Tabella titolo="Componenti approvati" vuoto={appComp.length === 0}>
             {appComp.map(c => (
-              <tr key={c.id} className="border-b border-gray-100">
+              <tr key={c.id} className="border-b border-stone-100">
                 <td className="py-2 px-3 w-8" />
                 <td className="py-2 px-3 font-medium">{c.pattern}</td>
                 <td className="py-2 px-3">{TIPI_COMPONENTE_LABEL[c.tipo] ?? c.tipo}{c.tipo !== 'NEUTRO' && <> = <strong>{c.valore}</strong></>}</td>
-                <td className="py-2 px-3 text-gray-500">{ambito(c.modello)}</td>
-                <td className="py-2 px-3 text-gray-500 text-xs">v{c.versione_in} · {c.deciso_da}</td>
-                <td className="py-2 px-3 text-right">{supervisore && <button className="text-xs text-red-600 hover:underline" disabled={occupato} onClick={() => decidi('componente', [c.id], 'revoca')}>Revoca</button>}</td>
+                <td className="py-2 px-3 text-muted">{ambito(c.modello)}</td>
+                <td className="py-2 px-3 text-muted text-xs">v{c.versione_in} · {c.deciso_da}</td>
+                <td className="py-2 px-3 text-right">{supervisore && <button className="text-xs text-danger hover:underline" disabled={occupato} onClick={() => decidi('componente', [c.id], 'revoca')}>Revoca</button>}</td>
               </tr>
             ))}
           </Tabella>
@@ -223,12 +222,12 @@ export default function ConoscenzaPage() {
 
       {vista === 'aggiungi' && (
         <div className="card max-w-3xl">
-          <h2 className="font-semibold text-gray-900 mb-1">Proponi codici in blocco</h2>
-          <p className="text-sm text-gray-500 mb-3">
+          <h2 className="font-semibold text-ink-900 mb-1">Proponi codici in blocco</h2>
+          <p className="text-sm text-muted mb-3">
             Una riga per codice: <code>CODICE;significato;categoria</code> (la categoria è facoltativa). Diventano proposte da approvare.
             I componenti del testo libero si definiscono invece durante la revisione di una scheda.
           </p>
-          {!puoOperare ? <p className="text-sm text-gray-500">Non hai il permesso di proporre regole.</p> : (
+          {!puoOperare ? <p className="text-sm text-muted">Non hai il permesso di proporre regole.</p> : (
             <>
               <textarea className="input font-mono min-h-[180px]" placeholder={'CEL2;Allestimento vano motore in carbonio;Carbonio\nRSFD;Cerchi forgiati diamantati;Cerchi'}
                 value={testoCodici} onChange={e => setTestoCodici(e.target.value)} />
@@ -261,7 +260,7 @@ export default function ConoscenzaPage() {
             <label className="label">Controllo a campione delle schede VERDI (%)</label>
             <input className="input" type="number" min={0} max={100} disabled={!supervisore} value={cfgForm.sampling_pct}
               onChange={e => setCfgForm({ ...cfgForm, sampling_pct: e.target.value })} />
-            <p className="text-xs text-gray-400 mt-1">100 = tutte le schede passano da una persona (consigliato all&apos;inizio). Scende quando ci si fida.</p>
+            <p className="text-xs text-muted mt-1">100 = tutte le schede passano da una persona (consigliato all&apos;inizio). Scende quando ci si fida.</p>
           </div>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" disabled={!supervisore} checked={cfgForm.four_eyes} onChange={e => setCfgForm({ ...cfgForm, four_eyes: e.target.checked })} />
@@ -273,7 +272,7 @@ export default function ConoscenzaPage() {
               onChange={e => setCfgForm({ ...cfgForm, ia_attesa_ore: e.target.value })} />
           </div>
           {supervisore ? <button className="btn-primary" disabled={occupato} onClick={salvaConfig}>Salva</button>
-            : <p className="text-sm text-gray-500">Solo il supervisore può modificare le impostazioni.</p>}
+            : <p className="text-sm text-muted">Solo il supervisore può modificare le impostazioni.</p>}
         </div>
       )}
     </div>
@@ -284,11 +283,11 @@ function Tabella({ titolo, vuoto, azioni, children }: { titolo: string; vuoto: b
   return (
     <section>
       <div className="flex items-center justify-between mb-2">
-        <h2 className="font-semibold text-gray-900">{titolo}</h2>
+        <h2 className="font-semibold text-ink-900">{titolo}</h2>
         {azioni}
       </div>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-        {vuoto ? <p className="text-center text-gray-400 py-6 text-sm">Nessun elemento</p> : (
+      <div className="bg-white rounded-card border border-line overflow-x-auto">
+        {vuoto ? <p className="text-center text-muted py-6 text-sm">Nessun elemento</p> : (
           <table className="w-full text-sm"><tbody>{children}</tbody></table>
         )}
       </div>

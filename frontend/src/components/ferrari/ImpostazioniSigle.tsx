@@ -165,9 +165,9 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
   if (!c) return <Errore messaggio={errore} />;
   if (c.modelli.length === 0) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm">
+      <div className="rounded-card border border-line bg-white p-6 text-sm">
         <h2 className="text-lg font-semibold">Non c&apos;è ancora nessuna scheda</h2>
-        <p className="mt-1 text-gray-500">Le sigle si decidono guardando le schede. Carica uno o più Excel (o leggi la cartella) e poi torna qui: troverai l&apos;elenco delle sigle da decidere.</p>
+        <p className="mt-1 text-muted">Le sigle si decidono guardando le schede. Carica uno o più Excel (o leggi la cartella) e poi torna qui: troverai l&apos;elenco delle sigle da decidere.</p>
         <Link href="/ferrari" className="btn-primary mt-3 inline-block">Vai a «Vedere»</Link>
       </div>
     );
@@ -181,13 +181,13 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
   return (
     <div className="space-y-3">
       <Errore messaggio={errore} />
-      {nota && <p className="text-xs text-gray-600">{nota}</p>}
+      {nota && <p className="text-xs text-ink-700">{nota}</p>}
 
-      <div className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm">
-        <button className="font-medium text-blue-700 hover:underline" onClick={() => setElencoAperto(o => !o)}><span className="inline-flex items-center gap-1">{elencoAperto ? <IconaGiu /> : <IconaDestra />} Aggiungi sigle (una o un elenco, con le descrizioni)</span></button>
+      <div className="rounded-card border border-line bg-white px-4 py-2 text-sm">
+        <button className="font-medium text-accent-ink hover:underline" onClick={() => setElencoAperto(o => !o)}><span className="inline-flex items-center gap-1">{elencoAperto ? <IconaGiu /> : <IconaDestra />} Aggiungi sigle (una o un elenco, con le descrizioni)</span></button>
         {elencoAperto && (
           <div className="mt-2 space-y-2">
-            <p className="text-xs text-gray-500">Una sigla per riga (anche una sola), con la descrizione dopo un tab, un «;» o uno spazio (es. <code>BIC2 CARROZZERIA BICOLORE</code>). Puoi incollarlo oppure scegliere un file (.txt, .csv, .xlsx: sigla nella prima colonna, descrizione nella seconda). Senza descrizione va bene: quando un Excel la ha, ti chiedo se aggiungerla.</p>
+            <p className="text-xs text-muted">Una sigla per riga (anche una sola), con la descrizione dopo un tab, un «;» o uno spazio (es. <code>BIC2 CARROZZERIA BICOLORE</code>). Puoi incollarlo oppure scegliere un file (.txt, .csv, .xlsx: sigla nella prima colonna, descrizione nella seconda). Senza descrizione va bene: quando un Excel la ha, ti chiedo se aggiungerla.</p>
             <textarea className="input w-full font-mono text-xs" rows={6} value={testoElenco} onChange={e => setTestoElenco(e.target.value)} placeholder={'BIC2\tCARROZZERIA BICOLORE\nCEXS\tRIVEST.SOTTOPORTA IN CARBONIO\nTLM13'} />
             <div className="flex flex-wrap items-center gap-2">
               <input type="file" accept=".txt,.csv,.tsv,.xlsx,.xls" className="text-xs" onChange={e => leggiFile(e.target.files?.[0])} />
@@ -195,21 +195,21 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
                 <option value="colonna">Le sigle nuove vanno come Colonna</option><option value="sub">Le sigle nuove vanno come Sotto-sigla</option>
               </select>
               <button className="btn-primary !py-1" disabled={!testoElenco.trim()} onClick={caricaElenco}>Carica l&apos;elenco</button>
-              <span className="text-xs text-gray-500">Valgono per tutti i modelli. Quelle già decise non si toccano (si aggiorna solo la descrizione).</span>
+              <span className="text-xs text-muted">Valgono per tutti i modelli. Quelle già decise non si toccano (si aggiorna solo la descrizione).</span>
             </div>
           </div>
         )}
       </div>
 
       {proposteDesc.length > 0 && (
-        <div className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm">
+        <div className="rounded-card border border-sky-300 bg-accent-soft px-4 py-3 text-sm">
           <div className="flex flex-wrap items-center gap-2">
             <b>{proposteDesc.length} {proposteDesc.length === 1 ? 'sigla senza descrizione' : 'sigle senza descrizione'}</b>: le schede la hanno. Vuoi aggiungerla? Comparirà nella colonna, per esempio «CARROZZERIA BICOLORE (BIC2)».
             <button className="btn-primary !py-0.5 text-xs" onClick={() => descrizioni('accetta', proposteDesc.map(x => x.codice))}>Aggiungi tutte</button>
           </div>
           <table className="mt-2 w-full"><tbody>
             {proposteDesc.map(x => (
-              <tr key={x.codice} className="border-t border-sky-200">
+              <tr key={x.codice} className="border-t border-accent/40">
                 <td className="py-1 pr-3 font-bold">{x.codice}</td><td className="py-1 pr-3">{x.descrizione_proposta}</td>
                 <td className="py-1 text-right whitespace-nowrap">
                   <button className="btn-primary !py-0.5 text-xs mr-1" onClick={() => descrizioni('accetta', [x.codice])}>Aggiungi</button>
@@ -223,7 +223,7 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
       )}
 
       {conta.da > 0 ? (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm">
+        <div className="rounded-card border border-amber-300 bg-warning-soft px-4 py-3 text-sm">
           <b>{conta.da} {conta.da === 1 ? 'sigla' : 'sigle'} da decidere.</b> Per ognuna scegli <b>Sì</b> (compare come colonna nella tabella di «Vedere»), <b>Non mi serve</b> (è una sigla ma non ti interessa)
           oppure <b>Non è una sigla</b> (per esempio un colore o un codice di materiale). In tutti i casi non te lo chiederà più. A destra scegli a quali modelli vale.
           <div className="mt-2 flex flex-wrap gap-2">
@@ -233,9 +233,9 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
           </div>
         </div>
       ) : conta.si > 0 ? (
-        <div className="rounded-xl border border-green-300 bg-green-50 px-4 py-2 text-sm">Tutte le sigle sono decise: {conta.si} in tabella. <Link href="/ferrari" className="font-semibold text-blue-700 hover:underline">Vai a «Vedere»</Link> per guardare le schede.</div>
+        <div className="rounded-card border border-green-300 bg-success-soft px-4 py-2 text-sm">Tutte le sigle sono decise: {conta.si} in tabella. <Link href="/ferrari" className="font-semibold text-accent-ink hover:underline">Vai a «Vedere»</Link> per guardare le schede.</div>
       ) : (
-        <div className="rounded-xl border border-sky-300 bg-sky-50 px-4 py-2 text-sm">Tutte le sigle sono ignorate: la tabella resterà vuota. Metti «Sì» a quelle che vuoi vedere.</div>
+        <div className="rounded-card border border-sky-300 bg-accent-soft px-4 py-2 text-sm">Tutte le sigle sono ignorate: la tabella resterà vuota. Metti «Sì» a quelle che vuoi vedere.</div>
       )}
 
       <div className="flex flex-wrap items-center gap-2">
@@ -244,33 +244,33 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
           <option value="tutte">Tutte ({tutte.length})</option><option value="da">Da decidere ({conta.da})</option><option value="si">Sì - in tabella ({conta.si})</option>
           <option value="no">Non mi servono ({conta.no})</option><option value="ns">Non sono sigle ({conta.ns})</option>
         </select>
-        <span className="text-xs text-gray-500">{righe.length} {righe.length === 1 ? 'sigla' : 'sigle'}</span>
+        <span className="text-xs text-muted">{righe.length} {righe.length === 1 ? 'sigla' : 'sigle'}</span>
       </div>
 
-      <div className="max-h-[68vh] overflow-auto rounded-xl border border-gray-200 bg-white">
+      <div className="max-h-[68vh] overflow-auto rounded-card border border-line bg-white">
         <table className="w-full text-sm border-separate border-spacing-0">
           <thead>
             <tr>{['Sigla', 'Cosa è', 'Decisione', 'Sotto-sigla', 'Dentro quale voce', 'Modelli', ''].map((h, i) => (
-              <th key={i} className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 text-left font-semibold whitespace-nowrap">{h}</th>))}</tr>
+              <th key={i} className="sticky top-0 z-10 bg-stone-50 border-b border-line px-3 py-2 text-left font-semibold whitespace-nowrap">{h}</th>))}</tr>
           </thead>
           <tbody>
             {righe.map(s => {
               const x = sintesi(s), st = x.stato, da = st === 'da_decidere', sc = modelliScelti(s);
               return (
-                <tr key={s.codice} className={da ? 'bg-amber-50/60' : ''}>
-                  <td className="border-b border-gray-100 px-3 py-1.5 font-bold">{s.codice}</td>
-                  <td className="border-b border-gray-100 px-3 py-1.5 max-w-[26rem]" title={s.esempio}>
-                    {x.auto && <span className="mr-1.5 rounded bg-gray-100 px-1.5 text-xs text-gray-600" title="Deciso dal programma perché gli altri modelli lo avevano deciso tutti allo stesso modo. Cambialo se è sbagliato: ne terrà conto.">automatica</span>}
-                    {da && x.suggerimento && <span className="mr-1.5 rounded bg-gray-100 px-1.5 text-xs text-gray-600" title="Cosa hai deciso negli altri modelli">altri modelli: {x.suggerimento}</span>}
-                    {st === 'sub' && <span className="mr-1.5 rounded bg-blue-100 px-1.5 text-xs text-blue-700">sotto-sigla</span>}
-                    {st === 'alias' && <span className="mr-1.5 rounded bg-amber-100 px-1.5 text-xs text-amber-800">= errore di {x.alias ?? '?'}</span>}
-                    {st === 'misto' && <span className="mr-1.5 rounded bg-gray-100 px-1.5 text-xs text-gray-600">scelte diverse per modello</span>}
-                    {x.padre && <span className="mr-1.5 rounded bg-amber-100 px-1.5 text-xs text-amber-800">dentro {x.padre}</span>}
-                    {x.simile_a && <span className="mr-1.5 text-xs font-semibold text-amber-700">simile a {x.simile_a}</span>}
-                    {s.nome}{s.esempio && <span className="text-xs text-gray-400"> · {s.esempio.slice(0, 70)}</span>}
-                    <button className="ml-1.5 text-xs text-gray-400 hover:text-blue-700" title="Scrivi o cambia la descrizione" onClick={() => scriviDescrizione(s)}><IconaMatita /></button>
+                <tr key={s.codice} className={da ? 'bg-warning-soft/60' : ''}>
+                  <td className="border-b border-stone-100 px-3 py-1.5 font-bold">{s.codice}</td>
+                  <td className="border-b border-stone-100 px-3 py-1.5 max-w-[26rem]" title={s.esempio}>
+                    {x.auto && <span className="mr-1.5 rounded bg-stone-100 px-1.5 text-xs text-ink-700" title="Deciso dal programma perché gli altri modelli lo avevano deciso tutti allo stesso modo. Cambialo se è sbagliato: ne terrà conto.">automatica</span>}
+                    {da && x.suggerimento && <span className="mr-1.5 rounded bg-stone-100 px-1.5 text-xs text-ink-700" title="Cosa hai deciso negli altri modelli">altri modelli: {x.suggerimento}</span>}
+                    {st === 'sub' && <span className="mr-1.5 rounded bg-accent-soft px-1.5 text-xs text-accent-ink">sotto-sigla</span>}
+                    {st === 'alias' && <span className="mr-1.5 rounded bg-warning-soft px-1.5 text-xs text-warning">= errore di {x.alias ?? '?'}</span>}
+                    {st === 'misto' && <span className="mr-1.5 rounded bg-stone-100 px-1.5 text-xs text-ink-700">scelte diverse per modello</span>}
+                    {x.padre && <span className="mr-1.5 rounded bg-warning-soft px-1.5 text-xs text-warning">dentro {x.padre}</span>}
+                    {x.simile_a && <span className="mr-1.5 text-xs font-semibold text-warning">simile a {x.simile_a}</span>}
+                    {s.nome}{s.esempio && <span className="text-xs text-muted"> · {s.esempio.slice(0, 70)}</span>}
+                    <button className="ml-1.5 text-xs text-muted hover:text-accent-ink" title="Scrivi o cambia la descrizione" onClick={() => scriviDescrizione(s)}><IconaMatita /></button>
                   </td>
-                  <td className="border-b border-gray-100 px-3 py-1.5 whitespace-nowrap">
+                  <td className="border-b border-stone-100 px-3 py-1.5 whitespace-nowrap">
                     {([['colonna', 'Sì', st === 'da_decidere' && x.sub ? 'sub' : 'colonna'], ['no', 'Non mi serve', 'no'], ['nonsigla', 'Non è una sigla', 'nonsigla']] as const).map(([id, label, valore]) => (
                       <button key={id} className={`!py-0.5 mr-1 text-xs ${st === id ? 'btn-primary' : 'btn-secondary'}`} onClick={() => imposta(s, valore)}
                         title={id === 'colonna' ? 'È una sigla: compare come colonna in Vedere' : id === 'no' ? 'È una sigla ma non ti serve: non verrà più chiesta' : 'Non è una sigla (un colore, un codice di materiale...): non verrà più chiesta'}>{label}</button>
@@ -278,45 +278,45 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
                     <button className={`!py-0.5 text-xs ${st === 'alias' ? 'btn-primary' : 'btn-secondary'}`} title="È un errore di scrittura di un'altra sigla"
                       onClick={() => { const a = (prompt(`Questo codice (${s.codice}) è un errore di scrittura di quale sigla? (scrivi il codice giusto, es. CEXS)`, x.alias ?? '') ?? '').trim(); if (a) imposta(s, 'alias', a); }}>È…</button>
                   </td>
-                  <td className="border-b border-gray-100 px-3 py-1.5">
+                  <td className="border-b border-stone-100 px-3 py-1.5">
                     <button className={`!py-0.5 text-xs ${st === 'sub' ? 'btn-primary' : 'btn-secondary'}`}
                       title="Sotto-sigla: compare dentro la cella di un'altra voce, non come colonna" onClick={() => imposta(s, st === 'sub' ? 'colonna' : 'sub')}>{st === 'sub' ? 'Sì' : 'No'}</button>
                   </td>
-                  <td className="border-b border-gray-100 px-3 py-1.5">
+                  <td className="border-b border-stone-100 px-3 py-1.5">
                     {st === 'sub' ? (
                       <select className="input !w-auto !py-0.5 text-xs" value={x.padre ?? ''} onChange={e => imposta(s, 'sub', null, e.target.value || null)}>
                         <option value="">In qualsiasi voce</option>
                         {padriPossibili(s, x.padre).map(p => <option key={p} value={p}>{p}</option>)}
                       </select>
-                    ) : <span className="text-gray-300">—</span>}
+                    ) : <span className="text-stone-300">—</span>}
                   </td>
-                  <td className="border-b border-gray-100 px-3 py-1.5">
+                  <td className="border-b border-stone-100 px-3 py-1.5">
                     <details className="relative">
                       <summary className="btn-secondary !py-0.5 text-xs cursor-pointer list-none whitespace-nowrap">
                         {!sc.length ? 'Scegli i modelli…' : sc.length === c.modelli.length ? `Tutti i modelli (${sc.length})` : sc.length <= 2 ? sc.join(', ') : `${sc.length} modelli`}
                       </summary>
-                      <div className="absolute z-20 mt-1 min-w-[14rem] rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
+                      <div className="absolute z-20 mt-1 min-w-[14rem] rounded-card border border-line bg-white p-2 shadow-lg">
                         <label className="block text-xs font-semibold">
                           <input type="checkbox" checked={sc.length === c.modelli.length} onChange={e => setScelti(z => ({ ...z, [s.codice]: e.target.checked ? c.modelli.map(m => m.modello) : [] }))} /> Seleziona tutti
                         </label>
                         {c.modelli.map(m => (
                           <label key={m.modello} className="block text-xs">
                             <input type="checkbox" checked={sc.includes(m.modello)} onChange={e => setScelti(z => ({ ...z, [s.codice]: e.target.checked ? [...sc, m.modello] : sc.filter(y => y !== m.modello) }))} /> {m.modello}{' '}
-                            <span className="text-gray-400">{s.stati[m.modello] ? NOME_STATO[s.stati[m.modello]!.stato] : 'non compare'}</span>
+                            <span className="text-muted">{s.stati[m.modello] ? NOME_STATO[s.stati[m.modello]!.stato] : 'non compare'}</span>
                           </label>
                         ))}
-                        <p className="mt-1 text-[11px] text-gray-500">Poi premi Sì, Non mi serve o Non è una sigla.</p>
+                        <p className="mt-1 text-[11px] text-muted">Poi premi Sì, Non mi serve o Non è una sigla.</p>
                       </div>
                     </details>
                   </td>
-                  <td className="border-b border-gray-100 px-3 py-1.5 text-right">
-                    <button className="text-gray-400 hover:text-red-600" title="Togli questa sigla da tutti i modelli (tornerà da decidere)"
+                  <td className="border-b border-stone-100 px-3 py-1.5 text-right">
+                    <button className="text-muted hover:text-danger" title="Togli questa sigla da tutti i modelli (tornerà da decidere)"
                       onClick={async () => { if (confirm(`Togliere ${s.codice} da tutti i modelli? Tornerà da decidere se compare ancora nelle schede.`)) { try { await api.post('/api/ferrari/sigle/imposta', { codice: s.codice, stato: 'reset', modelli: '*' }); } catch (e) { setErrore((e as Error).message); } await carica(); } }}><IconaChiudi /></button>
                   </td>
                 </tr>
               );
             })}
-            {righe.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-gray-400">{tutte.length ? 'Nessuna sigla corrisponde al filtro o alla ricerca.' : 'Non ci sono sigle.'}</td></tr>}
+            {righe.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-muted">{tutte.length ? 'Nessuna sigla corrisponde al filtro o alla ricerca.' : 'Non ci sono sigle.'}</td></tr>}
           </tbody>
         </table>
       </div>

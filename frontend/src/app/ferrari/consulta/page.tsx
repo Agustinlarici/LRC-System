@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { STATI, fmtData, type Esito, type FileRiga, type StatoFile } from '@/lib/ferrari';
-import { Errore, EsitoDot, FerrariNav, StatoBadge } from '@/components/ferrari/Comuni';
+import { Errore, EsitoDot, StatoBadge } from '@/components/ferrari/Comuni';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 interface Risultati {
   file: { id: number; filename: string; stato: StatoFile; esito: Esito | null; commessa: string | null; modello: string | null; caricato_at: string }[];
@@ -78,15 +79,15 @@ export default function ConsultaPage() {
 
   return (
     <div>
-      <div className="mb-4">
-        <h1 className="text-3xl font-bold text-gray-900">Consulta</h1>
-        <p className="mt-1 text-gray-500">Cerca in schede, codici, componenti, decisioni e storico.</p>
-      </div>
-      <FerrariNav />
+      <PageHeader
+        back={{ label: 'Programma produzione (schede)', href: '/ferrari' }}
+        title="Consulta"
+        description="Cerca in schede, codici, componenti, decisioni e storico."
+      />
       <Errore messaggio={errore} />
 
       <section className="card mb-6">
-        <h2 className="font-semibold text-gray-900 mb-3">Ricerca libera</h2>
+        <h2 className="font-semibold text-ink-900 mb-3">Ricerca libera</h2>
         <form className="flex gap-3" onSubmit={testo}>
           <input className="input" placeholder="Es. una commessa, un codice (CEL2), una parola del testo libero, un utente…" value={q} onChange={e => setQ(e.target.value)} />
           <button className="btn-primary" disabled={cerca || q.trim().length < 2}>Cerca</button>
@@ -96,37 +97,37 @@ export default function ConsultaPage() {
           <div className="mt-5 space-y-5 text-sm">
             <Gruppo titolo="Schede" n={ris.file.length}>
               {ris.file.map(f => (
-                <Link key={f.id} href={`/ferrari/${f.id}`} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50">
-                  <span className="font-medium text-blue-700">{f.commessa ?? f.filename}</span>
-                  <span className="text-gray-500">{f.modello}</span><StatoBadge stato={f.stato} /><EsitoDot esito={f.esito} mostraTesto={false} />
-                  <span className="ml-auto text-gray-400">{fmtData(f.caricato_at)}</span>
+                <Link key={f.id} href={`/ferrari/${f.id}`} className="flex items-center gap-3 px-3 py-2 hover:bg-stone-50">
+                  <span className="font-medium text-accent-ink">{f.commessa ?? f.filename}</span>
+                  <span className="text-muted">{f.modello}</span><StatoBadge stato={f.stato} /><EsitoDot esito={f.esito} mostraTesto={false} />
+                  <span className="ml-auto text-muted">{fmtData(f.caricato_at)}</span>
                 </Link>
               ))}
             </Gruppo>
             <Gruppo titolo="Codici" n={ris.codici.length}>
               {ris.codici.map(c => (
                 <div key={c.id} className="px-3 py-2"><span className="font-mono font-medium">{c.codice}</span> {c.significato}
-                  <span className="text-gray-400"> · {c.modello ?? 'tutti'} · {c.stato}</span></div>
+                  <span className="text-muted"> · {c.modello ?? 'tutti'} · {c.stato}</span></div>
               ))}
             </Gruppo>
             <Gruppo titolo="Componenti del testo" n={ris.componenti.length}>
               {ris.componenti.map(c => (
                 <div key={c.id} className="px-3 py-2"><span className="font-medium">{c.pattern}</span> = {c.tipo}{c.tipo !== 'NEUTRO' && <> = {c.valore}</>}
-                  <span className="text-gray-400"> · {c.modello ?? 'tutti'} · {c.stato}</span></div>
+                  <span className="text-muted"> · {c.modello ?? 'tutti'} · {c.stato}</span></div>
               ))}
             </Gruppo>
             <Gruppo titolo="Decisioni" n={ris.decisioni.length}>
               {ris.decisioni.map(d => (
-                <Link key={d.id} href={`/ferrari/${d.file_id}`} className="block px-3 py-2 hover:bg-gray-50">
-                  <span className="font-medium">{d.decisione}</span> · {d.username} · <span className="text-gray-400">{fmtData(d.creata_at)}</span>
-                  {d.motivo && <div className="text-gray-600">{d.motivo}</div>}
+                <Link key={d.id} href={`/ferrari/${d.file_id}`} className="block px-3 py-2 hover:bg-stone-50">
+                  <span className="font-medium">{d.decisione}</span> · {d.username} · <span className="text-muted">{fmtData(d.creata_at)}</span>
+                  {d.motivo && <div className="text-ink-700">{d.motivo}</div>}
                 </Link>
               ))}
             </Gruppo>
             <Gruppo titolo="Storico" n={ris.storico.length}>
               {ris.storico.map(s => (
                 <div key={s.id} className="px-3 py-2"><span className="font-mono text-xs">{s.azione}</span> · {s.username ?? 'sistema'}
-                  <span className="text-gray-400"> · {fmtData(s.ts)}{s.entita ? ` · ${s.entita} ${s.entita_id ?? ''}` : ''}</span></div>
+                  <span className="text-muted"> · {fmtData(s.ts)}{s.entita ? ` · ${s.entita} ${s.entita_id ?? ''}` : ''}</span></div>
               ))}
             </Gruppo>
           </div>
@@ -134,7 +135,7 @@ export default function ConsultaPage() {
       </section>
 
       <section className="card mb-6">
-        <h2 className="font-semibold text-gray-900 mb-3">Filtra le schede</h2>
+        <h2 className="font-semibold text-ink-900 mb-3">Filtra le schede</h2>
         <form className="grid grid-cols-2 md:grid-cols-6 gap-3 items-end" onSubmit={filtra}>
           <div><label className="label">Modello</label><input className="input" placeholder="F171VS" value={modello} onChange={e => setModello(e.target.value)} /></div>
           <div><label className="label">Contiene il codice</label><input className="input" placeholder="CEL2" maxLength={4} value={codice} onChange={e => setCodice(e.target.value)} /></div>
@@ -152,20 +153,20 @@ export default function ConsultaPage() {
         </form>
         {schede && (
           <div className="mt-4 overflow-x-auto">
-            <p className="text-xs text-gray-400 mb-2">{totale} schede{totale > schede.length ? ` (prime ${schede.length})` : ''}</p>
+            <p className="text-xs text-muted mb-2">{totale} schede{totale > schede.length ? ` (prime ${schede.length})` : ''}</p>
             <table className="w-full text-sm">
               <tbody>
                 {schede.map(f => (
-                  <tr key={f.id} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="py-1.5 pr-4"><Link className="text-blue-700 hover:underline font-medium" href={`/ferrari/${f.id}`}>{f.commessa ?? f.filename}</Link></td>
+                  <tr key={f.id} className="border-b border-stone-100 hover:bg-stone-50">
+                    <td className="py-1.5 pr-4"><Link className="text-accent-ink hover:underline font-medium" href={`/ferrari/${f.id}`}>{f.commessa ?? f.filename}</Link></td>
                     <td className="py-1.5 pr-4">{f.modello}</td>
                     <td className="py-1.5 pr-4">{f.paese}</td>
                     <td className="py-1.5 pr-4"><StatoBadge stato={f.stato} /></td>
                     <td className="py-1.5 pr-4"><EsitoDot esito={f.esito} /></td>
-                    <td className="py-1.5 text-gray-400">{fmtData(f.caricato_at)}</td>
+                    <td className="py-1.5 text-muted">{fmtData(f.caricato_at)}</td>
                   </tr>
                 ))}
-                {schede.length === 0 && <tr><td className="py-4 text-center text-gray-400">Nessuna scheda</td></tr>}
+                {schede.length === 0 && <tr><td className="py-4 text-center text-muted">Nessuna scheda</td></tr>}
               </tbody>
             </table>
           </div>
@@ -174,29 +175,29 @@ export default function ConsultaPage() {
 
       <section className="card">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-gray-900">Storico completo (ultime 100 voci)</h2>
+          <h2 className="font-semibold text-ink-900">Storico completo (ultime 100 voci)</h2>
           <div className="flex items-center gap-3">
             {verifica && (
-              <span className={`text-sm font-medium ${verifica.ok ? 'text-green-700' : 'text-red-600'}`}>
+              <span className={`text-sm font-medium ${verifica.ok ? 'text-success' : 'text-danger'}`}>
                 {verifica.ok ? `Catena integra (${verifica.righe} voci)` : verifica.errore}
               </span>
             )}
             <button className="btn-secondary text-xs" onClick={verificaCatena}>Verifica integrità</button>
           </div>
         </div>
-        <p className="text-xs text-gray-400 mb-3">Lo storico è di sola aggiunta e ogni voce contiene l&apos;hash della precedente: una modifica nel database rompe la catena.</p>
+        <p className="text-xs text-muted mb-3">Lo storico è di sola aggiunta e ogni voce contiene l&apos;hash della precedente: una modifica nel database rompe la catena.</p>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <tbody>
               {audit.map(a => (
-                <tr key={a.id} className="border-b border-gray-100 align-top">
-                  <td className="py-1.5 pr-3 text-gray-400 whitespace-nowrap">{fmtData(a.ts)}</td>
+                <tr key={a.id} className="border-b border-stone-100 align-top">
+                  <td className="py-1.5 pr-3 text-muted whitespace-nowrap">{fmtData(a.ts)}</td>
                   <td className="py-1.5 pr-3">{a.username ?? 'sistema'}</td>
                   <td className="py-1.5 pr-3 font-mono text-xs">{a.azione}</td>
                   <td className="py-1.5 pr-3">
-                    {a.entita === 'file' && a.entita_id ? <Link className="text-blue-700 hover:underline" href={`/ferrari/${a.entita_id}`}>scheda #{a.entita_id}</Link> : `${a.entita ?? ''} ${a.entita_id ?? ''}`}
+                    {a.entita === 'file' && a.entita_id ? <Link className="text-accent-ink hover:underline" href={`/ferrari/${a.entita_id}`}>scheda #{a.entita_id}</Link> : `${a.entita ?? ''} ${a.entita_id ?? ''}`}
                   </td>
-                  <td className="py-1.5 text-xs text-gray-500 break-all">{a.dettagli ? JSON.stringify(a.dettagli) : ''}</td>
+                  <td className="py-1.5 text-xs text-muted break-all">{a.dettagli ? JSON.stringify(a.dettagli) : ''}</td>
                 </tr>
               ))}
             </tbody>
@@ -210,8 +211,8 @@ export default function ConsultaPage() {
 function Gruppo({ titolo, n, children }: { titolo: string; n: number; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="font-medium text-gray-700 mb-1">{titolo} <span className="text-gray-400">({n})</span></h3>
-      {n === 0 ? <p className="text-gray-400 text-xs">Nessun risultato</p> : <div className="rounded-lg border border-gray-200 divide-y divide-gray-100">{children}</div>}
+      <h3 className="font-medium text-ink-700 mb-1">{titolo} <span className="text-muted">({n})</span></h3>
+      {n === 0 ? <p className="text-muted text-xs">Nessun risultato</p> : <div className="rounded-ctl border border-line divide-y divide-stone-100">{children}</div>}
     </div>
   );
 }

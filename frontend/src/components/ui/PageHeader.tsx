@@ -3,7 +3,7 @@ import Link from 'next/link';
 
 interface Props {
   title:        string;
-  description?: string;
+  description?: React.ReactNode;
   /** Percorso di ritorno mostrato sopra il titolo, es. { label: 'Programma Produzione', href: '/produzione' } */
   back?:        { label: string; href: string };
   /** Badge o altro accanto al titolo */
@@ -26,7 +26,7 @@ export function PageHeader({ title, description, back, badge, actions }: Props) 
           <h1 className="text-2xl font-semibold tracking-tight text-ink-900">{title}</h1>
           {badge}
         </div>
-        {description && <p className="mt-1 text-sm text-muted">{description}</p>}
+        {description && <div className="mt-1 text-sm text-muted">{description}</div>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </header>

@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { inviaFile } from '@/lib/ferrari';
 import { AnomalieRiga, Cella, Errore, SottoSigla, VistaToggle } from '@/components/ferrari/Comuni';
 import { InfoCartella, type StatoCartella } from '@/components/ferrari/InfoCartella';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 interface Riga {
   id: number; commessa: string; modello: string | null;
@@ -26,7 +27,7 @@ interface Matrice {
 }
 
 const etichetta = (m: { etichette?: Record<string, string> }, t: string) => m.etichette?.[t] ? `${m.etichette[t]} (${t})` : t;
-const btnLink = 'flex items-center gap-1.5 text-sm border border-gray-200 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50';
+const btnLink = 'btn-secondary';
 
 export default function VederePage() {
   const { canManage } = useAuth();
@@ -123,38 +124,38 @@ export default function VederePage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-start justify-between flex-wrap gap-3 d-print-none">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Programma produzione (schede)</h1>
-          <InfoCartella stato={cartella} />
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          {puoGestire && (
-            <>
-              <input ref={inputRef} type="file" multiple accept=".xls,.xlsx" className="hidden" onChange={e => invia(Array.from(e.target.files ?? []))} />
-              <button className="flex items-center gap-1.5 text-sm bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-                disabled={occupato} onClick={() => inputRef.current?.click()}>{occupato ? 'Caricamento…' : 'Carica Excel'}</button>
-              {cartella?.config.percorso && (
-                <button className={btnLink} disabled={inCorso} onClick={leggiCartella} title={`Legge ${cartella.config.percorso}`}>{inCorso ? 'Lettura…' : 'Leggi cartella'}</button>
-              )}
-            </>
-          )}
-          <button className={btnLink} disabled={!m || righe.length === 0} onClick={esportaExcel}>Scarica Excel</button>
-          <button className={btnLink} onClick={() => window.print()}>Stampa</button>
-          {puoGestire && (
-            <Link href="/ferrari/impostazioni" className={btnLink}>
-              Impostazioni
-              {daFare > 0 && <span className="rounded-full bg-amber-500 px-1.5 text-[11px] font-bold leading-4 text-white">{daFare}</span>}
-            </Link>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Programma produzione (schede)"
+        description={<InfoCartella stato={cartella} />}
+        actions={
+          <>
+            {puoGestire && (
+              <>
+                <input ref={inputRef} type="file" multiple accept=".xls,.xlsx" className="hidden" onChange={e => invia(Array.from(e.target.files ?? []))} />
+                <button className="btn-primary"
+                  disabled={occupato} onClick={() => inputRef.current?.click()}>{occupato ? 'Caricamento…' : 'Carica Excel'}</button>
+                {cartella?.config.percorso && (
+                  <button className={btnLink} disabled={inCorso} onClick={leggiCartella} title={`Legge ${cartella.config.percorso}`}>{inCorso ? 'Lettura…' : 'Leggi cartella'}</button>
+                )}
+              </>
+            )}
+            <button className={btnLink} disabled={!m || righe.length === 0} onClick={esportaExcel}>Scarica Excel</button>
+            <button className={btnLink} onClick={() => window.print()}>Stampa</button>
+            {puoGestire && (
+              <Link href="/ferrari/impostazioni" className={btnLink}>
+                Impostazioni
+                {daFare > 0 && <span className="rounded-full bg-brand px-1.5 text-[11px] font-bold leading-4 text-white">{daFare}</span>}
+              </Link>
+            )}
+          </>
+        }
+      />
 
       <Errore messaggio={errore} />
-      {msg && <p className="d-print-none mb-3 text-xs text-gray-500">{msg}</p>}
+      {msg && <p className="d-print-none mb-3 text-xs text-muted">{msg}</p>}
 
       {puoGestire && daFare > 0 && (
-        <div className="d-print-none mb-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-2.5 text-sm text-blue-800">
+        <div className="d-print-none mb-4 rounded-card border border-accent/40 bg-accent-soft px-4 py-2.5 text-sm text-accent-ink">
           {(m?.nuove.length ?? 0) > 0 && <><b>{m!.nuove.length}</b> sigle da decidere. </>}
           {(m?.descrizioni_proposte?.length ?? 0) > 0 && <><b>{m!.descrizioni_proposte!.length}</b> descrizioni da confermare. </>}
           {(m?.proposte.length ?? 0) > 0 && <><b>{m!.proposte.length}</b> modifiche dalla PC IA. </>}
@@ -171,47 +172,47 @@ export default function VederePage() {
           </select>
           <input className="input !w-48" placeholder="Commessa…" value={fCommessa} onChange={e => setFCommessa(e.target.value)} />
           <input className="input !w-56" placeholder="Sigla o caratteristica…" value={fTesto} onChange={e => setFTesto(e.target.value)} />
-          <span className="text-sm text-gray-500">{righe.length === (m?.righe.length ?? 0) ? `${righe.length} commesse` : `${righe.length} di ${m?.righe.length} commesse`}</span>
+          <span className="text-sm text-muted">{righe.length === (m?.righe.length ?? 0) ? `${righe.length} commesse` : `${righe.length} di ${m?.righe.length} commesse`}</span>
         </div>
       )}
 
       <div className="print-a4">
         <div className="only-print mb-4 text-center">
-          <h1 className="text-2xl font-bold text-gray-900">Programma produzione (schede)</h1>
-          <p className="text-gray-500">Modello {m?.modello}</p>
+          <h1 className="text-2xl font-bold text-ink-900">Programma produzione (schede)</h1>
+          <p className="text-muted">Modello {m?.modello}</p>
         </div>
 
         {vuoto ? (
-          <div className="rounded-xl border border-gray-200 bg-white p-10 text-center text-sm text-gray-500">
-            <p className="text-base font-semibold text-gray-700">Non c&apos;è ancora nessuna scheda</p>
-            {puoGestire && <p className="mt-1">Premi «Carica Excel», oppure scegli la cartella degli Excel nelle <Link href="/ferrari/impostazioni#cartella" className="text-blue-600 hover:underline">Impostazioni</Link>.</p>}
+          <div className="rounded-card border border-line bg-white p-10 text-center text-sm text-muted">
+            <p className="text-base font-semibold text-ink-700">Non c&apos;è ancora nessuna scheda</p>
+            {puoGestire && <p className="mt-1">Premi «Carica Excel», oppure scegli la cartella degli Excel nelle <Link href="/ferrari/impostazioni#cartella" className="text-accent-ink hover:underline">Impostazioni</Link>.</p>}
           </div>
         ) : m!.termini.length === 0 ? (
-          <div className="rounded-xl border border-gray-200 bg-white p-10 text-center text-sm text-gray-500">
+          <div className="rounded-card border border-line bg-white p-10 text-center text-sm text-muted">
             Per {m!.modello} non hai ancora scelto nessuna sigla da mostrare.{' '}
-            {puoGestire && <Link href="/ferrari/impostazioni#sigle" className="text-blue-600 hover:underline">Scegli le sigle</Link>}
+            {puoGestire && <Link href="/ferrari/impostazioni#sigle" className="text-accent-ink hover:underline">Scegli le sigle</Link>}
           </div>
         ) : righe.length === 0 ? (
-          <div className="rounded-xl border border-gray-200 bg-white p-10 text-center text-sm text-gray-400">Nessuna commessa trovata</div>
+          <div className="rounded-card border border-line bg-white p-10 text-center text-sm text-muted">Nessuna commessa trovata</div>
         ) : (
-          <div className="overflow-auto max-h-[75vh] rounded-xl border border-gray-200 bg-white print:max-h-none print:overflow-visible print:border-0">
+          <div className="overflow-auto max-h-[75vh] rounded-card border border-line bg-white print:max-h-none print:overflow-visible print:border-0">
             <table className="w-full text-sm operator-sheet">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50 text-gray-500">
-                  <th className="sticky top-0 left-0 z-20 bg-gray-50 py-2.5 px-4 text-left font-medium">Commessa</th>
-                  {m!.termini.map(t => <th key={t} className="sticky top-0 z-10 bg-gray-50 py-2.5 px-4 text-left font-medium min-w-[140px]">{etichetta(m!, t)}</th>)}
+                <tr className="border-b border-line bg-stone-50 text-muted">
+                  <th className="sticky top-0 left-0 z-20 bg-stone-50 py-2.5 px-4 text-left font-medium">Commessa</th>
+                  {m!.termini.map(t => <th key={t} className="sticky top-0 z-10 bg-stone-50 py-2.5 px-4 text-left font-medium min-w-[140px]">{etichetta(m!, t)}</th>)}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-stone-100">
                 {righe.map(r => (
-                  <tr key={r.id} className="align-top hover:bg-gray-50">
+                  <tr key={r.id} className="align-top hover:bg-stone-50">
                     <td className="sticky left-0 z-10 bg-white py-2 px-4 font-semibold whitespace-nowrap">
-                      <Link href={`/ferrari/${r.id}`} className="text-blue-600 hover:underline print:text-black">{r.commessa}</Link>
+                      <Link href={`/ferrari/${r.id}`} className="text-accent-ink hover:underline print:text-black">{r.commessa}</Link>
                       <div className="d-print-none font-normal"><AnomalieRiga anomalie={r.anomalie} modello={m!.modello} onFatto={() => carica(modello)} onErrore={setErrore} /></div>
                     </td>
                     {m!.termini.map(t => (
                       <td key={t} className={`py-2 px-4 max-w-[280px] ${r.rivedere?.[t] ? 'shadow-[inset_3px_0_0_#f0a020]' : ''}`}>
-                        {r.avvisi?.[t] && <div className="text-xs font-semibold text-amber-700">{r.avvisi[t]}</div>}
+                        {r.avvisi?.[t] && <div className="text-xs font-semibold text-warning">{r.avvisi[t]}</div>}
                         <Cella testo={r.celle[t]} intero={r.testi[t]} />
                         {r.sub?.[t]?.map(x => <SottoSigla key={x.codice} x={x} modello={m!.modello} onFatto={() => carica(modello)} onErrore={setErrore} />)}
                       </td>

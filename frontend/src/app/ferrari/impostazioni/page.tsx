@@ -5,11 +5,13 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { inviaFile, scaricaFile } from '@/lib/ferrari';
-import { Errore, FerrariNav } from '@/components/ferrari/Comuni';
+import { Errore, } from '@/components/ferrari/Comuni';
 import { ImpostazioniCartella } from '@/components/ferrari/ImpostazioniCartella';
 import { ImpostazioniSigle, type ConfigSigle } from '@/components/ferrari/ImpostazioniSigle';
 import { ImpostazioniModelli } from '@/components/ferrari/ImpostazioniModelli';
 import { ComponentiGestione } from '@/components/ferrari/ComponentiGestione';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { Tabs } from '@/components/ui/Tabs';
 
 type Scheda = 'sigle' | 'modelli' | 'componenti' | 'cartella' | 'avanzate';
 const SCHEDE: { id: Scheda; label: string }[] = [
@@ -69,31 +71,25 @@ export default function ImpostazioniPage() {
     }
   }
 
-  const badge = (n: number) => n > 0 && <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 text-[11px] font-bold leading-4 text-white">{n}</span>;
-
   return (
     <div>
-      <FerrariNav />
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Impostazioni schede</h1>
-        <p className="mt-1 text-gray-500">Cartella degli Excel, sigle, modelli e componenti.</p>
-      </div>
+      <PageHeader
+        back={{ label: 'Programma produzione (schede)', href: '/ferrari' }}
+        title="Impostazioni schede"
+        description="Cartella degli Excel, sigle, modelli e componenti."
+      />
       <Errore messaggio={errore} />
 
-      <div className="mb-6 flex gap-1 overflow-x-auto border-b border-gray-200">
-        {SCHEDE.map(s => (
-          <button key={s.id} onClick={() => apri(s.id)}
-            className={`whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition-colors ${tab === s.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            {s.label}
-            {s.id === 'sigle' && badge(daDecidere + (cont?.descrizioni_da_confermare ?? 0))}
-            {s.id === 'modelli' && badge(modelliNuovi)}
-            {s.id === 'avanzate' && badge(proposte.length)}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        tabs={SCHEDE.map(x => x.id)}
+        value={tab}
+        onChange={apri}
+        labels={Object.fromEntries(SCHEDE.map(x => [x.id, x.label]))}
+        badges={{ sigle: daDecidere + (cont?.descrizioni_da_confermare ?? 0), modelli: modelliNuovi, avanzate: proposte.length }}
+      />
 
       {!puoGestire ? (
-        <p className="rounded-xl border border-gray-200 bg-white px-4 py-6 text-sm text-gray-500">Non hai il permesso di modificare le impostazioni delle schede.</p>
+        <p className="rounded-card border border-line bg-white px-4 py-6 text-sm text-muted">Non hai il permesso di modificare le impostazioni delle schede.</p>
       ) : (
         <>
           {tab === 'sigle' && <ImpostazioniSigle onCambia={(c: ConfigSigle) => setCont(c as unknown as Contatori)} />}
@@ -102,9 +98,9 @@ export default function ImpostazioniPage() {
           {tab === 'cartella' && <div className="max-w-3xl"><ImpostazioniCartella /></div>}
           {tab === 'avanzate' && (
             <div className="space-y-4">
-              <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <h2 className="mb-1 text-sm font-semibold text-gray-700">Altre pagine</h2>
-                <p className="mb-3 text-xs text-gray-500">Non servono nell&apos;uso di ogni giorno.</p>
+              <div className="rounded-card border border-line bg-white p-5">
+                <h2 className="mb-1 text-sm font-semibold text-ink-700">Altre pagine</h2>
+                <p className="mb-3 text-xs text-muted">Non servono nell&apos;uso di ogni giorno.</p>
                 <div className="flex flex-wrap gap-2">
                   {[['/ferrari/schede', 'Revisione'], ['/ferrari/consulta', 'Consulta'], ['/ferrari/conoscenza', 'Conoscenza'], ['/ferrari/scambio', 'Scambio con la IA']].map(([h, l]) => (
                     <Link key={h} href={h!} className="btn-secondary">{l}</Link>
@@ -112,17 +108,17 @@ export default function ImpostazioniPage() {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <h2 className="mb-1 text-sm font-semibold text-gray-700">PC IA (non collegata)</h2>
-                <p className="mb-3 text-xs text-gray-500">La VM lavora senza IA. Questo serve solo quando la PC IA verrà collegata: scambio manuale delle sigle e dei componenti.</p>
+              <div className="rounded-card border border-line bg-white p-5">
+                <h2 className="mb-1 text-sm font-semibold text-ink-700">PC IA (non collegata)</h2>
+                <p className="mb-3 text-xs text-muted">La VM lavora senza IA. Questo serve solo quando la PC IA verrà collegata: scambio manuale delle sigle e dei componenti.</p>
                 <input ref={zipRef} type="file" accept=".zip" className="hidden" onChange={e => importa(e.target.files?.[0])} />
                 <div className="flex flex-wrap items-center gap-2">
                   <button className="btn-secondary" onClick={() => scaricaFile('/api/ferrari/sigle/esporta', { nome: 'FERRARI_sigle_vm.zip' }).catch(e => setErrore((e as Error).message))}>Invia sigle alla PC IA</button>
                   <button className="btn-secondary" onClick={() => zipRef.current?.click()}>Carica file dalla PC IA</button>
-                  {msg && <span className="text-xs text-gray-500">{msg}</span>}
+                  {msg && <span className="text-xs text-muted">{msg}</span>}
                 </div>
                 {proposte.length > 0 && (
-                  <div className="mt-4 rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm">
+                  <div className="mt-4 rounded-card border border-accent/40 bg-accent-soft px-4 py-3 text-sm">
                     <div className="flex flex-wrap items-center gap-2">
                       <b>Dalla PC IA: {proposte.length} modifiche</b>
                       <button className="btn-primary !py-0.5 text-xs" onClick={() => risolvi('accetta-tutte')}>Accetta tutte</button>
@@ -130,10 +126,10 @@ export default function ImpostazioniPage() {
                     </div>
                     <table className="mt-2 w-full"><tbody>
                       {proposte.map(p => (
-                        <tr key={`${p.modello}/${p.codice}`} className="border-t border-sky-200">
+                        <tr key={`${p.modello}/${p.codice}`} className="border-t border-accent/40">
                           <td className="py-1 pr-3 font-semibold">{p.modello === '*' ? 'tutti i modelli' : p.modello}</td>
-                          <td className="py-1 pr-3"><b>{p.codice}</b> <span className="text-gray-500">{p.nome}</span>{p.sub && <span className="ml-2 rounded bg-gray-100 px-1.5 text-xs">sotto-sigla</span>}{p.alias && <span className="ml-2 rounded bg-gray-100 px-1.5 text-xs">= {p.alias}</span>}</td>
-                          <td className="py-1 pr-3">{p.va ? (p.sub ? 'va dentro la voce' : 'va in tabella') : 'non va'}{p.conflitto && <span className="ml-2 rounded bg-amber-100 px-1.5 text-xs text-amber-800">tu: il contrario</span>}</td>
+                          <td className="py-1 pr-3"><b>{p.codice}</b> <span className="text-muted">{p.nome}</span>{p.sub && <span className="ml-2 rounded bg-stone-100 px-1.5 text-xs">sotto-sigla</span>}{p.alias && <span className="ml-2 rounded bg-stone-100 px-1.5 text-xs">= {p.alias}</span>}</td>
+                          <td className="py-1 pr-3">{p.va ? (p.sub ? 'va dentro la voce' : 'va in tabella') : 'non va'}{p.conflitto && <span className="ml-2 rounded bg-warning-soft px-1.5 text-xs text-warning">tu: il contrario</span>}</td>
                           <td className="py-1 text-right whitespace-nowrap">
                             <button className="btn-primary !py-0.5 text-xs mr-1" onClick={() => risolvi('accetta', p)}>Accetta</button>
                             <button className="btn-secondary !py-0.5 text-xs" onClick={() => risolvi('rifiuta', p)}>Rifiuta</button>
