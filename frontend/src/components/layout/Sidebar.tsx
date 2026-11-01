@@ -39,7 +39,7 @@ const BACKEND = typeof window !== 'undefined'
 
 // Barretta rossa a sinistra della voce attiva (accento di marca)
 function ActiveMark() {
-  return <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-brand" />;
+  return <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-accent" />;
 }
 
 // Pallino con il numero di scadenze HR non ancora prese in carico (0 = nascosto)
