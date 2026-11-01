@@ -50,28 +50,28 @@ export function SalaryHistory({ employeeId, canManageSalary }: { employeeId: num
   const latest = entries[0];
 
   return (
-    <div className="card border-amber-200 bg-amber-50/30">
+    <div className="card border-warning/30 bg-warning-soft/30">
       <div className="flex items-center justify-between mb-3">
         <div>
-          <p className="text-sm font-medium text-gray-600">Dati retributivi <span className="text-[10px] text-amber-600 font-normal">(riservato)</span></p>
-          {latest && <p className="text-xs text-gray-500 mt-0.5">Attuale: {latest.livello_retributivo ?? '—'} · {fmtCurrency(latest.retribuzione_annua_lorda)}/anno</p>}
+          <p className="text-sm font-medium text-muted">Dati retributivi <span className="text-[10px] text-warning font-normal">(riservato)</span></p>
+          {latest && <p className="text-xs text-muted mt-0.5">Attuale: {latest.livello_retributivo ?? '—'} · {fmtCurrency(latest.retribuzione_annua_lorda)}/anno</p>}
         </div>
         {canManageSalary && <button onClick={() => setShowForm(s => !s)} className="btn-secondary text-sm">{showForm ? 'Chiudi' : '+ Modifica dati retributivi'}</button>}
       </div>
 
       {showForm && (
-        <form onSubmit={submit} className="bg-white border border-gray-200 rounded-lg p-4 mb-3 space-y-3">
+        <form onSubmit={submit} className="bg-white border border-line rounded-ctl p-4 mb-3 space-y-3">
           <div className="grid grid-cols-3 gap-3">
             <div><label className="label">Decorrenza</label><input type="date" className="input" value={form.data_decorrenza} onChange={e => setForm(f => ({ ...f, data_decorrenza: e.target.value }))} /></div>
             <div>
               <label className="label">Nuovo livello retributivo</label>
               <input className="input" value={form.livello_retributivo} onChange={e => setForm(f => ({ ...f, livello_retributivo: e.target.value }))} />
-              <p className="text-[11px] text-gray-400 mt-0.5">Attuale: {latest?.livello_retributivo ?? '—'}</p>
+              <p className="text-[11px] text-muted mt-0.5">Attuale: {latest?.livello_retributivo ?? '—'}</p>
             </div>
             <div>
               <label className="label">Nuova retribuzione annua lorda (€)</label>
               <input type="number" step="0.01" className="input" value={form.retribuzione_annua_lorda} onChange={e => setForm(f => ({ ...f, retribuzione_annua_lorda: e.target.value }))} />
-              <p className="text-[11px] text-gray-400 mt-0.5">Attuale: {latest ? fmtCurrency(latest.retribuzione_annua_lorda) : '—'}</p>
+              <p className="text-[11px] text-muted mt-0.5">Attuale: {latest ? fmtCurrency(latest.retribuzione_annua_lorda) : '—'}</p>
             </div>
             <div className="col-span-3"><label className="label">Note</label><input className="input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} /></div>
           </div>
@@ -82,23 +82,23 @@ export function SalaryHistory({ employeeId, canManageSalary }: { employeeId: num
       )}
 
       {loading ? (
-        <p className="text-sm text-gray-400 text-center py-4">Caricamento…</p>
+        <p className="text-sm text-muted text-center py-4">Caricamento…</p>
       ) : entries.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-4">Nessuno storico retributivo registrato</p>
+        <p className="text-sm text-muted text-center py-4">Nessuno storico retributivo registrato</p>
       ) : (
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-[11px] text-gray-400 uppercase tracking-wide">
+            <tr className="text-left text-[11px] text-muted uppercase tracking-wide">
               <th className="font-medium py-1">Decorrenza</th><th className="font-medium py-1">Livello</th><th className="font-medium py-1 text-right">Retribuzione annua</th><th className="font-medium py-1">Note</th>
             </tr>
           </thead>
           <tbody>
             {entries.map(e => (
-              <tr key={e.id} className="border-t border-gray-100">
+              <tr key={e.id} className="border-t border-stone-100">
                 <td className="py-1.5">{fmtDate(e.data_decorrenza)}</td>
                 <td className="py-1.5">{e.livello_retributivo ?? '—'}</td>
                 <td className="py-1.5 text-right">{fmtCurrency(e.retribuzione_annua_lorda)}</td>
-                <td className="py-1.5 text-gray-500">{e.note ?? ''}</td>
+                <td className="py-1.5 text-muted">{e.note ?? ''}</td>
               </tr>
             ))}
           </tbody>

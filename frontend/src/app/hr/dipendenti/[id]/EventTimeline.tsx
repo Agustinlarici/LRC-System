@@ -65,8 +65,8 @@ export function EventTimeline({ employeeId, employee, departments, plants, allEm
     <div className="card">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <p className="text-sm font-medium text-gray-600">Storico eventi</p>
-          <p className="text-xs text-gray-400">Timeline completa — assunzione, cambi, congedi e altri eventi</p>
+          <p className="text-sm font-medium text-muted">Storico eventi</p>
+          <p className="text-xs text-muted">Timeline completa — assunzione, cambi, congedi e altri eventi</p>
         </div>
         {canManageLimited && (
           <button onClick={() => setShowForm(s => !s)} className="btn-secondary text-sm">{showForm ? 'Chiudi' : '+ Registra evento'}</button>
@@ -86,27 +86,27 @@ export function EventTimeline({ employeeId, employee, departments, plants, allEm
       {offer && <GenerateWordDialog employee={employee} offer={offer} onClose={() => setOffer(null)} />}
 
       {loading ? (
-        <p className="text-sm text-gray-400 text-center py-8">Caricamento…</p>
+        <p className="text-sm text-muted text-center py-8">Caricamento…</p>
       ) : events.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-8">Nessun evento registrato</p>
+        <p className="text-sm text-muted text-center py-8">Nessun evento registrato</p>
       ) : (
         <div className="relative pl-6 mt-4 space-y-5">
-          <div className="absolute left-[7px] top-1 bottom-1 w-px bg-gray-200" />
+          <div className="absolute left-[7px] top-1 bottom-1 w-px bg-stone-200" />
           {events.map(ev => (
             <div key={ev.id} className="relative">
-              <div className="absolute -left-6 top-0.5 w-3.5 h-3.5 rounded-full bg-blue-500 border-2 border-white shadow" />
+              <div className="absolute -left-6 top-0.5 w-3.5 h-3.5 rounded-full bg-accent border-2 border-white shadow" />
               <div className="flex items-baseline gap-2 flex-wrap">
-                <span className="text-sm font-medium text-gray-800">{EVENT_LABEL[ev.event_type]}</span>
-                <span className="text-xs text-gray-400">{fmtDate(ev.event_date)}{ev.end_date ? ` → ${fmtDate(ev.end_date)}` : ''}</span>
+                <span className="text-sm font-medium text-ink-800">{EVENT_LABEL[ev.event_type]}</span>
+                <span className="text-xs text-muted">{fmtDate(ev.event_date)}{ev.end_date ? ` → ${fmtDate(ev.end_date)}` : ''}</span>
               </div>
               {(ev.from_value || ev.to_value) && (
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-xs text-muted mt-0.5">
                   {ev.from_value ? <>da <span className="font-medium">{ev.from_value}</span> </> : null}
                   {ev.to_value ? <>a <span className="font-medium">{ev.to_value}</span></> : null}
                 </p>
               )}
-              {ev.note && <p className="text-xs text-gray-500 mt-0.5">{ev.note}</p>}
-              {ev.created_by_name && <p className="text-[10px] text-gray-300 mt-0.5">registrato da {ev.created_by_name}</p>}
+              {ev.note && <p className="text-xs text-muted mt-0.5">{ev.note}</p>}
+              {ev.created_by_name && <p className="text-[10px] text-stone-300 mt-0.5">registrato da {ev.created_by_name}</p>}
             </div>
           ))}
         </div>
@@ -167,7 +167,7 @@ function NewEventForm({ employeeId, employee, lookups, availableTypes, onDone }:
   }
 
   return (
-    <form onSubmit={submit} className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4 space-y-3">
+    <form onSubmit={submit} className="bg-stone-50 border border-line rounded-ctl p-4 mb-4 space-y-3">
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="label">Tipo evento</label>
@@ -209,7 +209,7 @@ function NewEventForm({ employeeId, employee, lookups, availableTypes, onDone }:
           <input className="input" value={note} onChange={e => setNote(e.target.value)} />
         </div>
       </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
       <div className="flex justify-end">
         <button type="submit" disabled={saving} className="btn-primary text-sm">{saving ? 'Salvataggio…' : 'Registra evento'}</button>
       </div>
@@ -267,8 +267,8 @@ function GenerateWordDialog({ employee, offer, onClose }: {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="card w-full max-w-md max-h-[90vh] overflow-y-auto space-y-3" onClick={e => e.stopPropagation()}>
         <div>
-          <p className="text-sm font-semibold text-gray-700">Evento registrato</p>
-          <p className="text-xs text-gray-500 mt-0.5">Vuoi generare il documento Word per {employee.cognome} {employee.nome}?</p>
+          <p className="text-sm font-semibold text-ink-800">Evento registrato</p>
+          <p className="text-xs text-muted mt-0.5">Vuoi generare il documento Word per {employee.cognome} {employee.nome}?</p>
         </div>
 
         {offer.docs.length > 1 && (
@@ -279,11 +279,11 @@ function GenerateWordDialog({ employee, offer, onClose }: {
             </select>
           </div>
         )}
-        {offer.docs.length === 1 && <p className="text-sm font-medium text-gray-800">{offer.docs[0].name}</p>}
+        {offer.docs.length === 1 && <p className="text-sm font-medium text-ink-800">{offer.docs[0].name}</p>}
 
-        {loadingPreview ? <p className="text-xs text-gray-400">Caricamento…</p> : fields.length > 0 && (
-          <div className="space-y-2 border-t border-gray-100 pt-3">
-            <p className="text-xs text-gray-500">Controlla i dati del cambiamento. I campi vuoti restano come riga ________.</p>
+        {loadingPreview ? <p className="text-xs text-muted">Caricamento…</p> : fields.length > 0 && (
+          <div className="space-y-2 border-t border-stone-100 pt-3">
+            <p className="text-xs text-muted">Controlla i dati del cambiamento. I campi vuoti restano come riga ________.</p>
             {fields.map((f, i) => (
               <div key={f.key}>
                 <label className="label">{f.label}</label>

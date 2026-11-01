@@ -114,9 +114,9 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
   return (
     <>
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-card shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="max-h-[90vh] overflow-y-auto p-6">
-        <h2 className="text-base font-medium text-gray-900 mb-4">Nuovo dipendente</h2>
+        <h2 className="text-base font-medium text-ink-900 mb-4">Nuovo dipendente</h2>
         <form onSubmit={submit} className="space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div><label className="label">Nome *</label><input className="input" value={form.nome} onChange={e => set('nome', e.target.value)} /></div>
@@ -140,7 +140,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
             <div><label className="label">Provincia</label><input className="input" maxLength={50} value={form.provincia} onChange={e => set('provincia', e.target.value.toUpperCase())} placeholder="es. MO" /></div>
             <div><label className="label">CAP</label><input className="input" maxLength={10} value={form.cap} onChange={e => set('cap', e.target.value)} /></div>
             <div><label className="label">Gruppo orario</label><input className="input" value={form.gruppo_orario} onChange={e => set('gruppo_orario', e.target.value)} /></div>
-            <p className="col-span-full text-sm font-semibold text-gray-700 -mb-2">Vestiario</p>
+            <p className="col-span-full text-sm font-semibold text-ink-800 -mb-2">Vestiario</p>
             <div><label className="label">Taglia pantaloni</label><input className="input" maxLength={20} value={form.taglia_pantaloni} onChange={e => set('taglia_pantaloni', e.target.value)} placeholder="es. 48" /></div>
             <div><label className="label">Taglia maglia</label><input className="input" maxLength={20} value={form.taglia_maglia} onChange={e => set('taglia_maglia', e.target.value)} placeholder="es. L" /></div>
             <div><label className="label">Taglia scarpe</label><input className="input" maxLength={20} value={form.taglia_scarpe} onChange={e => set('taglia_scarpe', e.target.value)} placeholder="es. 42" /></div>
@@ -177,7 +177,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
               <PlantMultiSelect plants={plants} value={plantIds} onChange={setPlantIds} onAdd={() => addCatalogEntry('plants', 'plant', setPlants, 'plant_id')} />
             </div>
             <div><label className="label">Mansione</label><input className="input" value={form.mansione} onChange={e => set('mansione', e.target.value)} /></div>
-            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer self-end pb-2">
+            <label className="flex items-center gap-2 text-sm text-ink-800 cursor-pointer self-end pb-2">
               <input type="checkbox" checked={l68} onChange={e => setL68(e.target.checked)} />
               Legge 68 (L.68)
             </label>
@@ -200,13 +200,13 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
                 {tags.filter(t => t.is_active).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
             </div>
-            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer self-end pb-2">
+            <label className="flex items-center gap-2 text-sm text-ink-800 cursor-pointer self-end pb-2">
               <input type="checkbox" checked={inProva} onChange={e => setInProva(e.target.checked)} />
               In prova
             </label>
           </div>
 
-          {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+          {error && <p className="text-sm text-danger bg-danger-soft border border-danger/30 rounded-ctl px-3 py-2">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="btn-secondary text-sm">Annulla</button>

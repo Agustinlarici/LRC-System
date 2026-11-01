@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { StatusBadge, type Tone } from '@/components/ui/StatusBadge';
 import { useAuth } from '@/lib/auth';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
 import { EditEmployeeModal } from './EditEmployeeModal';
@@ -20,12 +22,8 @@ const STATO_LABEL: Record<string, string> = {
   attivo: 'Attivo', aspettativa: 'Aspettativa', malattia: 'Malattia',
   maternita_paternita: 'Maternità/Paternità', cessato: 'Cessato',
 };
-const STATO_COLOR: Record<string, string> = {
-  attivo: 'bg-green-50 text-green-700 border-green-200',
-  aspettativa: 'bg-amber-50 text-amber-700 border-amber-200',
-  malattia: 'bg-red-50 text-red-700 border-red-200',
-  maternita_paternita: 'bg-purple-50 text-purple-700 border-purple-200',
-  cessato: 'bg-gray-100 text-gray-500 border-gray-200',
+const STATO_TONE: Record<string, Tone> = {
+  attivo: 'success', aspettativa: 'warning', malattia: 'danger', maternita_paternita: 'info', cessato: 'neutral',
 };
 
 function fmtDate(d: string | null): string {
@@ -39,7 +37,7 @@ function fmtDate(d: string | null): string {
 function InfoCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="card">
-      <p className="text-sm font-semibold text-gray-700 mb-4">{title}</p>
+      <p className="text-sm font-semibold text-ink-800 mb-4">{title}</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">{children}</div>
     </div>
   );
@@ -48,8 +46,8 @@ function InfoCard({ title, children }: { title: string; children: React.ReactNod
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
-      <p className="text-sm text-gray-800 mt-0.5">{value ?? '—'}</p>
+      <p className="text-[11px] font-medium text-muted uppercase tracking-wide">{label}</p>
+      <p className="text-sm text-ink-800 mt-0.5">{value ?? '—'}</p>
     </div>
   );
 }
@@ -125,8 +123,8 @@ export default function EmployeeDetailPage() {
     setPhotoBusy(false);
   }
 
-  if (loading) return <p className="text-sm text-gray-400 text-center py-16">Caricamento…</p>;
-  if (notFound || !employee) return <p className="text-sm text-red-600 text-center py-16">Dipendente non trovato</p>;
+  if (loading) return <p className="text-sm text-muted text-center py-16">Caricamento…</p>;
+  if (notFound || !employee) return <p className="text-sm text-danger text-center py-16">Dipendente non trovato</p>;
 
   const persone = (n: number) => `${n} ${n === 1 ? 'persona' : 'persone'}`;
   const funzioni = Array.from(new Set(allEmployees.map(e => e.funzione_aziendale).filter((f): f is string => !!f))).sort((a, b) => a.localeCompare(b));
@@ -141,15 +139,29 @@ export default function EmployeeDetailPage() {
           <img
             src={`${BACKEND}/api/hr/employees/${employee.id}/photo?v=${employee.photo_version}`}
             alt={`${employee.cognome} ${employee.nome}`}
-            className="max-w-full max-h-full rounded-lg shadow-2xl object-contain"
+            className="max-w-full max-h-full rounded-ctl shadow-2xl object-contain"
             onClick={e => e.stopPropagation()}
           />
         </div>
       )}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <Link href="/hr/dipendenti" className="btn-secondary text-sm">← Torna alla lista</Link>
-        {canEditLimited && <button onClick={() => setShowEdit(true)} className="btn-primary text-sm">Modifica</button>}
-      </div>
+      <PageHeader
+        back={{ label: 'Dipendenti', href: '/hr/dipendenti' }}
+        title={`${employee.cognome} ${employee.nome}`}
+        badge={<>
+          <StatusBadge tone={STATO_TONE[employee.stato] ?? 'neutral'}>{STATO_LABEL[employee.stato]}</StatusBadge>
+          {employee.tag_name && (
+            <span
+              className={`text-xs font-medium px-2.5 py-1 rounded-full border ${tagBadgeStyle(employee.tag_color).className}`}
+              style={tagBadgeStyle(employee.tag_color).style}
+            >
+              {employee.tag_name}
+            </span>
+          )}
+          {employee.in_prova && <StatusBadge tone="info">In prova</StatusBadge>}
+          {employee.l68 && <StatusBadge tone="neutral">Legge 68</StatusBadge>}
+        </>}
+        actions={canEditLimited && <button onClick={() => setShowEdit(true)} className="btn-primary text-sm">Modifica</button>}
+      />
 
       <div className="flex items-center gap-4 flex-wrap">
         <div className="flex flex-col items-center gap-1">
@@ -164,35 +176,19 @@ export default function EmployeeDetailPage() {
           )}
           {manage && (
             <div className="flex items-center gap-2 text-xs">
-              <label className={`text-blue-600 hover:underline cursor-pointer ${photoBusy ? 'opacity-50 pointer-events-none' : ''}`}>
+              <label className={`text-accent-ink hover:underline cursor-pointer ${photoBusy ? 'opacity-50 pointer-events-none' : ''}`}>
                 {employee.photo_version ? 'Cambia foto' : 'Aggiungi foto'}
                 <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={uploadPhoto} disabled={photoBusy} />
               </label>
-              {employee.photo_version && <button onClick={removePhoto} disabled={photoBusy} className="text-gray-400 hover:text-red-600">Rimuovi</button>}
+              {employee.photo_version && <button onClick={removePhoto} disabled={photoBusy} className="text-muted hover:text-danger">Rimuovi</button>}
             </div>
           )}
-          {photoError && <p className="text-xs text-red-600">{photoError}</p>}
+          {photoError && <p className="text-xs text-danger">{photoError}</p>}
         </div>
-        <h1 className="text-xl font-semibold text-gray-900">{employee.cognome} {employee.nome}</h1>
-        <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${STATO_COLOR[employee.stato]}`}>{STATO_LABEL[employee.stato]}</span>
-        {employee.tag_name && (
-          <span
-            className={`text-xs font-medium px-2.5 py-1 rounded-full border ${tagBadgeStyle(employee.tag_color).className}`}
-            style={tagBadgeStyle(employee.tag_color).style}
-          >
-            {employee.tag_name}
-          </span>
-        )}
-        {employee.in_prova && (
-          <span className="text-xs font-medium px-2.5 py-1 rounded-md border bg-blue-50 text-blue-700 border-blue-200">In prova</span>
-        )}
-        {employee.l68 && (
-          <span className="text-xs font-medium px-2.5 py-1 rounded-md border bg-indigo-50 text-indigo-700 border-indigo-200">Legge 68</span>
-        )}
       </div>
 
       {employee.import_warning && (
-        <div className="flex items-center justify-between gap-3 text-sm bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-3 py-2">
+        <div className="flex items-center justify-between gap-3 text-sm bg-warning-soft text-warning border border-warning/30 rounded-ctl px-3 py-2">
           <span>⚠ Importato dall&apos;Excel con dati incompleti: {employee.import_warning}</span>
           {manage && (
             <button
@@ -203,7 +199,7 @@ export default function EmployeeDetailPage() {
                 });
                 load();
               }}
-              className="text-xs font-medium text-amber-800 hover:underline shrink-0"
+              className="text-xs font-medium text-warning hover:underline shrink-0"
             >
               Segna come risolto
             </button>

@@ -182,10 +182,10 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
   return (
     <>
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-card shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="max-h-[90vh] overflow-y-auto p-6">
-        <h2 className="text-base font-medium text-gray-900 mb-1">Modifica dipendente</h2>
-        {!fullManage && <p className="text-xs text-amber-600 mb-4">Puoi modificare solo i dati di contatto del tuo team diretto.</p>}
+        <h2 className="text-base font-medium text-ink-900 mb-1">Modifica dipendente</h2>
+        {!fullManage && <p className="text-xs text-warning mb-4">Puoi modificare solo i dati di contatto del tuo team diretto.</p>}
         <form onSubmit={submit} className="space-y-4">
           {fullManage && (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -212,18 +212,18 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
             <div className="flex flex-wrap gap-2">
               <button
                 type="button" onClick={() => setInProva(v => !v)}
-                className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${inProva ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-gray-600 hover:border-blue-400'}`}
+                className={`text-sm px-3 py-1.5 rounded-ctl border transition-colors ${inProva ? 'bg-ink-800 border-ink-800 text-white' : 'bg-white border-stone-300 text-muted hover:border-accent'}`}
               >In prova</button>
               <button
                 type="button" onClick={() => setL68(v => !v)}
-                className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${l68 ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-300 text-gray-600 hover:border-blue-400'}`}
+                className={`text-sm px-3 py-1.5 rounded-ctl border transition-colors ${l68 ? 'bg-ink-800 border-ink-800 text-white' : 'bg-white border-stone-300 text-muted hover:border-accent'}`}
               >Legge 68 (L.68)</button>
             </div>
           )}
 
           {fullManage && (
             <div>
-              <p className="text-sm font-semibold text-gray-700 mb-2">Anagrafica e contatti</p>
+              <p className="text-sm font-semibold text-ink-800 mb-2">Anagrafica e contatti</p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div><label className="label">Sesso</label>
                   <select className="input" value={form.sesso} onChange={e => set('sesso', e.target.value)}>
@@ -241,7 +241,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
 
           {fullManage && (
             <div>
-              <p className="text-sm font-semibold text-gray-700 mb-2">Contratto</p>
+              <p className="text-sm font-semibold text-ink-800 mb-2">Contratto</p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div><label className="label">Matricola</label><input className="input" value={form.matricola} onChange={e => set('matricola', e.target.value)} placeholder="Vuota per contrattisti/agenzia" /></div>
                 <div><label className="label">Società contratto</label>
@@ -254,7 +254,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
                 <div><label className="label">Tipo contratto</label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
                 <div><label className="label">Data cessazione / fine contratto</label>
                   <input type="date" className="input" value={form.data_cessazione} onChange={e => set('data_cessazione', e.target.value)} />
-                  <p className="text-[11px] text-gray-400 mt-1">Con stato Cessato, se vuota verrà usata la data di oggi. Una data futura con stato Attivo indica la scadenza del contratto.</p>
+                  <p className="text-[11px] text-muted mt-1">Con stato Cessato, se vuota verrà usata la data di oggi. Una data futura con stato Attivo indica la scadenza del contratto.</p>
                 </div>
               </div>
             </div>
@@ -262,7 +262,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
 
           {fullManage && (
             <div>
-              <p className="text-sm font-semibold text-gray-700 mb-2">Lavoro</p>
+              <p className="text-sm font-semibold text-ink-800 mb-2">Lavoro</p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div><label className="label">Funzione aziendale</label>
                   <div className="flex gap-1.5">
@@ -307,7 +307,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
 
           {fullManage && (
             <div>
-              <p className="text-sm font-semibold text-gray-700 mb-2">Vestiario</p>
+              <p className="text-sm font-semibold text-ink-800 mb-2">Vestiario</p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div><label className="label">Taglia pantaloni</label><input className="input" maxLength={20} value={form.taglia_pantaloni} onChange={e => set('taglia_pantaloni', e.target.value)} placeholder="es. 48" /></div>
                 <div><label className="label">Taglia maglia</label><input className="input" maxLength={20} value={form.taglia_maglia} onChange={e => set('taglia_maglia', e.target.value)} placeholder="es. L" /></div>
@@ -316,9 +316,9 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
             </div>
           )}
           {fullManage && (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-              <p className="text-sm font-medium text-gray-700">{employee.nome} guida un team insieme a un&apos;altra persona?</p>
-              <p className="text-xs text-gray-500 mt-0.5 mb-2">Compariranno affiancate nell&apos;organigramma, con lo stesso team sotto a entrambe.</p>
+            <div className="bg-stone-50 border border-line rounded-ctl p-3">
+              <p className="text-sm font-medium text-ink-800">{employee.nome} guida un team insieme a un&apos;altra persona?</p>
+              <p className="text-xs text-muted mt-0.5 mb-2">Compariranno affiancate nell&apos;organigramma, con lo stesso team sotto a entrambe.</p>
               <select className="input text-sm max-w-xs" value={coResponsabileId} onChange={e => setCoResponsabileId(e.target.value)}>
                 <option value="">Nessun co-responsabile</option>
                 {allEmployees.map(e => <option key={e.id} value={e.id}>{e.cognome} {e.nome}</option>)}
@@ -326,7 +326,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
             </div>
           )}
           <div>
-            {fullManage && <p className="text-sm font-semibold text-gray-700 mb-2">Contatti</p>}
+            {fullManage && <p className="text-sm font-semibold text-ink-800 mb-2">Contatti</p>}
             <div className="grid grid-cols-2 gap-4">
               <div><label className="label">Telefono</label><input className="input" value={form.telefono} onChange={e => set('telefono', e.target.value)} /></div>
               <div><label className="label">Email</label><input type="email" className="input" value={form.email} onChange={e => set('email', e.target.value)} /></div>
@@ -340,7 +340,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
             </div>
           </div>
 
-          {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+          {error && <p className="text-sm text-danger bg-danger-soft border border-danger/30 rounded-ctl px-3 py-2">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="btn-secondary text-sm">Annulla</button>

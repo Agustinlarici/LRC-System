@@ -6,6 +6,9 @@ import { useAuth } from '@/lib/auth';
 import type { HrEmployee, HrContractCompany, HrDeadlineRule } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import { MultiSelectDropdown } from '@/components/ui/MultiSelectDropdown';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { SkeletonTable } from '@/components/ui/Skeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -213,41 +216,39 @@ export default function ScadenzePage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-lg font-medium text-gray-900">Scadenze</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Contratti in scadenza: chi è in avviso o già scaduto, per regola</p>
-        </div>
-        {manage && <button onClick={() => setShowRules(true)} className="btn-secondary text-sm">Gestisci regole di avviso</button>}
-      </div>
+      <PageHeader
+        title="Scadenze"
+        description="Contratti in scadenza: chi è in avviso o già scaduto, per regola"
+        actions={manage && <button onClick={() => setShowRules(true)} className="btn-secondary text-sm">Gestisci regole di avviso</button>}
+      />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-amber-700">In avviso</p>
-          <p className="text-3xl font-semibold text-amber-700 leading-tight mt-1">{counts.avviso}</p>
+        <div className="rounded-card border border-warning/30 bg-warning-soft px-4 py-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-warning">In avviso</p>
+          <p className="text-3xl font-semibold text-warning leading-tight mt-1">{counts.avviso}</p>
         </div>
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-red-700">Scadute</p>
-          <p className="text-3xl font-semibold text-red-700 leading-tight mt-1">{counts.scadute}</p>
+        <div className="rounded-card border border-danger/30 bg-danger-soft px-4 py-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-danger">Scadute</p>
+          <p className="text-3xl font-semibold text-danger leading-tight mt-1">{counts.scadute}</p>
         </div>
         {ruleCards.map(({ rule, avviso, scadute }) => (
           <div
             key={rule.id}
-            className="rounded-xl border border-gray-200 bg-white px-4 py-3 col-span-2 lg:col-span-1"
+            className="rounded-card border border-line bg-white px-4 py-3 col-span-2 lg:col-span-1"
             title={`${ruleDescription(rule)} · avviso a ${rule.giorni_avviso} giorni`}
           >
             <div className="flex items-baseline justify-between gap-2">
-              <p className="text-sm font-medium text-gray-800 truncate">{rule.label || ruleDescription(rule)}</p>
-              <p className="text-[11px] text-gray-400 whitespace-nowrap">{rule.giorni_avviso} giorni</p>
+              <p className="text-sm font-medium text-ink-800 truncate">{rule.label || ruleDescription(rule)}</p>
+              <p className="text-[11px] text-muted whitespace-nowrap">{rule.giorni_avviso} giorni</p>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div>
-                <p className="text-3xl font-semibold leading-none text-amber-600">{avviso}</p>
-                <p className="mt-1 flex items-center gap-1.5 text-xs text-gray-500"><span className="w-2 h-2 rounded-full bg-amber-400" />in avviso</p>
+                <p className="text-3xl font-semibold leading-none text-warning">{avviso}</p>
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-muted"><span className="w-2 h-2 rounded-full bg-warning" />in avviso</p>
               </div>
               <div>
-                <p className="text-3xl font-semibold leading-none text-red-600">{scadute}</p>
-                <p className="mt-1 flex items-center gap-1.5 text-xs text-gray-500"><span className="w-2 h-2 rounded-full bg-red-500" />scadute</p>
+                <p className="text-3xl font-semibold leading-none text-danger">{scadute}</p>
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-muted"><span className="w-2 h-2 rounded-full bg-danger" />scadute</p>
               </div>
             </div>
           </div>
@@ -258,22 +259,22 @@ export default function ScadenzePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowRules(false)}>
           <div className="card w-full max-w-6xl max-h-[95vh] overflow-y-auto space-y-4 relative" onClick={e => e.stopPropagation()}>
             <button type="button" onClick={() => setShowRules(false)} aria-label="Chiudi"
-              className="absolute top-3 right-3 text-gray-400 hover:text-gray-700 text-xl leading-none w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">×</button>
+              className="absolute top-3 right-3 text-muted hover:text-ink-800 text-xl leading-none w-8 h-8 flex items-center justify-center rounded-full hover:bg-stone-100">×</button>
 
             <div className="pr-8">
-              <p className="text-sm font-semibold text-gray-700">Regole di avviso</p>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-sm font-semibold text-ink-800">Regole di avviso</p>
+              <p className="text-xs text-muted mt-1">
                 Ogni dipendente con data di cessazione prende la prima regola attiva (dall&apos;alto) i cui filtri corrispondono — società e/o periodo di prova. Lascia un filtro su &quot;Qualsiasi&quot; per farlo valere a prescindere.
               </p>
             </div>
 
             {rules.length === 0 ? (
-              <p className="text-sm text-gray-400">Nessuna regola creata — senza regole nessun dipendente risulta &quot;in avviso&quot;.</p>
+              <p className="text-sm text-muted">Nessuna regola creata — senza regole nessun dipendente risulta &quot;in avviso&quot;.</p>
             ) : (
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="border border-line rounded-ctl overflow-hidden">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-400 uppercase tracking-wide">
+                    <tr className="bg-stone-50 border-b border-line text-xs font-medium text-muted uppercase tracking-wide">
                       <th className="w-8"></th>
                       <th className="text-left px-3 py-2">Nome</th>
                       <th className="text-left px-3 py-2">Società</th>
@@ -285,26 +286,26 @@ export default function ScadenzePage() {
                   </thead>
                   <tbody>
                     {rules.map((r, i) => (
-                      <tr key={r.id} className={`border-b border-gray-100 last:border-b-0 ${r.is_active ? '' : 'opacity-50'}`}>
+                      <tr key={r.id} className={`border-b border-stone-100 last:border-b-0 ${r.is_active ? '' : 'opacity-50'}`}>
                         <td className="px-2 py-2">
                           <div className="flex flex-col gap-0.5">
-                            <button type="button" disabled={i === 0} onClick={() => moveRule(i, -1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-20 text-xs leading-none">▲</button>
-                            <button type="button" disabled={i === rules.length - 1} onClick={() => moveRule(i, 1)} className="text-gray-400 hover:text-gray-700 disabled:opacity-20 text-xs leading-none">▼</button>
+                            <button type="button" disabled={i === 0} onClick={() => moveRule(i, -1)} className="text-muted hover:text-ink-800 disabled:opacity-20 text-xs leading-none">▲</button>
+                            <button type="button" disabled={i === rules.length - 1} onClick={() => moveRule(i, 1)} className="text-muted hover:text-ink-800 disabled:opacity-20 text-xs leading-none">▼</button>
                           </div>
                         </td>
-                        <td className="px-3 py-2 text-gray-800 font-medium truncate max-w-[160px]">{r.label || '—'}</td>
-                        <td className="px-3 py-2 text-gray-600 truncate max-w-[160px]">{ruleSocieta(r)}</td>
-                        <td className="px-3 py-2 text-gray-600">{ruleProva(r)}</td>
-                        <td className="px-3 py-2 text-gray-600">{r.giorni_avviso} giorni</td>
+                        <td className="px-3 py-2 text-ink-800 font-medium truncate max-w-[160px]">{r.label || '—'}</td>
+                        <td className="px-3 py-2 text-muted truncate max-w-[160px]">{ruleSocieta(r)}</td>
+                        <td className="px-3 py-2 text-muted">{ruleProva(r)}</td>
+                        <td className="px-3 py-2 text-muted">{r.giorni_avviso} giorni</td>
                         <td className="px-3 py-2">
-                          <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${r.is_active ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>
+                          <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${r.is_active ? 'bg-success-soft text-success border-success/30' : 'bg-stone-50 text-muted border-line'}`}>
                             {r.is_active ? 'Attiva' : 'Disattivata'}
                           </span>
                         </td>
                         <td className="px-3 py-2">
                           <div className="flex items-center justify-end gap-2 whitespace-nowrap">
-                            <button type="button" onClick={() => startEditRule(r)} className="text-xs text-blue-600 hover:text-blue-800">Modifica</button>
-                            <button type="button" onClick={() => deleteRule(r)} className="text-xs text-red-400 hover:text-red-600">Elimina</button>
+                            <button type="button" onClick={() => startEditRule(r)} className="text-xs text-accent-ink hover:underline">Modifica</button>
+                            <button type="button" onClick={() => deleteRule(r)} className="text-xs text-danger hover:text-danger">Elimina</button>
                           </div>
                         </td>
                       </tr>
@@ -314,7 +315,7 @@ export default function ScadenzePage() {
               </div>
             )}
 
-            <form onSubmit={submitRule} className="space-y-3 border-t border-gray-100 pt-4">
+            <form onSubmit={submitRule} className="space-y-3 border-t border-stone-100 pt-4">
               <div className="flex items-end gap-3 flex-wrap">
                 <div className="shrink-0"><label className="label">Nome (facoltativo)</label>
                   <input className="input text-sm" value={ruleForm.label} onChange={e => setRuleForm(f => ({ ...f, label: e.target.value }))} placeholder="es. STR in prova" />
@@ -350,7 +351,7 @@ export default function ScadenzePage() {
       )}
 
       <div className="card p-0 overflow-hidden">
-        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-100 bg-gray-50 flex-wrap">
+        <div className="flex items-center gap-3 px-4 py-2.5 border-b border-stone-100 bg-stone-50 flex-wrap">
           <MultiSelectDropdown
             className="w-56"
             allLabel="Tutte le società"
@@ -358,25 +359,25 @@ export default function ScadenzePage() {
             selected={societaFilter.map(String)}
             onChange={vals => setSocietaFilter(vals.map(Number))}
           />
-          <span className="text-xs text-gray-400">Solo dipendenti in avviso o scaduti</span>
+          <span className="text-xs text-muted">Solo dipendenti in avviso o scaduti</span>
         </div>
 
-        <div className={`grid ${COLS} gap-x-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-xs font-medium text-gray-400 uppercase tracking-wide`}>
+        <div className={`grid ${COLS} gap-x-3 px-4 py-2.5 bg-stone-50 border-b border-stone-100 text-xs font-medium text-muted uppercase tracking-wide`}>
           <div>In carico</div><div>Cognome</div><div>Nome</div><div>Società</div><div className="text-center">Prova</div>
           <div>Cessazione</div><div>Regola applicata</div><div className="text-center">Giorni</div>
         </div>
         {loading ? (
-          <p className="text-sm text-gray-400 text-center py-12">Caricamento…</p>
+          <SkeletonTable rows={8} cols={6} />
         ) : deadlines.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-12">Nessuna scadenza trovata</p>
+          <EmptyState title="Nessuna scadenza trovata" />
         ) : deadlines.map(d => {
           // Lo stato vale solo per la data di cessazione a cui si riferiva.
           const stored = acks.get(d.employee.id);
           const ack = stored && stored.data_cessazione === d.employee.data_cessazione?.slice(0, 10) ? stored : null;
           return (
           <Link key={d.employee.id} href={`/hr/dipendenti/${d.employee.id}`}
-            className={`grid ${COLS} gap-x-3 px-4 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50 transition-colors items-center
-              ${ack ? 'opacity-60' : d.overdue ? 'bg-red-50/60' : d.inAvviso ? 'bg-amber-50/60' : ''}`}
+            className={`grid ${COLS} gap-x-3 px-4 py-3 border-b border-stone-50 last:border-b-0 hover:bg-stone-50 transition-colors items-center
+              ${ack ? 'opacity-60' : d.overdue ? 'bg-danger-soft/60' : d.inAvviso ? 'bg-warning-soft/60' : ''}`}
           >
             <div className="flex items-center gap-2 min-w-0">
               {ack ? (
@@ -386,38 +387,38 @@ export default function ScadenzePage() {
                     aria-label="Rimuovi presa in carico"
                     title="Preso in carico — clicca per annullare"
                     onClick={e => { e.preventDefault(); e.stopPropagation(); setAck(d.employee.id, null); }}
-                    className="shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center bg-green-500 border-green-500 text-white"
+                    className="shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center bg-success border-success/30 text-white"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} className="w-3.5 h-3.5">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   </button>
                   <div className="min-w-0 leading-tight" title={`${ack.user_name ?? '—'} · ${fmtDateTime(ack.acted_at)}`}>
-                    <p className="text-[11px] font-medium text-gray-600 truncate">{ack.user_name ?? '—'}</p>
-                    <p className="text-[10px] text-gray-400">{fmtDateTime(ack.acted_at)}</p>
+                    <p className="text-[11px] font-medium text-muted truncate">{ack.user_name ?? '—'}</p>
+                    <p className="text-[10px] text-muted">{fmtDateTime(ack.acted_at)}</p>
                   </div>
                 </>
               ) : (
                 <button
                   type="button"
                   onClick={e => { e.preventDefault(); e.stopPropagation(); setAck(d.employee.id, 'preso_in_carico'); }}
-                  className="shrink-0 text-[11px] font-medium text-gray-600 border border-gray-300 rounded-full px-2 py-0.5 hover:border-green-500 hover:text-green-600 hover:bg-green-50 transition-colors"
+                  className="shrink-0 text-[11px] font-medium text-muted border border-stone-300 rounded-full px-2 py-0.5 hover:border-success/30 hover:text-success hover:bg-success-soft transition-colors"
                 >
                   Prendi in carico
                 </button>
               )}
             </div>
-            <div className="text-sm font-medium text-gray-800 truncate">{d.employee.cognome}</div>
-            <div className="text-sm text-gray-800 truncate">{d.employee.nome}</div>
-            <div className="text-sm text-gray-600 truncate">{d.employee.contract_company_name ?? '—'}</div>
-            <div className="text-center text-sm text-gray-600">{d.employee.in_prova ? 'Sì' : '—'}</div>
-            <div className="text-sm text-gray-600">{fmtDate(d.employee.data_cessazione)}</div>
-            <div className="text-xs text-gray-500 truncate">{d.rule ? ruleDescription(d.rule) : 'Nessuna regola'}</div>
+            <div className="text-sm font-medium text-ink-800 truncate">{d.employee.cognome}</div>
+            <div className="text-sm text-ink-800 truncate">{d.employee.nome}</div>
+            <div className="text-sm text-muted truncate">{d.employee.contract_company_name ?? '—'}</div>
+            <div className="text-center text-sm text-muted">{d.employee.in_prova ? 'Sì' : '—'}</div>
+            <div className="text-sm text-muted">{fmtDate(d.employee.data_cessazione)}</div>
+            <div className="text-xs text-muted truncate">{d.rule ? ruleDescription(d.rule) : 'Nessuna regola'}</div>
             <div className="text-center">
               <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${
-                d.overdue ? 'bg-red-50 text-red-700 border-red-200'
-                  : d.inAvviso ? 'bg-amber-50 text-amber-700 border-amber-200'
-                  : 'bg-gray-50 text-gray-500 border-gray-200'
+                d.overdue ? 'bg-danger-soft text-danger border-danger/30'
+                  : d.inAvviso ? 'bg-warning-soft text-warning border-warning/30'
+                  : 'bg-stone-50 text-muted border-line'
               }`}>
                 {d.overdue ? `${Math.abs(d.giorniRimanenti)}g fa` : `${d.giorniRimanenti}g`}
               </span>
