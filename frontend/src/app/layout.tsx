@@ -5,9 +5,9 @@ import { AuthProvider } from '@/lib/auth';
 import { AppShell } from '@/components/layout/AppShell';
 import { KIOSK_PATTERN } from '@/lib/kiosk';
 
-// Outfit (OFL) incluso nel progetto: nessun download da Google, funziona anche offline.
+// Inter (OFL) incluso nel progetto: nessun download da Google, funziona anche offline.
 const sans = localFont({
-  src:      './fonts/Outfit-Variable.woff2',
+  src:      './fonts/Inter-Variable.woff2',
   variable: '--font-sans',
   weight:   '100 900',
   display:  'swap',
