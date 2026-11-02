@@ -86,6 +86,7 @@ body {
 }
 .sheet-td {
   @apply border-b border-stone-100 px-4 py-2.5;
+  font-variant-numeric: tabular-nums;
 }
 /* Colonna Commessa fissa quando si scorre in orizzontale; modo compatto */
 .sheet-sticky { position: sticky; left: 0; z-index: 5; background-color: inherit; box-shadow: 1px 0 0 theme('colors.line'); }

@@ -60,7 +60,7 @@ Il design è unificato con token e componenti. **Non usare colori Tailwind diret
   evidenziazioni, focus, info; per il testo `accent-ink`), `canvas`, `line`, `muted` (testo
   secondario), `success/warning/danger/info`, raggi `rounded-card`/`rounded-ctl`, ombre
   `shadow-card`/`shadow-float`. Il rosso STR **non** indica errori: per quelli c'è `danger`.
-- **Font**: Outfit, file locale in `src/app/fonts` (nessun download da Google).
+- **Font**: Inter, file locale in `src/app/fonts` (nessun download da Google).
 - **Componenti** in `src/components/ui/`: `PageHeader` (un solo H1 per pagina: `back`, `title`,
   `badge`, `description`, `actions` — l'azione principale per ultima, a destra), `Button`,
   `StatusBadge`, `Tabs` (solapas standard, con contatori), `EmptyState`, `CountUp`, `Skeleton`/
