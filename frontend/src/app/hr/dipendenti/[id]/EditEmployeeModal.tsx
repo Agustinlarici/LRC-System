@@ -51,6 +51,21 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
     taglia_pantaloni: employee.taglia_pantaloni ?? '',
     taglia_maglia: employee.taglia_maglia ?? '',
     taglia_scarpe: employee.taglia_scarpe ?? '',
+    badge: employee.badge ?? '',
+    transponder: employee.transponder ?? '',
+    terminale: employee.terminale ?? '',
+    qualifica: employee.qualifica ?? '',
+    indeterminato: employee.indeterminato == null ? '' : employee.indeterminato ? 'si' : 'no',
+    indeterminato_data: employee.indeterminato_data?.slice(0, 10) ?? '',
+    part_time: employee.part_time ?? '',
+    luogo_nascita: employee.luogo_nascita ?? '',
+    titolo_studio: employee.titolo_studio ?? '',
+    stato_civile: employee.stato_civile ?? '',
+    domicilio_indirizzo: employee.domicilio_indirizzo ?? '',
+    domicilio_citta: employee.domicilio_citta ?? '',
+    domicilio_provincia: employee.domicilio_provincia ?? '',
+    domicilio_cap: employee.domicilio_cap ?? '',
+    note_hr: employee.note_hr ?? '',
     nazionalita: employee.nazionalita ?? '',
     mansione: employee.mansione ?? '',
     livello: employee.livello ?? '',
@@ -114,6 +129,8 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
           contract_company_id: form.contract_company_id ? Number(form.contract_company_id) : null,
           capo_id: form.capo_id ? Number(form.capo_id) : null,
           data_cessazione: form.data_cessazione || null,
+          indeterminato: form.indeterminato === '' ? null : form.indeterminato === 'si',
+          indeterminato_data: form.indeterminato_data || null,
         }
       : { telefono: form.telefono, email: form.email, indirizzo: form.indirizzo, citta: form.citta, provincia: form.provincia, cap: form.cap, note: form.note };
 
@@ -312,6 +329,43 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
                 <div><label className="label">Taglia pantaloni</label><input className="input" maxLength={20} value={form.taglia_pantaloni} onChange={e => set('taglia_pantaloni', e.target.value)} placeholder="es. 48" /></div>
                 <div><label className="label">Taglia maglia</label><input className="input" maxLength={20} value={form.taglia_maglia} onChange={e => set('taglia_maglia', e.target.value)} placeholder="es. L" /></div>
                 <div><label className="label">Taglia scarpe</label><input className="input" maxLength={20} value={form.taglia_scarpe} onChange={e => set('taglia_scarpe', e.target.value)} placeholder="es. 42" /></div>
+              </div>
+            </div>
+          )}
+
+          {fullManage && (
+            <div>
+              <p className="text-sm font-semibold text-gray-700 mb-2">Altri dati (Osti)</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div><label className="label">Badge</label><input className="input" maxLength={50} value={form.badge} onChange={e => set('badge', e.target.value)} /></div>
+                <div><label className="label">Transponder</label><input className="input" maxLength={50} value={form.transponder} onChange={e => set('transponder', e.target.value)} /></div>
+                <div><label className="label">Terminale di timbratura</label><input className="input" maxLength={50} value={form.terminale} onChange={e => set('terminale', e.target.value)} /></div>
+                <div><label className="label">Qualifica</label><input className="input" maxLength={100} value={form.qualifica} onChange={e => set('qualifica', e.target.value)} /></div>
+                <div><label className="label">Tempo indeterminato</label>
+                  <select className="input" value={form.indeterminato} onChange={e => set('indeterminato', e.target.value)}>
+                    <option value="">—</option>
+                    <option value="si">Sì</option>
+                    <option value="no">No</option>
+                  </select>
+                </div>
+                <div><label className="label">Data passaggio a indeterminato</label><input type="date" className="input" value={form.indeterminato_data} onChange={e => set('indeterminato_data', e.target.value)} /></div>
+                <div><label className="label">Part-time</label><input className="input" maxLength={30} value={form.part_time} onChange={e => set('part_time', e.target.value)} /></div>
+                <div><label className="label">Luogo di nascita</label><input className="input" maxLength={150} value={form.luogo_nascita} onChange={e => set('luogo_nascita', e.target.value)} /></div>
+                <div><label className="label">Titolo di studio</label><input className="input" maxLength={100} value={form.titolo_studio} onChange={e => set('titolo_studio', e.target.value)} /></div>
+                <div><label className="label">Stato civile</label><input className="input" maxLength={50} value={form.stato_civile} onChange={e => set('stato_civile', e.target.value)} /></div>
+              </div>
+            </div>
+          )}
+
+          {fullManage && (
+            <div>
+              <p className="text-sm font-semibold text-gray-700 mb-2">Domicilio</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div><label className="label">Indirizzo</label><input className="input" maxLength={255} value={form.domicilio_indirizzo} onChange={e => set('domicilio_indirizzo', e.target.value)} /></div>
+                <div><label className="label">Città</label><input className="input" maxLength={100} value={form.domicilio_citta} onChange={e => set('domicilio_citta', e.target.value)} /></div>
+                <div><label className="label">Provincia</label><input className="input" maxLength={50} value={form.domicilio_provincia} onChange={e => set('domicilio_provincia', e.target.value.toUpperCase())} /></div>
+                <div><label className="label">CAP</label><input className="input" maxLength={10} value={form.domicilio_cap} onChange={e => set('domicilio_cap', e.target.value)} /></div>
+                <div className="col-span-full"><label className="label">Note HR</label><textarea className="input" rows={2} value={form.note_hr} onChange={e => set('note_hr', e.target.value)} /></div>
               </div>
             </div>
           )}

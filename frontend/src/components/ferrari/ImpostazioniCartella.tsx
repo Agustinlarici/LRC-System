@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { Errore } from '@/components/ferrari/Comuni';
 import { quando, riassunto, type StatoCartella } from '@/components/ferrari/InfoCartella';
@@ -103,8 +103,8 @@ export function ImpostazioniCartella({ onCambia }: { onCambia?: () => void }) {
           <table className="w-full text-sm">
             <tbody>
               {st.letture.map(l => (
-                <>
-                  <tr key={l.id} className="border-t border-stone-100 cursor-pointer hover:bg-stone-50" onClick={() => setAperta(aperta === l.id ? null : l.id)}>
+                <Fragment key={l.id}>
+                  <tr className="border-t border-stone-100 cursor-pointer hover:bg-stone-50" onClick={() => setAperta(aperta === l.id ? null : l.id)}>
                     <td className="py-1.5 pr-3 whitespace-nowrap">{quando(l.avviato_at)}</td>
                     <td className="py-1.5 pr-3 text-muted">{l.tipo === 'auto' ? 'automatica' : `manuale${l.utente ? ` (${l.utente})` : ''}`}</td>
                     <td className={`py-1.5 pr-3 ${l.errore || l.errori > 0 ? 'text-danger' : ''}`}>{l.finito_at ? riassunto(l) : 'in corso…'}</td>
@@ -119,7 +119,7 @@ export function ImpostazioniCartella({ onCambia }: { onCambia?: () => void }) {
                       ))}
                     </td></tr>
                   )}
-                </>
+                </Fragment>
               ))}
             </tbody>
           </table>
