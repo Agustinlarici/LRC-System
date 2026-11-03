@@ -30,9 +30,8 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ['react', 'react-dom'],
   },
 
-  // Skip type/lint checks during build (run separately)
+  // Skip type checks during build (run separately)
   typescript:  { ignoreBuildErrors: false },
-  eslint:      { ignoreDuringBuilds: true },
 
   async headers() {
     return [{ source: '/(.*)', headers: securityHeaders }];
