@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Errore } from '@/components/ferrari/Comuni';
-import { IconaChiudi, IconaDestra, IconaGiu, IconaMatita } from '@/components/ferrari/Icone';
+import { IconaChiudi, IconaMatita } from '@/components/ferrari/Icone';
 
 type Stato = 'colonna' | 'sub' | 'no' | 'alias' | 'nonsigla' | 'da_decidere';
 interface StatoModello {
@@ -48,7 +48,6 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
   const [scelto, setScelto] = useState(false);
   const [cerca, setCerca] = useState('');
   const [scelti, setScelti] = useState<Record<string, string[]>>({});
-  const [elencoAperto, setElencoAperto] = useState(false);
   const [testoElenco, setTestoElenco] = useState('');
   const [tipoElenco, setTipoElenco] = useState<'colonna' | 'sub'>('colonna');
   const cambiaRef = useRef(onCambia);                         // il chiamante passa una funzione nuova a ogni render: non deve rifare la richiesta
@@ -65,7 +64,6 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
   useEffect(() => { carica(); }, [carica]);
 
   // al primo ingresso si mostra subito cio' che va deciso
-  useEffect(() => { if (c && c.sigle.length === 0) setElencoAperto(true); }, [c?.sigle.length === 0]); // eslint-disable-line react-hooks/exhaustive-deps
   const totDa = c ? Object.values(c.da_decidere).reduce((a, b) => a + b, 0) : 0;
   useEffect(() => { if (!scelto && totDa > 0) { setFiltro('da'); setScelto(true); } }, [totDa, scelto]);
 
@@ -119,7 +117,6 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
         + (r.senza_descrizione ? ` · ${r.senza_descrizione} senza descrizione (se le schede la hanno, te la propongo)` : '')
         + (r.ignorate.length ? ` · ${r.ignorate.length} righe ignorate` : ''));
       setTestoElenco('');
-      setElencoAperto(false);
       setErrore(null);
     } catch (e) { setErrore((e as Error).message); }
     await carica();
@@ -192,22 +189,25 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
         </div>
       )}
 
-      <div className="rounded-card border border-line bg-white px-4 py-2 text-sm">
-        <button className="font-medium text-accent-ink hover:underline" onClick={() => setElencoAperto(o => !o)}><span className="inline-flex items-center gap-1">{elencoAperto ? <IconaGiu /> : <IconaDestra />} Aggiungi sigle (una o un elenco, con le descrizioni)</span></button>
-        {elencoAperto && (
-          <div className="mt-2 space-y-2">
-            <p className="text-xs text-muted">Una sigla per riga (anche una sola), con la descrizione dopo un tab, un «;» o uno spazio (es. <code>BIC2 CARROZZERIA BICOLORE</code>). Puoi incollarlo oppure scegliere un file (.txt, .csv, .xlsx: sigla nella prima colonna, descrizione nella seconda). Senza descrizione va bene: quando un Excel la ha, ti chiedo se aggiungerla.</p>
-            <textarea className="input w-full font-mono text-xs" rows={6} value={testoElenco} onChange={e => setTestoElenco(e.target.value)} placeholder={'BIC2\tCARROZZERIA BICOLORE\nCEXS\tRIVEST.SOTTOPORTA IN CARBONIO\nTLM13'} />
-            <div className="flex flex-wrap items-center gap-2">
-              <input type="file" accept=".txt,.csv,.tsv,.xlsx,.xls" className="text-xs" onChange={e => leggiFile(e.target.files?.[0])} />
-              <select className="input !w-auto !py-1" value={tipoElenco} onChange={e => setTipoElenco(e.target.value as 'colonna' | 'sub')}>
-                <option value="colonna">Le sigle nuove vanno come Colonna</option><option value="sub">Le sigle nuove vanno come Sotto-sigla</option>
-              </select>
-              <button className="btn-primary !py-1" disabled={!testoElenco.trim()} onClick={caricaElenco}>Carica l&apos;elenco</button>
-              <span className="text-xs text-muted">Valgono per tutti i modelli. Quelle già decise non si toccano (si aggiorna solo la descrizione).</span>
-            </div>
-          </div>
-        )}
+      <div className="rounded-card border border-line bg-white p-4 text-sm">
+        <h2 className="font-semibold text-ink-900">Carica le sigle</h2>
+        <p className="mt-0.5 text-xs text-muted">
+          Incolla qui l&apos;elenco: una sigla per riga, con la descrizione dopo un tab, un «;» o uno spazio (es. <code>BIC2 CARROZZERIA BICOLORE</code>). Anche una sola va bene.
+          Senza descrizione va bene lo stesso: quando un Excel la ha, ti chiedo se aggiungerla.
+        </p>
+        <textarea className="input mt-2 w-full font-mono text-xs" rows={5} value={testoElenco} onChange={e => setTestoElenco(e.target.value)}
+          placeholder={'BIC2\tCARROZZERIA BICOLORE\nCEXS\tRIVEST.SOTTOPORTA IN CARBONIO\nTLM13'} />
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <select className="input !w-auto !py-1" value={tipoElenco} onChange={e => setTipoElenco(e.target.value as 'colonna' | 'sub')}>
+            <option value="colonna">Le sigle nuove vanno come Colonna</option><option value="sub">Le sigle nuove vanno come Sotto-sigla</option>
+          </select>
+          <label className="btn-secondary !py-1 cursor-pointer" title="Un file .txt, .csv o .xlsx: sigla nella prima colonna, descrizione nella seconda">
+            Da un file
+            <input type="file" accept=".txt,.csv,.tsv,.xlsx,.xls" className="hidden" onChange={e => { leggiFile(e.target.files?.[0]); e.target.value = ''; }} />
+          </label>
+          <button className="btn-primary !py-1 ml-auto" disabled={!testoElenco.trim()} onClick={caricaElenco}>Carica l&apos;elenco</button>
+        </div>
+        <p className="mt-1 text-xs text-muted">Valgono per tutti i modelli. Quelle già decise non si toccano (si aggiorna solo la descrizione).</p>
       </div>
 
       {proposteDesc.length > 0 && (
