@@ -12,6 +12,7 @@ export interface ModuleConfig {
   group:        string;
   moduleKey?:   ModuleKey;  // permesso richiesto per vedere la card in home
   manageOnly?:  boolean;    // true = richiede canManage invece di canView
+  adminOnly?:   boolean;    // true = visibile solo agli admin (nessun permesso di modulo)
 }
 
 export const MODULES: ModuleConfig[] = [
@@ -106,6 +107,11 @@ export const MODULES: ModuleConfig[] = [
     href: '/admin/system', label: 'Sistema', group: 'IT',
     description: 'Utenti, permessi, reparti, configurazioni e stato del sistema',
     sidebar: 'IconMonitor', hidden: false, moduleKey: 'impostazioni',
+  },
+  {
+    href: '/admin/attivita', label: 'Attività', group: 'IT',
+    description: 'Accessi, utilizzo dei moduli, utenti online e sicurezza (solo amministratori)',
+    sidebar: 'IconTrendUp', hidden: false, adminOnly: true,
   },
 
   {

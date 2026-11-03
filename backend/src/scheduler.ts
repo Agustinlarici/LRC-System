@@ -191,6 +191,16 @@ export function startScheduler() {
     setNextRun('edi_ferrari_scan', nextOccurrence(6));
   }, { timezone: 'Europe/Rome' });
 
+  // 03:30 — pulizia analytics di utilizzo: le visite pagina si tengono 180 giorni
+  cron.schedule('30 3 * * *', async () => {
+    try {
+      const r = await db`DELETE FROM page_views WHERE created_at < now() - interval '180 days'`;
+      logger.info(`[scheduler] page_views: ${r.count} righe vecchie rimosse`);
+    } catch (e) {
+      logger.error(`[scheduler] Pulizia page_views fallita: ${e instanceof Error ? e.message : e}`);
+    }
+  }, { timezone: 'Europe/Rome' });
+
   // 23:45 — generazione automatica EDI per i clienti con auto_generate = true
   cron.schedule('45 23 * * *', async () => {
     logger.info('[scheduler] EDI auto-generate...');

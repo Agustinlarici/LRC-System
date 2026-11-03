@@ -220,7 +220,7 @@ export function Sidebar() {
 
         {/* Grouped modules */}
         {MODULE_GROUPS.map(group => {
-          const items = modulesByGroup(group).filter(m => canAccess(m.href, m.manageOnly));
+          const items = modulesByGroup(group).filter(m => m.adminOnly ? user?.role === 'admin' : canAccess(m.href, m.manageOnly));
           if (items.length === 0) return null;
 
           const groupOpen   = openGroups.has(group);

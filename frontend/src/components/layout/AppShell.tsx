@@ -7,6 +7,7 @@ import { ToastProvider } from '@/components/ui/Toast';
 import { useAuth } from '@/lib/auth';
 import type { ModuleKey } from '@/types';
 import { isKioskPath } from '@/lib/kiosk';
+import { usePageTracking } from '@/lib/usePageTracking';
 
 // ─── Route → module mapping ───────────────────────────────────────────────────
 
@@ -97,6 +98,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       router.replace('/cambio-password');
     }
   }, [loading, user, pathname, router]);
+
+  usePageTracking(user?.id ?? null, pathname, isFullscreen || isTablet || isMonitor || isKioskPath(pathname));
 
   // ── Fullscreen layouts (no sidebar) ────────────────────────────────────────
 

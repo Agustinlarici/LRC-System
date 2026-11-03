@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import { MODULE_GROUPS, modulesByGroup } from '@/lib/modules';
+import { MODULE_GROUPS, modulesByGroup, type ModuleConfig } from '@/lib/modules';
 import { ICON_MAP, IconSettings } from '@/components/icons/ModuleIcons';
 import { PageHeader } from '@/components/ui/PageHeader';
 
@@ -18,9 +18,10 @@ function greeting(): string {
 export function HomeCards() {
   const { user, canView } = useAuth();
 
-  const groups = MODULE_GROUPS.filter(g =>
-    modulesByGroup(g).some(m => !m.manageOnly && (!m.moduleKey || canView(m.moduleKey)))
-  );
+  const visible = (m: ModuleConfig) =>
+    m.adminOnly ? user?.role === 'admin' : !m.manageOnly && (!m.moduleKey || canView(m.moduleKey));
+
+  const groups = MODULE_GROUPS.filter(g => modulesByGroup(g).some(visible));
 
   const firstName = user?.display_name?.split(/\s+/)[0] ?? '';
 
@@ -33,8 +34,7 @@ export function HomeCards() {
 
       <div className="space-y-6">
         {groups.map(group => {
-          const items = modulesByGroup(group)
-            .filter(m => !m.manageOnly && (!m.moduleKey || canView(m.moduleKey)));
+          const items = modulesByGroup(group).filter(visible);
           return (
             <section key={group} className="bg-white rounded-card shadow-card p-3">
               <h2 className="px-3 pt-2 pb-3 text-xs font-medium uppercase tracking-wider text-muted">{group}</h2>
