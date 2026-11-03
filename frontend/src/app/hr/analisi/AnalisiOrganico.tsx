@@ -19,13 +19,13 @@ const TICK = { fontSize: 12, fill: '#374151' };
 
 // ─── Dimensioni di analisi ─────────────────────────────────────────────────────
 
-type Dim = 'mansione' | 'l68' | 'funzione' | 'plant' | 'societa' | 'categoria' | 'tipologia' | 'livello' | 'responsabile' | 'reparto' | 'nazionalita' | 'sesso' | 'anzianita';
+type Dim = 'mansione' | 'l68' | 'funzione' | 'plant' | 'societa' | 'categoria' | 'tipologia' | 'livello' | 'responsabile' | 'reparto' | 'nazionalita' | 'sesso' | 'anzianita' | 'scadenza';
 
 const DIM_LABEL: Record<Dim, string> = {
   l68: 'Legge 68', mansione: 'Mansione', funzione: 'Funzione aziendale', plant: 'Plant', societa: 'Società', categoria: 'Categoria', tipologia: 'Tipologia', livello: 'Livello',
-  responsabile: 'Responsabile', reparto: 'Reparto', nazionalita: 'Nazionalità', sesso: 'Sesso', anzianita: 'Anzianità',
+  responsabile: 'Responsabile', reparto: 'Reparto', nazionalita: 'Nazionalità', sesso: 'Sesso', anzianita: 'Anzianità', scadenza: 'Scadenza contratto',
 };
-const FILTER_ORDER: Dim[] = ['funzione', 'mansione', 'l68', 'plant', 'societa', 'categoria', 'tipologia', 'livello', 'responsabile', 'reparto', 'nazionalita', 'sesso', 'anzianita'];
+const FILTER_ORDER: Dim[] = ['funzione', 'mansione', 'l68', 'plant', 'societa', 'categoria', 'tipologia', 'livello', 'responsabile', 'reparto', 'nazionalita', 'sesso', 'anzianita', 'scadenza'];
 
 type Filters = Partial<Record<Dim, string[]>>;
 
@@ -44,6 +44,8 @@ function valuesOf(e: HrEmployee, dim: Dim, plantName: Map<number, string>): stri
     case 'funzione':     return [clean(e.funzione_aziendale)];
     case 'l68':          return [e.l68 ? 'Sì' : 'No'];
     case 'anzianita':    return [anzianitaBucket(e.anzianita_anni)];
+    // Mese di fine contratto (MM/AA), come nel grafico delle scadenze; chi non ha una data futura resta "n/d"
+    case 'scadenza':     { const d = iso(e.data_cessazione); return [d > new Date().toISOString().slice(0, 10) ? `${d.slice(5, 7)}/${d.slice(2, 4)}` : NA]; }
     // Una persona può lavorare su più sedi: conta in ognuna
     case 'plant':        return e.plant_ids?.length ? e.plant_ids.map(id => plantName.get(id) ?? NA) : [NA];
   }
@@ -431,6 +433,11 @@ export function AnalisiOrganico({ view = 'main' }: { view?: 'main' | 'mansioni' 
   const expiring = useMemo(() =>
     active.filter(e => iso(e.data_cessazione) > today).sort((a, b) => iso(a.data_cessazione).localeCompare(iso(b.data_cessazione))),
   [active, today]);
+  // Per il grafico: tutti i filtri tranne quello sulla scadenza, così i mesi non selezionati restano visibili
+  const expiringAll = useMemo(() =>
+    allActive.filter(e => iso(e.data_cessazione) > today && (Object.entries(filters) as [Dim, string[]][]).every(([dim, sel]) =>
+      dim === 'scadenza' || !sel.length || valuesOf(e, dim, plantName).some(v => sel.includes(v)))),
+  [allActive, filters, plantName, today]);
   const expiring90 = expiring.filter(e => iso(e.data_cessazione) <= plus(90));
 
   const monthly = useMemo(() => {
@@ -441,9 +448,9 @@ export function AnalisiOrganico({ view = 'main' }: { view?: 'main' | 'mansioni' 
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       months.push({ key, mese: `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`, count: 0 });
     }
-    for (const e of expiring) { const m = months.find(x => x.key === iso(e.data_cessazione).slice(0, 7)); if (m) m.count++; }
+    for (const e of expiringAll) { const m = months.find(x => x.key === iso(e.data_cessazione).slice(0, 7)); if (m) m.count++; }
     return months;
-  }, [expiring]);
+  }, [expiringAll]);
 
   const anzianitaStruct = useMemo(() => anzianitaByFunzione(active), [active]);
   const livelliStruct = useMemo(() => livelliByMansione(active), [active]);
@@ -494,7 +501,10 @@ export function AnalisiOrganico({ view = 'main' }: { view?: 'main' | 'mansioni' 
             <XAxis dataKey="mese" tick={TICK} />
             <YAxis allowDecimals={false} tick={TICK} />
             <Tooltip cursor={{ fill: '#f3f4f6' }} />
-            <Bar dataKey="count" name="Contratti in scadenza" fill={PALETTE[2]} radius={[4, 4, 0, 0]} label={{ position: 'top', fontSize: 11, fill: '#374151' }} />
+            <Bar dataKey="count" name="Contratti in scadenza" fill={PALETTE[2]} radius={[4, 4, 0, 0]} label={{ position: 'top', fontSize: 11, fill: '#374151' }}
+              cursor="pointer" onClick={(d: any) => d.count > 0 && toggleFilter('scadenza', d.mese)}>
+              {monthly.map(m => <Cell key={m.key} fill={PALETTE[2]} opacity={!filters.scadenza?.length || filters.scadenza.includes(m.mese) ? 1 : 0.35} />)}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       )}

@@ -356,13 +356,14 @@ export default function OrganigrammaPage() {
     setExpanded(new Set(viewNodes.filter(n => (depthOf.get(n.id) ?? 0) + 1 < level).map(n => n.id)));
   }, [viewNodes, depthOf, level]);
 
-  // Stampa solo l'albero attualmente visibile, in orizzontale: lo scala per farlo stare in una pagina A4.
+  // Stampa solo l'albero attualmente visibile, in orizzontale: lo scala per riempire una pagina A4.
   const treeRef = useRef<HTMLUListElement>(null);
   function handlePrint() {
     const el = treeRef.current;
     if (el) {
-      const availW = 1000, availH = 630; // area utile A4 orizzontale a 96dpi, con margini
-      el.style.setProperty('--print-zoom', String(Math.min(1, availW / el.scrollWidth, availH / el.scrollHeight)));
+      const availW = 1020, availH = 690; // area utile A4 orizzontale a 96dpi, tolti margini di pagina e padding
+      // Può anche ingrandire (fino a 3x): l'albero deve occupare tutto il foglio, non solo ridursi per starci.
+      el.style.setProperty('--print-zoom', String(Math.min(3, availW / el.scrollWidth, availH / el.scrollHeight)));
     }
     window.print();
   }
@@ -429,8 +430,8 @@ export default function OrganigrammaPage() {
       />
 
       <div className="flex items-center gap-2 flex-wrap d-print-none">
-        <input type="text" placeholder="Cerca una persona…" value={search} onChange={e => setSearch(e.target.value)} className="input text-sm w-64 h-9 py-0" />
-        <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className="input text-sm w-auto min-w-[11rem] h-9 py-0">
+        <input type="text" placeholder="Cerca una persona…" value={search} onChange={e => setSearch(e.target.value)} className="input !bg-white !border-stone-300 shadow-sm text-sm w-64 h-9 py-0" />
+        <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className="input !bg-white !border-stone-300 shadow-sm text-sm w-auto min-w-[11rem] h-9 py-0">
           <option value="">Tutte le funzioni</option>
           {funzioni.map(f => <option key={f} value={f}>{f}</option>)}
         </select>
@@ -455,14 +456,6 @@ export default function OrganigrammaPage() {
       </div>
 
       <div>
-        <div className="only-print mb-3">
-          <h1 className="text-base font-semibold text-ink-900">
-            Organigramma{funzioneFilter ? ` — ${funzioneFilter}` : ''}{search.trim() ? ` — Ricerca: "${search.trim()}"` : ''}
-          </h1>
-          <p className="text-[11px] text-muted">
-            {[funzioneFilter && `Funzione: ${funzioneFilter}`, search.trim() && `Persona: ${search.trim()}`, byMansione && 'Vista per mansione'].filter(Boolean).join(' · ')}
-          </p>
-        </div>
         <div className="card overflow-x-auto overflow-y-hidden py-6 org-print-area">
           {loading ? (
             <SkeletonTable rows={8} cols={6} />

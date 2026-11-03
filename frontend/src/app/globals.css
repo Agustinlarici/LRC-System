@@ -62,7 +62,9 @@ body {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: none; }
 }
-.animate-pageIn { animation: pageIn 0.18s ease-out both; }
+/* "backwards" e non "both": con fill-mode forwards la animazione di transform resta attiva
+   e diventa il contenitore dei figli `fixed` (modali e menu si spostano e vengono tagliati). */
+.animate-pageIn { animation: pageIn 0.18s ease-out backwards; }
 
 @media (hover: hover) {
   .group-gear .gear       { transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); }
