@@ -356,13 +356,15 @@ export default function OrganigrammaPage() {
     setExpanded(new Set(viewNodes.filter(n => (depthOf.get(n.id) ?? 0) + 1 < level).map(n => n.id)));
   }, [viewNodes, depthOf, level]);
 
-  // Stampa solo l'albero attualmente visibile, in orizzontale: lo scala per farlo stare in una pagina A4.
+  // Stampa solo l'albero attualmente visibile, in orizzontale. Qui si misura solo la dimensione
+  // naturale dell'albero: lo zoom lo calcola il CSS di stampa (.org-print-zoom) in base alla
+  // pagina scelta nella finestra di stampa, così riempie il foglio (A4 se il browser non la comunica).
   const treeRef = useRef<HTMLUListElement>(null);
   function handlePrint() {
     const el = treeRef.current;
     if (el) {
-      const availW = 1000, availH = 630; // area utile A4 orizzontale a 96dpi, con margini
-      el.style.setProperty('--print-zoom', String(Math.min(1, availW / el.scrollWidth, availH / el.scrollHeight)));
+      el.style.setProperty('--tw', String(el.scrollWidth));
+      el.style.setProperty('--th', String(el.scrollHeight));
     }
     window.print();
   }
@@ -395,7 +397,7 @@ export default function OrganigrammaPage() {
 
   return (
     <div className="space-y-4">
-      <style>{`@media print { @page { size: A4 landscape; margin: 8mm; } }`}</style>
+      <style>{`@media print { @page { size: landscape; margin: 8mm; } }`}</style>
       {photoZoom && selected?.photo_version && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 cursor-zoom-out d-print-none" onClick={() => setPhotoZoom(false)}>
           <button type="button" onClick={() => setPhotoZoom(false)} aria-label="Chiudi"
@@ -411,7 +413,6 @@ export default function OrganigrammaPage() {
       )}
       <PageHeader
         title="Organigramma"
-        description="Struttura organizzativa: dipendente → responsabile → manager → direzione"
         actions={<>
           <div className="flex items-center rounded-ctl border border-stone-300 overflow-hidden text-xs" role="group" aria-label="Vista organigramma">
             {([[false, 'Per persona'], [true, 'Per mansione']] as const).map(([val, label]) => (
@@ -428,7 +429,7 @@ export default function OrganigrammaPage() {
         </>}
       />
 
-      <div className="flex items-center gap-2 flex-wrap d-print-none">
+      <div className="card !p-3 flex items-center gap-2 flex-wrap d-print-none">
         <input type="text" placeholder="Cerca una persona…" value={search} onChange={e => setSearch(e.target.value)} className="input text-sm w-64 h-9 py-0" />
         <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className="input text-sm w-auto min-w-[11rem] h-9 py-0">
           <option value="">Tutte le funzioni</option>
@@ -455,14 +456,6 @@ export default function OrganigrammaPage() {
       </div>
 
       <div>
-        <div className="only-print mb-3">
-          <h1 className="text-base font-semibold text-ink-900">
-            Organigramma{funzioneFilter ? ` — ${funzioneFilter}` : ''}{search.trim() ? ` — Ricerca: "${search.trim()}"` : ''}
-          </h1>
-          <p className="text-[11px] text-muted">
-            {[funzioneFilter && `Funzione: ${funzioneFilter}`, search.trim() && `Persona: ${search.trim()}`, byMansione && 'Vista per mansione'].filter(Boolean).join(' · ')}
-          </p>
-        </div>
         <div className="card overflow-x-auto overflow-y-hidden py-6 org-print-area">
           {loading ? (
             <SkeletonTable rows={8} cols={6} />
