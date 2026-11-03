@@ -241,6 +241,27 @@ export default function EmployeeDetailPage() {
             <Field label="Taglia scarpe" value={employee.taglia_scarpe} />
           </InfoCard>
 
+          <InfoCard title="Altri dati (Osti)">
+            <Field label="Badge" value={employee.badge} />
+            <Field label="Transponder" value={employee.transponder} />
+            <Field label="Terminale di timbratura" value={employee.terminale} />
+            <Field label="Qualifica" value={employee.qualifica} />
+            <Field label="Tempo indeterminato" value={employee.indeterminato == null ? null : employee.indeterminato ? 'Sì' : 'No'} />
+            <Field label="Passaggio a indeterminato" value={employee.indeterminato_data ? fmtDate(employee.indeterminato_data) : null} />
+            <Field label="Part-time" value={employee.part_time} />
+            <Field label="Luogo di nascita" value={employee.luogo_nascita} />
+            <Field label="Titolo di studio" value={employee.titolo_studio} />
+            <Field label="Stato civile" value={employee.stato_civile} />
+          </InfoCard>
+
+          <InfoCard title="Domicilio">
+            <Field label="Indirizzo" value={employee.domicilio_indirizzo} />
+            <Field label="Città" value={employee.domicilio_citta} />
+            <Field label="Provincia" value={employee.domicilio_provincia} />
+            <Field label="CAP" value={employee.domicilio_cap} />
+            {employee.note_hr && <Field label="Note HR" value={employee.note_hr} />}
+          </InfoCard>
+
           <InfoCard title="Lavoro">
             <Field label="Funzione aziendale" value={employee.funzione_aziendale} />
             <Field label="Reparto" value={employee.reparto_name} />
