@@ -119,7 +119,7 @@ ticketRoutes.post('/', async (c) => {
     }
     const parsed = createTicketSchema.safeParse(raw);
     if (!parsed.success) {
-      throw new HTTPException(400, { message: parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ') });
+      throw new HTTPException(400, { message: parsed.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ') });
     }
     fields = parsed.data;
 

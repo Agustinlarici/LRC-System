@@ -83,7 +83,7 @@ function parseMultipartFields<T>(form: FormData, fileKeys: string[], schema: z.Z
   }
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
-    throw new HTTPException(400, { message: parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ') });
+    throw new HTTPException(400, { message: parsed.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ') });
   }
   return parsed.data;
 }
@@ -206,7 +206,7 @@ qualitaRoutes.post('/reports', requireModule('qualita'), async (c) => {
   }
   const parsed = reportFieldsSchema.safeParse(raw);
   if (!parsed.success) {
-    throw new HTTPException(400, { message: parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ') });
+    throw new HTTPException(400, { message: parsed.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ') });
   }
   const fields = parsed.data;
 
@@ -342,7 +342,7 @@ qualitaRoutes.post('/export', requireModule('qualita'), async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = exportSchema.safeParse(body);
   if (!parsed.success) {
-    throw new HTTPException(400, { message: parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ') });
+    throw new HTTPException(400, { message: parsed.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ') });
   }
   const { component_id, commessa } = parsed.data;
 
