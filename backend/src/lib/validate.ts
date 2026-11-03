@@ -13,7 +13,7 @@ export async function parseBody<T>(c: Context, schema: z.ZodType<T>): Promise<T>
   const result = schema.safeParse(body);
   if (!result.success) {
     throw new HTTPException(400, {
-      message: result.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', '),
+      message: result.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', '),
     });
   }
   return result.data;

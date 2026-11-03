@@ -339,7 +339,7 @@ const generateSchema = z.object({
   employee_id: z.number().int().positive(),
   event_id:    z.number().int().positive().optional().nullable(),
   // Valori inseriti a mano (solo chiavi del catalogo): vincono su quelli ricavati dal sistema
-  values:      z.record(z.string().max(500)).optional(),
+  values:      z.record(z.string(), z.string().max(500)).optional(),
 });
 
 type EmpRow = Record<string, any>;

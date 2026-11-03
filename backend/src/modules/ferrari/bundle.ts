@@ -133,7 +133,7 @@ export function leggiBundle(buf: Buffer, secret: string, atteso: BundleTipo): Bu
   }
   const parsed = ManifestSchema.safeParse(json);
   if (!parsed.success) {
-    throw new BundleError(`manifest non valido: ${parsed.error.errors.map(e => `${e.path.join('.')} ${e.message}`).join(', ')}`);
+    throw new BundleError(`manifest non valido: ${parsed.error.issues.map(e => `${e.path.join('.')} ${e.message}`).join(', ')}`);
   }
   const manifest = parsed.data;
 
@@ -246,7 +246,7 @@ export function leggiRisultatoIa(contenuto: Buffer): AnalisiIa {
   }
   const r = AnalisiIaSchema.safeParse(json);
   if (!r.success) {
-    throw new BundleError(`Risultato IA non valido: ${r.error.errors.slice(0, 5).map(e => `${e.path.join('.')} ${e.message}`).join('; ')}`);
+    throw new BundleError(`Risultato IA non valido: ${r.error.issues.slice(0, 5).map(e => `${e.path.join('.')} ${e.message}`).join('; ')}`);
   }
   return r.data as AnalisiIa;
 }
