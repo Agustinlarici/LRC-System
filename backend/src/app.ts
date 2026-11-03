@@ -21,6 +21,7 @@ import { qualitaRoutes } from './modules/qualita/routes.js';
 import { programmaProduzioneRoutes } from './modules/programma-produzione/routes.js';
 import { hrRoutes } from './modules/hr/routes.js';
 import { ferrariRoutes } from './modules/ferrari/routes.js';
+import { activityRoutes } from './modules/activity/routes.js';
 import { logger } from './lib/logger.js';
 import { db } from './db/client.js';
 import { getWebthronPool } from './modules/monitor/mysql-client.js';
@@ -105,6 +106,7 @@ app.route('/api/qualita', qualitaRoutes);
 app.route('/api/prod', programmaProduzioneRoutes);
 app.route('/api/hr', hrRoutes);
 app.route('/api/ferrari', ferrariRoutes);
+app.route('/api/activity', activityRoutes);
 
 // Stub para módulos aún no migrados
 const stub = (module: string) =>
