@@ -296,7 +296,7 @@ function Stacked({ data, series, colorFor, asPct, labelWidth = 140, onSelect, ac
         <YAxis type="category" dataKey="name" width={labelWidth} interval={0} axisLine={false} tickLine={false}
           tick={<ClickableCategoryTick onSelect={onSelectRow ?? onSelect} active={activeRow ?? active} />} />
         <Tooltip cursor={{ fill: '#f3f4f6' }} />
-        <Legend wrapperStyle={{ fontSize: 12 }} onClick={onSelect ? (d: any) => isClickable(d.value) && onSelect(d.value) : undefined} cursor={onSelect ? 'pointer' : undefined} />
+        <Legend wrapperStyle={{ fontSize: 12, cursor: onSelect ? 'pointer' : undefined }} onClick={onSelect ? (d: any) => isClickable(d.value) && onSelect(d.value) : undefined} />
         {series.map(s => (
           <Bar key={s} dataKey={s} stackId="a" fill={colorFor(s)} stroke="#fff" strokeWidth={1}
             fillOpacity={!active?.length || active.includes(s) ? 1 : 0.35}
