@@ -412,7 +412,6 @@ export default function OrganigrammaPage() {
       )}
       <PageHeader
         title="Organigramma"
-        description="Struttura organizzativa: dipendente → responsabile → manager → direzione"
         actions={<>
           <div className="flex items-center rounded-ctl border border-stone-300 overflow-hidden text-xs" role="group" aria-label="Vista organigramma">
             {([[false, 'Per persona'], [true, 'Per mansione']] as const).map(([val, label]) => (
@@ -429,9 +428,9 @@ export default function OrganigrammaPage() {
         </>}
       />
 
-      <div className="flex items-center gap-2 flex-wrap d-print-none">
-        <input type="text" placeholder="Cerca una persona…" value={search} onChange={e => setSearch(e.target.value)} className="input !bg-white !border-stone-300 shadow-sm text-sm w-64 h-9 py-0" />
-        <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className="input !bg-white !border-stone-300 shadow-sm text-sm w-auto min-w-[11rem] h-9 py-0">
+      <div className="card !p-3 flex items-center gap-2 flex-wrap d-print-none">
+        <input type="text" placeholder="Cerca una persona…" value={search} onChange={e => setSearch(e.target.value)} className="input text-sm w-64 h-9 py-0" />
+        <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className="input text-sm w-auto min-w-[11rem] h-9 py-0">
           <option value="">Tutte le funzioni</option>
           {funzioni.map(f => <option key={f} value={f}>{f}</option>)}
         </select>
