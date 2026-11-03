@@ -270,10 +270,14 @@ th.sheet-sticky { z-index: 15; background-color: #fff; }
   .analisi-print .min-h-\[300px\] { min-height: 0 !important; }
 }
 
-/* ─── Stampa Organigramma: solo l'albero, A4 orizzontale, scalato da handlePrint ─ */
+/* ─── Stampa Organigramma: solo l'albero, orizzontale (A4/A3), scalato da handlePrint ─ */
 @media print {
   .org-print-area { overflow: visible !important; box-shadow: none !important; border: 0 !important; padding: 0 !important; }
-  .org-print-zoom { zoom: var(--print-zoom, 1); }
+  /* Area utile in px (tolti margini e padding): di base A4 orizzontale; se la finestra di stampa
+     comunica una pagina più grande (A3) l'albero si ingrandisce di conseguenza. --tw/--th: handlePrint. */
+  .org-print-zoom { --pw: 1010; --ph: 680; zoom: min(4, calc(var(--pw) / var(--tw, 1)), calc(var(--ph) / var(--th, 1))); }
+  @media (min-width: 1300px)  { .org-print-zoom { --pw: 1470; } }
+  @media (min-height: 900px)  { .org-print-zoom { --ph: 1005; } }
   .org-tree li, .org-node { break-inside: avoid; }
 }
 

@@ -356,16 +356,15 @@ export default function OrganigrammaPage() {
     setExpanded(new Set(viewNodes.filter(n => (depthOf.get(n.id) ?? 0) + 1 < level).map(n => n.id)));
   }, [viewNodes, depthOf, level]);
 
-  // Stampa solo l'albero attualmente visibile, in orizzontale: lo scala per riempire tutto il
-  // foglio del formato scelto. Aree utili in px a 96dpi, tolti margini di pagina e padding.
-  const PRINT_AREA = { A4: { w: 1010, h: 680 }, A3: { w: 1470, h: 1005 } } as const;
-  const [paper, setPaper] = useState<keyof typeof PRINT_AREA>('A4');
+  // Stampa solo l'albero attualmente visibile, in orizzontale. Qui si misura solo la dimensione
+  // naturale dell'albero: lo zoom lo calcola il CSS di stampa (.org-print-zoom) in base alla
+  // pagina scelta nella finestra di stampa, così riempie il foglio (A4 se il browser non la comunica).
   const treeRef = useRef<HTMLUListElement>(null);
   function handlePrint() {
     const el = treeRef.current;
     if (el) {
-      const { w, h } = PRINT_AREA[paper];
-      el.style.setProperty('--print-zoom', String(Math.min(4, w / el.scrollWidth, h / el.scrollHeight)));
+      el.style.setProperty('--tw', String(el.scrollWidth));
+      el.style.setProperty('--th', String(el.scrollHeight));
     }
     window.print();
   }
@@ -398,7 +397,7 @@ export default function OrganigrammaPage() {
 
   return (
     <div className="space-y-4">
-      <style>{`@media print { @page { size: ${paper} landscape; margin: 8mm; } }`}</style>
+      <style>{`@media print { @page { size: landscape; margin: 8mm; } }`}</style>
       {photoZoom && selected?.photo_version && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 cursor-zoom-out d-print-none" onClick={() => setPhotoZoom(false)}>
           <button type="button" onClick={() => setPhotoZoom(false)} aria-label="Chiudi"
@@ -426,10 +425,6 @@ export default function OrganigrammaPage() {
               </button>
             ))}
           </div>
-          <select value={paper} onChange={e => setPaper(e.target.value as keyof typeof PRINT_AREA)} aria-label="Formato di stampa" className="input text-sm w-auto h-9 py-0">
-            <option value="A4">A4</option>
-            <option value="A3">A3</option>
-          </select>
           <button onClick={handlePrint} className="btn-primary text-sm">Stampa</button>
         </>}
       />
