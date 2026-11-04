@@ -13,6 +13,7 @@ import {
 import type { WebthronEvent as HeatmapWebthronRow } from '../monitor/mysql-client.js';
 import { getAvailableFasi, getAvailableComponenti, computeLeadTime, SPMA_PIANO_FASE } from './lead-time.js';
 import { logger } from '../../lib/logger.js';
+import { assertIKnowEnabled } from '../../lib/system-flags.js';
 
 export const dashboardsRoutes = new Hono();
 
@@ -320,6 +321,7 @@ dashboardsRoutes.get('/heatmap/detail/:lineaId/:data', async (c) => {
 // Risponde subito (202) e gira in background.
 
 dashboardsRoutes.post('/heatmap/backfill', async (c) => {
+  await assertIKnowEnabled('iknow_backfill_enabled');
   if (backfillRunning) {
     return c.json({ error: 'Backfill già in corso', status: backfillStatus }, 409);
   }
@@ -407,6 +409,7 @@ let historyBackfillRunning = false;
 let historyBackfillStatus: { done: number; total: number; current: string; errors: string[] } | null = null;
 
 dashboardsRoutes.post('/lead-time/backfill', async (c) => {
+  await assertIKnowEnabled('iknow_backfill_enabled');
   if (historyBackfillRunning) {
     return c.json({ error: 'Backfill già in corso', status: historyBackfillStatus }, 409);
   }
@@ -562,6 +565,7 @@ dashboardsRoutes.get('/lead-time/backfill', async (c) => {
 // Does NOT trigger or depend on the iKnow Andon sync scheduler.
 
 dashboardsRoutes.post('/lead-time/patch-commessa', async (c) => {
+  await assertIKnowEnabled('iknow_backfill_enabled');
   const dateStr = c.req.query('date');
   if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
     throw new HTTPException(400, { message: 'Parametro date richiesto (YYYY-MM-DD)' });

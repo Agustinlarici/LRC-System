@@ -2,21 +2,38 @@
  * System flags — iKnow (WebThron) connection toggles.
  * Persisted in PostgreSQL system_config table.
  * In-memory cache refreshed on every read (low frequency).
+ *
+ * `iknow_enabled` è l'interruttore generale; ogni altra chiave accende/spegne una
+ * singola query (o gruppo di query) verso iKnow. Le chiavi mancanti valgono `true`.
  */
 
+import { HTTPException } from 'hono/http-exception';
 import { db } from '../db/client.js';
 
-export interface IKnowFlags {
-  iknow_enabled:        boolean;
-  iknow_andon_enabled:  boolean;
-  iknow_buffer_enabled: boolean;
-}
+/** Interruttori per singola query verso iKnow. */
+export const IKNOW_QUERY_FLAGS = [
+  'iknow_andon_enabled',     // sync incrementale Andon/Monitor, ogni 30 s
+  'iknow_nightly_enabled',   // rilettura notturna della giornata precedente, 01:00
+  'iknow_lookup_enabled',    // aggiornamento fasi e combos, 02:00 (+ manuale e all'avvio)
+  'iknow_buffer_enabled',    // ricalcolo Buffer, ogni 30 min (legge dallo storico locale)
+  'iknow_bucci_enabled',     // lookup seriali/commesse nella Spedizione Bucci
+  'iknow_backfill_enabled',  // backfill manuali (heatmap, lead time, patch commessa)
+] as const;
 
-const DEFAULTS: IKnowFlags = {
-  iknow_enabled:        true,
-  iknow_andon_enabled:  true,
-  iknow_buffer_enabled: true,
-};
+export type IKnowQueryFlag = (typeof IKNOW_QUERY_FLAGS)[number];
+
+export type IKnowFlags = { iknow_enabled: boolean } & Record<IKnowQueryFlag, boolean>;
+
+const ALL_KEYS = ['iknow_enabled', ...IKNOW_QUERY_FLAGS] as const;
+
+const DEFAULTS = Object.fromEntries(ALL_KEYS.map(k => [k, true])) as IKnowFlags;
+
+/** Lanciata quando si tenta di interrogare iKnow con l'interruttore (generale o della query) spento. */
+export class IKnowDisabledError extends HTTPException {
+  constructor() {
+    super(503, { message: "Connessione iKnow disabilitata dall'amministratore" });
+  }
+}
 
 // In-memory cache — refreshed at most once per minute
 let cached: IKnowFlags | null = null;
@@ -28,15 +45,11 @@ export async function getIKnowFlags(): Promise<IKnowFlags> {
   try {
     const rows = await db`
       SELECT key, value FROM system_config
-      WHERE key IN ('iknow_enabled','iknow_andon_enabled','iknow_buffer_enabled')
+      WHERE key IN ${db([...ALL_KEYS])}
     `;
     const map: Record<string, boolean> = {};
     for (const r of rows) map[r.key as string] = r.value === 'true';
-    cached = {
-      iknow_enabled:        map['iknow_enabled']        ?? DEFAULTS.iknow_enabled,
-      iknow_andon_enabled:  map['iknow_andon_enabled']  ?? DEFAULTS.iknow_andon_enabled,
-      iknow_buffer_enabled: map['iknow_buffer_enabled'] ?? DEFAULTS.iknow_buffer_enabled,
-    };
+    cached = Object.fromEntries(ALL_KEYS.map(k => [k, map[k] ?? DEFAULTS[k]])) as IKnowFlags;
     cacheTs = Date.now();
     return cached;
   } catch {
@@ -57,8 +70,13 @@ export async function setIKnowFlags(partial: Partial<IKnowFlags>): Promise<IKnow
   return getIKnowFlags();
 }
 
-/** Shorthand — returns false only if BOTH master and specific flag are false */
-export async function isIKnowEnabled(flag: 'iknow_andon_enabled' | 'iknow_buffer_enabled'): Promise<boolean> {
+/** Shorthand — returns true only if BOTH master and the specific flag are on */
+export async function isIKnowEnabled(flag: IKnowQueryFlag): Promise<boolean> {
   const f = await getIKnowFlags();
   return f.iknow_enabled && f[flag];
+}
+
+/** Per le rotte e i job on-demand: lancia 503 se la query è spenta (generale o singola). */
+export async function assertIKnowEnabled(flag: IKnowQueryFlag): Promise<void> {
+  if (!(await isIKnowEnabled(flag))) throw new IKnowDisabledError();
 }

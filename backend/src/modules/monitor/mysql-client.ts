@@ -1,18 +1,12 @@
 import mysql from 'mysql2/promise';
-import { HTTPException } from 'hono/http-exception';
-import { getIKnowFlags } from '../../lib/system-flags.js';
+import { getIKnowFlags, IKnowDisabledError } from '../../lib/system-flags.js';
+
+export { IKnowDisabledError };
 
 let pool: mysql.Pool | null = null;
 
 export function resetWebthronPool(): void {
   pool = null;
-}
-
-/** Lanciata quando si tenta di interrogare iKnow con l'interruttore generale spento. */
-export class IKnowDisabledError extends HTTPException {
-  constructor() {
-    super(503, { message: "Connessione iKnow disabilitata dall'amministratore" });
-  }
 }
 
 async function assertIKnowEnabled(): Promise<void> {

@@ -1,7 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 
-const flags = { iknow_enabled: false, iknow_andon_enabled: true, iknow_buffer_enabled: true };
-vi.mock('../../../lib/system-flags.js', () => ({ getIKnowFlags: async () => flags }));
+const flags = { iknow_enabled: false };
+vi.mock('../../../lib/system-flags.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../lib/system-flags.js')>()),
+  getIKnowFlags: async () => flags,
+}));
 
 import { getWebthronPool, IKnowDisabledError } from '../mysql-client.js';
 

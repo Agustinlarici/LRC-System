@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { parseBody } from '../../lib/validate.js';
-import { getIKnowFlags, setIKnowFlags } from '../../lib/system-flags.js';
+import { getIKnowFlags, setIKnowFlags, assertIKnowEnabled, IKNOW_QUERY_FLAGS } from '../../lib/system-flags.js';
 import { getAllStats, startRun, endRun, failRun } from '../../lib/sync-stats.js';
 import { refreshLookupTables } from '../monitor/pg-webthron-sync.js';
 import { executiveRefresh } from '../monitor/executive-cache.js';
@@ -26,9 +26,8 @@ systemRoutes.get('/iknow-flags', async (c) => {
 
 systemRoutes.patch('/iknow-flags', async (c) => {
   const body = await parseBody(c, z.object({
-    iknow_enabled:        z.boolean().optional(),
-    iknow_andon_enabled:  z.boolean().optional(),
-    iknow_buffer_enabled: z.boolean().optional(),
+    iknow_enabled: z.boolean().optional(),
+    ...Object.fromEntries(IKNOW_QUERY_FLAGS.map(k => [k, z.boolean().optional()])),
   }));
   const flags = await setIKnowFlags(body);
   return c.json(flags);
@@ -48,7 +47,8 @@ systemRoutes.get('/sync-status', (c) => {
 });
 
 // POST /api/system/lookup-refresh — aggiorna fasi e combos da WebThron subito
-systemRoutes.post('/lookup-refresh', (c) => {
+systemRoutes.post('/lookup-refresh', async (c) => {
+  await assertIKnowEnabled('iknow_lookup_enabled');
   refreshLookupTables()
     .then(() => {})
     .catch(() => {});
