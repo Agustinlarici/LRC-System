@@ -102,13 +102,14 @@ services:
     logging: *default-logging
     image: node:24.22.2-alpine
     working_dir: /app
-    command: sh -c "npm install --no-audit --no-fund && npm run dev"
+    # --webpack: con Turbopack (default di Next 16) il polling non funziona e su Windows le modifiche non si vedono
+    command: sh -c "npm install --no-audit --no-fund && npm run dev -- --webpack"
     restart: unless-stopped
     environment:
       BACKEND_URL:          http://backend:3001
       INTERNAL_API_URL:     http://backend:3001
       NEXT_PUBLIC_API_URL:  http://localhost:3001
-      WATCHPACK_POLLING:       "true"   # webpack polling (funciona con --no-turbopack)
+      WATCHPACK_POLLING:       "true"   # polling dei file (serve --webpack, vedi command)
     ports:
       - "3000:3000"
     volumes:

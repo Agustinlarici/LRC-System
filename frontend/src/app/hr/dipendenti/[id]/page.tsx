@@ -13,6 +13,7 @@ import { SalaryHistory } from './SalaryHistory';
 import { EmployeeAvatar } from '@/components/hr/EmployeeAvatar';
 import { tagBadgeStyle } from '@/lib/tagColors';
 import { resizePhoto } from '@/lib/hrPhoto';
+import { OstiMark, OstiLegend, isOstiLabel } from '@/components/ui/OstiMark';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -46,7 +47,7 @@ function InfoCard({ title, children }: { title: string; children: React.ReactNod
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <p className="text-[11px] font-medium text-muted uppercase tracking-wide">{label}</p>
+      <p className="text-[11px] font-medium text-muted uppercase tracking-wide">{label}{isOstiLabel(label) && <OstiMark />}</p>
       <p className="text-sm text-ink-800 mt-0.5">{value ?? '—'}</p>
     </div>
   );
@@ -207,13 +208,15 @@ export default function EmployeeDetailPage() {
         </div>
       )}
 
+      <OstiLegend className="mb-3" />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
         {/* Colonna sinistra: dati della persona */}
         <div className="lg:col-span-2 space-y-5">
           <InfoCard title="Anagrafica e contatti">
             <Field label="Sesso" value={employee.sesso} />
             <Field label="Data di nascita" value={employee.data_nascita ? `${fmtDate(employee.data_nascita)}${employee.eta != null ? ` (${employee.eta} anni)` : ''}` : null} />
-            <Field label="Nazionalità" value={employee.nazionalita} />
+            <Field label="Nazionalità" value={employee.nazionalita?.toUpperCase()} />
+            <Field label="Extra UE / Italia" value={employee.tipo_nazionalita === 'ITALIANO' ? 'ITALIA' : employee.tipo_nazionalita} />
             <Field label="Codice fiscale" value={employee.codice_fiscale} />
             <Field label="Nome Osti" value={employee.nome_osti} />
             <Field label="Email" value={employee.email} />
@@ -241,19 +244,6 @@ export default function EmployeeDetailPage() {
             <Field label="Taglia scarpe" value={employee.taglia_scarpe} />
           </InfoCard>
 
-          <InfoCard title="Altri dati (Osti)">
-            <Field label="Badge" value={employee.badge} />
-            <Field label="Transponder" value={employee.transponder} />
-            <Field label="Terminale di timbratura" value={employee.terminale} />
-            <Field label="Qualifica" value={employee.qualifica} />
-            <Field label="Tempo indeterminato" value={employee.indeterminato == null ? null : employee.indeterminato ? 'Sì' : 'No'} />
-            <Field label="Passaggio a indeterminato" value={employee.indeterminato_data ? fmtDate(employee.indeterminato_data) : null} />
-            <Field label="Part-time" value={employee.part_time} />
-            <Field label="Luogo di nascita" value={employee.luogo_nascita} />
-            <Field label="Titolo di studio" value={employee.titolo_studio} />
-            <Field label="Stato civile" value={employee.stato_civile} />
-          </InfoCard>
-
           <InfoCard title="Domicilio">
             <Field label="Indirizzo" value={employee.domicilio_indirizzo} />
             <Field label="Città" value={employee.domicilio_citta} />
@@ -273,6 +263,19 @@ export default function EmployeeDetailPage() {
               ? <Link href={`/hr/dipendenti/${employee.capo_id}`} className="btn-secondary text-xs">{employee.capo_nome}</Link>
               : null} />
             <Field label="Riporti diretti" value={employee.n_riporti > 0 ? persone(employee.n_riporti) : null} />
+          </InfoCard>
+
+          <InfoCard title="Altri dati (Osti)">
+            <Field label="Badge" value={employee.badge} />
+            <Field label="Transponder" value={employee.transponder} />
+            <Field label="Terminale di timbratura" value={employee.terminale} />
+            <Field label="Qualifica" value={employee.qualifica} />
+            <Field label="Tempo indeterminato" value={employee.indeterminato == null ? null : employee.indeterminato ? 'Sì' : 'No'} />
+            <Field label="Passaggio a indeterminato" value={employee.indeterminato_data ? fmtDate(employee.indeterminato_data) : null} />
+            <Field label="Part-time" value={employee.part_time} />
+            <Field label="Luogo di nascita" value={employee.luogo_nascita} />
+            <Field label="Titolo di studio" value={employee.titolo_studio} />
+            <Field label="Stato civile" value={employee.stato_civile} />
           </InfoCard>
         </div>
 

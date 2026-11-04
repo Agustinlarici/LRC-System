@@ -7,10 +7,12 @@ import { parseBody } from '../../lib/validate.js';
 import { auditLog } from '../../lib/audit.js';
 import { hrAnalyticsRoutes } from './analytics.js';
 import { hrDocumentRoutes } from './documents.js';
+import { hrOstiRoutes } from './osti.js';
 
 export const hrRoutes = new Hono<Env>();
 hrRoutes.route('/analytics', hrAnalyticsRoutes);
 hrRoutes.route('/documents', hrDocumentRoutes);
+hrRoutes.route('/osti', hrOstiRoutes);
 
 // Eventi che un capo può registrare per il proprio team diretto, senza permesso
 // di gestione HR completo — tutto ciò che è strutturale/sensibile (promozioni,
@@ -275,7 +277,7 @@ const employeeSelect = db`
     e.nome_osti, e.taglia_pantaloni, e.taglia_maglia, e.taglia_scarpe,
     e.badge, e.transponder, e.terminale, e.qualifica, e.indeterminato, e.indeterminato_data, e.part_time,
     e.luogo_nascita, e.domicilio_indirizzo, e.domicilio_citta, e.domicilio_provincia, e.domicilio_cap,
-    e.titolo_studio, e.stato_civile, e.note_hr,
+    e.titolo_studio, e.stato_civile, e.note_hr, e.tipo_nazionalita,
     e.l68, e.mansione, e.livello, e.categoria, e.tipo_contratto, e.funzione_aziendale,
     e.reparto_id, d.name AS reparto_name,
     e.plant_id, e.plant_ids,
@@ -407,6 +409,7 @@ const employeeFieldsSchema = z.object({
   titolo_studio:        z.string().max(100).optional().nullable(),
   stato_civile:         z.string().max(50).optional().nullable(),
   note_hr:              z.string().optional().nullable(),
+  tipo_nazionalita:     z.enum(['ITALIANO', 'UE', 'EXTRA UE']).optional().nullable(),
   mansione:            z.string().max(150).optional().nullable(),
   livello:              z.string().max(30).optional().nullable(),
   l68:                  z.boolean().optional(),
