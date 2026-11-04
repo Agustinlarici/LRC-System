@@ -12,6 +12,7 @@ import { startTelegramBot } from './lib/telegram-bot.js';
 import { applyDefaultsForDate } from './modules/monitor/auto-turni.js';
 import { logger } from './lib/logger.js';
 import { db } from './db/client.js';
+import { setIKnowFlags } from './lib/system-flags.js';
 
 const port = parseInt(process.env.PORT || '3001', 10);
 
@@ -151,6 +152,13 @@ serve({ fetch: app.fetch, port }, async (info) => {
   // spegne scheduler, watcher cartelle, bot Telegram e sync esterni (WebThron/BC).
   const backgroundJobs = process.env.DISABLE_BACKGROUND_JOBS !== 'true';
   if (!backgroundJobs) logger.warn('[Startup] DISABLE_BACKGROUND_JOBS=true — job in background disattivati');
+
+  // Ambiente di sviluppo: IKNOW_OFF_ON_START=true spegne l'interruttore iKnow a ogni avvio,
+  // così il dev non interroga mai WebThron finché non lo riattivi a mano da Sistema.
+  if (process.env.IKNOW_OFF_ON_START === 'true') {
+    await setIKnowFlags({ iknow_enabled: false });
+    logger.warn("[Startup] IKNOW_OFF_ON_START=true — iKnow disattivato all'avvio");
+  }
 
   if (backgroundJobs) {
     startScheduler();

@@ -1,4 +1,6 @@
 import mysql from 'mysql2/promise';
+import { HTTPException } from 'hono/http-exception';
+import { getIKnowFlags } from '../../lib/system-flags.js';
 
 let pool: mysql.Pool | null = null;
 
@@ -6,9 +8,27 @@ export function resetWebthronPool(): void {
   pool = null;
 }
 
+/** Lanciata quando si tenta di interrogare iKnow con l'interruttore generale spento. */
+export class IKnowDisabledError extends HTTPException {
+  constructor() {
+    super(503, { message: "Connessione iKnow disabilitata dall'amministratore" });
+  }
+}
+
+async function assertIKnowEnabled(): Promise<void> {
+  if (!(await getIKnowFlags()).iknow_enabled) throw new IKnowDisabledError();
+}
+
+// Metodi che aprono una connessione o eseguono una query verso WebThron.
+const GUARDED = new Set<string | symbol>(['execute', 'query', 'getConnection']);
+
+/**
+ * Unico punto di uscita verso iKnow: con `iknow_enabled` spento ogni query viene
+ * rifiutata prima di toccare la rete, qualunque sia il modulo chiamante.
+ */
 export function getWebthronPool(): mysql.Pool {
   if (!pool) {
-    pool = mysql.createPool({
+    const raw = mysql.createPool({
       host:             process.env.WEBTHRON_HOST ?? '192.168.1.12',
       port:             parseInt(process.env.WEBTHRON_PORT ?? '3306'),
       database:         process.env.WEBTHRON_DB ?? 'WebThron',
@@ -22,8 +42,18 @@ export function getWebthronPool(): mysql.Pool {
     });
     // Libera la connessione in 5 min di inattività invece degli 8h di default MySQL.
     // Nessun privilegio admin richiesto.
-    pool.on('connection', (conn) => {
+    raw.on('connection', (conn) => {
       conn.query('SET SESSION wait_timeout = 300, SESSION interactive_timeout = 300');
+    });
+    pool = new Proxy(raw, {
+      get(target, prop) {
+        const value = Reflect.get(target, prop, target);
+        if (!GUARDED.has(prop) || typeof value !== 'function') return value;
+        return async (...args: unknown[]) => {
+          await assertIKnowEnabled();
+          return value.apply(target, args);
+        };
+      },
     });
   }
   return pool;
