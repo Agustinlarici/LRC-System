@@ -68,6 +68,7 @@ services:
       WEBTHRON_USER:       ${WEBTHRON_USER}
       WEBTHRON_PASS:       ${WEBTHRON_PASS}
       WEBTHRON_TZ:         ${WEBTHRON_TZ:-+01:00}
+      IKNOW_OFF_ON_START:  "true"   # il dev parte sempre con iKnow spento (riattivabile da Sistema)
       BC_SERVER:           ${BC_SERVER:-192.168.1.159}
       BC_DATABASE:         ${BC_DATABASE:-STR}
       BC_USER:             ${BC_USER}

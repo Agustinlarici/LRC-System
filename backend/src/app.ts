@@ -23,7 +23,7 @@ import { hrRoutes } from './modules/hr/routes.js';
 import { ferrariRoutes } from './modules/ferrari/routes.js';
 import { logger } from './lib/logger.js';
 import { db } from './db/client.js';
-import { getWebthronPool } from './modules/monitor/mysql-client.js';
+import { getWebthronPool, IKnowDisabledError } from './modules/monitor/mysql-client.js';
 
 const app = new Hono();
 
@@ -63,14 +63,14 @@ app.get('/health', async (c) => {
       conn = await getWebthronPool().getConnection();
       await conn.ping();
       deps.webthron = 'ok';
-    } catch {
-      deps.webthron = 'unavailable';
+    } catch (e) {
+      deps.webthron = e instanceof IKnowDisabledError ? 'disabled' : 'unavailable';
     } finally {
       conn?.release();
     }
 
     const pgDown = deps.postgres !== 'ok';
-    const degraded = deps.webthron !== 'ok';
+    const degraded = deps.webthron === 'unavailable';
 
     const status = pgDown ? 'error' : degraded ? 'degraded' : 'ok';
     const httpStatus = pgDown ? 503 : 200;

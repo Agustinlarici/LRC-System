@@ -15,7 +15,7 @@
 import { db } from '../../db/client.js';
 import { queryWebthronEvents, getWebthronPool, WebthronEvent, LineaCombo } from './mysql-client.js';
 import { logger } from '../../lib/logger.js';
-import { isIKnowEnabled } from '../../lib/system-flags.js';
+import { getIKnowFlags, isIKnowEnabled } from '../../lib/system-flags.js';
 import { startRun, endRun, failRun } from '../../lib/sync-stats.js';
 
 export type ProdRow = WebthronEvent;
@@ -150,6 +150,10 @@ export async function syncWebthronToPostgres(): Promise<void> {
 
 export async function syncFullDayToHistory(dateStr: string): Promise<number> {
   if (!process.env.WEBTHRON_HOST) return 0;
+  if (!(await isIKnowEnabled('iknow_andon_enabled'))) {
+    logger.debug('[WebthronSync] iKnow Andon disabilitato — skip rilettura giornata');
+    return 0;
+  }
 
   const combos       = await getActiveLineeWithCombos();
   const deliberaFasi = getDeliberaFasi();
@@ -211,6 +215,10 @@ export async function getProdRowsFromPG(): Promise<ProdRow[]> {
 export async function refreshLookupTables(): Promise<void> {
   if (!process.env.WEBTHRON_HOST) {
     logger.debug('[LookupRefresh] WEBTHRON_HOST non configurato — skip');
+    return;
+  }
+  if (!(await getIKnowFlags()).iknow_enabled) {
+    logger.debug('[LookupRefresh] iKnow disabilitato — skip');
     return;
   }
 
