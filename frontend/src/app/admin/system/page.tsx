@@ -82,14 +82,22 @@ function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (
 // ─── Avanzata tab ─────────────────────────────────────────────────────────────
 
 interface IKnowFlags {
-  iknow_enabled:        boolean;
-  iknow_andon_enabled:  boolean;
-  iknow_buffer_enabled: boolean;
+  iknow_enabled:          boolean;
+  iknow_andon_enabled:    boolean;
+  iknow_nightly_enabled:  boolean;
+  iknow_lookup_enabled:   boolean;
+  iknow_buffer_enabled:   boolean;
+  iknow_bucci_enabled:    boolean;
+  iknow_backfill_enabled: boolean;
 }
 
 const IKNOW_QUERIES: { key: keyof Omit<IKnowFlags, 'iknow_enabled'>; label: string; description: string }[] = [
-  { key: 'iknow_andon_enabled',  label: 'Andon / Monitor', description: 'Sincronizzazione dati produzione (esecutivo) — ogni 5 minuti' },
-  { key: 'iknow_buffer_enabled', label: 'Buffer',          description: 'Sincronizzazione seriali in pre-area — ogni 30 minuti' },
+  { key: 'iknow_andon_enabled',    label: 'Andon / Monitor — sincronizzazione continua', description: 'Legge i nuovi eventi di produzione da iKnow — ogni 30 secondi' },
+  { key: 'iknow_nightly_enabled',  label: 'Rilettura notturna',                           description: 'Rilegge tutta la giornata precedente per sistemare i dati — ogni notte alle 01:00' },
+  { key: 'iknow_lookup_enabled',   label: 'Fasi e combinazioni',                          description: 'Aggiorna fasi, modelli e componenti — ogni notte alle 02:00, a mano da Fasi iKnow e all’avvio se le liste sono vuote' },
+  { key: 'iknow_buffer_enabled',   label: 'Buffer',                                       description: 'Ricalcola i seriali in pre-area dallo storico locale — ogni 30 minuti' },
+  { key: 'iknow_bucci_enabled',    label: 'Spedizione Bucci',                             description: 'Cerca seriali e commesse in iKnow durante scansione e verifica delle spedizioni' },
+  { key: 'iknow_backfill_enabled', label: 'Backfill manuali',                             description: 'Ricarico storico di Heatmap, Lead time e correzione commesse (solo su richiesta)' },
 ];
 
 function AvanzataTab() {
@@ -142,7 +150,7 @@ function AvanzataTab() {
 
       <div className="card">
         <h2 className="font-semibold text-gray-800 mb-1">Query iKnow per modulo</h2>
-        <p className="text-xs text-gray-500 mb-4">Attiva o disattiva le singole query. Efficace solo se il toggle generale è attivo.</p>
+        <p className="text-xs text-gray-500 mb-4">Attiva o disattiva ogni singola query verso iKnow. Efficace solo se il toggle generale è attivo.</p>
         <div className="divide-y divide-gray-100">
           {IKNOW_QUERIES.map(q => (
             <div key={q.key} className="flex items-center justify-between py-3">

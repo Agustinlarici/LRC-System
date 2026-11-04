@@ -15,7 +15,7 @@
 import { db } from '../../db/client.js';
 import { queryWebthronEvents, getWebthronPool, WebthronEvent, LineaCombo } from './mysql-client.js';
 import { logger } from '../../lib/logger.js';
-import { getIKnowFlags, isIKnowEnabled } from '../../lib/system-flags.js';
+import { isIKnowEnabled } from '../../lib/system-flags.js';
 import { startRun, endRun, failRun } from '../../lib/sync-stats.js';
 
 export type ProdRow = WebthronEvent;
@@ -150,8 +150,8 @@ export async function syncWebthronToPostgres(): Promise<void> {
 
 export async function syncFullDayToHistory(dateStr: string): Promise<number> {
   if (!process.env.WEBTHRON_HOST) return 0;
-  if (!(await isIKnowEnabled('iknow_andon_enabled'))) {
-    logger.debug('[WebthronSync] iKnow Andon disabilitato — skip rilettura giornata');
+  if (!(await isIKnowEnabled('iknow_nightly_enabled'))) {
+    logger.debug('[WebthronSync] Rilettura notturna disabilitata — skip');
     return 0;
   }
 
@@ -217,8 +217,8 @@ export async function refreshLookupTables(): Promise<void> {
     logger.debug('[LookupRefresh] WEBTHRON_HOST non configurato — skip');
     return;
   }
-  if (!(await getIKnowFlags()).iknow_enabled) {
-    logger.debug('[LookupRefresh] iKnow disabilitato — skip');
+  if (!(await isIKnowEnabled('iknow_lookup_enabled'))) {
+    logger.debug('[LookupRefresh] Aggiornamento fasi/combos disabilitato — skip');
     return;
   }
 

@@ -2,6 +2,7 @@ import { db } from '../../db/client.js';
 import { queryWebthronEvents, WebthronEvent, LineaCombo as MysqlLineaCombo } from '../monitor/mysql-client.js';
 import { getDeliberaFasi, isConforming } from '../monitor/executive-cache.js';
 import { logger } from '../../lib/logger.js';
+import { assertIKnowEnabled } from '../../lib/system-flags.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,6 +77,7 @@ export async function queryWebthronRange(
   deliberaFasi: string[],
 ): Promise<WebthronEvent[]> {
   if (prodCombos.length === 0 || deliberaFasi.length === 0) return [];
+  await assertIKnowEnabled('iknow_backfill_enabled');
   return queryWebthronEvents(prodCombos, deliberaFasi, { mode: 'range', from: dateFrom, to: dateTo });
 }
 
