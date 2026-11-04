@@ -39,11 +39,13 @@ const STATO_FILTER_OPTIONS: { value: string; label: string }[] = [
 ];
 
 // Colonna ⚠ (avvisi dell'import) in testa, solo se almeno una riga in elenco ne ha uno
+// ITALIANO / UE / EXTRA UE (come salvato) → testo per l'elenco
+const tipoNazLabel = (v: string | null | undefined) => (v === 'ITALIANO' ? 'ITALIA' : (v ?? '').toUpperCase());
 const gridCols = (warn: boolean) => (warn ? '24px ' : '') + GRID_COLS;
 // Larghezza minima della tabella: somma delle colonne, così righe e intestazione hanno lo stesso sfondo
-const TABLE_MIN_WIDTH = 3280;
+const TABLE_MIN_WIDTH = 3380;
 const GRID_COLS = '28px minmax(130px,1fr) minmax(110px,1fr) 90px 56px minmax(100px,1fr) minmax(120px,1fr) '
-  + 'minmax(100px,1fr) 92px minmax(170px,1.2fr) minmax(170px,1.2fr) minmax(110px,1fr) 60px 64px '
+  + 'minmax(100px,1fr) minmax(100px,1fr) 92px minmax(170px,1.2fr) minmax(170px,1.2fr) minmax(110px,1fr) 60px 64px '
   + 'minmax(120px,1fr) minmax(110px,1fr) minmax(110px,1fr) minmax(120px,1fr) 80px '
   + 'minmax(120px,1fr) minmax(110px,1fr) minmax(120px,1fr) minmax(150px,1.2fr) 100px 100px 68px 118px';
 
@@ -96,6 +98,7 @@ export default function DipendentiPage() {
   const [fSesso, setFSesso] = useState('');
   const [fCategoria, setFCategoria] = useState('');
   const [fNazionalita, setFNazionalita] = useState('');
+  const [fTipoNaz, setFTipoNaz] = useState('');
   const [fLivello, setFLivello] = useState('');
   const [fTipoContratto, setFTipoContratto] = useState('');
   const [funzioneFilter, setFunzioneFilter] = useState('');
@@ -217,12 +220,12 @@ export default function DipendentiPage() {
   const extraCount = [fEmail, fIndirizzo, fCitta, fCap, fNomeOsti, fProv, fGruppo, fMese, fGiorno,
     fNascitaDa || fNascitaA, fAssunzioneDa || fAssunzioneA, fCessazioneDa || fCessazioneA].filter(Boolean).length;
   const hasFilters = !!(fNominativo || fMatricola || fMansione || fResp || fSesso || fCategoria
-    || fNazionalita || fLivello || fTipoContratto || funzioneFilter || repartoFilter || plantFilter
+    || fNazionalita || fTipoNaz || fLivello || fTipoContratto || funzioneFilter || repartoFilter || plantFilter
     || societaFilter || tagFilter || inProvaFilter || avvisoFilter || statoFilter !== 'attivo'
     || extraCount > 0);
   function resetFilters() {
     setFNominativo(''); setFMatricola(''); setFMansione(''); setFResp('');
-    setFSesso(''); setFCategoria(''); setFNazionalita(''); setFLivello(''); setFTipoContratto('');
+    setFSesso(''); setFCategoria(''); setFNazionalita(''); setFTipoNaz(''); setFLivello(''); setFTipoContratto('');
     setFunzioneFilter(''); setRepartoFilter(''); setPlantFilter(''); setSocietaFilter('');
     setTagFilter(''); setInProvaFilter(''); setAvvisoFilter(''); setStatoFilter('attivo');
     setFMese(''); setFGiorno(''); setFEmail(''); setFIndirizzo(''); setFCitta(''); setFCap(''); setFNomeOsti(''); setFProv(''); setFGruppo('');
@@ -230,7 +233,7 @@ export default function DipendentiPage() {
   }
   // `skip` esclude un filtro dal confronto: serve a calcolare le opzioni di quel menu
   // in base a tutti gli ALTRI filtri attivi.
-  type FilterKey = 'sesso' | 'categoria' | 'societa' | 'nazionalita' | 'funzione' | 'reparto' | 'plant'
+  type FilterKey = 'sesso' | 'categoria' | 'societa' | 'nazionalita' | 'tipoNaz' | 'funzione' | 'reparto' | 'plant'
     | 'mansione' | 'livello' | 'resp' | 'tipoContratto' | 'tag' | 'inProva' | 'avviso' | 'stato' | 'prov' | 'gruppo';
   const matches = (e: HrEmployee, skip?: FilterKey) => {
     const has = (v: string | null | undefined, q: string) => !q.trim() || (v ?? '').toLowerCase().includes(q.trim().toLowerCase());
@@ -252,6 +255,7 @@ export default function DipendentiPage() {
       && (skip === 'mansione' || !fMansione || e.mansione === fMansione)
       && (skip === 'resp' || !fResp || e.capo_nome === fResp)
       && (skip === 'nazionalita' || !fNazionalita || e.nazionalita === fNazionalita)
+      && (skip === 'tipoNaz' || !fTipoNaz || e.tipo_nazionalita === fTipoNaz)
       && (skip === 'livello' || !fLivello || e.livello === fLivello)
       && (skip === 'sesso' || !fSesso || e.sesso === fSesso)
       && (skip === 'categoria' || !fCategoria || e.categoria === fCategoria)
@@ -300,7 +304,7 @@ export default function DipendentiPage() {
   function exportExcel() {
     const rows = visible.map(e => ({
       Cognome: e.cognome, Nome: e.nome, Matricola: e.matricola ?? '', Sesso: e.sesso ?? '',
-      Categoria: e.categoria ?? '', Società: e.contract_company_name ?? '', Nazionalità: e.nazionalita ?? '',
+      Categoria: e.categoria ?? '', Società: e.contract_company_name ?? '', Nazionalità: (e.nazionalita ?? '').toUpperCase(), 'Extra UE / Italia': tipoNazLabel(e.tipo_nazionalita),
       'Data nascita': e.data_nascita?.slice(0, 10) ?? '', Email: e.email ?? '', Indirizzo: e.indirizzo ?? '',
       Città: e.citta ?? '', Provincia: e.provincia ?? '', CAP: e.cap ?? '',
       Funzione: e.funzione_aziendale ?? '', Reparto: e.reparto_name ?? '', Plant: e.plant_name ?? '',
@@ -333,8 +337,15 @@ export default function DipendentiPage() {
     if (res.ok) refreshEmployees();
   }
 
+  // Righe di Osti lette dal database (stesso formato del CSV): il backend legge solo, mai scrive
+  async function fetchOstiRows(): Promise<Record<string, string>[]> {
+    const res = await fetch(`${BACKEND}/api/hr/osti/dipendenti`, { credentials: 'include' });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? 'Impossibile leggere i dati da Osti');
+    return res.json();
+  }
+
   async function importRows(rows: Record<string, string>[], variant?: string): Promise<ImportResult> {
-    if (variant === 'osti') {
+    if (variant === 'osti' || variant === 'osti-db') {
       const [empRes, depRes] = await Promise.all([
         fetch(`${BACKEND}/api/hr/employees`, { credentials: 'include' }),
         fetch(`${BACKEND}/api/hr/departments`, { credentials: 'include' }),
@@ -696,19 +707,25 @@ export default function DipendentiPage() {
                       title={`Da Excel: File → Salva con nome → CSV UTF-8. Colonne attese: ${IMPORT_COLUMNS.join(', ')}`}
                       onClick={() => { setShowMore(false); importRef.current?.open('storico'); }}
                       className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
-                      Importa da Excel — registra i cambiamenti
+                      Importa da Excel (registra evento)
                     </button>
                     <button type="button" role="menuitem"
                       title={`Da Excel: File → Salva con nome → CSV UTF-8. Colonne attese: ${IMPORT_COLUMNS.join(', ')}`}
                       onClick={() => { setShowMore(false); importRef.current?.open('sostituisci'); }}
                       className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
-                      Importa da Excel — sostituisci tutto
+                      Importa da Excel (senza eventi)
                     </button>
                     <button type="button" role="menuitem"
                       title="Elenco dipendenti di Osti (CSV): abbina per cognome e nome (o Nome Osti) e aggiorna le schede"
                       onClick={() => { setShowMore(false); importRef.current?.open('osti'); }}
                       className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
-                      Importa elenco Osti (CSV)
+                      Importa CSV (Osti)
+                    </button>
+                    <button type="button" role="menuitem"
+                      title="Legge l'elenco dipendenti direttamente dal database di Osti (sola lettura) e aggiorna le schede"
+                      onClick={() => { setShowMore(false); importRef.current?.open('osti-db'); }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
+                      Sincronizza con Osti
                     </button>
                     <button type="button" role="menuitem"
                       onClick={() => { setShowMore(false); router.push('/hr/dipendenti/foto-massiva'); }}
@@ -728,7 +745,7 @@ export default function DipendentiPage() {
         </>}
       />
 
-      {manage && <ImportExcelButton ref={importRef} hideButton columns={IMPORT_COLUMNS} processRows={importRows} onDone={load} />}
+      {manage && <ImportExcelButton ref={importRef} hideButton columns={IMPORT_COLUMNS} processRows={importRows} onDone={load} sources={{ 'osti-db': fetchOstiRows }} />}
 
       <div className="card p-0 overflow-hidden">
         <div className={`flex items-center justify-between px-4 py-2.5 bg-stone-50 ${showFilters ? 'border-b border-stone-100' : ''}`}>
@@ -746,100 +763,90 @@ export default function DipendentiPage() {
         {showFilters && (
         <>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 px-4 py-3">
-          <input value={fNominativo} onChange={e => setFNominativo(e.target.value)} placeholder="Nome e cognome" className="input text-sm min-w-0" />
-          <input value={fMatricola} onChange={e => setFMatricola(e.target.value)} placeholder="Matricola" className="input text-sm min-w-0" />
-          <select value={fSesso} onChange={e => setFSesso(e.target.value)} className={`input text-sm min-w-0 ${fSesso ? '' : 'text-muted'}`}>
+          <input value={fNominativo} onChange={e => setFNominativo(e.target.value)} placeholder="Nome e cognome" className={`input text-sm min-w-0 ${fNominativo ? '!border-accent ring-2 ring-accent/40' : ''}`} />
+          <input value={fMatricola} onChange={e => setFMatricola(e.target.value)} placeholder="Matricola" className={`input text-sm min-w-0 ${fMatricola ? '!border-accent ring-2 ring-accent/40' : ''}`} />
+          <select value={fSesso} onChange={e => setFSesso(e.target.value)} className={`input text-sm min-w-0 ${fSesso ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Sesso</option>
             {(sessoDisponibili.has('M') || fSesso === 'M') && <option value="M" className="text-ink-900">M</option>}
             {(sessoDisponibili.has('F') || fSesso === 'F') && <option value="F" className="text-ink-900">F</option>}
           </select>
-          <select value={fCategoria} onChange={e => setFCategoria(e.target.value)} className={`input text-sm min-w-0 ${fCategoria ? '' : 'text-muted'}`}>
+          <select value={fCategoria} onChange={e => setFCategoria(e.target.value)} className={`input text-sm min-w-0 ${fCategoria ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Categoria</option>
             {categorie.map(c => <option key={c} value={c} className="text-ink-900">{c}</option>)}
           </select>
-          <select value={societaFilter} onChange={e => setSocietaFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${societaFilter ? '' : 'text-muted'}`}>
+          <select value={societaFilter} onChange={e => setSocietaFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${societaFilter ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Società contratto</option>
             {companiesShown.map(c => <option key={c.id} value={c.id} className="text-ink-900">{c.name}</option>)}
           </select>
-          <select value={fNazionalita} onChange={e => setFNazionalita(e.target.value)} className={`input text-sm min-w-0 ${fNazionalita ? '' : 'text-muted'}`}>
+          <select value={fNazionalita} onChange={e => setFNazionalita(e.target.value)} className={`input text-sm min-w-0 ${fNazionalita ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Nazionalità</option>
-            {nazionalita.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
+            {nazionalita.map(v => <option key={v} value={v} className="text-ink-900">{v.toUpperCase()}</option>)}
           </select>
-          <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className={`input text-sm min-w-0 ${funzioneFilter ? '' : 'text-muted'}`}>
+          <select value={fTipoNaz} onChange={e => setFTipoNaz(e.target.value)} className={`input text-sm min-w-0 ${fTipoNaz ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
+            <option value="">Extra UE / Italia</option>
+            {['ITALIANO', 'UE', 'EXTRA UE'].map(v => <option key={v} value={v} className="text-ink-900">{tipoNazLabel(v)}</option>)}
+          </select>
+          <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className={`input text-sm min-w-0 ${funzioneFilter ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Funzione</option>
             {funzioni.map(f => <option key={f} value={f} className="text-ink-900">{f}</option>)}
           </select>
-          <select value={repartoFilter} onChange={e => setRepartoFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${repartoFilter ? '' : 'text-muted'}`}>
+          <select value={repartoFilter} onChange={e => setRepartoFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${repartoFilter ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Reparto</option>
             {departmentsShown.map(d => <option key={d.id} value={d.id} className="text-ink-900">{d.name}</option>)}
           </select>
-          <select value={plantFilter} onChange={e => setPlantFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${plantFilter ? '' : 'text-muted'}`}>
+          <select value={plantFilter} onChange={e => setPlantFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${plantFilter ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Plant</option>
             {plantsShown.map(p => <option key={p.id} value={p.id} className="text-ink-900">{p.name}</option>)}
           </select>
-          <select value={fMansione} onChange={e => setFMansione(e.target.value)} className={`input text-sm min-w-0 ${fMansione ? '' : 'text-muted'}`}>
+          <select value={fMansione} onChange={e => setFMansione(e.target.value)} className={`input text-sm min-w-0 ${fMansione ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Mansione</option>
             {mansioni.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
           </select>
-          <select value={fLivello} onChange={e => setFLivello(e.target.value)} className={`input text-sm min-w-0 ${fLivello ? '' : 'text-muted'}`}>
+          <select value={fLivello} onChange={e => setFLivello(e.target.value)} className={`input text-sm min-w-0 ${fLivello ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Livello</option>
             {livelli.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
           </select>
-          <select value={fResp} onChange={e => setFResp(e.target.value)} className={`input text-sm min-w-0 ${fResp ? '' : 'text-muted'}`}>
+          <select value={fResp} onChange={e => setFResp(e.target.value)} className={`input text-sm min-w-0 ${fResp ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Responsabile</option>
             {responsabili.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
           </select>
-          <select value={fTipoContratto} onChange={e => setFTipoContratto(e.target.value)} className={`input text-sm min-w-0 ${fTipoContratto ? '' : 'text-muted'}`}>
+          <select value={fTipoContratto} onChange={e => setFTipoContratto(e.target.value)} className={`input text-sm min-w-0 ${fTipoContratto ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Tipo contratto</option>
             {tipiContratto.map(t => <option key={t} value={t} className="text-ink-900">{t}</option>)}
           </select>
-          <select value={tagFilter} onChange={e => setTagFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${tagFilter ? '' : 'text-muted'}`}>
+          <select value={tagFilter} onChange={e => setTagFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${tagFilter ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Etichetta</option>
             {tagsShown.map(t => <option key={t.id} value={t.id} className="text-ink-900">{t.name}</option>)}
           </select>
-          <select value={inProvaFilter} onChange={e => setInProvaFilter(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${inProvaFilter ? '' : 'text-muted'}`}>
+          <select value={inProvaFilter} onChange={e => setInProvaFilter(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${inProvaFilter ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">In prova</option>
             {(provaSi || inProvaFilter === 'si') && <option value="si" className="text-ink-900">Sì</option>}
             {(provaNo || inProvaFilter === 'no') && <option value="no" className="text-ink-900">No</option>}
           </select>
-          <select value={avvisoFilter} onChange={e => setAvvisoFilter(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${avvisoFilter ? '' : 'text-muted'}`}>
+          <select value={avvisoFilter} onChange={e => setAvvisoFilter(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${avvisoFilter ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Errori import</option>
             {(avvisoSi || avvisoFilter === 'si') && <option value="si" className="text-ink-900">Con errori</option>}
             {(avvisoNo || avvisoFilter === 'no') && <option value="no" className="text-ink-900">Senza errori</option>}
           </select>
-          <select value={statoFilter} onChange={e => setStatoFilter(e.target.value)} className={`input text-sm min-w-0 ${statoFilter ? '' : 'text-muted'}`}>
+          <select value={statoFilter} onChange={e => setStatoFilter(e.target.value)} className={`input text-sm min-w-0 ${statoFilter ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Stato</option>
             {statiShown.map(o => <option key={o.value} value={o.value} className="text-ink-900">{o.label}</option>)}
           </select>
           {showExtraFilters && (
             <>
-              <input value={fEmail} onChange={e => setFEmail(e.target.value)} placeholder="Email" className="input text-sm min-w-0" />
-              <input value={fIndirizzo} onChange={e => setFIndirizzo(e.target.value)} placeholder="Indirizzo" className="input text-sm min-w-0" />
-              <input value={fCitta} onChange={e => setFCitta(e.target.value)} placeholder="Città" className="input text-sm min-w-0" />
-              <select value={fProv} onChange={e => setFProv(e.target.value)} className={`input text-sm min-w-0 ${fProv ? '' : 'text-muted'}`}>
+              <input value={fEmail} onChange={e => setFEmail(e.target.value)} placeholder="Email" className={`input text-sm min-w-0 ${fEmail ? '!border-accent ring-2 ring-accent/40' : ''}`} />
+              <input value={fIndirizzo} onChange={e => setFIndirizzo(e.target.value)} placeholder="Indirizzo" className={`input text-sm min-w-0 ${fIndirizzo ? '!border-accent ring-2 ring-accent/40' : ''}`} />
+              <input value={fCitta} onChange={e => setFCitta(e.target.value)} placeholder="Città" className={`input text-sm min-w-0 ${fCitta ? '!border-accent ring-2 ring-accent/40' : ''}`} />
+              <select value={fProv} onChange={e => setFProv(e.target.value)} className={`input text-sm min-w-0 ${fProv ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
                 <option value="">Provincia</option>
                 {province.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
               </select>
-              <input value={fCap} onChange={e => setFCap(e.target.value)} placeholder="CAP" className="input text-sm min-w-0" />
-              <select value={fGruppo} onChange={e => setFGruppo(e.target.value)} className={`input text-sm min-w-0 ${fGruppo ? '' : 'text-muted'}`}>
+              <input value={fCap} onChange={e => setFCap(e.target.value)} placeholder="CAP" className={`input text-sm min-w-0 ${fCap ? '!border-accent ring-2 ring-accent/40' : ''}`} />
+              <select value={fGruppo} onChange={e => setFGruppo(e.target.value)} className={`input text-sm min-w-0 ${fGruppo ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
                 <option value="">Gruppo orario</option>
                 {gruppiOrari.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
               </select>
-              <input value={fNomeOsti} onChange={e => setFNomeOsti(e.target.value)} placeholder="Nome Osti" className="input text-sm min-w-0" />
-              <div className="col-span-2 min-w-0">
-                <div className="text-xs font-medium text-muted mb-1">Compleanno</div>
-                <div className="grid grid-cols-2 gap-2">
-                <select value={fGiorno} onChange={e => setFGiorno(e.target.value)} title="Giorno" className={`input text-sm min-w-0 ${fGiorno ? '' : 'text-muted'}`}>
-                  <option value="">Giorno</option>
-                  {Array.from({ length: 31 }, (_, i) => i + 1).map(d => <option key={d} value={d} className="text-ink-900">{d}</option>)}
-                </select>
-                <select value={fMese} onChange={e => setFMese(e.target.value)} title="Mese" className={`input text-sm min-w-0 ${fMese ? '' : 'text-muted'}`}>
-                  <option value="">Mese</option>
-                  {['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
-                    .map((m, i) => <option key={m} value={i + 1} className="text-ink-900">{m}</option>)}
-                </select>
-                </div>
-              </div>
+              <input value={fNomeOsti} onChange={e => setFNomeOsti(e.target.value)} placeholder="Nome Osti" className={`input text-sm min-w-0 ${fNomeOsti ? '!border-accent ring-2 ring-accent/40' : ''}`} />
               {([
                 ['Data nascita', fNascitaDa, setFNascitaDa, fNascitaA, setFNascitaA],
                 ['Assunzione', fAssunzioneDa, setFAssunzioneDa, fAssunzioneA, setFAssunzioneA],
@@ -850,15 +857,29 @@ export default function DipendentiPage() {
                   <div className="grid grid-cols-2 gap-2">
                     <label className="flex items-center gap-1.5 text-xs text-muted min-w-0">
                       <span className="shrink-0">Dal</span>
-                      <input type="date" value={da} onChange={e => setDa(e.target.value)} className="input text-sm min-w-0" />
+                      <input type="date" value={da} onChange={e => setDa(e.target.value)} className={`input text-sm min-w-0 ${da ? '!border-accent ring-2 ring-accent/40' : ''}`} />
                     </label>
                     <label className="flex items-center gap-1.5 text-xs text-muted min-w-0">
                       <span className="shrink-0">Al</span>
-                      <input type="date" value={a} onChange={e => setA(e.target.value)} className="input text-sm min-w-0" />
+                      <input type="date" value={a} onChange={e => setA(e.target.value)} className={`input text-sm min-w-0 ${a ? '!border-accent ring-2 ring-accent/40' : ''}`} />
                     </label>
                   </div>
                 </div>
               ))}
+              <div className="col-span-2 min-w-0">
+                <div className="text-xs font-medium text-muted mb-1">Compleanno</div>
+                <div className="grid grid-cols-2 gap-2">
+                <select value={fGiorno} onChange={e => setFGiorno(e.target.value)} title="Giorno" className={`input text-sm min-w-0 ${fGiorno ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
+                  <option value="">Giorno</option>
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map(d => <option key={d} value={d} className="text-ink-900">{d}</option>)}
+                </select>
+                <select value={fMese} onChange={e => setFMese(e.target.value)} title="Mese" className={`input text-sm min-w-0 ${fMese ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
+                  <option value="">Mese</option>
+                  {['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
+                    .map((m, i) => <option key={m} value={i + 1} className="text-ink-900">{m}</option>)}
+                </select>
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -880,7 +901,7 @@ export default function DipendentiPage() {
             {showWarnCol && <div />}
             <div />
             <div>Cognome</div><div>Nome</div><div>Matricola</div><div>Sesso</div><div>Categoria</div>
-            <div>Società</div><div>Nazionalità</div>
+            <div>Società</div><div>Nazionalità</div><div>Extra UE / Italia</div>
             <div>Data nascita</div><div>Email</div><div>Indirizzo</div><div>Città</div><div>Prov.</div><div>CAP</div>
             <div>Funzione</div><div>Reparto</div><div>Plant</div>
             <div>Mansione</div><div>Livello</div><div>Responsabile</div><div>Tipo contratto</div><div>Gruppo orario</div><div>Nome Osti</div>
@@ -957,7 +978,8 @@ export default function DipendentiPage() {
               <div className="text-sm text-muted truncate">{e.sesso ?? '—'}</div>
               <div className="text-sm text-muted truncate">{e.categoria ?? '—'}</div>
               <div className="text-sm text-muted truncate">{e.contract_company_name ?? '—'}</div>
-              <div className="text-sm text-muted truncate">{e.nazionalita ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.nazionalita?.toUpperCase() ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{tipoNazLabel(e.tipo_nazionalita) || '—'}</div>
               <div className="text-sm text-muted truncate">{e.data_nascita?.slice(0, 10) ?? '—'}</div>
               <div className="text-sm text-muted truncate" title={e.email ?? undefined}>{e.email ?? '—'}</div>
               <div className="text-sm text-muted truncate" title={e.indirizzo ?? undefined}>{e.indirizzo ?? '—'}</div>

@@ -1,0 +1,3 @@
+# Gli script shell girano in container Linux: sempre LF, anche su Windows (autocrlf)
+*.sh text eol=lf
+*.sql text eol=lf

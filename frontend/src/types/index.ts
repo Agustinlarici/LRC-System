@@ -757,6 +757,7 @@ export interface HrEmployee {
   titolo_studio:            string | null;
   stato_civile:             string | null;
   note_hr:                  string | null;
+  tipo_nazionalita:         string | null;
   mansione:                 string | null;
   livello:                  string | null;
   categoria:                string | null;
