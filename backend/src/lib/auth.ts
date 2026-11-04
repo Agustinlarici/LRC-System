@@ -41,6 +41,8 @@ export type AuthUser = {
   department_id:         number | null;
   department_name:       string | null;
   must_change_password:  boolean;
+  /** Presente solo se la sessione è nata dal token di un dispositivo (kiosk, tablet) */
+  device_id?:            number;
 };
 
 export type UserProfile = {
@@ -55,7 +57,7 @@ export type Env = { Variables: { user: AuthUser } };
 
 // ─── Token helpers ────────────────────────────────────────────────────────────
 
-export type TokenPayload = Pick<AuthUser, 'id' | 'username' | 'display_name' | 'role'>;
+export type TokenPayload = Pick<AuthUser, 'id' | 'username' | 'display_name' | 'role' | 'device_id'>;
 
 export function signToken(payload: TokenPayload): string {
   return sign(payload, JWT_SECRET, { expiresIn: '8h' });
