@@ -141,7 +141,7 @@ Il lavoro sulla PC IA si fa in una rama dedicata; **la sessione locale della PC 
 - **Rete**: servono una regola di firewall in ingresso sulla PC IA (porta scelta, solo dall'IP della VM) e `FERRARI_LAN=1`. Da verificare con una prova (`curl` dalla VM).
 - **Avvio PC IA**: il programma deve partire da solo con Windows (servizio o attivita' pianificata), altrimenti la IA sembra «non raggiungibile» ogni mattina.
 - **Latenza**: la IA e' lenta per scheda; per questo il risultato non blocca nulla. Con ~20 schede per tanda basta una coda semplice.
-- **Prompt/modello**: un cambio di prompt o modello invalida i risultati (si rifanno): per questo `versione_prompt` e' nell'idempotenza.
+- **Prompt/modello**: un cambio di prompt o modello invalida i risultati (si rifanno): per questo l'idempotenza e' per `richiesta_id` (uno nuovo per ogni invio della VM, quindi un cambio di prompt/modello si rifa' con un nuovo invio).
 - **Da decidere con l'utente**: porta da usare; se la tappa «Confronto» deve poter mandare automaticamente a «da rivedere» o solo segnalare (proposta: solo segnalare); dopo quanto tempo una IA «in attesa» diventa «non riuscita» (proposta: 6 tentativi).
 
 ## 12. Stato di avanzamento
@@ -153,8 +153,9 @@ rotte (`/api/ferrari/ia/*`) · aggancio al caricamento (a mano e da cartella) ·
 interruttore e prova della connessione in Impostazioni → Avanzate. Provata con una **PC IA finta** (HTTP vero) che simula spenta,
 firma sbagliata, timeout, riavvio e sigle sconosciute.
 
-**Fase 2 — PC IA (da fare)**: blueprint `/v1/*` (firma, nonce, salute, sigle, analisi, risultato) sopra `elabora_excel`, stessi file di esempio
-del contratto (`backend/src/modules/ferrari/ia/__tests__/fixtures-ia-v1.ts`) per i test di contratto. Prima di iniziare servono le risposte su porta/firewall e avvio automatico (§11).
+**Fase 2 — PC IA (fatta, repo STR-LocalAI, PR verso `main`)**: blueprint `/v1/*` (firma, nonce, salute, sigle, analisi con avanzamento, risultato) sopra `elabora_excel`,
+un solo lavoro pesante alla volta, dalla rete passa solo `/v1/*`, pagina **Attivita'** (tappe, diario, risultati) sulla PC IA. Vettore di contratto condiviso
+(`contratto-v1.json`, stesso hash delle sigle nei due repo) e prova end-to-end VM(TS) ↔ API Flask vera. Messa in servizio: `docs/FERRARI-IA-DEPLOY.md`.
 
 **Limiti noti della Fase 1**: i riassunti si mostrano gia' nella tabella (stessa tabella `ferrari_dettaglio` di oggi) ma l'editor di revisione nella VM e
 l'invio degli esempi alla IA sono della Fase 3; l'indirizzo della PC IA lo configura chi ha il permesso di gestione (valutare una lista di reti ammesse);

@@ -26,3 +26,14 @@ describe('snapshot delle sigle', () => {
     expect(SnapshotSigleSchema.parse(s).colonne).toEqual([]);
   });
 });
+
+describe('vettore condiviso con la PC IA (stesso hash in TypeScript e in Python)', () => {
+  it('la versione delle sigle coincide con quella calcolata dalla PC IA', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const v = JSON.parse(readFileSync(fileURLToPath(new URL('./contratto-v1.json', import.meta.url)), 'utf8')) as { snapshot: ReturnType<typeof costruisciSnapshot> };
+    const { versione_sigle: _versione, ...corpo } = v.snapshot;
+    expect(costruisciSnapshot(corpo).versione_sigle).toBe(v.snapshot.versione_sigle);
+    expect(v.snapshot.versione_sigle).toBe('cfdf59342ec54ad64c34779e424e8730e14b94102f8f532329085ae33349de4b');
+  });
+});

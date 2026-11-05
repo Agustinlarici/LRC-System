@@ -108,8 +108,8 @@ export async function avviaFakePcIa(parziale: Partial<Scenario> & { secret: stri
         if (file.length > 10 * 1024 * 1024) return errore(413, 'troppo_grande', 'File oltre 10 MB');
         if (!sigleNote.has(meta.data.versione_sigle)) return errore(409, 'sigle_obsolete', 'Versione delle sigle sconosciuta');
         richieste[richieste.length - 1] = { metodo: 'POST', percorso, meta: meta.data, dimFile: file.length };
-        const chiave = `${meta.data.sha256}|${meta.data.versione_sigle}`;
-        let id = perChiave.get(chiave);                                         // idempotente: stesso file e sigle = stesso lavoro
+        const chiave = meta.data.richiesta_id;
+        let id = perChiave.get(chiave);                                         // idempotente per richiesta_id (come la PC IA vera)
         if (!id) { id = `job-${lavori.size + 1}`; perChiave.set(chiave, id); lavori.set(id, { chiave, consultazioni: 0, file, meta: meta.data }); }
         return risposta(202, { schema: 1, id, stato: 'in_coda' });
       }

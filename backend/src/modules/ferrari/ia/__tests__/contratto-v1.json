@@ -1,0 +1,128 @@
+{
+  "snapshot": {
+    "versione_sigle": "cfdf59342ec54ad64c34779e424e8730e14b94102f8f532329085ae33349de4b",
+    "colonne": [
+      "BIC2",
+      "LIVR",
+      "PAR2"
+    ],
+    "sotto_sigle": [
+      {
+        "codice": "TLM13",
+        "padre": "LIVR"
+      },
+      {
+        "codice": "TLM5",
+        "padre": null
+      }
+    ],
+    "alias": {
+      "TLM15": "TLM16"
+    },
+    "modelli": [
+      "F171VS",
+      "F999XX"
+    ],
+    "esempi": [
+      {
+        "voce": "LIVREA SPECIALE",
+        "testo": "LIVREA TLM13 SUGLI SPECCHI à \"x\"\n",
+        "dettaglio": "TLM13 sugli specchi"
+      }
+    ]
+  },
+  "risultato": {
+    "commessa": "100001",
+    "modello": "F999XX",
+    "lettura": [
+      {
+        "riga": 8,
+        "codice": "BIC2",
+        "descrizione": "CARROZZERIA BICOLORE",
+        "valore": "NERO DS 1250",
+        "nota": "",
+        "testi": []
+      },
+      {
+        "riga": 9,
+        "codice": "LIVR",
+        "descrizione": "LIVREA SPECIALE",
+        "valore": "SI",
+        "nota": "",
+        "testi": [
+          "LIVREA TLM13 SUGLI SPECCHI (VEDI IMMAGINI)"
+        ]
+      }
+    ],
+    "dettagli": [
+      {
+        "codice": "LIVR",
+        "chiave": "cccccccccccccccccccccccccccccccccccccccc",
+        "dettaglio": "TLM13 sugli specchi",
+        "stato": "ok"
+      }
+    ],
+    "avvisi": [],
+    "metriche": {
+      "secondi": 12.5,
+      "chiamate": 3,
+      "versione_prompt": "3",
+      "modello": "gemma4:e2b"
+    }
+  },
+  "salute": {
+    "schema": 1,
+    "versione_api": 1,
+    "ollama": true,
+    "modello": "gemma4:e2b",
+    "in_coda": 0,
+    "in_corso": 0,
+    "versione_prompt": "3"
+  },
+  "stato_fatto": {
+    "schema": 1,
+    "id": "job-1",
+    "stato": "fatto",
+    "passo": "fine",
+    "avanzamento": null,
+    "risultato": {
+      "commessa": "100001",
+      "modello": "F999XX",
+      "lettura": [
+        {
+          "riga": 8,
+          "codice": "BIC2",
+          "descrizione": "CARROZZERIA BICOLORE",
+          "valore": "NERO DS 1250",
+          "nota": "",
+          "testi": []
+        },
+        {
+          "riga": 9,
+          "codice": "LIVR",
+          "descrizione": "LIVREA SPECIALE",
+          "valore": "SI",
+          "nota": "",
+          "testi": [
+            "LIVREA TLM13 SUGLI SPECCHI (VEDI IMMAGINI)"
+          ]
+        }
+      ],
+      "dettagli": [
+        {
+          "codice": "LIVR",
+          "chiave": "cccccccccccccccccccccccccccccccccccccccc",
+          "dettaglio": "TLM13 sugli specchi",
+          "stato": "ok"
+        }
+      ],
+      "avvisi": [],
+      "metriche": {
+        "secondi": 12.5,
+        "chiamate": 3,
+        "versione_prompt": "3",
+        "modello": "gemma4:e2b"
+      }
+    }
+  }
+}

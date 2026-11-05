@@ -56,6 +56,9 @@ export interface RiepilogoTick { saltato?: 'occupato' | 'spenta' | 'non_raggiung
 
 const COLONNE_JOB = db`id::text AS id, file_id, sha256, richiesta_id, id_remoto, stato, passo, avanzamento, tentativi, prossimo_tentativo_at, errore, versione_sigle`;
 
+/** Codici di errore dell'analisi remota che non cambiano riprovando (il file non e' una scheda). */
+const ERRORI_REMOTI_DEFINITIVI = new Set(['non_e_una_scheda']);
+
 export class ServizioIa {
   private inTick = false;
   private clienteCache: { chiave: string; cliente: ClienteIaLike } | null = null;
@@ -337,7 +340,7 @@ export class ServizioIa {
     const rete = e instanceof ErroreRete;
     if (rete) this.reteKo(e);
     // un errore «definitivo» non si ripete da solo: segreto sbagliato, file rifiutato, risposta fuori contratto
-    const definitivo = e instanceof ErroreContratto || (e instanceof ErroreIa && !e.ritentabile);
+    const definitivo = e instanceof ErroreContratto || (e instanceof ErroreIa && (!e.ritentabile || ERRORI_REMOTI_DEFINITIVI.has(e.codice)));
     const passo: PassoUtente = job.stato === 'in_coda' ? 'inviata' : job.stato === 'confronto' ? 'confronto' : 'analisi';
     const tentativi = job.tentativi + 1;
     const finito = definitivo || tentativi >= cfg.maxTentativi;

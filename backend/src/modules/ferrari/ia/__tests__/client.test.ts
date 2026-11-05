@@ -34,7 +34,7 @@ describe('cliente della PC IA', () => {
     expect((await due.json() as { errore: { codice: string } }).errore.codice).toBe('nonce_ripetuto');
   });
 
-  it('flusso completo: sigle → analisi → avanzamento → risultato; stesso invio = stesso lavoro', async () => {
+  it('flusso completo: sigle → analisi → avanzamento → risultato; stessa richiesta = stesso lavoro', async () => {
     ia = await avviaFakePcIa({ secret: S, passiPrimaDelFinire: 3 });
     const c = cliente();
     expect(await c.inviaSigle(snapshot)).toBe(VERSIONE);
@@ -42,7 +42,8 @@ describe('cliente della PC IA', () => {
     const a = await c.avviaAnalisi(file, 'scheda.xls', meta);
     expect(a).toMatchObject({ id: 'job-1', stato: 'in_coda' });
     expect(ia.richieste.at(-1)).toMatchObject({ metodo: 'POST', dimFile: file.length, meta: { sha256: SHA } });
-    expect((await c.avviaAnalisi(file, 'scheda.xls', { ...meta, richiesta_id: '99999999-2222-4333-8444-555555555555' })).id).toBe('job-1');   // idempotente
+    expect((await c.avviaAnalisi(file, 'scheda.xls', meta)).id).toBe('job-1');   // stessa richiesta_id = stesso lavoro (ritrasmissione)
+    expect((await c.avviaAnalisi(file, 'scheda.xls', { ...meta, richiesta_id: '99999999-2222-4333-8444-555555555555' })).id).toBe('job-2');
     expect(await c.stato('job-1')).toMatchObject({ stato: 'in_corso', passo: 'lettura', avanzamento: { fatti: 1, totale: 3 } });
     expect(await c.stato('job-1')).toMatchObject({ stato: 'in_corso', passo: 'riassunti' });
     const fine = await c.stato('job-1');
