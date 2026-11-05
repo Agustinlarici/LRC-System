@@ -4,7 +4,7 @@ import Link from 'next/link';
 
 const options = [
   { href: '/hr/dipendenti',   title: 'Dipendenti',           desc: 'Anagrafica, dati lavorativi e storico eventi di ogni persona' },
-  { href: '/hr/richieste',   title: 'Richieste',             desc: 'Ferie e permessi di capi e team, da approvare da HR' },
+  { href: '/hr/richieste',   title: 'Richieste',             desc: 'Ferie, assenze e modifiche scheda proposte dai capi, da approvare da HR' },
   { href: '/hr/scadenze',     title: 'Scadenze',              desc: 'Contratti in scadenza e regole di avviso' },
   { href: '/hr/documenti',     title: 'Documenti',             desc: 'Modelli di lettera (cambio mansione, retribuzione…) e documenti di consultazione' },
   { href: '/hr/organigramma', title: 'Organigramma',          desc: 'Struttura organizzativa, responsabili e team' },

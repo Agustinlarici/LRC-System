@@ -14,13 +14,6 @@ hrRoutes.route('/analytics', hrAnalyticsRoutes);
 hrRoutes.route('/documents', hrDocumentRoutes);
 hrRoutes.route('/osti', hrOstiRoutes);
 
-// Eventi che un capo può registrare per il proprio team diretto, senza permesso
-// di gestione HR completo — tutto ciò che è strutturale/sensibile (promozioni,
-// cambio livello, cambio capo, cessazione, assunzione) resta esclusivo di HR.
-const CAPO_ALLOWED_EVENT_TYPES = new Set([
-  'malattia', 'maternita_paternita', 'infortunio', 'congedo', 'rientro', 'trasferimento', 'altro',
-]);
-
 // Eventi il cui inizio/fine deve riflettersi sullo stato del dipendente — altrimenti
 // un evento "in corso" (senza end_date passata) resta invisibile ai filtri per stato
 // finché qualcuno non lo aggiorna a mano dalla scheda dipendente.
@@ -29,15 +22,20 @@ const EVENT_TYPE_TO_STATO: Record<string, string> = {
   maternita_paternita: 'maternita_paternita',
 };
 
-async function isDirectCapoOf(user: AuthUser, employeeId: number): Promise<boolean> {
-  const [row] = await db<{ ok: boolean }[]>`
-    SELECT EXISTS (
-      SELECT 1 FROM hr_employee target
-      JOIN hr_employee capo ON capo.id = target.capo_id
-      WHERE target.id = ${employeeId} AND capo.user_id = ${user.id}
-    ) AS ok
-  `;
-  return row?.ok ?? false;
+// Chi non ha la gestione HR vede solo sé stesso e il proprio team (ricorsivo).
+async function assertCanSee(user: AuthUser, employeeId: number): Promise<void> {
+  if (hasHrManage(user)) return;
+  if (!(await teamEmployeeIds(user)).includes(employeeId)) {
+    throw new HTTPException(403, { message: 'Puoi vedere solo il tuo team' });
+  }
+}
+
+// Campi che il capo non vede: restano di HR.
+const SENSITIVE_FIELDS = ['codice_fiscale', 'nazionalita', 'tipo_nazionalita', 'note_hr', 'l68', 'import_warning'];
+function stripSensitive<T extends Record<string, unknown>>(row: T): T {
+  const copy: Record<string, unknown> = { ...row };
+  for (const f of SENSITIVE_FIELDS) delete copy[f];
+  return copy as T;
 }
 
 function hasHrManage(user: AuthUser): boolean {
@@ -111,7 +109,7 @@ hrRoutes.get('/requests/employees', requireModule('hr'), async (c) => {
 
 const requestSchema = z.object({
   employee_id: z.number().int(),
-  tipo:        z.enum(['ferie', 'permesso']),
+  tipo:        z.enum(['ferie', 'permesso', 'malattia', 'infortunio']),
   data_inizio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   data_fine:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   motivo:      z.string().max(1000).optional().nullable(),
@@ -147,11 +145,29 @@ hrRoutes.post('/requests/:id/decide', requireModule('hr'), async (c) => {
   if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
   const body = await parseBody(c, decisionSchema);
 
-  const [row] = await db`
-    UPDATE hr_request SET stato = ${body.stato}, decision_note = ${body.decision_note || null},
-           decided_by_user_id = ${user.id}, decided_at = now()
-    WHERE id = ${id} AND stato = 'in_attesa' RETURNING id
-  `;
+  const row = await db.begin(async (tx) => {
+    const [r] = await tx`
+      UPDATE hr_request SET stato = ${body.stato}, decision_note = ${body.decision_note || null},
+             decided_by_user_id = ${user.id}, decided_at = now()
+      WHERE id = ${id} AND stato = 'in_attesa'
+      RETURNING id, employee_id, tipo, data_inizio, data_fine, motivo
+    `;
+    // Malattia e infortunio approvati entrano nella timeline (e la malattia in corso aggiorna lo stato).
+    if (r && body.stato === 'approvata' && (r.tipo === 'malattia' || r.tipo === 'infortunio')) {
+      await tx`
+        INSERT INTO hr_employee_event ${tx({
+          employee_id: r.employee_id, event_type: r.tipo, event_date: r.data_inizio, end_date: r.data_fine,
+          note: r.motivo, created_by_user_id: user.id, created_by_name: user.display_name,
+        })}
+      `;
+      const today = new Date().toISOString().slice(0, 10);
+      const fine = new Date(r.data_fine).toISOString().slice(0, 10);
+      if (r.tipo === 'malattia' && fine >= today) {
+        await tx`UPDATE hr_employee SET stato = 'malattia' WHERE id = ${r.employee_id} AND stato <> 'cessato'`;
+      }
+    }
+    return r;
+  });
   if (!row) throw new HTTPException(409, { message: 'Richiesta non trovata o già decisa' });
   await auditLog({ userId: user.id, username: user.username, action: `hr.request.${body.stato}`, entity: 'hr_request', entityId: id });
   return c.json(row);
@@ -170,6 +186,181 @@ hrRoutes.post('/requests/:id/cancel', requireModule('hr'), async (c) => {
   `;
   if (!row) throw new HTTPException(409, { message: 'Richiesta non trovata, già decisa o non tua' });
   await auditLog({ userId: user.id, username: user.username, action: 'hr.request.cancel', entity: 'hr_request', entityId: id });
+  return c.json(row);
+});
+
+// ─── Proposte di modifica scheda ──────────────────────────────────────────────
+// Il capo propone, HR approva o rifiuta ogni campo separatamente. Solo questi campi
+// sono proponibili: tutto il resto (livello, contratto, capo, stato, plant…) è di HR.
+const PROPOSABLE_FIELDS = [
+  'mansione', 'qualifica', 'reparto_id', 'gruppo_orario',
+  'telefono', 'email', 'indirizzo', 'citta', 'provincia', 'cap',
+  'taglia_pantaloni', 'taglia_maglia', 'taglia_scarpe', 'note',
+] as const;
+
+const changeRequestSchema = z.object({
+  employee_id: z.number().int(),
+  motivo:      z.string().max(1000).optional().nullable(),
+  changes:     z.record(z.string(), z.union([z.string().max(2000), z.number().int(), z.null()])),
+});
+
+hrRoutes.post('/change-requests', requireModule('hr'), async (c) => {
+  const user = c.get('user');
+  const body = await parseBody(c, changeRequestSchema);
+
+  if (!hasHrManage(user) && !(await teamEmployeeIds(user)).includes(body.employee_id)) {
+    throw new HTTPException(403, { message: 'Puoi proporre modifiche solo per te e per il tuo team' });
+  }
+  const [emp] = await db`SELECT * FROM hr_employee WHERE id = ${body.employee_id}`;
+  if (!emp) throw new HTTPException(404, { message: 'Dipendente non trovato' });
+
+  const allowed = new Set<string>(PROPOSABLE_FIELDS);
+  const items: { campo: string; valore_attuale: string | null; valore_proposto: string | null; label_attuale: string | null; label_proposto: string | null }[] = [];
+  const deptIds = new Set<number>();
+  for (const [campo, raw] of Object.entries(body.changes)) {
+    if (!allowed.has(campo)) throw new HTTPException(400, { message: `Campo non modificabile dal capo: ${campo}` });
+    const value = raw === '' ? null : raw;
+    const parsed = employeePatchSchema.safeParse({ [campo]: value });
+    if (!parsed.success) throw new HTTPException(400, { message: `Valore non valido per ${campo}` });
+    const proposto = value === null ? null : String(value);
+    const attuale = emp[campo] == null ? null : String(emp[campo]);
+    if (proposto === attuale) continue;
+    if (campo === 'reparto_id') { if (value !== null) deptIds.add(Number(value)); if (emp.reparto_id != null) deptIds.add(emp.reparto_id); }
+    items.push({ campo, valore_attuale: attuale, valore_proposto: proposto, label_attuale: attuale, label_proposto: proposto });
+  }
+  if (!items.length) throw new HTTPException(400, { message: 'Nessuna modifica rispetto ai dati attuali' });
+
+  if (deptIds.size) {
+    const names = new Map((await db`SELECT id, name FROM hr_department WHERE id = ANY(${[...deptIds]})`).map((d: any) => [String(d.id), d.name as string]));
+    for (const it of items.filter(i => i.campo === 'reparto_id')) {
+      if (it.valore_proposto && !names.has(it.valore_proposto)) throw new HTTPException(400, { message: 'Reparto non valido' });
+      it.label_attuale = it.valore_attuale ? names.get(it.valore_attuale) ?? it.valore_attuale : null;
+      it.label_proposto = it.valore_proposto ? names.get(it.valore_proposto) ?? it.valore_proposto : null;
+    }
+  }
+
+  const id = await db.begin(async (tx) => {
+    const [r] = await tx`
+      INSERT INTO hr_change_request ${tx({ employee_id: body.employee_id, requested_by_user_id: user.id, motivo: body.motivo || null })}
+      RETURNING id
+    `;
+    for (const it of items) await tx`INSERT INTO hr_change_request_item ${tx({ request_id: r.id, ...it })}`;
+    return r.id as number;
+  });
+  await auditLog({ userId: user.id, username: user.username, action: 'hr.change_request.create', entity: 'hr_change_request', entityId: id, details: { employee_id: body.employee_id, campi: items.map(i => i.campo) } });
+  return c.json({ id }, 201);
+});
+
+hrRoutes.get('/change-requests', requireModule('hr'), async (c) => {
+  const user = c.get('user');
+  const manage = hasHrManage(user);
+  const ids = manage ? null : await teamEmployeeIds(user);
+  const scope = manage ? db`` : db`WHERE r.requested_by_user_id = ${user.id} ${ids?.length ? db`OR r.employee_id IN ${db(ids)}` : db``}`;
+
+  const rows = await db`
+    SELECT r.id, r.employee_id, e.nome || ' ' || e.cognome AS employee_name, r.motivo, r.stato,
+           ru.display_name AS requested_by_name, r.requested_by_user_id,
+           du.display_name AS decided_by_name, r.decided_at, r.decision_note, r.created_at,
+           CASE WHEN r.stato = 'in_attesa' THEN to_jsonb(e) END AS emp,
+           (SELECT json_agg(json_build_object('id', i.id, 'campo', i.campo, 'valore_attuale', i.valore_attuale,
+                    'valore_proposto', i.valore_proposto, 'label_attuale', i.label_attuale,
+                    'label_proposto', i.label_proposto, 'stato', i.stato) ORDER BY i.id)
+            FROM hr_change_request_item i WHERE i.request_id = r.id) AS items
+    FROM hr_change_request r
+    JOIN hr_employee e ON e.id = r.employee_id
+    JOIN users ru ON ru.id = r.requested_by_user_id
+    LEFT JOIN users du ON du.id = r.decided_by_user_id
+    ${scope}
+    ORDER BY (r.stato = 'in_attesa') DESC, r.created_at DESC LIMIT 300
+  `;
+  // "stale": il valore in scheda è cambiato dopo la proposta.
+  return c.json(rows.map((r: any) => {
+    const { emp, ...rest } = r;
+    return {
+      ...rest,
+      items: (r.items ?? []).map((i: any) => ({
+        ...i,
+        stale: !!emp && (emp[i.campo] == null ? null : String(emp[i.campo])) !== i.valore_attuale,
+      })),
+    };
+  }));
+});
+
+const changeDecisionSchema = z.object({
+  items: z.array(z.object({ id: z.number().int(), approva: z.boolean() })).min(1),
+  decision_note: z.string().max(1000).optional().nullable(),
+});
+
+hrRoutes.post('/change-requests/:id/decide', requireModule('hr'), async (c) => {
+  const user = c.get('user');
+  if (!hasHrManage(user)) throw new HTTPException(403, { message: 'Solo HR può approvare o rifiutare' });
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const body = await parseBody(c, changeDecisionSchema);
+
+  await db.begin(async (tx) => {
+    const [req] = await tx`SELECT id, employee_id FROM hr_change_request WHERE id = ${id} AND stato = 'in_attesa' FOR UPDATE`;
+    if (!req) throw new HTTPException(409, { message: 'Richiesta non trovata o già decisa' });
+    const pending = await tx`SELECT id, campo, valore_proposto FROM hr_change_request_item WHERE request_id = ${id}`;
+    const decisions = new Map(body.items.map(i => [i.id, i.approva]));
+    if (pending.length !== decisions.size || pending.some((p: any) => !decisions.has(p.id))) {
+      throw new HTTPException(400, { message: 'Serve una decisione per ogni campo' });
+    }
+
+    const updates: Record<string, any> = {};
+    for (const it of pending) {
+      const approva = decisions.get(it.id)!;
+      await tx`UPDATE hr_change_request_item SET stato = ${approva ? 'approvato' : 'rifiutato'} WHERE id = ${it.id}`;
+      if (!approva) continue;
+      const value = it.valore_proposto;
+      updates[it.campo] = it.campo === 'reparto_id' ? (value == null ? null : Number(value)) : value;
+    }
+
+    if (Object.keys(updates).length) {
+      const parsed = employeePatchSchema.safeParse(updates);
+      if (!parsed.success) throw new HTTPException(400, { message: 'Uno dei valori proposti non è più valido' });
+      const [existing] = await tx`SELECT * FROM hr_employee WHERE id = ${req.employee_id}`;
+      const events: { event_type: string; from_value: string | null; to_value: string | null }[] = [];
+      if ('reparto_id' in updates && updates.reparto_id !== existing.reparto_id) {
+        const ids = [existing.reparto_id, updates.reparto_id].filter((v): v is number => v != null);
+        const names = ids.length ? new Map((await tx`SELECT id, name FROM hr_department WHERE id = ANY(${ids})`).map((d: any) => [d.id, d.name])) : new Map();
+        events.push({ event_type: 'cambio_reparto', from_value: names.get(existing.reparto_id) ?? null, to_value: names.get(updates.reparto_id) ?? null });
+      }
+      if ('mansione' in updates && updates.mansione !== existing.mansione) {
+        events.push({ event_type: 'cambio_mansione', from_value: existing.mansione, to_value: updates.mansione });
+      }
+      await tx`UPDATE hr_employee SET ${tx({ ...updates, updated_at: new Date() })} WHERE id = ${req.employee_id}`;
+      for (const ev of events) {
+        await tx`
+          INSERT INTO hr_employee_event ${tx({
+            employee_id: req.employee_id, ...ev, event_date: new Date().toISOString().slice(0, 10),
+            created_by_user_id: user.id, created_by_name: user.display_name,
+          })}
+        `;
+      }
+    }
+    await tx`
+      UPDATE hr_change_request SET stato = 'decisa', decision_note = ${body.decision_note || null},
+             decided_by_user_id = ${user.id}, decided_at = now()
+      WHERE id = ${id}
+    `;
+  });
+  await auditLog({ userId: user.id, username: user.username, action: 'hr.change_request.decide', entity: 'hr_change_request', entityId: id, details: { items: body.items } });
+  return c.json({ ok: true });
+});
+
+hrRoutes.post('/change-requests/:id/cancel', requireModule('hr'), async (c) => {
+  const user = c.get('user');
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const manage = hasHrManage(user);
+  const [row] = await db`
+    UPDATE hr_change_request SET stato = 'annullata'
+    WHERE id = ${id} AND stato = 'in_attesa' AND (${manage} OR requested_by_user_id = ${user.id})
+    RETURNING id
+  `;
+  if (!row) throw new HTTPException(409, { message: 'Richiesta non trovata, già decisa o non tua' });
+  await auditLog({ userId: user.id, username: user.username, action: 'hr.change_request.cancel', entity: 'hr_change_request', entityId: id });
   return c.json(row);
 });
 
@@ -425,6 +616,11 @@ const employeeSelect = db`
 
 hrRoutes.get('/employees', requireModule('hr'), async (c) => {
   const { search, reparto_id, stato, capo_id } = c.req.query();
+  const user = c.get('user');
+  const manage = hasHrManage(user);
+  const ids = manage ? null : await teamEmployeeIds(user);
+  if (ids && !ids.length) return c.json([]);
+  const scopeFilter = ids ? db`AND e.id IN ${db(ids)}` : db``;
 
   const searchFilter = search
     ? db`AND (e.nome ILIKE ${'%' + search + '%'} OR e.cognome ILIKE ${'%' + search + '%'} OR e.matricola ILIKE ${'%' + search + '%'})`
@@ -435,19 +631,21 @@ hrRoutes.get('/employees', requireModule('hr'), async (c) => {
 
   const rows = await db`
     ${employeeSelect}
-    WHERE 1=1 ${searchFilter} ${repartoFilter} ${statoFilter} ${capoFilter}
+    WHERE 1=1 ${scopeFilter} ${searchFilter} ${repartoFilter} ${statoFilter} ${capoFilter}
     ORDER BY e.cognome, e.nome
   `;
-  return c.json(rows);
+  return c.json(manage ? rows : rows.map(stripSensitive));
 });
 
 hrRoutes.get('/employees/:id', requireModule('hr'), async (c) => {
   const id = parseInt(c.req.param('id') ?? '', 10);
   if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
 
+  const user = c.get('user');
+  await assertCanSee(user, id);
   const [employee] = await db`${employeeSelect} WHERE e.id = ${id}`;
   if (!employee) throw new HTTPException(404, { message: 'Dipendente non trovato' });
-  return c.json(employee);
+  return c.json(hasHrManage(user) ? employee : stripSensitive(employee));
 });
 
 // ─── Foto dipendente ──────────────────────────────────────────────────────────
@@ -458,6 +656,7 @@ const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
 hrRoutes.get('/employees/:id/photo', requireModule('hr'), async (c) => {
   const id = parseInt(c.req.param('id') ?? '', 10);
   if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  await assertCanSee(c.get('user'), id);
   const [photo] = await db`SELECT mime, data FROM hr_employee_photo WHERE employee_id = ${id}`;
   if (!photo) throw new HTTPException(404, { message: 'Nessuna foto' });
   c.header('Content-Type', photo.mime);
@@ -587,8 +786,8 @@ hrRoutes.patch('/employees/:id', requireModule('hr'), async (c) => {
 
   const user = c.get('user');
   const manage = hasHrManage(user);
-  if (!manage && !(await isDirectCapoOf(user, id))) {
-    throw new HTTPException(403, { message: 'Permessi insufficienti per modificare questo dipendente' });
+  if (!manage) {
+    throw new HTTPException(403, { message: 'Solo HR modifica la scheda: usa "Proponi modifica"' });
   }
 
   const [existing] = await db`SELECT * FROM hr_employee WHERE id = ${id}`;
@@ -596,13 +795,9 @@ hrRoutes.patch('/employees/:id', requireModule('hr'), async (c) => {
 
   const body = await parseBody(c, employeePatchSchema);
 
-  // Un capo (senza gestione HR completa) può solo aggiornare note di contatto,
-  // non dati strutturali/sensibili — quelli restano esclusivi di HR.
-  const CAPO_EDITABLE_FIELDS = new Set(['telefono', 'email', 'indirizzo', 'citta', 'provincia', 'cap', 'note']);
   const REQUIRED_FIELDS = new Set(['nome', 'cognome', 'data_assunzione']);
   const updates: Record<string, any> = {};
   for (const [k, v] of Object.entries(body)) {
-    if (!manage && !CAPO_EDITABLE_FIELDS.has(k)) continue;
     // Campo di testo opzionale svuotato dall'utente → NULL, non stringa vuota
     // (altrimenti la ficha mostrerebbe un vuoto invece di "—").
     updates[k] = v === '' && !REQUIRED_FIELDS.has(k) ? null : v;
@@ -701,6 +896,7 @@ hrRoutes.get('/employees/:id/events', requireModule('hr'), async (c) => {
   const id = parseInt(c.req.param('id') ?? '', 10);
   if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
 
+  await assertCanSee(c.get('user'), id);
   const rows = await db`
     SELECT id, employee_id, event_type, event_date, end_date, from_value, to_value, note, created_by_name, created_at
     FROM hr_employee_event
@@ -732,12 +928,7 @@ hrRoutes.post('/employees/:id/events', requireModule('hr'), async (c) => {
   const body = await parseBody(c, eventFieldsSchema);
 
   if (!manage) {
-    if (!CAPO_ALLOWED_EVENT_TYPES.has(body.event_type)) {
-      throw new HTTPException(403, { message: 'Questo tipo di evento richiede i permessi di gestione HR' });
-    }
-    if (!(await isDirectCapoOf(user, id))) {
-      throw new HTTPException(403, { message: 'Puoi registrare eventi solo per il tuo team diretto' });
-    }
+    throw new HTTPException(403, { message: 'Solo HR registra eventi: usa "Richieste" per malattia e infortunio' });
   }
 
   const [existing] = await db`SELECT id, stato FROM hr_employee WHERE id = ${id}`;
