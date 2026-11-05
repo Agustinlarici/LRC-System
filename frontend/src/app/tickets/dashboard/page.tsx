@@ -6,6 +6,7 @@ import { MultiSelectFilter } from '@/components/ui/MultiSelectFilter';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
+import { TicketProjectBox } from '@/components/progetti/TicketProjectBox';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -59,6 +60,8 @@ type TicketDetail = Ticket & {
   approved_at: string | null;
   attachment_path: string | null;
   attachment_name: string | null;
+  project_id: number | null;
+  project_name: string | null;
   history: HistoryEntry[];
 };
 
@@ -766,6 +769,13 @@ export default function TicketDashboard() {
               {selected.caller_phone   && <p><span className="text-gray-500">Tel:</span> <span className="text-gray-700">{selected.caller_phone}</span></p>}
               {selected.category       && <p><span className="text-gray-500">Categoria:</span> <span className="text-gray-700">{selected.category}{selected.subcategory ? ` / ${selected.subcategory}` : ''}</span></p>}
             </div>
+
+            {/* Progetto: crea un progetto da questo ticket o aggiungilo a uno esistente */}
+            <TicketProjectBox
+              ticketId={selected.id} ticketTitle={selected.title}
+              projectId={selected.project_id} projectName={selected.project_name}
+              onChanged={() => openTicket(selected.id)}
+            />
 
             {/* Description */}
             <div className="p-5 border-b border-gray-100">
