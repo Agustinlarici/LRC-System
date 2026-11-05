@@ -1,6 +1,6 @@
 # Schede Ferrari — collegamento VM ↔ PC IA (piano)
 
-Stato: **piano da approvare, nessun codice ancora**. Sostituisce, per le schede, il vecchio scambio a pacchetti zip
+Stato: **Fase 1 (VM) implementata e provata contro una PC IA finta; Fase 2 (PC IA) da fare** — vedi §12. Sostituisce, per le schede, il vecchio scambio a pacchetti zip
 (`docs/FERRARI-FLUSSO.md`, §«Scambio»). Le decisioni qui sotto sono state prese con l'utente.
 
 ## 1. Decisioni prese
@@ -109,10 +109,10 @@ I riassunti dei testi entrano in `ferrari_dettaglio` (come oggi, con `stato`), e
 
 ## 7. Dati nella VM (migrazioni aggiuntive, solo tabelle/colonne nuove)
 
-Prossimo numero libero su `dev`: **0080** (verificare prima del PR).
-- `ferrari_ia_job` — `id, file_id, sha256, richiesta_id, id_remoto, stato, passo, avanzamento jsonb, tentativi, prossimo_tentativo_at, errore, creato_at, inviato_at, finito_at, versione_sigle, versione_prompt`.
-- `ferrari_ia_passo` — log eventi per la linea del tempo: `job_id, passo, stato, at, dettaglio` (alimenta lo schermo; append-only).
-- `ferrari_ia_lettura` — `job_id, risultato jsonb` (lettura di controllo + avvisi) e `ferrari_ia_confronto` — `job_id, esito, discrepanze jsonb`.
+Migrazione **0080** (verificare il numero libero su `dev` prima del PR).
+- `ferrari_ia_job` — `id, file_id, sha256, richiesta_id, id_remoto, stato, passo, avanzamento jsonb, tentativi, prossimo_tentativo_at, errore, versione_sigle, creato_da, creato_at, inviato_at, finito_at, aggiornato_at`; un solo lavoro attivo per scheda (indice parziale unico).
+- `ferrari_ia_passo` — log eventi per la linea del tempo (solo aggiunte): `job_id, passo, stato, dettaglio, at`.
+- `ferrari_ia_risultato` — `job_id, lettura jsonb, avvisi, metriche, esito, discrepanze jsonb` (lettura di controllo della IA e confronto fatto dalla VM).
 - Si **riusa** `ferrari_dettaglio` per i riassunti. Il vecchio flusso a pacchetti (`ferrari_analisi`, `ferrari_confronto`, `ferrari_bundle`) resta intatto e inattivo: si ritirera' in un PR separato.
 - Config: `ia_attiva`, `ia_url`, `ia_max_tentativi`, `ia_timeout_s` in `ferrari_config` (nessun segreto nuovo).
 
@@ -143,3 +143,19 @@ Il lavoro sulla PC IA si fa in una rama dedicata; **la sessione locale della PC 
 - **Latenza**: la IA e' lenta per scheda; per questo il risultato non blocca nulla. Con ~20 schede per tanda basta una coda semplice.
 - **Prompt/modello**: un cambio di prompt o modello invalida i risultati (si rifanno): per questo `versione_prompt` e' nell'idempotenza.
 - **Da decidere con l'utente**: porta da usare; se la tappa «Confronto» deve poter mandare automaticamente a «da rivedere» o solo segnalare (proposta: solo segnalare); dopo quanto tempo una IA «in attesa» diventa «non riuscita» (proposta: 6 tentativi).
+
+## 12. Stato di avanzamento
+
+**Fase 1 — VM (fatta, interruttore spento di default)**: contratto v1 (zod) · firma HMAC · cliente HTTP con timeout ed errori tipizzati ·
+snapshot delle sigle con versione · macchina a stati e tappe · confronto per codice · servizio con coda, tentativi con attesa crescente,
+corto circuito (3 errori di rete di fila → si ferma e controlla `/salute` ogni minuto), massimo 3 lavori in volo, riavvio senza perdite ·
+rotte (`/api/ferrari/ia/*`) · aggancio al caricamento (a mano e da cartella) · pagina **Elaborazione** con le tappe colorate ·
+interruttore e prova della connessione in Impostazioni → Avanzate. Provata con una **PC IA finta** (HTTP vero) che simula spenta,
+firma sbagliata, timeout, riavvio e sigle sconosciute.
+
+**Fase 2 — PC IA (da fare)**: blueprint `/v1/*` (firma, nonce, salute, sigle, analisi, risultato) sopra `elabora_excel`, stessi file di esempio
+del contratto (`backend/src/modules/ferrari/ia/__tests__/fixtures-ia-v1.ts`) per i test di contratto. Prima di iniziare servono le risposte su porta/firewall e avvio automatico (§11).
+
+**Limiti noti della Fase 1**: i riassunti si mostrano gia' nella tabella (stessa tabella `ferrari_dettaglio` di oggi) ma l'editor di revisione nella VM e
+l'invio degli esempi alla IA sono della Fase 3; l'indirizzo della PC IA lo configura chi ha il permesso di gestione (valutare una lista di reti ammesse);
+il traffico e' HTTP in rete interna firmato (non cifrato): se serve, mettere un proxy TLS davanti alla PC IA.

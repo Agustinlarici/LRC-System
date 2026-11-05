@@ -18,6 +18,8 @@ export interface Scenario {
   ritardoMs: number;
   /** Responde con una pagina HTML (PC equivocada). */
   rispostaNonJson: boolean;
+  /** Puerto fijo (por defecto uno libre al azar). */
+  porta?: number;
   risultato: (file: Buffer, meta: MetaAnalisi) => Risultato;
 }
 
@@ -133,7 +135,7 @@ export async function avviaFakePcIa(parziale: Partial<Scenario> & { secret: stri
       return errore(500, 'errore_interno', (e as Error).message);
     }
   });
-  await new Promise<void>(ok => server.listen(0, '127.0.0.1', ok));
+  await new Promise<void>(ok => server.listen(scenario.porta ?? 0, '127.0.0.1', ok));
   const porta = (server.address() as AddressInfo).port;
   return {
     url: `http://127.0.0.1:${porta}`, scenario, richieste, sigleNote,

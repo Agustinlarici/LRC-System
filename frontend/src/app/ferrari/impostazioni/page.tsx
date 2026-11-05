@@ -8,6 +8,7 @@ import { inviaFile, scaricaFile } from '@/lib/ferrari';
 import { Errore, } from '@/components/ferrari/Comuni';
 import { ImpostazioniCartella } from '@/components/ferrari/ImpostazioniCartella';
 import { ImpostazioniSigle, type ConfigSigle } from '@/components/ferrari/ImpostazioniSigle';
+import { ImpostazioniIa } from '@/components/ferrari/ImpostazioniIa';
 import { ImpostazioniModelli } from '@/components/ferrari/ImpostazioniModelli';
 import { ComponentiGestione } from '@/components/ferrari/ComponentiGestione';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -98,6 +99,8 @@ export default function ImpostazioniPage() {
           {tab === 'cartella' && <div className="max-w-3xl"><ImpostazioniCartella /></div>}
           {tab === 'avanzate' && (
             <div className="space-y-4">
+              <ImpostazioniIa />
+
               <div className="rounded-card border border-line bg-white p-5">
                 <h2 className="mb-1 text-sm font-semibold text-ink-700">Altre pagine</h2>
                 <p className="mb-3 text-xs text-muted">Non servono nell&apos;uso di ogni giorno.</p>
@@ -109,8 +112,8 @@ export default function ImpostazioniPage() {
               </div>
 
               <div className="rounded-card border border-line bg-white p-5">
-                <h2 className="mb-1 text-sm font-semibold text-ink-700">PC IA (non collegata)</h2>
-                <p className="mb-3 text-xs text-muted">La VM lavora senza IA. Questo serve solo quando la PC IA verrà collegata: scambio manuale delle sigle e dei componenti.</p>
+                <h2 className="mb-1 text-sm font-semibold text-ink-700">Scambio manuale con la PC IA (pacchetti zip)</h2>
+                <p className="mb-3 text-xs text-muted">Il vecchio scambio a file, senza collegamento diretto. Non serve se usi l'analisi con la PC IA qui sopra.</p>
                 <input ref={zipRef} type="file" accept=".zip" className="hidden" onChange={e => importa(e.target.files?.[0])} />
                 <div className="flex flex-wrap items-center gap-2">
                   <button className="btn-secondary" onClick={() => scaricaFile('/api/ferrari/sigle/esporta', { nome: 'FERRARI_sigle_vm.zip' }).catch(e => setErrore((e as Error).message))}>Invia sigle alla PC IA</button>
