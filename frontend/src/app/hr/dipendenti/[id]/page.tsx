@@ -8,6 +8,7 @@ import { StatusBadge, type Tone } from '@/components/ui/StatusBadge';
 import { useAuth } from '@/lib/auth';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
 import { EditEmployeeModal } from './EditEmployeeModal';
+import { ProponiModificaModal } from './ProponiModificaModal';
 import { EventTimeline } from './EventTimeline';
 import { SalaryHistory } from './SalaryHistory';
 import { EmployeeAvatar } from '@/components/hr/EmployeeAvatar';
@@ -57,7 +58,7 @@ export default function EmployeeDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = Number(params.id);
-  const { user, canManage, canView } = useAuth();
+  const { canManage, canView } = useAuth();
   const manage = canManage('hr');
   const salaryView = canView('hr_salary') || canManage('hr_salary');
 
@@ -74,9 +75,8 @@ export default function EmployeeDetailPage() {
   const [photoError, setPhotoError] = useState('');
   const [photoZoom, setPhotoZoom] = useState(false);
 
-  const isDirectCapo = employee != null && user != null &&
-    allEmployees.some(e => e.id === employee.capo_id && e.user_id === user.id);
-  const canEditLimited = manage || isDirectCapo;
+  const [showPropose, setShowPropose] = useState(false);
+  const [proposeSent, setProposeSent] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -145,6 +145,11 @@ export default function EmployeeDetailPage() {
           />
         </div>
       )}
+      {proposeSent && (
+        <p className="mb-4 rounded-ctl bg-success-soft px-3 py-2 text-sm text-success">
+          Proposta inviata a HR: la scheda cambierà solo dopo l&apos;approvazione. Vedi lo stato in Risorse Umane → Richieste.
+        </p>
+      )}
       <PageHeader
         back={{ label: 'Dipendenti', href: '/hr/dipendenti' }}
         title={`${employee.cognome} ${employee.nome}`}
@@ -161,7 +166,9 @@ export default function EmployeeDetailPage() {
           {employee.in_prova && <StatusBadge tone="info">In prova</StatusBadge>}
           {employee.l68 && <StatusBadge tone="neutral">Legge 68</StatusBadge>}
         </>}
-        actions={canEditLimited && <button onClick={() => setShowEdit(true)} className="btn-primary text-sm">Modifica</button>}
+        actions={manage
+          ? <button onClick={() => setShowEdit(true)} className="btn-primary text-sm">Modifica</button>
+          : <button onClick={() => { setProposeSent(false); setShowPropose(true); }} className="btn-primary text-sm">Proponi modifica</button>}
       />
 
       <div className="flex items-center gap-4 flex-wrap">
@@ -282,9 +289,18 @@ export default function EmployeeDetailPage() {
         {/* Colonna destra: retribuzione e storico */}
         <div className="space-y-5">
           {salaryView && <SalaryHistory employeeId={employee.id} canManageSalary={canManage('hr_salary')} />}
-          <EventTimeline employeeId={employee.id} employee={employee} departments={departments} plants={plants} allEmployees={allEmployees} canManage={manage} canManageLimited={canEditLimited} />
+          <EventTimeline employeeId={employee.id} employee={employee} departments={departments} plants={plants} allEmployees={allEmployees} canManage={manage} canManageLimited={manage} />
         </div>
       </div>
+
+      {showPropose && (
+        <ProponiModificaModal
+          employee={employee}
+          departments={departments}
+          onClose={() => setShowPropose(false)}
+          onSent={() => { setShowPropose(false); setProposeSent(true); }}
+        />
+      )}
 
       {showEdit && (
         <EditEmployeeModal
