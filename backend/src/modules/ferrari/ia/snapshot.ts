@@ -1,0 +1,47 @@
+// Snapshot delle sigle della VM da mandare alla PC IA (la VM e' la fonte di verita'). Si manda UNA volta per versione:
+// ogni scheda indica solo `versione_sigle`. Le colonne sono l'unione di quelle di tutti i modelli: la IA non salta mai qualcosa che serve.
+
+import { createHash } from 'node:crypto';
+import { db } from '../../../db/client.js';
+import { stableStringify } from '../bundle.js';
+import type { SnapshotSigle } from './contratto.js';
+
+type Corpo = Omit<SnapshotSigle, 'versione_sigle'>;
+
+const ordina = (xs: string[]) => [...new Set(xs)].sort();
+
+/** Versione = sha256 del contenuto in forma stabile: stesso contenuto, stessa versione (idempotente). */
+export function versioneSigle(corpo: Corpo): string {
+  return createHash('sha256').update(stableStringify(corpo), 'utf8').digest('hex');
+}
+
+/** Normalizza (ordine e doppioni) e aggiunge la versione. Pura: la usano anche i test. */
+export function costruisciSnapshot(g: {
+  colonne: string[]; sotto_sigle: { codice: string; padre: string | null }[]; alias: Record<string, string>; modelli: string[];
+  esempi?: SnapshotSigle['esempi'];
+}): SnapshotSigle {
+  const sotto = new Map<string, string | null>();
+  for (const s of g.sotto_sigle) sotto.set(s.codice, sotto.has(s.codice) && sotto.get(s.codice) !== s.padre ? null : s.padre);   // padri diversi per modello = «in qualsiasi voce»
+  const corpo: Corpo = {
+    colonne: ordina(g.colonne),
+    sotto_sigle: [...sotto].sort(([a], [b]) => a.localeCompare(b)).map(([codice, padre]) => ({ codice, padre })),
+    alias: Object.fromEntries(Object.entries(g.alias).sort(([a], [b]) => a.localeCompare(b))),
+    modelli: ordina(g.modelli),
+    esempi: g.esempi ?? [],
+  };
+  return { versione_sigle: versioneSigle(corpo), ...corpo };
+}
+
+export async function leggiSnapshotDaDb(): Promise<SnapshotSigle> {
+  const sigle = await db<{ codice: string; va: boolean; sub: boolean; alias: string | null; nosigla: boolean; padre: string | null }[]>`
+    SELECT codice, va, sub, alias, nosigla, padre FROM ferrari_sigla`;
+  const modelli = await db<{ modello: string }[]>`
+    SELECT modello FROM ferrari_modello_noto
+    UNION SELECT DISTINCT modello FROM ferrari_file WHERE modello IS NOT NULL AND stato NOT IN ('SOSTITUITO', 'QUARANTENA', 'RIFIUTATO')`;
+  return costruisciSnapshot({
+    colonne: sigle.filter(s => s.va && !s.sub && !s.nosigla && !s.alias).map(s => s.codice),
+    sotto_sigle: sigle.filter(s => s.va && s.sub && !s.nosigla && !s.alias).map(s => ({ codice: s.codice, padre: s.padre })),
+    alias: Object.fromEntries(sigle.filter(s => s.alias).map(s => [s.codice, s.alias!])),
+    modelli: modelli.map(m => m.modello),
+  });
+}

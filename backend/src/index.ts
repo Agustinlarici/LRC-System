@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server';
 import app from './app.js';
 import { startScheduler } from './scheduler.js';
 import { startWatcher } from './watcher/watcher.service.js';
+import { avviaCodaIa } from './modules/ferrari/ia/worker.js';
 import { startBufferCache, bufferFullRefresh } from './modules/buffer/cache.js';
 import { startExecutiveCache, executiveRefresh } from './modules/monitor/executive-cache.js';
 import { detectStopsAllLines } from './modules/monitor/stop-detector.js';
@@ -163,6 +164,7 @@ serve({ fetch: app.fetch, port }, async (info) => {
   if (backgroundJobs) {
     startScheduler();
     startWatcher();
+    avviaCodaIa();                       // collegamento con la PC IA (spento di default)
 
     // Telegram bot: parte subito, non dipende dal sync
     startTelegramBot();

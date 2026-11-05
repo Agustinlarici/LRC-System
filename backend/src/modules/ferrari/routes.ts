@@ -14,6 +14,8 @@ import {
 import { applicaComponente, configurazioneSigle, decidiTutteDaDecidere, ereditaPerModello, importaElenco, impostaSigla, STATI_IMPOSTABILI } from './impostazioni.js';
 import { aggiungiDaSchede, rifiutaDescrizioni, salvaDescrizioni } from './descrizioni.js';
 import { creaModello, modelloErroreDi, togliModello } from './modelli.js';
+import { iaRoutes } from './ia/routes.js';
+import { accodaDopoCarico } from './ia/aggancio.js';
 import { leggiCartella, leggiConfig, salvaConfig, statoLettura, ultimeLetture } from './cartella.js';
 import { logger } from '../../lib/logger.js';
 import {
@@ -21,6 +23,7 @@ import {
 } from './componenti.js';
 
 export const ferrariRoutes = new Hono<Env>();
+ferrariRoutes.route('/ia', iaRoutes);
 
 const VISTA = 'ferrari_schede' as const;
 const SUPERVISORE = 'ferrari_supervisore' as const;
@@ -261,6 +264,7 @@ ferrariRoutes.post('/files', requireManage(VISTA), async (c) => {
     }
     const r = await caricaScheda(user, f.name, f.buf);
     if (!r.duplicato) await ereditaPerModello(r.modello).catch(() => 0);       // sigle gia' decise da altri modelli: si decidono da sole
+    await accodaDopoCarico(user, r);                                            // analisi IA, se l'interruttore e' acceso
     risultati.push(r);
   }
   return c.json({ risultati });
