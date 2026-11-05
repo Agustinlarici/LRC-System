@@ -11,6 +11,7 @@ describe('stati del lavoro', () => {
     expect(puoPassare('confronto', 'fatto')).toBe(true);
     expect(puoPassare('attesa_ia', 'in_coda')).toBe(true);
     expect(puoPassare('errore', 'in_coda')).toBe(true);        // «Riprova»
+    expect(puoPassare('confronto', 'attesa_ia')).toBe(true);   // guasto passeggero durante il confronto
   });
   it('quelli vietati e gli stati finali', () => {
     expect(puoPassare('fatto', 'in_coda')).toBe(false);

@@ -15,7 +15,7 @@ const TRANSIZIONI: Record<StatoJob, readonly StatoJob[]> = {
   in_coda: ['inviato', 'attesa_ia', 'errore', 'annullato'],
   inviato: ['in_analisi', 'confronto', 'attesa_ia', 'errore', 'annullato'],
   in_analisi: ['confronto', 'attesa_ia', 'errore', 'annullato'],
-  confronto: ['fatto', 'errore'],
+  confronto: ['fatto', 'attesa_ia', 'errore'],          // un guasto passeggero del database durante il confronto si riprova
   attesa_ia: ['in_coda', 'errore', 'annullato'],      // scaduta l'attesa torna in coda e si reinvia
   errore: ['in_coda'],                                // «Riprova» a mano
   fatto: [],
