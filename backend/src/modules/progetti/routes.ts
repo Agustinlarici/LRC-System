@@ -1,4 +1,4 @@
-// Progetti: livello di gestione progetti sopra i ticket (vedi db/migrations/0080_progetti.sql).
+// Progetti: livello di gestione progetti sopra i ticket (vedi db/migrations/0082_progetti.sql).
 // Un progetto raggruppa ticket esistenti (tickets.project_id) e ha attività e un diario.
 // Permesso: lo stesso del team IT (tickets_it) — nessun modulo nuovo.
 import { Hono } from 'hono';
