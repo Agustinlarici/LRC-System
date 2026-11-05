@@ -77,6 +77,11 @@ type HistoryEntry = {
   created_at: string;
 };
 
+type PublicProject = {
+  name: string; status: string; due_date: string | null; progress_pct: number;
+  news: { body: string; created_at: string }[];
+};
+
 function fmt(iso: string) {
   return new Date(iso).toLocaleString('it-IT', { dateStyle: 'medium', timeStyle: 'short' });
 }
@@ -85,6 +90,7 @@ export default function TicketStatoPage() {
   const { number } = useParams<{ number: string }>();
   const [ticket,  setTicket]  = useState<Ticket | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [project, setProject] = useState<PublicProject | null>(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState('');
 
@@ -98,6 +104,7 @@ export default function TicketStatoPage() {
         const data = await r.json();
         setTicket(data);
         setHistory(data.history ?? []);
+        setProject(data.project ?? null);
       })
       .catch(() => setError('Errore di connessione'))
       .finally(() => setLoading(false));
@@ -163,6 +170,41 @@ export default function TicketStatoPage() {
           </div>
         )}
       </div>
+
+      {/* Progetto collegato: solo avanzamento generale e novità segnate come visibili */}
+      {project && (
+        <div className="bg-white rounded-card shadow-card p-6 space-y-4">
+          <h2 className="font-semibold text-ink-900">Progetto</h2>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+            <dt className="text-muted">Nome</dt><dd className="text-ink-900">{project.name}</dd>
+            {project.due_date && (
+              <><dt className="text-muted">Scadenza prevista</dt>
+              <dd className="text-ink-900">{new Date(`${project.due_date}T12:00:00Z`).toLocaleDateString('it-IT', { dateStyle: 'medium' })}</dd></>
+            )}
+            <dt className="text-muted">Avanzamento</dt>
+            <dd className="flex items-center gap-3">
+              <span className="h-2 flex-1 overflow-hidden rounded-full bg-stone-100">
+                <span className="block h-full rounded-full bg-accent-ink" style={{ width: `${project.progress_pct}%` }} />
+              </span>
+              <span className="text-xs tabular-nums text-muted">{project.progress_pct}%</span>
+            </dd>
+          </dl>
+          {project.news.length > 0 && (
+            <div>
+              <p className="text-sm font-medium text-ink-900 mb-3">Novità</p>
+              <ol className="relative border-l border-line space-y-4 ml-2">
+                {project.news.map((n, i) => (
+                  <li key={i} className="ml-4">
+                    <div className="absolute w-2.5 h-2.5 bg-accent rounded-full -left-1.5 border-2 border-white" />
+                    <p className="text-xs text-stone-400">{fmt(n.created_at)}</p>
+                    <p className="text-sm text-ink-800 whitespace-pre-wrap">{n.body}</p>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* History */}
       {history.length > 0 && (

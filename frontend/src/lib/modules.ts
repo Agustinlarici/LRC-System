@@ -99,6 +99,11 @@ export const MODULES: ModuleConfig[] = [
     sidebar: 'IconTicket', hidden: false, moduleKey: 'tickets',
   },
   {
+    href: '/progetti', label: 'Progetti', group: 'IT',
+    description: 'Progetti, attività, avanzamenti e cronologia: cosa fare oggi e cosa aspetta una risposta',
+    sidebar: 'IconProject', hidden: false, moduleKey: 'tickets_it',
+  },
+  {
     href: '/ferrari', label: 'Programma produzione (schede)', group: 'IT',
     description: 'Validazione degli Excel di allestimento Ferrari: analisi con IA locale e VM, confronto e revisione',
     sidebar: 'IconClipboard', hidden: false, moduleKey: 'ferrari_schede',
