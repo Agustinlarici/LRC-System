@@ -51,6 +51,128 @@ function hasSalaryView(user: AuthUser, manage = false): boolean {
   return manage ? !!perm?.can_manage : !!(perm?.can_view || perm?.can_manage);
 }
 
+// ─── Richieste ferie/permessi ─────────────────────────────────────────────────
+// Il capo richiede per sé o per chiunque sia sotto di lui (anche indirettamente);
+// HR (gestione) vede tutto e decide. Ogni richiesta resta "in_attesa" finché HR non decide.
+
+// Dipendente collegato all'utente + tutti i suoi subordinati (ricorsivo su capo_id).
+async function teamEmployeeIds(user: AuthUser): Promise<number[]> {
+  const rows = await db<{ id: number }[]>`
+    WITH RECURSIVE team AS (
+      SELECT id FROM hr_employee WHERE user_id = ${user.id}
+      UNION
+      SELECT e.id FROM hr_employee e JOIN team t ON e.capo_id = t.id
+    )
+    SELECT id FROM team
+  `;
+  return rows.map(r => r.id);
+}
+
+const requestSelect = db`
+  SELECT r.id, r.employee_id, e.nome || ' ' || e.cognome AS employee_name,
+         r.tipo, to_char(r.data_inizio, 'YYYY-MM-DD') AS data_inizio,
+         to_char(r.data_fine, 'YYYY-MM-DD') AS data_fine, r.motivo, r.stato,
+         ru.display_name AS requested_by_name, r.requested_by_user_id,
+         du.display_name AS decided_by_name, r.decided_at, r.decision_note, r.created_at
+  FROM hr_request r
+  JOIN hr_employee e ON e.id = r.employee_id
+  JOIN users ru ON ru.id = r.requested_by_user_id
+  LEFT JOIN users du ON du.id = r.decided_by_user_id
+`;
+
+hrRoutes.get('/requests', requireModule('hr'), async (c) => {
+  const user = c.get('user');
+  if (hasHrManage(user)) {
+    return c.json(await db`${requestSelect} ORDER BY (r.stato = 'in_attesa') DESC, r.created_at DESC LIMIT 500`);
+  }
+  const ids = await teamEmployeeIds(user);
+  return c.json(await db`
+    ${requestSelect}
+    WHERE r.requested_by_user_id = ${user.id} ${ids.length ? db`OR r.employee_id IN ${db(ids)}` : db``}
+    ORDER BY (r.stato = 'in_attesa') DESC, r.created_at DESC LIMIT 500
+  `);
+});
+
+// Persone per cui l'utente può fare una richiesta (HR: tutti gli attivi).
+hrRoutes.get('/requests/employees', requireModule('hr'), async (c) => {
+  const user = c.get('user');
+  if (hasHrManage(user)) {
+    return c.json(await db`
+      SELECT id, nome || ' ' || cognome AS name FROM hr_employee WHERE stato <> 'cessato' ORDER BY cognome, nome
+    `);
+  }
+  const ids = await teamEmployeeIds(user);
+  if (!ids.length) return c.json([]);
+  return c.json(await db`
+    SELECT id, nome || ' ' || cognome AS name FROM hr_employee
+    WHERE id IN ${db(ids)} AND stato <> 'cessato' ORDER BY cognome, nome
+  `);
+});
+
+const requestSchema = z.object({
+  employee_id: z.number().int(),
+  tipo:        z.enum(['ferie', 'permesso']),
+  data_inizio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  data_fine:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  motivo:      z.string().max(1000).optional().nullable(),
+}).refine(b => b.data_fine >= b.data_inizio, { message: 'La data fine precede la data inizio' });
+
+hrRoutes.post('/requests', requireModule('hr'), async (c) => {
+  const user = c.get('user');
+  const body = await parseBody(c, requestSchema);
+
+  if (!hasHrManage(user) && !(await teamEmployeeIds(user)).includes(body.employee_id)) {
+    throw new HTTPException(403, { message: 'Puoi fare richieste solo per te e per il tuo team' });
+  }
+  const [emp] = await db`SELECT id FROM hr_employee WHERE id = ${body.employee_id} AND stato <> 'cessato'`;
+  if (!emp) throw new HTTPException(404, { message: 'Dipendente non trovato' });
+
+  const [row] = await db`
+    INSERT INTO hr_request ${db({ ...body, motivo: body.motivo || null, requested_by_user_id: user.id })}
+    RETURNING id
+  `;
+  await auditLog({ userId: user.id, username: user.username, action: 'hr.request.create', entity: 'hr_request', entityId: row.id, details: { employee_id: body.employee_id, tipo: body.tipo } });
+  return c.json(row, 201);
+});
+
+const decisionSchema = z.object({
+  stato: z.enum(['approvata', 'rifiutata']),
+  decision_note: z.string().max(1000).optional().nullable(),
+});
+
+hrRoutes.post('/requests/:id/decide', requireModule('hr'), async (c) => {
+  const user = c.get('user');
+  if (!hasHrManage(user)) throw new HTTPException(403, { message: 'Solo HR può approvare o rifiutare' });
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const body = await parseBody(c, decisionSchema);
+
+  const [row] = await db`
+    UPDATE hr_request SET stato = ${body.stato}, decision_note = ${body.decision_note || null},
+           decided_by_user_id = ${user.id}, decided_at = now()
+    WHERE id = ${id} AND stato = 'in_attesa' RETURNING id
+  `;
+  if (!row) throw new HTTPException(409, { message: 'Richiesta non trovata o già decisa' });
+  await auditLog({ userId: user.id, username: user.username, action: `hr.request.${body.stato}`, entity: 'hr_request', entityId: id });
+  return c.json(row);
+});
+
+// Annulla una richiesta ancora in attesa (chi l'ha fatta, o HR).
+hrRoutes.post('/requests/:id/cancel', requireModule('hr'), async (c) => {
+  const user = c.get('user');
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const manage = hasHrManage(user);
+  const [row] = await db`
+    UPDATE hr_request SET stato = 'annullata'
+    WHERE id = ${id} AND stato = 'in_attesa' AND (${manage} OR requested_by_user_id = ${user.id})
+    RETURNING id
+  `;
+  if (!row) throw new HTTPException(409, { message: 'Richiesta non trovata, già decisa o non tua' });
+  await auditLog({ userId: user.id, username: user.username, action: 'hr.request.cancel', entity: 'hr_request', entityId: id });
+  return c.json(row);
+});
+
 // ─── Cataloghi (reparto, plant, società contratto) — stessa forma per tutti ───
 
 function mountCatalog(table: 'hr_department' | 'hr_plant' | 'hr_contract_company', label: string) {
