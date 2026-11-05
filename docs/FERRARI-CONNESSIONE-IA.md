@@ -8,7 +8,7 @@ Stato: **piano da approvare, nessun codice ancora**. Sostituisce, per le schede,
 | Tema | Decisione |
 |---|---|
 | Chi apre la connessione | **La VM chiama la PC IA** (HTTP). La PC IA espone una piccola API v1; la PC IA non chiama mai la VM. |
-| Cosa si manda | **L'Excel originale** + uno **snapshot delle sigle** della VM (le sigle di interesse, sotto-sigle, alias, modelli). |
+| Cosa si manda | **L'Excel originale** a ogni scheda. Le **sigle** (colonne, sotto-sigle, alias, modelli) si **sincronizzano una volta** (`PUT /v1/sigle`, con un numero di versione) e ogni scheda indica solo la `versione_sigle`; se la PC IA non la ha risponde `409 sigle_obsolete` e la VM le rimanda. |
 | Cosa fa la IA | **Due cose**: (1) riassume i testi liberi; (2) legge la scheda per conto suo (lettura di controllo). |
 | Chi confronta | **La VM, per codice di sigla.** La IA puo' riscrivere le descrizioni, i codici no: il confronto per codice e' ripetibile, testabile e funziona anche con la IA spenta. |
 | Quando si vede il risultato | **Subito** (lettura della VM per codice); la IA **arricchisce dopo** (riassunti, avvisi). Nessuno aspetta la IA. |
@@ -69,7 +69,8 @@ dell'IP della VM e `FERRARI_LAN=1` solo sull'interfaccia necessaria. Mai segreti
 ### Endpoint
 - `GET /v1/salute` → `{ schema, versione_api, ollama: true|false, modello, in_coda, in_corso, versione_prompt }` (senza autenticazione sui dati, solo stato).
 - `POST /v1/analisi` (multipart: `file` = Excel, `meta` = JSON) → `202 { id, stato: "in_coda" }`. Idempotente: stesso `sha256` + stessa `versione_sigle` + stessa `versione_prompt` = stesso `id` (non si rifa').
-  - `meta`: `{ sha256, commessa?, modello?, versione_sigle, sigle: { colonne:[…], sotto_sigle:[{codice, padre?}], alias:{scritto:giusto}, modelli:[…] }, esempi:[{voce, testo, dettaglio}], richiesta_id }`.
+  - `meta`: `{ sha256, commessa?, modello?, versione_sigle, richiesta_id }`. Se la `versione_sigle` non e' nota alla PC IA → `409 { errore.codice: "sigle_obsolete" }` e la VM sincronizza e riprova (senza perdere un tentativo).
+- `PUT /v1/sigle` (JSON) → `200 { versione_sigle }`. Corpo: `{ versione_sigle, colonne:[…], sotto_sigle:[{codice, padre?}], alias:{scritto:giusto}, modelli:[…], esempi:[{voce, testo, dettaglio}] }`. `versione_sigle` = sha256 del corpo stabile (stessa versione = stesso contenuto, idempotente). La IA le usa anche per **saltare** i testi delle opzioni che non sono colonne (tempo risparmiato).
 - `GET /v1/analisi/{id}` → `{ id, stato, passo, avanzamento:{fatti,totale,etichetta}, tentativi?, secondi, chiamate, risultato? , errore? }`
   - `stato`: `in_coda | in_corso | fatto | errore`; `passo`: `lettura | riassunti | controllo | fine`.
 - `DELETE /v1/analisi/{id}` → annulla (se ancora in coda).
