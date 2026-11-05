@@ -109,7 +109,7 @@ I riassunti dei testi entrano in `ferrari_dettaglio` (come oggi, con `stato`), e
 
 ## 7. Dati nella VM (migrazioni aggiuntive, solo tabelle/colonne nuove)
 
-Migrazione **0080** (verificare il numero libero su `dev` prima del PR).
+Migrazione **0081** (verificare il numero libero su `dev` prima del PR).
 - `ferrari_ia_job` — `id, file_id, sha256, richiesta_id, id_remoto, stato, passo, avanzamento jsonb, tentativi, prossimo_tentativo_at, errore, versione_sigle, creato_da, creato_at, inviato_at, finito_at, aggiornato_at`; un solo lavoro attivo per scheda (indice parziale unico).
 - `ferrari_ia_passo` — log eventi per la linea del tempo (solo aggiunte): `job_id, passo, stato, dettaglio, at`.
 - `ferrari_ia_risultato` — `job_id, lettura jsonb, avvisi, metriche, esito, discrepanze jsonb` (lettura di controllo della IA e confronto fatto dalla VM).

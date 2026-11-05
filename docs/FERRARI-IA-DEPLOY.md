@@ -3,7 +3,7 @@
 Interruttore IA **spento** di default: il `./deploy.sh update` non cambia il comportamento finche' non lo si accende.
 
 ## 1. VM (server)
-1. `./deploy.sh update` (applica la migrazione `0080_ferrari-ia-collegamento.sql`; solo tabelle nuove).
+1. `./deploy.sh update` (applica la migrazione `0081_ferrari-ia-collegamento.sql`; solo tabelle nuove).
 2. Aprire Schede Ferrari → Impostazioni → Avanzate → «Scambio con la IA» e copiare il segreto (solo supervisori).
 
 ## 2. PC IA (Windows)
@@ -15,7 +15,7 @@ Interruttore IA **spento** di default: il `./deploy.sh update` non cambia il com
 
 ## 3. Accensione (VM → Impostazioni → Avanzate → Collegamento IA)
 1. Inserire l'indirizzo `http://<IP-PC-IA>:5000` → **Prova la connessione** (deve essere verde).
-2. Accendere l'interruttore → **Analizza le schede mancanti** (tande da ~20).
+2. Accendere l'interruttore → **Analizza le schede mancanti** (fino a ~20 per volta).
 3. Seguire le tappe nella pagina **Elaborazione** (VM) e nella pagina **Attivita'** (PC IA).
 
 ## Rollback
