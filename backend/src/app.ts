@@ -22,6 +22,7 @@ import { programmaProduzioneRoutes } from './modules/programma-produzione/routes
 import { hrRoutes } from './modules/hr/routes.js';
 import { ferrariRoutes } from './modules/ferrari/routes.js';
 import { activityRoutes } from './modules/activity/routes.js';
+import { progettiRoutes } from './modules/progetti/routes.js';
 import { logger } from './lib/logger.js';
 import { db } from './db/client.js';
 import { getWebthronPool, IKnowDisabledError } from './modules/monitor/mysql-client.js';
@@ -107,6 +108,7 @@ app.route('/api/prod', programmaProduzioneRoutes);
 app.route('/api/hr', hrRoutes);
 app.route('/api/ferrari', ferrariRoutes);
 app.route('/api/activity', activityRoutes);
+app.route('/api/progetti', progettiRoutes);
 
 // Stub para módulos aún no migrados
 const stub = (module: string) =>

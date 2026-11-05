@@ -62,6 +62,7 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/buffer':             'buffer',
   '/mappa':              'mappa',
   '/tickets':            'tickets',
+  '/progetti':           'tickets_it',
   '/admin/system':       'impostazioni',
   '/dashboards':              'dashboards',
   '/dashboards/heatmap':      'dashboards',

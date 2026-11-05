@@ -73,6 +73,15 @@ export function IconTicket({ className = base }: IconProps) {
     </svg>
   );
 }
+export function IconProject({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
+      <rect x="3" y="4" width="5" height="16" rx="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="10" y="4" width="5" height="10" rx="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="17" y="4" width="4" height="6" rx="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 export function IconChart({ className = base }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
@@ -175,7 +184,7 @@ export const ICON_MAP: Record<string, ModuleIcon> = {
   IconBox, IconTruck, IconMonitor, IconArchive, IconMap,
   IconClipboard, IconFactory, IconSettings, IconTicket, IconChart,
   IconHeatmap, IconList, IconScan, IconEdi, IconWebDdt, IconSparkles, IconSearch,
-  IconUsers, IconOrgChart, IconTrendUp,
+  IconUsers, IconOrgChart, IconTrendUp, IconProject,
 };
 
 // ─── Group representative icons ─────────────────────────────────────────────
