@@ -103,7 +103,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [loading, user, pathname, router]);
 
-  usePageTracking(user?.id ?? null, pathname, isFullscreen || isTablet || isMonitor || isKioskPath(pathname));
+  usePageTracking(user?.id ?? null, pathname, isFullscreen);
 
   // ── Fullscreen layouts (no sidebar) ────────────────────────────────────────
 

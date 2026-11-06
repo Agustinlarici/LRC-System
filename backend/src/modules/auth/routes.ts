@@ -375,9 +375,10 @@ authRoutes.post('/devices/login', loginRateLimit, async (c) => {
     loadProfile(user.id),
   ]);
 
-  const payload: TokenPayload = { id: user.id, username: user.username, display_name: user.display_name, role: user.role as TokenPayload['role'] };
+  const payload: TokenPayload = { id: user.id, username: user.username, display_name: user.display_name, role: user.role as TokenPayload['role'], device_id: device.id };
   setSessionCookie(c, signToken(payload));
   await db`UPDATE device_tokens SET last_used_at = now() WHERE id = ${device.id}`;
+  await auditLog({ userId: user.id, username: user.username, action: 'device_login_success', entity: 'device_tokens', entityId: device.id, ip });
 
   return c.json({ user: { ...payload, ...profile, permissions } });
 });
