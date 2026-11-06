@@ -22,7 +22,7 @@ export type ModuleKey =
   | 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer'
   | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
   | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci'
-  | 'programma_produzione' | 'hr' | 'hr_salary' | 'ferrari_schede' | 'ferrari_supervisore';
+  | 'programma_produzione' | 'hr' | 'hr_salary' | 'hr_team' | 'ferrari_schede' | 'ferrari_supervisore';
 
 export type ModulePermission = {
   module_key: ModuleKey;
@@ -169,6 +169,21 @@ export function requireModule(moduleKey: ModuleKey) {
       const perm = user.permissions.find(p => p.module_key === moduleKey);
       if (!perm?.can_view) {
         throw new HTTPException(403, { message: `Accesso al modulo '${moduleKey}' negato` });
+      }
+    }
+    await next();
+  };
+}
+
+// Basta uno qualsiasi dei permessi indicati (admin sempre ammesso).
+export function requireModuleAny(...moduleKeys: ModuleKey[]) {
+  return async function (c: Context<Env>, next: Next) {
+    await requireAuth(c, async () => {});
+    const user = c.get('user');
+    if (user.role !== 'admin') {
+      const ok = user.permissions.some(p => moduleKeys.includes(p.module_key) && p.can_view);
+      if (!ok) {
+        throw new HTTPException(403, { message: `Accesso al modulo '${moduleKeys.join("' o '")}' negato` });
       }
     }
     await next();

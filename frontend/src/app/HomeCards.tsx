@@ -19,7 +19,7 @@ export function HomeCards() {
   const { user, canView } = useAuth();
 
   const visible = (m: ModuleConfig) =>
-    m.adminOnly ? user?.role === 'admin' : !m.manageOnly && (!m.moduleKey || canView(m.moduleKey));
+    m.adminOnly ? user?.role === 'admin' : !m.manageOnly && (!m.moduleKey || [m.moduleKey].flat().some(k => canView(k)));
 
   const groups = MODULE_GROUPS.filter(g => modulesByGroup(g).some(visible));
 

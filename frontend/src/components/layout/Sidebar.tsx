@@ -54,7 +54,7 @@ function CountBadge({ n, className = '' }: { n: number; className?: string }) {
 
 // ─── Permission key map ───────────────────────────────────────────────────────
 
-const MODULE_KEY_MAP: Record<string, ModuleKey> = {
+const MODULE_KEY_MAP: Record<string, ModuleKey | ModuleKey[]> = {
   '/ingresso-merci':     'ingresso_merci',
   '/packing':            'packing',
   '/monitor':            'monitor',
@@ -80,11 +80,12 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/qualita':                 'qualita',
   '/produzione':              'programma_produzione',
   '/ferrari':                 'ferrari_schede',
-  '/hr':                      'hr',
-  '/hr/dipendenti':           'hr',
-  '/hr/scadenze':             'hr',
+  '/hr':                      ['hr', 'hr_team'],
+  '/hr/dipendenti':           ['hr', 'hr_team'],
+  '/hr/richieste':            ['hr', 'hr_team'],
+  '/hr/scadenze':             ['hr', 'hr_team'],
   '/hr/documenti':            'hr',
-  '/hr/organigramma':         'hr',
+  '/hr/organigramma':         ['hr', 'hr_team'],
   '/hr/analisi':              'hr',
   '/hr/evoluzione':           'hr',
 };
@@ -166,9 +167,9 @@ export function Sidebar() {
 
   // Check if a module is accessible
   function canAccess(href: string, manageOnly?: boolean): boolean {
-    const key = MODULE_KEY_MAP[href];
-    if (!key) return true;
-    return manageOnly ? canView(key) || canManage(key) : canView(key);
+    const keys = [MODULE_KEY_MAP[href]].flat();
+    if (!keys[0]) return true;
+    return keys.some(key => manageOnly ? canView(key) || canManage(key) : canView(key));
   }
 
   function isActive(href: string): boolean {
