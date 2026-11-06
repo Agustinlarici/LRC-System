@@ -100,16 +100,30 @@ const EMPTY_CLIENT: Omit<EdiClient, 'id' | 'created_at' | 'updated_at'> = {
   csg_supply_point: '', output_folder: '', auto_generate: false,
 };
 
+type ClientKey = keyof typeof EMPTY_CLIENT;
+
+// Campi che il generatore del tipo EDI usa davvero nel messaggio: se mancano il file
+// esce incompleto e il cliente lo rifiuta. DESADV_AUDI: vedi backend/edi_generators/DESADV_AUDI.js
+const REQUIRED_BY_TYPE: Record<string, Partial<Record<ClientKey, { label: string; hint: string }>>> = {
+  DESADV_AUDI: {
+    cdt_vat:                { label: 'P.IVA mittente',               hint: 'Odette ID mittente, 14 caratteri (UNB)' },
+    supplier_code:          { label: 'Codice Fornitore',             hint: 'NAD+SF' },
+    csg_establishment_code: { label: 'Cod. identificativo destinatario', hint: 'Odette ID Audi/VW, 14 caratteri (UNB)' },
+    csg_supply_point:       { label: 'Punto di scarico / Codice impianto', hint: 'NAD+ST e LOC+11, max 5 caratteri' },
+  },
+};
+
 function Field({
-  label, value, onChange, placeholder, required, maxLen, mono,
+  label, value, onChange, placeholder, required, maxLen, mono, hint,
 }: {
   label: string; value: string; onChange: (v: string) => void;
-  placeholder?: string; required?: boolean; maxLen?: number; mono?: boolean;
+  placeholder?: string; required?: boolean; maxLen?: number; mono?: boolean; hint?: string;
 }) {
   return (
     <div>
       <label className="block text-xs font-medium text-gray-600 mb-1">
         {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+        {hint && <span className="ml-1 font-normal text-muted">— {hint}</span>}
       </label>
       <input
         type="text"
@@ -138,11 +152,21 @@ function ClientModal({
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
+  const rules = REQUIRED_BY_TYPE[form.edi_type] ?? {};
+  const requiredKeys = Object.keys(rules) as ClientKey[];
+  const req  = (k: ClientKey) => k in rules;
+  const hint = (k: ClientKey) => rules[k]?.hint;
+
   function set(key: keyof typeof EMPTY_CLIENT) {
     return (v: string) => setForm(f => ({ ...f, [key]: v }));
   }
 
   async function handleSave() {
+    const missing = requiredKeys.filter(k => !String(form[k] ?? '').trim());
+    if (missing.length > 0) {
+      setError(`Per ${form.edi_type} compilare: ${missing.map(k => rules[k]!.label).join(', ')}`);
+      return;
+    }
     setSaving(true);
     setError('');
     try {
@@ -175,6 +199,11 @@ function ClientModal({
 
           <section>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Generale</h3>
+            {requiredKeys.length > 0 && (
+              <p className="mb-3 rounded-ctl bg-info-soft px-3 py-2 text-xs text-info">
+                Per {form.edi_type} da compilare (*) per il messaggio: {requiredKeys.map(k => rules[k]!.label).join(' · ')}.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <Field label="Customer Account Dynamics" value={form.customer_account} onChange={set('customer_account')} required maxLen={20} mono />
               <Field label="Descrizione interna" value={form.description} onChange={set('description')} required />
@@ -208,7 +237,7 @@ function ClientModal({
           <section>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">CDT — Mittente</h3>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="P.IVA mittente (es. 0940XXXXXXXXXXX)" value={form.cdt_vat} onChange={set('cdt_vat')} required maxLen={20} mono />
+              <Field label="P.IVA mittente (es. 0940XXXXXXXXXXX)" value={form.cdt_vat} onChange={set('cdt_vat')} required hint={hint('cdt_vat')} maxLen={20} mono />
               <Field label="Ragione sociale" value={form.cdt_company_name} onChange={set('cdt_company_name')} required maxLen={35} />
               <Field label="Indirizzo 1" value={form.cdt_address_1 ?? ''} onChange={set('cdt_address_1')} maxLen={35} />
               <Field label="Indirizzo 2" value={form.cdt_address_2 ?? ''} onChange={set('cdt_address_2')} maxLen={35} />
@@ -221,7 +250,7 @@ function ClientModal({
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">SDT — Venditore/Fornitore</h3>
             <div className="grid grid-cols-2 gap-3">
               <Field label="P.IVA venditore" value={form.sdt_vat} onChange={set('sdt_vat')} maxLen={20} mono />
-              <Field label="Codice Fornitore (max 9 cifre)" value={form.supplier_code} onChange={set('supplier_code')} required maxLen={9} mono placeholder="001234" />
+              <Field label="Codice Fornitore (max 9 cifre)" value={form.supplier_code} onChange={set('supplier_code')} required hint={hint('supplier_code')} maxLen={9} mono placeholder="001234" />
             </div>
           </section>
 
@@ -232,6 +261,8 @@ function ClientModal({
                 label="Cod. identificativo destinatario"
                 value={form.csg_establishment_code ?? ''}
                 onChange={set('csg_establishment_code')}
+                required={req('csg_establishment_code')}
+                hint={hint('csg_establishment_code')}
                 maxLen={20}
                 mono
                 placeholder="021 (Ferrari) · Odette ID (Audi) · Warehouse (McLaren)"
@@ -241,7 +272,7 @@ function ClientModal({
               <Field label="Indirizzo 2" value={form.csg_address_2 ?? ''} onChange={set('csg_address_2')} maxLen={35} />
               <Field label="Indirizzo 3" value={form.csg_address_3 ?? ''} onChange={set('csg_address_3')} maxLen={35} />
               <Field label="Indirizzo 4" value={form.csg_address_4 ?? ''} onChange={set('csg_address_4')} maxLen={35} />
-              <Field label="Punto di scarico / Codice impianto (an..5)" value={form.csg_supply_point ?? ''} onChange={set('csg_supply_point')} maxLen={17} mono placeholder="es. I05 (Audi Ingolstadt)" />
+              <Field label="Punto di scarico / Codice impianto (an..5)" value={form.csg_supply_point ?? ''} onChange={set('csg_supply_point')} required={req('csg_supply_point')} hint={hint('csg_supply_point')} maxLen={17} mono placeholder="es. I05 (Audi Ingolstadt)" />
             </div>
           </section>
         </div>
