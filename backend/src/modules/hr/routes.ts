@@ -601,7 +601,7 @@ const employeeSelect = db`
     (SELECT string_agg(pl.name, ', ' ORDER BY pl.name) FROM hr_plant pl WHERE pl.id = ANY(e.plant_ids)) AS plant_name,
     e.contract_company_id, cc.name AS contract_company_name,
     e.capo_id, (capo.nome || ' ' || capo.cognome) AS capo_nome,
-    e.user_id, e.data_assunzione, e.data_cessazione, e.stato, e.note,
+    e.user_id, u.username AS account_username, e.data_assunzione, e.data_cessazione, e.stato, e.note,
     e.tag_id, tg.name AS tag_name, tg.color AS tag_color,
     e.in_prova, e.import_warning,
     (SELECT EXTRACT(EPOCH FROM ph.updated_at)::bigint FROM hr_employee_photo ph WHERE ph.employee_id = e.id) AS photo_version,
@@ -616,7 +616,31 @@ const employeeSelect = db`
   LEFT JOIN hr_contract_company cc ON cc.id = e.contract_company_id
   LEFT JOIN hr_employee capo ON capo.id = e.capo_id
   LEFT JOIN hr_employee_tag tg ON tg.id = e.tag_id
+  LEFT JOIN users u ON u.id = e.user_id
 `;
+
+// Account di sistema collegabili a una scheda (solo HR). Mostra a chi è già collegato ciascuno.
+hrRoutes.get('/users', requireManage('hr'), async (c) => {
+  const rows = await db`
+    SELECT u.id, u.username, u.display_name, e.id AS employee_id, (e.nome || ' ' || e.cognome) AS employee_name
+    FROM users u
+    LEFT JOIN hr_employee e ON e.user_id = u.id
+    WHERE u.is_active
+    ORDER BY u.display_name, u.username
+  `;
+  return c.json(rows);
+});
+
+// Un account può essere collegato a una sola scheda: altrimenti il capo vedrebbe i team di entrambe.
+async function assertAccountFree(userId: number, exceptEmployeeId?: number): Promise<void> {
+  const [u] = await db`SELECT id FROM users WHERE id = ${userId} AND is_active`;
+  if (!u) throw new HTTPException(400, { message: 'Account non valido o disattivato' });
+  const [other] = await db`
+    SELECT nome || ' ' || cognome AS name FROM hr_employee
+    WHERE user_id = ${userId} AND id <> ${exceptEmployeeId ?? 0} LIMIT 1
+  `;
+  if (other) throw new HTTPException(409, { message: `Questo account è già collegato a ${other.name}` });
+}
 
 hrRoutes.get('/employees', requireModuleAny('hr', 'hr_team'), async (c) => {
   const { search, reparto_id, stato, capo_id } = c.req.query();
@@ -758,6 +782,7 @@ const employeeFieldsSchema = z.object({
 hrRoutes.post('/employees', requireManage('hr'), async (c) => {
   const body = await parseBody(c, employeeFieldsSchema);
   const user = c.get('user');
+  if (body.user_id) await assertAccountFree(body.user_id);
   const plantFields = body.plant_ids ? { plant_id: body.plant_ids[0] ?? null } : {};
 
   const [employee] = await db`
@@ -808,6 +833,7 @@ hrRoutes.patch('/employees/:id', requireModule('hr'), async (c) => {
   }
   if (updates.plant_ids) updates.plant_id = updates.plant_ids[0] ?? null;
   if (!Object.keys(updates).length) throw new HTTPException(400, { message: 'Nessun campo modificabile fornito' });
+  if (updates.user_id) await assertAccountFree(updates.user_id, id);
   if (updates.capo_id === id) throw new HTTPException(400, { message: 'Una persona non può essere capo di se stessa' });
   if (updates.capo_id) {
     // Il nuovo responsabile non può essere un subordinato (diretto o indiretto) di questa persona

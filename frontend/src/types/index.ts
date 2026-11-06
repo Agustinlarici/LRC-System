@@ -774,6 +774,7 @@ export interface HrEmployee {
   capo_id:                  number | null;
   capo_nome:                string | null;
   user_id:                  number | null;
+  account_username:         string | null;
   data_assunzione:          string;
   data_cessazione:          string | null;
   stato:                    HrEmployeeStatus;
