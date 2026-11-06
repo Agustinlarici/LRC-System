@@ -259,4 +259,13 @@ describe.skipIf(!URL)('Collegamento con la PC IA — servizio', () => {
     await ia!.chiudi(); ia = null;
     expect(await s.prova()).toMatchObject({ ok: false });
   });
+
+  it('sincronizza le sigle: le manda subito (anche due volte di fila) o dice il motivo dell\'errore', async () => {
+    const s = await nuovo();
+    expect(await s.sincronizzaSigle()).toMatchObject({ ok: true, versione: expect.any(String) });
+    expect(await s.sincronizzaSigle()).toMatchObject({ ok: true });
+    expect(ia!.richieste.filter(r => r.metodo === 'PUT')).toHaveLength(2);
+    await ia!.chiudi(); ia = null;
+    expect(await s.sincronizzaSigle()).toMatchObject({ ok: false });
+  });
 });

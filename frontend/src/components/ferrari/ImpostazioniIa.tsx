@@ -50,6 +50,18 @@ export function ImpostazioniIa() {
     } catch (e) { setErrore((e as Error).message); } finally { setOccupato(false); }
   }
 
+  async function sincronizzaSigle() {
+    setOccupato(true); setEsito(null);
+    try {
+      if (cambiata) await iaApi.salvaConfig({ url: bozza!.url });
+      const r = await iaApi.sincronizzaSigle();
+      setEsito(r.ok
+        ? { ok: true, testo: `Sigle inviate alla PC IA: ${r.colonne} colonne, ${r.sottoSigle} sotto-sigle` }
+        : { ok: false, testo: r.errore });
+      await carica(true);
+    } catch (e) { setErrore((e as Error).message); } finally { setOccupato(false); }
+  }
+
   return (
     <div className="rounded-card border border-line bg-white p-5 shadow-card">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -96,6 +108,8 @@ export function ImpostazioniIa() {
           {salvato ? <span className="inline-flex items-center gap-1"><IconaOk /> Salvato</span> : 'Salva'}
         </button>
         <button className="btn-secondary" disabled={occupato || !bozza.url.trim()} onClick={prova}>Prova la connessione</button>
+        <button className="btn-secondary" disabled={occupato || !bozza.url.trim()} onClick={sincronizzaSigle}
+          title="Manda subito alla PC IA l'elenco attuale di sigle e sotto-sigle (di solito parte da sola prima di ogni scheda)">Sincronizza le sigle</button>
         <Link href="/ferrari/elaborazione" className="btn-secondary">Vedi l&apos;elaborazione</Link>
         {esito && <span className={`text-sm ${esito.ok ? 'text-success' : 'text-danger'}`} role="status">{esito.testo}</span>}
       </div>

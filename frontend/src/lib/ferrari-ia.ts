@@ -40,6 +40,7 @@ export const iaApi = {
   dettaglio: (id: string) => api.get<DettaglioJob>(`${B}/jobs/${encodeURIComponent(id)}`),
   salvaConfig: (c: Partial<ConfigIa>) => api.put<ConfigIa>(`${B}/config`, c),
   prova: () => api.post<{ ok: true; salute: Salute } | { ok: false; errore: string }>(`${B}/prova`, {}),
+  sincronizzaSigle: () => api.post<{ ok: true; versione: string; colonne: number; sottoSigle: number } | { ok: false; errore: string }>(`${B}/sigle/sincronizza`, {}),
   riprova: (id: string) => api.post(`${B}/jobs/${encodeURIComponent(id)}/riprova`, {}),
   annulla: (id: string) => api.post(`${B}/jobs/${encodeURIComponent(id)}/annulla`, {}),
   analizza: (fileId: number) => api.post(`${B}/schede/${fileId}/analizza`, {}),
