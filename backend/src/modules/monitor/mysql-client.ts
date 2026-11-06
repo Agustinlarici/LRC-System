@@ -131,12 +131,14 @@ function buildGuardedPool(poolGuard: ReturnType<typeof createGuard>, maxStatemen
   raw.on('connection', (conn) => {
     const id = (conn as unknown as { threadId?: number; connection?: { threadId?: number } });
     threadId = id.threadId ?? id.connection?.threadId ?? null;
-    // Se un SET viene rifiutato si registra un avviso e si continua: nessun errore non gestito.
+    // L'evento 'connection' dà la connessione con l'API a callback (non quella a promise): usare
+    // .then/.catch lì lancia un errore e la connessione non si apre mai.
+    // Se un SET viene rifiutato si registra un avviso e si continua.
+    const cbConn = conn as unknown as { query(sql: string, cb: (err: Error | null) => void): void };
     const setup = (sql: string) => {
-      const warn = (err: Error) => logger.warn(`[WebThron] Impostazione di sessione non applicata (${sql}): ${err.message}`);
-      const r = conn.query(sql) as unknown as { catch?: (f: (e: Error) => void) => unknown; on?: (ev: string, f: (e: Error) => void) => unknown };
-      if (typeof r?.catch === 'function') r.catch(warn);
-      else if (typeof r?.on === 'function') r.on('error', warn);
+      cbConn.query(sql, (err) => {
+        if (err) logger.warn(`[WebThron] Impostazione di sessione non applicata (${sql}): ${err.message}`);
+      });
     };
     setup('SET SESSION wait_timeout = 300, SESSION interactive_timeout = 300');
     setup(`SET SESSION max_statement_time = ${maxStatementSeconds}`);
