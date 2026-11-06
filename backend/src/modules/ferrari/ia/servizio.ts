@@ -202,6 +202,20 @@ export class ServizioIa {
     }
   }
 
+  /** «Sincronizza le sigle»: manda subito alla PC IA l'elenco attuale (sempre, anche se la versione non e' cambiata). */
+  async sincronizzaSigle(): Promise<{ ok: true; versione: string; colonne: number; sottoSigle: number } | { ok: false; errore: string }> {
+    const cfg = await leggiConfigIa();
+    if (!cfg.url) return { ok: false, errore: 'Scrivi prima l\'indirizzo della PC IA' };
+    try {
+      const snap = await this.snapshotSincronizzato(await this.cliente(cfg), true);
+      return { ok: true, versione: snap.versione_sigle, colonne: snap.colonne.length, sottoSigle: snap.sotto_sigle.length };
+    } catch (e) {
+      this.connessione.ultimoControllo = this.d.adesso();
+      this.connessione.errore = (e as Error).message;
+      return { ok: false, errore: (e as Error).message };
+    }
+  }
+
   // ─── Passi del lavoro ─────────────────────────────────────────────────────
 
   private async riprendiScaduti() {

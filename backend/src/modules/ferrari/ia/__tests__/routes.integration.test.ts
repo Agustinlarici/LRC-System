@@ -39,6 +39,7 @@ describe.skipIf(!URL)('Collegamento con la PC IA — rotte', () => {
     expect((await chiama('GET', '/ia/stato', { token: senzaPermessi })).status).toBe(403);
     expect((await chiama('PUT', '/ia/config', { token: senzaPermessi, corpo: { attiva: false } })).status).toBe(403);
     expect((await chiama('POST', '/ia/prova', { token: senzaPermessi })).status).toBe(403);
+    expect((await chiama('POST', '/ia/sigle/sincronizza', { token: senzaPermessi })).status).toBe(403);
   });
 
   it('stato: spenta di default, senza lavori', async () => {
