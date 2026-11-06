@@ -22,9 +22,8 @@ const port = parseInt(process.env.PORT || '3001', 10);
 async function shutdown() {
   logger.info('Shutting down — closing MySQL pool...');
   try {
-    const { getWebthronPool, resetWebthronPool } = await import('./modules/monitor/mysql-client.js');
-    await getWebthronPool().end();
-    resetWebthronPool();
+    const { closeWebthronPools } = await import('./modules/monitor/mysql-client.js');
+    await closeWebthronPools();
     logger.info('MySQL pool closed.');
   } catch { /* pool may not have been initialized */ }
   process.exit(0);
