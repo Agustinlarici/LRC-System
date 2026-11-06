@@ -41,6 +41,9 @@ export const SnapshotSigleSchema = z.object({
     alias: z.string().nullable(), nosigla: z.boolean(), padre: z.string().nullable(),
   })).optional(),
   componenti: z.array(z.object({ modello: z.string(), nome: z.string(), termini: z.array(z.string()) })).optional(),
+  // elenco dei modelli creati dalla VM (nell'ordine di creazione) e i loro errori di scrittura (es. F171V5 → F171VS)
+  modelli_noti: z.array(z.string()).optional(),
+  modelli_alias: z.array(z.object({ sbagliato: z.string(), giusto: z.string() })).optional(),
 });
 export type SnapshotSigle = z.infer<typeof SnapshotSigleSchema>;
 

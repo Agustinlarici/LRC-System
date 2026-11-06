@@ -126,7 +126,7 @@
     }
   },
   "snapshot_v2": {
-    "versione_sigle": "88ba7a685291ad08ad8e0aae2c2ac0dc563268ec11ab3a0d787c3f0dcdf887f3",
+    "versione_sigle": "ee2882bfb9d061692b0a3e113bc99694b34601f3dbff884a9fe70b90ae92c0df",
     "colonne": [
       "BIC2",
       "LIVR"
@@ -215,6 +215,16 @@
           "PAR2",
           "LIVR"
         ]
+      }
+    ],
+    "modelli_noti": [
+      "F171VS",
+      "F999XX"
+    ],
+    "modelli_alias": [
+      {
+        "sbagliato": "F171V5",
+        "giusto": "F171VS"
       }
     ]
   }

@@ -51,6 +51,13 @@ describe('decisioni complete e componenti (campi facoltativi)', () => {
     const s = costruisciSnapshot({ ...base, decisioni: [dec('*', 'B', true), dec('F1', 'A', false), dec('*', 'B', false)] });
     expect(s.decisioni?.map(d => `${d.modello}:${d.codice}:${d.va}`)).toEqual(['*:B:true', 'F1:A:false']);
   });
+  it('modelli noti e loro errori di scrittura viaggiano solo se ci sono', () => {
+    const a = costruisciSnapshot(base);
+    expect('modelli_noti' in a || 'modelli_alias' in a).toBe(false);
+    const b = costruisciSnapshot({ ...base, modelli_noti: ['F2', 'F1', 'F2'], modelli_alias: [{ sbagliato: 'Z', giusto: 'F1' }, { sbagliato: 'A', giusto: 'F2' }] });
+    expect(b.modelli_noti).toEqual(['F2', 'F1']);                      // ordine di creazione, senza doppioni
+    expect(b.modelli_alias?.map(x => x.sbagliato)).toEqual(['A', 'Z']);
+  });
   it('vettore condiviso con le decisioni: stesso hash in TypeScript e in Python', async () => {
     const { readFileSync } = await import('node:fs');
     const { fileURLToPath } = await import('node:url');
@@ -58,6 +65,6 @@ describe('decisioni complete e componenti (campi facoltativi)', () => {
     const { versione_sigle: _v, ...corpo } = v.snapshot_v2;
     expect(costruisciSnapshot(corpo)).toEqual(v.snapshot_v2);
     expect(SnapshotSigleSchema.parse(v.snapshot_v2)).toEqual(v.snapshot_v2);
-    expect(v.snapshot_v2.versione_sigle).toBe('88ba7a685291ad08ad8e0aae2c2ac0dc563268ec11ab3a0d787c3f0dcdf887f3');
+    expect(v.snapshot_v2.versione_sigle).toBe('ee2882bfb9d061692b0a3e113bc99694b34601f3dbff884a9fe70b90ae92c0df');
   });
 });
