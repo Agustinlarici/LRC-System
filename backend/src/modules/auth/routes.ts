@@ -6,7 +6,7 @@ import { randomBytes, randomInt, createHash } from 'crypto';
 import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
 import {
-  requireAuth, requireManage, signToken, setSessionCookie, clearSessionCookie, loadProfile,
+  requireAuth, requireManage, signToken, setSessionCookie, clearSessionCookie, loadProfile, loadPermissions,
   type Env, type TokenPayload,
 } from '../../lib/auth.js';
 import { loginRateLimit } from '../../middleware/rate-limit.js';
@@ -41,10 +41,7 @@ authRoutes.post('/login', loginRateLimit, async (c) => {
   }
 
   const [permissions, profile] = await Promise.all([
-    db`
-      SELECT module_key, can_view, can_manage
-      FROM user_module_permissions WHERE user_id = ${user.id}
-    `,
+    loadPermissions(user.id),
     loadProfile(user.id),
   ]);
 
@@ -344,9 +341,7 @@ authRoutes.post('/devices/pair/redeem', loginRateLimit, async (c) => {
   await db`DELETE FROM device_pairing_codes WHERE code = ${body.code}`;
 
   const [permissions, profile] = await Promise.all([
-    db<{ module_key: string; can_view: boolean; can_manage: boolean }[]>`
-      SELECT module_key, can_view, can_manage FROM user_module_permissions WHERE user_id = ${user.id}
-    `,
+    loadPermissions(user.id),
     loadProfile(user.id),
   ]);
 
@@ -376,9 +371,7 @@ authRoutes.post('/devices/login', loginRateLimit, async (c) => {
   if (!user || !user.is_active) throw new HTTPException(401, { message: 'Utente non attivo' });
 
   const [permissions, profile] = await Promise.all([
-    db<{ module_key: string; can_view: boolean; can_manage: boolean }[]>`
-      SELECT module_key, can_view, can_manage FROM user_module_permissions WHERE user_id = ${user.id}
-    `,
+    loadPermissions(user.id),
     loadProfile(user.id),
   ]);
 
