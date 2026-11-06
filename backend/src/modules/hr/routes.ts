@@ -619,18 +619,6 @@ const employeeSelect = db`
   LEFT JOIN users u ON u.id = e.user_id
 `;
 
-// Account di sistema collegabili a una scheda (solo HR). Mostra a chi è già collegato ciascuno.
-hrRoutes.get('/users', requireManage('hr'), async (c) => {
-  const rows = await db`
-    SELECT u.id, u.username, u.display_name, e.id AS employee_id, (e.nome || ' ' || e.cognome) AS employee_name
-    FROM users u
-    LEFT JOIN hr_employee e ON e.user_id = u.id
-    WHERE u.is_active
-    ORDER BY u.display_name, u.username
-  `;
-  return c.json(rows);
-});
-
 // Un account può essere collegato a una sola scheda: altrimenti il capo vedrebbe i team di entrambe.
 async function assertAccountFree(userId: number, exceptEmployeeId?: number): Promise<void> {
   const [u] = await db`SELECT id FROM users WHERE id = ${userId} AND is_active`;

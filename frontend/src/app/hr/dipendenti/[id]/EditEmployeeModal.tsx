@@ -93,17 +93,6 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
-  // Account di sistema collegato alla scheda (serve ai capi per usare Team e Richieste)
-  const [userId, setUserId] = useState(employee.user_id ? String(employee.user_id) : '');
-  const [accounts, setAccounts] = useState<{ id: number; username: string; display_name: string; employee_id: number | null; employee_name: string | null }[]>([]);
-  useEffect(() => {
-    if (!fullManage) return;
-    (async () => {
-      const res = await fetch(`${BACKEND}/api/hr/users`, { credentials: 'include' });
-      if (res.ok) setAccounts(await res.json());
-    })();
-  }, [fullManage]);
-
   // Coppia di co-responsabile: due persone che guidano insieme lo stesso team —
   // compaiono affiancate nell'organigramma. Si gestisce qui, non in una pagina a parte.
   const [existingPair, setExistingPair] = useState<HrCapoPair | null>(null);
@@ -141,7 +130,6 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
           tag_id: form.tag_id ? Number(form.tag_id) : null,
           contract_company_id: form.contract_company_id ? Number(form.contract_company_id) : null,
           capo_id: form.capo_id ? Number(form.capo_id) : null,
-          user_id: userId ? Number(userId) : null,
           data_cessazione: form.data_cessazione || null,
           indeterminato: form.indeterminato === '' ? null : form.indeterminato === 'si',
           indeterminato_data: form.indeterminato_data || null,
@@ -333,20 +321,6 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
                     <option value="">—</option>
                     {allEmployees.map(e => <option key={e.id} value={e.id}>{e.cognome} {e.nome}</option>)}
                   </select>
-                </div>
-                <div className="md:col-span-2"><label className="label">Account di sistema</label>
-                  <select className="input" value={userId} onChange={e => setUserId(e.target.value)}>
-                    <option value="">— Nessun account —</option>
-                    {accounts.map(a => {
-                      const taken = a.employee_id != null && a.employee_id !== employee.id;
-                      return (
-                        <option key={a.id} value={a.id} disabled={taken}>
-                          {a.display_name} ({a.username}){taken ? ` — già collegato a ${a.employee_name}` : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <p className="text-xs text-muted mt-1">Serve ai capi: con l&apos;account collegato vedono il proprio team e possono fare richieste.</p>
                 </div>
               </div>
             </div>

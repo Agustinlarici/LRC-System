@@ -152,7 +152,7 @@ export default function EmployeeDetailPage() {
       )}
       {manage && employee.n_riporti > 0 && !employee.user_id && (
         <p className="mb-4 rounded-ctl bg-warning-soft px-3 py-2 text-sm text-warning">
-          Questo capo non ha un account collegato: non può vedere il suo team né fare richieste. Collegalo da Modifica → Account di sistema.
+          Questo capo non ha un account collegato: non può vedere il suo team né fare richieste. L'account si collega dal menu IT (Sistema → Utenti → campo "Persona").
         </p>
       )}
       <PageHeader

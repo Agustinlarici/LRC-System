@@ -11,7 +11,40 @@ type User = {
   id: number; username: string; display_name: string; email: string | null;
   phone: string | null; department_id: number | null; department_name: string | null;
   role: 'guest' | 'operator' | 'it' | 'admin'; is_active: boolean;
+  employee_id: number | null; employee_name: string | null;
 };
+type HrPerson = { id: number; nome: string; cognome: string; matricola: string | null; user_id: number | null; linked_username: string | null };
+
+// Persone (schede HR) tra cui scegliere a chi appartiene l'account
+function useHrPeople(): HrPerson[] {
+  const [people, setPeople] = useState<HrPerson[]>([]);
+  useEffect(() => {
+    apiFetch('/api/auth/hr-employees').then(r => r.json()).then(setPeople).catch(() => {});
+  }, []);
+  return people;
+}
+
+function PersonSelect({ people, value, onChange, currentUserId, className }: {
+  people: HrPerson[]; value: string; onChange: (v: string) => void; currentUserId?: number; className: string;
+}) {
+  return (
+    <div>
+      <label className="block text-xs text-gray-600 mb-1">Persona (scheda HR)</label>
+      <select value={value} onChange={e => onChange(e.target.value)} className={className}>
+        <option value="">— Nessuna —</option>
+        {people.map(p => {
+          const taken = p.user_id !== null && p.user_id !== currentUserId;
+          return (
+            <option key={p.id} value={p.id} disabled={taken}>
+              {p.cognome} {p.nome}{p.matricola ? ` · ${p.matricola}` : ''}{taken ? ` — già collegata a ${p.linked_username}` : ''}
+            </option>
+          );
+        })}
+      </select>
+      <p className="text-xs text-gray-500 mt-1">Serve ai capi: con la persona collegata vedono il proprio team e fanno le richieste.</p>
+    </div>
+  );
+}
 type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci' | 'programma_produzione' | 'hr' | 'hr_salary' | 'hr_team' | 'ferrari_schede' | 'ferrari_supervisore';
 type Permission = { module_key: ModuleKey; can_view: boolean; can_manage: boolean };
 
@@ -383,7 +416,9 @@ function CreateUserTab({ departments, onCreated }: { departments: Department[]; 
     phone:         '',
     department_id: '',
     role:          'operator' as 'guest' | 'operator' | 'it' | 'admin',
+    employee_id:   '',
   });
+  const hrPeople = useHrPeople();
   const [permEdits, setPermEdits] = useState<Record<ModuleKey, { can_view: boolean; can_manage: boolean }>>(emptyPermEdits);
   const [saving,    setSaving]    = useState(false);
   const [error,     setError]     = useState('');
@@ -410,6 +445,7 @@ function CreateUserTab({ departments, onCreated }: { departments: Department[]; 
           email:         form.email || undefined,
           phone:         form.phone || undefined,
           department_id: form.department_id ? Number(form.department_id) : undefined,
+          employee_id:   form.employee_id ? Number(form.employee_id) : undefined,
         }),
       });
       const data = await res.json();
@@ -428,7 +464,7 @@ function CreateUserTab({ departments, onCreated }: { departments: Department[]; 
       });
 
       setSuccess(`Utente "${data.display_name}" creato.`);
-      setForm({ username: '', password: '', display_name: '', email: '', phone: '', department_id: '', role: 'operator' });
+      setForm({ username: '', password: '', display_name: '', email: '', phone: '', department_id: '', role: 'operator', employee_id: '' });
       setPermEdits(emptyPermEdits());
       onCreated();
     } catch { setError('Errore di connessione'); }
@@ -478,6 +514,8 @@ function CreateUserTab({ departments, onCreated }: { departments: Department[]; 
           </div>
         </div>
 
+        <PersonSelect people={hrPeople} value={form.employee_id} onChange={v => setForm(p => ({ ...p, employee_id: v }))} className={`${inputClass} bg-white`} />
+
         <div>
           <label className="block text-xs text-gray-600 mb-1">Ruolo</label>
           <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value as typeof form.role }))}
@@ -521,7 +559,9 @@ function EditUserTab({ users, departments, onSaved }: { users: User[]; departmen
     role:          'operator' as 'guest' | 'operator' | 'it' | 'admin',
     is_active:     true,
     password:      '',
+    employee_id:   '',
   });
+  const hrPeople = useHrPeople();
   const [saving,  setSaving]  = useState(false);
   const [error,   setError]   = useState('');
   const [success, setSuccess] = useState('');
@@ -539,6 +579,7 @@ function EditUserTab({ users, departments, onSaved }: { users: User[]; departmen
       role:          u.role,
       is_active:     u.is_active,
       password:      '',
+      employee_id:   u.employee_id?.toString() ?? '',
     });
   }
 
@@ -557,6 +598,7 @@ function EditUserTab({ users, departments, onSaved }: { users: User[]; departmen
           department_id: form.department_id ? Number(form.department_id) : null,
           role:          form.role,
           is_active:     form.is_active,
+          employee_id:   form.employee_id ? Number(form.employee_id) : null,
           ...(form.password ? { password: form.password } : {}),
         }),
       });
@@ -618,6 +660,8 @@ function EditUserTab({ users, departments, onSaved }: { users: User[]; departmen
                 {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
             </div>
+            <PersonSelect people={hrPeople} value={form.employee_id} onChange={v => setForm(p => ({ ...p, employee_id: v }))}
+              currentUserId={Number(selectedId) || undefined} className={`${inputClass} bg-white`} />
             <div>
               <label className="block text-xs text-gray-600 mb-1">Ruolo</label>
               <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value as typeof form.role }))}

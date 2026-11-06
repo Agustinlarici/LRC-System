@@ -110,14 +110,42 @@ authRoutes.post('/change-password', requireAuth, async (c) => {
   return c.json({ status: 'ok' });
 });
 
+// ─── Collegamento account ↔ persona (scheda HR) ───────────────────────────────
+// Si imposta da qui, quando IT crea o modifica l'account. Serve ai capi: con la scheda
+// collegata il sistema sa chi sono e quale team vedono. Una scheda ha un solo account e
+// un account una sola scheda.
+
+async function linkEmployee(tx: typeof db, userId: number, employeeId: number | null): Promise<void> {
+  await tx`UPDATE hr_employee SET user_id = NULL WHERE user_id = ${userId}`;
+  if (employeeId === null) return;
+  const [emp] = await tx`SELECT id, user_id, nome || ' ' || cognome AS name FROM hr_employee WHERE id = ${employeeId} AND stato <> 'cessato' FOR UPDATE`;
+  if (!emp) throw new HTTPException(404, { message: 'Persona non trovata' });
+  if (emp.user_id !== null) throw new HTTPException(409, { message: `${emp.name} ha già un altro account collegato` });
+  await tx`UPDATE hr_employee SET user_id = ${userId} WHERE id = ${employeeId}`;
+}
+
+// Persone (schede HR) tra cui scegliere nel form utente.
+authRoutes.get('/hr-employees', requireManage('tickets_admin'), async (c) => {
+  const rows = await db`
+    SELECT e.id, e.nome, e.cognome, e.matricola, e.user_id, u.username AS linked_username
+    FROM hr_employee e
+    LEFT JOIN users u ON u.id = e.user_id
+    WHERE e.stato <> 'cessato'
+    ORDER BY e.cognome, e.nome
+  `;
+  return c.json(rows);
+});
+
 // ─── Users list ───────────────────────────────────────────────────────────────
 
 authRoutes.get('/users', requireManage('tickets_admin'), async (c) => {
   const users = await db`
     SELECT u.id, u.username, u.display_name, u.email, u.phone, u.department_id, d.name AS department_name,
-           u.role, u.is_active, u.created_at
+           u.role, u.is_active, u.created_at,
+           e.id AS employee_id, (e.nome || ' ' || e.cognome) AS employee_name
     FROM users u
     LEFT JOIN ticket_departments d ON d.id = u.department_id
+    LEFT JOIN hr_employee e ON e.user_id = u.id
     ORDER BY u.display_name
   `;
   return c.json(users);
@@ -134,14 +162,19 @@ authRoutes.post('/users', requireManage('tickets_admin'), async (c) => {
     phone:         z.string().max(30).optional(),
     department_id: z.number().int().positive().optional(),
     role:          z.enum(['guest', 'operator', 'it', 'admin']).default('operator'),
+    employee_id:   z.number().int().positive().optional(),
   }));
 
   const password_hash = await hash(body.password, 10);
-  const [created] = await db`
-    INSERT INTO users (username, password_hash, display_name, email, phone, department_id, role, must_change_password)
-    VALUES (${body.username}, ${password_hash}, ${body.display_name}, ${body.email ?? null}, ${body.phone ?? null}, ${body.department_id ?? null}, ${body.role ?? 'operator'}, TRUE)
-    RETURNING id, username, display_name, email, phone, department_id, role, is_active, created_at
-  `;
+  const created = await db.begin(async (tx) => {
+    const [row] = await tx`
+      INSERT INTO users (username, password_hash, display_name, email, phone, department_id, role, must_change_password)
+      VALUES (${body.username}, ${password_hash}, ${body.display_name}, ${body.email ?? null}, ${body.phone ?? null}, ${body.department_id ?? null}, ${body.role ?? 'operator'}, TRUE)
+      RETURNING id, username, display_name, email, phone, department_id, role, is_active, created_at
+    `;
+    if (body.employee_id) await linkEmployee(tx as unknown as typeof db, row.id, body.employee_id);
+    return row;
+  });
   const actor = c.get('user');
   await auditLog({ userId: actor.id, username: actor.username, action: 'user_created', entity: 'users', entityId: created.id, details: { new_username: body.username, role: body.role } });
   return c.json(created, 201);
@@ -161,6 +194,7 @@ authRoutes.patch('/users/:id', requireManage('tickets_admin'), async (c) => {
     role:          z.enum(['guest', 'operator', 'it', 'admin']).optional(),
     is_active:     z.boolean().optional(),
     password:      z.string().min(6).optional(),
+    employee_id:   z.number().int().positive().nullable().optional(),   // null = scollega la persona
   }));
 
   const updates: Record<string, any> = {};
@@ -175,17 +209,23 @@ authRoutes.patch('/users/:id', requireManage('tickets_admin'), async (c) => {
     updates.must_change_password = true;
   }
 
-  if (!Object.keys(updates).length) {
+  if (!Object.keys(updates).length && body.employee_id === undefined) {
     throw new HTTPException(400, { message: 'Nessun campo da aggiornare' });
   }
 
-  const [updated] = await db`
-    UPDATE users SET ${db(updates)} WHERE id = ${id}
-    RETURNING id, username, display_name, email, phone, department_id, role, is_active
-  `;
-  if (!updated) throw new HTTPException(404, { message: 'Utente non trovato' });
+  const updated = await db.begin(async (tx) => {
+    const [row] = Object.keys(updates).length
+      ? await tx`
+          UPDATE users SET ${tx(updates)} WHERE id = ${id}
+          RETURNING id, username, display_name, email, phone, department_id, role, is_active
+        `
+      : await tx`SELECT id, username, display_name, email, phone, department_id, role, is_active FROM users WHERE id = ${id}`;
+    if (!row) throw new HTTPException(404, { message: 'Utente non trovato' });
+    if (body.employee_id !== undefined) await linkEmployee(tx as unknown as typeof db, id, body.employee_id);
+    return row;
+  });
   const actor = c.get('user');
-  const changedFields = Object.keys(updates).filter(k => k !== 'password_hash');
+  const changedFields = [...Object.keys(updates).filter(k => k !== 'password_hash'), ...(body.employee_id !== undefined ? ['employee_id'] : [])];
   await auditLog({ userId: actor.id, username: actor.username, action: 'user_updated', entity: 'users', entityId: id, details: { changed_fields: changedFields } });
   return c.json(updated);
 });
