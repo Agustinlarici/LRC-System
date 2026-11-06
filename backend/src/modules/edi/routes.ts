@@ -43,6 +43,8 @@ const EdiClientSchema = z.object({
   csg_supply_point:          z.string().max(17).nullish(),
   output_folder:             z.string().min(1),
   auto_generate:             z.boolean().default(false),
+  // Parametri specifici del tipo EDI (es. DESADV_AUDI: DUNS, acquirente, indirizzo di scarico)
+  edi_params:                z.record(z.string(), z.string().max(256)).default({}),
 });
 
 const GenerateSchema = z.object({
@@ -52,6 +54,10 @@ const GenerateSchema = z.object({
   document_date:   z.string().nullish(),
   is_extra_cee:    z.boolean().default(false),
   force:           z.boolean().default(false),
+  // Pesi della consegna in kg (DESADV_AUDI: MEA+AAX+AAD/AAL/T)
+  gross_weight:    z.number().nullish(),
+  net_weight:      z.number().nullish(),
+  tare_weight:     z.number().nullish(),
   lines: z.array(z.object({
     article_code:    z.string(),
     description:     z.string(),
@@ -116,7 +122,7 @@ ediRoutes.post('/clients', requireManage(MODULE), async (c) => {
       sdt_vat, supplier_code,
       csg_establishment_code, csg_company_name,
       csg_address_1, csg_address_2, csg_address_3, csg_address_4,
-      csg_supply_point, output_folder, auto_generate
+      csg_supply_point, output_folder, auto_generate, edi_params
     ) VALUES (
       ${b.customer_account}, ${b.description}, ${b.edi_type},
       ${b.cdt_company_name ?? ''}, ${b.cdt_vat ?? ''},
@@ -126,7 +132,8 @@ ediRoutes.post('/clients', requireManage(MODULE), async (c) => {
       ${b.csg_establishment_code}, ${b.csg_company_name ?? ''},
       ${b.csg_address_1 ?? null}, ${b.csg_address_2 ?? null},
       ${b.csg_address_3 ?? null}, ${b.csg_address_4 ?? null},
-      ${b.csg_supply_point ?? null}, ${b.output_folder}, ${b.auto_generate ?? false}
+      ${b.csg_supply_point ?? null}, ${b.output_folder}, ${b.auto_generate ?? false},
+      ${db.json(JSON.parse(JSON.stringify(b.edi_params ?? {})))}
     ) RETURNING *
   `;
   return c.json(row, 201);
@@ -169,6 +176,7 @@ ediRoutes.put('/clients/:id', requireManage(MODULE), async (c) => {
       csg_supply_point        = ${b.csg_supply_point ?? null},
       output_folder           = ${b.output_folder},
       auto_generate           = ${b.auto_generate ?? false},
+      edi_params              = ${db.json(JSON.parse(JSON.stringify(b.edi_params ?? {})))},
       updated_at              = NOW()
     WHERE id = ${id}
     RETURNING *

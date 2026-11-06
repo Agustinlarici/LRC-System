@@ -346,6 +346,7 @@ export interface EdiClient {
   csg_supply_point:           string | null;
   output_folder:              string;
   auto_generate:              boolean;
+  edi_params:                 Record<string, string>;
   created_at:                 string;
   updated_at:                 string;
 }
