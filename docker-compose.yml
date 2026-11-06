@@ -72,6 +72,12 @@ services:
       WEBTHRON_DB:    ${WEBTHRON_DB:-WebThron}
       WEBTHRON_USER:  ${WEBTHRON_USER:-}
       WEBTHRON_PASS:  ${WEBTHRON_PASS:-}
+      # Osti (MySQL) — sincronizzazione dipendenti HR, sola lettura
+      OSTI_HOST:      ${OSTI_HOST:-}
+      OSTI_PORT:      ${OSTI_PORT:-3306}
+      OSTI_DB:        ${OSTI_DB:-juniorweb}
+      OSTI_USER:      ${OSTI_USER:-}
+      OSTI_PASS:      ${OSTI_PASS:-}
       TZ:             Europe/Rome
       WEBTHRON_TZ:    ${WEBTHRON_TZ:-+01:00}
       # JWT (Ticket IT)
