@@ -21,6 +21,7 @@ export function costruisciSnapshot(g: {
   colonne: string[]; sotto_sigle: { codice: string; padre: string | null }[]; alias: Record<string, string>; modelli: string[];
   esempi?: SnapshotSigle['esempi'];
   decisioni?: NonNullable<SnapshotSigle['decisioni']>; componenti?: NonNullable<SnapshotSigle['componenti']>;
+  modelli_noti?: string[]; modelli_alias?: NonNullable<SnapshotSigle['modelli_alias']>;
 }): SnapshotSigle {
   const sotto = new Map<string, string | null>();
   for (const s of g.sotto_sigle) sotto.set(s.codice, sotto.has(s.codice) && sotto.get(s.codice) !== s.padre ? null : s.padre);   // padri diversi per modello = «in qualsiasi voce»
@@ -37,6 +38,10 @@ export function costruisciSnapshot(g: {
   const componenti = [...(g.componenti ?? [])].sort((a, b) => a.modello.localeCompare(b.modello) || a.nome.localeCompare(b.nome));
   if (decisioni.length) corpo.decisioni = decisioni;
   if (componenti.length) corpo.componenti = componenti;
+  const noti = [...new Set(g.modelli_noti ?? [])];                                 // ordine di creazione della VM
+  const alias = [...(g.modelli_alias ?? [])].sort((a, b) => a.sbagliato.localeCompare(b.sbagliato));
+  if (noti.length) corpo.modelli_noti = noti;
+  if (alias.length) corpo.modelli_alias = alias;
   return { versione_sigle: versioneSigle(corpo), ...corpo };
 }
 
@@ -53,5 +58,7 @@ export async function leggiSnapshotDaDb(): Promise<SnapshotSigle> {
     modelli: modelli.map(m => m.modello),
     decisioni: sigle.map(s => ({ modello: s.modello, codice: s.codice, va: s.va, sub: s.sub, alias: s.alias, nosigla: s.nosigla, padre: s.padre })),
     componenti: await esportaComponenti(db),
+    modelli_noti: (await db<{ modello: string }[]>`SELECT modello FROM ferrari_modello_noto ORDER BY creato_at, modello`).map(m => m.modello),
+    modelli_alias: await db<{ sbagliato: string; giusto: string }[]>`SELECT sbagliato, giusto FROM ferrari_modello_alias`,
   });
 }
