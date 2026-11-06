@@ -9,6 +9,8 @@ import { Tabs } from '@/components/ui/Tabs';
 import { StatusBadge, type Tone } from '@/components/ui/StatusBadge';
 import { SkeletonTable } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ProponiModificaModal } from '../dipendenti/[id]/ProponiModificaModal';
+import type { HrEmployee, HrDepartment } from '@/types';
 
 type Tipo = 'ferie' | 'permesso' | 'malattia' | 'infortunio';
 
@@ -87,6 +89,10 @@ export default function RichiestePage() {
   // Per ogni campo proposto: true = approva (default), false = rifiuta
   const [decisions, setDecisions] = useState<Record<number, boolean>>({});
   const [notes, setNotes] = useState<Record<number, string>>({});
+  // Nuova proposta di modifica scheda: prima si sceglie la persona, poi si apre il modulo
+  const [showPick, setShowPick] = useState(false);
+  const [pickId, setPickId] = useState('');
+  const [proposeFor, setProposeFor] = useState<{ employee: HrEmployee; departments: HrDepartment[] } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -98,6 +104,8 @@ export default function RichiestePage() {
       setRequests(r);
       setChanges(c);
       setPeople(p);
+      // Aggiorna il contatore rosso nella sidebar di HR
+      window.dispatchEvent(new Event('hr-requests-changed'));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Errore di caricamento');
       setRequests([]);
@@ -123,6 +131,21 @@ export default function RichiestePage() {
       setShowForm(false);
       setForm({ employee_id: '', tipo: 'ferie', data_inizio: '', data_fine: '', motivo: '' });
       await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Errore');
+    }
+  }
+
+  async function startPropose(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const [employee, departments] = await Promise.all([
+        api.get<HrEmployee>(`/api/hr/employees/${pickId}`),
+        api.get<HrDepartment[]>('/api/hr/departments'),
+      ]);
+      setProposeFor({ employee, departments });
+      setShowPick(false);
+      setPickId('');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Errore');
     }
@@ -170,7 +193,8 @@ export default function RichiestePage() {
         back={{ label: 'Risorse Umane', href: '/hr' }}
         title="Richieste"
         description={canManage ? 'Ferie, permessi, malattie e modifiche scheda da approvare' : 'Richieste tue e del tuo team: le approva HR'}
-        actions={tab === 'ferie' && <button type="button" className="btn-primary" onClick={() => setShowForm(v => !v)}>Nuova richiesta</button>}
+        actions={<button type="button" className="btn-primary"
+          onClick={() => (tab === 'ferie' ? setShowForm(v => !v) : setShowPick(v => !v))}>Nuova richiesta</button>}
       />
 
       <Tabs
@@ -261,6 +285,29 @@ export default function RichiestePage() {
             </div>
           )}
         </>
+      )}
+
+      {tab === 'modifiche' && showPick && (
+        <form onSubmit={startPropose} className="card mb-4 flex flex-wrap items-end gap-3">
+          <div className="min-w-[220px] flex-1">
+            <label className="label">Per chi vuoi proporre una modifica?</label>
+            <select className="input" required value={pickId} onChange={e => setPickId(e.target.value)}>
+              <option value="">—</option>
+              {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <button type="button" className="btn-secondary" onClick={() => setShowPick(false)}>Annulla</button>
+          <button type="submit" className="btn-primary">Continua</button>
+        </form>
+      )}
+
+      {proposeFor && (
+        <ProponiModificaModal
+          employee={proposeFor.employee}
+          departments={proposeFor.departments}
+          onClose={() => setProposeFor(null)}
+          onSent={() => { setProposeFor(null); toast.success('Proposta inviata a HR'); load(); }}
+        />
       )}
 
       {tab === 'modifiche' && (

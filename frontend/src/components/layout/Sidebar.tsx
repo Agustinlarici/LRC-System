@@ -98,6 +98,7 @@ export function Sidebar() {
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const { user, canView, canManage, logout } = useAuth();
   const [deadlineCount, setDeadlineCount] = useState(0);
+  const [requestCount, setRequestCount] = useState(0);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -128,6 +129,22 @@ export function Sidebar() {
     window.addEventListener('hr-deadlines-changed', loadCount);
     return () => { cancelled = true; window.removeEventListener('hr-deadlines-changed', loadCount); };
   }, [canSeeHr, pathname]);
+
+  // Richieste (ferie, assenze, modifiche scheda) in attesa di decisione: solo per chi gestisce HR.
+  const canManageHr = canManage('hr');
+  useEffect(() => {
+    if (!canManageHr) { setRequestCount(0); return; }
+    let cancelled = false;
+    async function loadCount() {
+      try {
+        const res = await fetch(`${BACKEND}/api/hr/requests-pending-count`, { credentials: 'include' });
+        if (res.ok && !cancelled) setRequestCount((await res.json()).count ?? 0);
+      } catch { /* badge opzionale */ }
+    }
+    loadCount();
+    window.addEventListener('hr-requests-changed', loadCount);
+    return () => { cancelled = true; window.removeEventListener('hr-requests-changed', loadCount); };
+  }, [canManageHr, pathname]);
 
   // Restore sidebar expanded state + open the group containing the current page
   useEffect(() => {
@@ -243,7 +260,7 @@ export function Sidebar() {
                   >
                     <span>{group}</span>
                     <span className="flex items-center gap-1.5">
-                      {group === 'HR' && !groupOpen && <CountBadge n={deadlineCount} />}
+                      {group === 'HR' && !groupOpen && <CountBadge n={deadlineCount + requestCount} />}
                       <IconChevron open={groupOpen} />
                     </span>
                   </button>
@@ -261,6 +278,7 @@ export function Sidebar() {
                             <span className="nudge-icon flex"><Icon /></span>
                             <span className="truncate font-medium flex-1">{m.label}</span>
                             {m.href === '/hr/scadenze' && <CountBadge n={deadlineCount} />}
+                            {m.href === '/hr/richieste' && <CountBadge n={requestCount} />}
                           </Link>
                         );
                       })}
@@ -275,7 +293,7 @@ export function Sidebar() {
                 >
                   <span className="relative">
                     <GroupIcon />
-                    {group === 'HR' && <CountBadge n={deadlineCount} className="absolute -top-1.5 -right-2" />}
+                    {group === 'HR' && <CountBadge n={deadlineCount + requestCount} className="absolute -top-1.5 -right-2" />}
                   </span>
                 </button>
               )}
