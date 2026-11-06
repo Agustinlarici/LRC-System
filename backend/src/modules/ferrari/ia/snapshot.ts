@@ -4,6 +4,7 @@
 import { createHash } from 'node:crypto';
 import { db } from '../../../db/client.js';
 import { stableStringify } from '../bundle.js';
+import { esportaComponenti } from '../componenti-base.js';
 import type { SnapshotSigle } from './contratto.js';
 
 type Corpo = Omit<SnapshotSigle, 'versione_sigle'>;
@@ -19,6 +20,7 @@ export function versioneSigle(corpo: Corpo): string {
 export function costruisciSnapshot(g: {
   colonne: string[]; sotto_sigle: { codice: string; padre: string | null }[]; alias: Record<string, string>; modelli: string[];
   esempi?: SnapshotSigle['esempi'];
+  decisioni?: NonNullable<SnapshotSigle['decisioni']>; componenti?: NonNullable<SnapshotSigle['componenti']>;
 }): SnapshotSigle {
   const sotto = new Map<string, string | null>();
   for (const s of g.sotto_sigle) sotto.set(s.codice, sotto.has(s.codice) && sotto.get(s.codice) !== s.padre ? null : s.padre);   // padri diversi per modello = «in qualsiasi voce»
@@ -29,12 +31,18 @@ export function costruisciSnapshot(g: {
     modelli: ordina(g.modelli),
     esempi: g.esempi ?? [],
   };
+  // le liste vuote non si mandano: l'hash di prima (senza questi campi) resta valido. L'ordine delle decisioni e' quello della VM.
+  const viste = new Set<string>();
+  const decisioni = (g.decisioni ?? []).filter(d => { const k = `${d.modello}\u0000${d.codice}`; return !viste.has(k) && !!viste.add(k); });
+  const componenti = [...(g.componenti ?? [])].sort((a, b) => a.modello.localeCompare(b.modello) || a.nome.localeCompare(b.nome));
+  if (decisioni.length) corpo.decisioni = decisioni;
+  if (componenti.length) corpo.componenti = componenti;
   return { versione_sigle: versioneSigle(corpo), ...corpo };
 }
 
 export async function leggiSnapshotDaDb(): Promise<SnapshotSigle> {
-  const sigle = await db<{ codice: string; va: boolean; sub: boolean; alias: string | null; nosigla: boolean; padre: string | null }[]>`
-    SELECT codice, va, sub, alias, nosigla, padre FROM ferrari_sigla`;
+  const sigle = await db<{ modello: string; codice: string; va: boolean; sub: boolean; alias: string | null; nosigla: boolean; padre: string | null }[]>`
+    SELECT modello, codice, va, sub, alias, nosigla, padre FROM ferrari_sigla ORDER BY ordine`;
   const modelli = await db<{ modello: string }[]>`
     SELECT modello FROM ferrari_modello_noto
     UNION SELECT DISTINCT modello FROM ferrari_file WHERE modello IS NOT NULL AND stato NOT IN ('SOSTITUITO', 'QUARANTENA', 'RIFIUTATO')`;
@@ -43,5 +51,7 @@ export async function leggiSnapshotDaDb(): Promise<SnapshotSigle> {
     sotto_sigle: sigle.filter(s => s.va && s.sub && !s.nosigla && !s.alias).map(s => ({ codice: s.codice, padre: s.padre })),
     alias: Object.fromEntries(sigle.filter(s => s.alias).map(s => [s.codice, s.alias!])),
     modelli: modelli.map(m => m.modello),
+    decisioni: sigle.map(s => ({ modello: s.modello, codice: s.codice, va: s.va, sub: s.sub, alias: s.alias, nosigla: s.nosigla, padre: s.padre })),
+    componenti: await esportaComponenti(db),
   });
 }

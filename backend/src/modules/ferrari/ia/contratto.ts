@@ -34,6 +34,13 @@ export const SnapshotSigleSchema = z.object({
   alias: z.record(z.string(), z.string()),
   modelli: z.array(z.string()),
   esempi: z.array(z.object({ voce: z.string(), testo: z.string(), dettaglio: z.string() })),
+  // facoltativi (presenti solo se non vuoti): TUTTE le decisioni della VM, per modello ('*' = tutti i modelli), «non mi serve»,
+  // «non e' una sigla» e alias compresi, e i componenti. La PC IA li copia cosi' com'e', senza richiederli.
+  decisioni: z.array(z.object({
+    modello: z.string(), codice: z.string(), va: z.boolean(), sub: z.boolean(),
+    alias: z.string().nullable(), nosigla: z.boolean(), padre: z.string().nullable(),
+  })).optional(),
+  componenti: z.array(z.object({ modello: z.string(), nome: z.string(), termini: z.array(z.string()) })).optional(),
 });
 export type SnapshotSigle = z.infer<typeof SnapshotSigleSchema>;
 
