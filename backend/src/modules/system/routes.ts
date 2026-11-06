@@ -2,9 +2,10 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { parseBody } from '../../lib/validate.js';
-import { getIKnowFlags, setIKnowFlags, assertIKnowEnabled, IKNOW_QUERY_FLAGS } from '../../lib/system-flags.js';
+import { getIKnowFlags, setIKnowFlags, assertIKnowEnabled, isIKnowEnabled, IKNOW_QUERY_FLAGS } from '../../lib/system-flags.js';
 import { getAllStats, startRun, endRun, failRun } from '../../lib/sync-stats.js';
 import { refreshLookupTables } from '../monitor/pg-webthron-sync.js';
+import { startFirstSync, getFirstSyncStatus, cancelFirstSync } from '../monitor/first-sync.js';
 import { executiveRefresh } from '../monitor/executive-cache.js';
 import { syncPackArticles } from '../packing/bc-client.js';
 import { snapshotDayFromHistory } from '../dashboards/heatmap.js';
@@ -44,6 +45,34 @@ systemRoutes.get('/sync-status', (c) => {
     };
   }
   return c.json(out);
+});
+
+// ─── Carica iniziale dello storico (ultimi N giorni, default 90) ─────────────────
+// Richiede i toggle «iKnow generale» e «Backfill manuali». Un giorno alla volta, in background.
+
+const clampInt = (raw: string | undefined, fallback: number, min: number, max: number) => {
+  const n = parseInt(raw ?? '', 10);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+};
+
+systemRoutes.post('/first-sync', requireAuth, async (c) => {
+  if (!(await isIKnowEnabled('iknow_backfill_enabled'))) {
+    return c.json({ message: 'Attiva prima «iKnow — Generale» e «Backfill manuali» in Avanzata' }, 503);
+  }
+  if (getFirstSyncStatus().running) {
+    return c.json({ message: 'Carica iniziale già in corso', status: getFirstSyncStatus() }, 409);
+  }
+  const days     = clampInt(c.req.query('days'), 90, 1, 120);
+  const pauseSec = clampInt(c.req.query('pause_sec'), 3, 1, 600);
+  const status   = startFirstSync({ days, pauseSec });
+  return c.json({ message: `Carica iniziale avviata: ultimi ${days} giorni, un giorno alla volta`, status }, 202);
+});
+
+systemRoutes.get('/first-sync', (c) => c.json(getFirstSyncStatus()));
+
+systemRoutes.post('/first-sync/cancel', requireAuth, (c) => {
+  const stopped = cancelFirstSync();
+  return c.json({ message: stopped ? 'Si fermerà dopo il giorno in corso' : 'Nessuna carica in corso' });
 });
 
 // POST /api/system/lookup-refresh — aggiorna fasi e combos da WebThron subito

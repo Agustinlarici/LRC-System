@@ -22,6 +22,28 @@ export const IKNOW_QUERY_FLAGS = [
 
 export type IKnowQueryFlag = (typeof IKNOW_QUERY_FLAGS)[number];
 
+/**
+ * Interruttori delle sincronizzazioni verso iKnow. Bucci ha una connessione tutta sua e, finché
+ * le sincronizzazioni sono spente, è l'unica che deve funzionare: attivarne una la chiude.
+ */
+export const IKNOW_SYNC_FLAGS = [
+  'iknow_andon_enabled',
+  'iknow_nightly_enabled',
+  'iknow_lookup_enabled',
+  'iknow_buffer_enabled',
+  'iknow_backfill_enabled',
+] as const;
+
+/**
+ * Se la modifica accende una sincronizzazione, spegne anche Bucci (a meno che la stessa modifica
+ * non lo accenda esplicitamente). Riaccendere Bucci dopo resta possibile a mano.
+ */
+export function closeBucciWhenSyncOpens<T extends Partial<IKnowFlags>>(partial: T): T {
+  const opensSync = IKNOW_SYNC_FLAGS.some(k => partial[k] === true);
+  if (!opensSync || partial.iknow_bucci_enabled === true) return partial;
+  return { ...partial, iknow_bucci_enabled: false };
+}
+
 export type IKnowFlags = { iknow_enabled: boolean } & Record<IKnowQueryFlag, boolean>;
 
 const ALL_KEYS = ['iknow_enabled', ...IKNOW_QUERY_FLAGS] as const;
@@ -59,7 +81,7 @@ export async function getIKnowFlags(): Promise<IKnowFlags> {
 }
 
 export async function setIKnowFlags(partial: Partial<IKnowFlags>): Promise<IKnowFlags> {
-  for (const [key, val] of Object.entries(partial)) {
+  for (const [key, val] of Object.entries(closeBucciWhenSyncOpens(partial))) {
     await db`
       INSERT INTO system_config (key, value, updated_at)
       VALUES (${key}, ${String(val)}, NOW())

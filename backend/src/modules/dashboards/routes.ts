@@ -8,12 +8,13 @@ import {
   romeOffsetForDate,
   OeeHourCell,
   snapshotDayFromHistory,
-  queryWebthronRange,
 } from './heatmap.js';
 import type { WebthronEvent as HeatmapWebthronRow } from '../monitor/mysql-client.js';
 import { getAvailableFasi, getAvailableComponenti, computeLeadTime, SPMA_PIANO_FASE } from './lead-time.js';
 import { logger } from '../../lib/logger.js';
 import { assertIKnowEnabled } from '../../lib/system-flags.js';
+import { dayBoundsNaive } from '../monitor/webthron-time.js';
+import { getActiveLineeWithCombos, loadDayIntoHistory } from '../monitor/pg-webthron-sync.js';
 
 export const dashboardsRoutes = new Hono();
 
@@ -416,7 +417,7 @@ dashboardsRoutes.post('/lead-time/backfill', async (c) => {
 
   const fromStr  = c.req.query('from');
   const toStr    = c.req.query('to');
-  const pauseSec = Math.max(30, parseInt(c.req.query('pause_sec') ?? '120', 10)); // default 2 min
+  const pauseSec = Math.max(2, parseInt(c.req.query('pause_sec') ?? '5', 10)); // default 5 s: ogni giorno è letto a rebanadine corte
   const force    = c.req.query('force') === 'true'; // bypass completeness check
 
   if (!fromStr || !toStr || !/^\d{4}-\d{2}-\d{2}$/.test(fromStr) || !/^\d{4}-\d{2}-\d{2}$/.test(toStr)) {
@@ -460,15 +461,7 @@ dashboardsRoutes.post('/lead-time/backfill', async (c) => {
   historyBackfillRunning = true;
   historyBackfillStatus  = { done: 0, total: days.length, current: '', errors: [] };
 
-  type LineaCombo = { fase: string; modello: string; componente: string };
-  const combos = (await db`
-    SELECT DISTINCT ml.fase, mlc.modello, mlc.componente
-    FROM monitor_linea ml
-    JOIN monitor_linea_combo mlc ON mlc.linea_id = ml.id
-    WHERE ml.attivo = true
-  `) as unknown as LineaCombo[];
-  const deliberaFasi = (process.env.DELIBERA_FASI ?? 'DELIBERA FINALE,DELIBERA FINALE PROX')
-    .split(',').map(s => s.trim()).filter(Boolean);
+  const combos = await getActiveLineeWithCombos();
 
   if (combos.length === 0) {
     historyBackfillRunning = false;
@@ -506,32 +499,9 @@ dashboardsRoutes.post('/lead-time/backfill', async (c) => {
           insertedCount = result.count;
           logger.info(`[HistoryBackfill] ${day} (da cache locale) — +${insertedCount} eventi`);
         } else {
-          // Past day: query MySQL (lightweight — one day, timeout, zombie protections in place)
-          const rows = await queryWebthronRange(
-            day, day,
-            combos as Array<{ fase: string; modello: string; componente: string }>,
-            deliberaFasi,
-          );
-          if (rows.length > 0) {
-            const records = rows.map((r: HeatmapWebthronRow) => ({
-              fase:             r.fase,
-              modello:          r.modello,
-              componente:       r.componente,
-              cod_seriale:      r.cod_seriale,
-              commessa:         r.commessa ?? null,
-              esito_delibera:   r.esito_delibera ?? null,
-              data_inserimento: r.data_inserimento,
-              data_cache:       day,
-            }));
-            const result = await db`
-              INSERT INTO webthron_events_history ${db(records)}
-              ON CONFLICT (fase, cod_seriale, data_inserimento)
-              DO UPDATE SET commessa = EXCLUDED.commessa
-              WHERE webthron_events_history.commessa IS NULL
-            `;
-            insertedCount = result.count;
-          }
-          logger.info(`[HistoryBackfill] ${day} — +${insertedCount} eventi`);
+          // Past day: stessa lettura della rilettura notturna (rebanadine di 4 ore, campi nuovi inclusi)
+          insertedCount = await loadDayIntoHistory(day);
+          logger.info(`[HistoryBackfill] ${day} — ${insertedCount} eventi letti`);
         }
 
         historyBackfillStatus!.done++;
@@ -584,10 +554,10 @@ dashboardsRoutes.post('/lead-time/patch-commessa', async (c) => {
 
   // Minimal MySQL query — only the fields needed to patch commessa.
   // No combo filter (no model/component conditions) — just date + NOT NULL guards.
-  // MAX_EXECUTION_TIME(60000) = 1 min server-side kill.
-  // Driver timeout: 90 sec. Connection pool: limit 2, wait_timeout=300.
+  // Filtro di giorno sull'indice di datain (stessi limiti del vecchio CONVERT_TZ +01:00, senza scansione).
+  // Il limite di tempo vero è max_statement_time di sessione (vedi monitor/mysql-client.ts).
   const sql = `
-    SELECT /*+ MAX_EXECUTION_TIME(60000) */
+    SELECT
       Extra186.stringa AS cod_seriale,
       Extra30.stringa  AS commessa,
       ubi.datain       AS data_inserimento
@@ -595,16 +565,17 @@ dashboardsRoutes.post('/lead-time/patch-commessa', async (c) => {
     LEFT JOIN ikExtra Extra186 ON ubi.iddocu = Extra186.iddocu AND Extra186.idcampo = 186 AND Extra186.idcomm = 0 AND Extra186.seq = 0
     LEFT JOIN ikExtra Extra30  ON ubi.iddocu = Extra30.iddocu  AND Extra30.idcampo  = 30  AND Extra30.idcomm  = 0 AND Extra30.seq  = 0
     WHERE ubi.tipdoc IN ('0080','1520','5004','5005','5006','5007','5010','5016','PX01','0160','0090','5019','1040','5009','5018','0480','5020')
-      AND DATE(CONVERT_TZ(ubi.datain, '+00:00', '+01:00')) = ?
+      AND ubi.datain >= ? AND ubi.datain < ?
       AND Extra186.stringa IS NOT NULL
       AND Extra30.stringa  IS NOT NULL
     LIMIT 50000
   `;
 
+  const bounds = dayBoundsNaive(dateStr);
   const { getWebthronPool } = await import('../monitor/mysql-client.js');
   const [rows] = await getWebthronPool().execute(
-    { sql, timeout: 90_000 },
-    [dateStr],
+    { sql, timeout: 30_000 },
+    [bounds.from, bounds.to],
   ) as [Array<{ cod_seriale: string; commessa: string; data_inserimento: Date }>, unknown];
 
   if (rows.length === 0) {

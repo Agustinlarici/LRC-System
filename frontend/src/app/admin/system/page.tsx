@@ -130,8 +130,8 @@ const IKNOW_QUERIES: { key: keyof Omit<IKnowFlags, 'iknow_enabled'>; label: stri
   { key: 'iknow_nightly_enabled',  label: 'Rilettura notturna',                           description: 'Rilegge tutta la giornata precedente per sistemare i dati — ogni notte alle 01:00' },
   { key: 'iknow_lookup_enabled',   label: 'Fasi e combinazioni',                          description: 'Aggiorna fasi, modelli e componenti — ogni notte alle 02:00, a mano da Fasi iKnow e all’avvio se le liste sono vuote' },
   { key: 'iknow_buffer_enabled',   label: 'Buffer',                                       description: 'Ricalcola i seriali in pre-area dallo storico locale — ogni 30 minuti' },
-  { key: 'iknow_bucci_enabled',    label: 'Spedizione Bucci',                             description: 'Cerca seriali e commesse in iKnow durante scansione e verifica delle spedizioni' },
-  { key: 'iknow_backfill_enabled', label: 'Backfill manuali',                             description: 'Ricarico storico di Heatmap, Lead time e correzione commesse (solo su richiesta)' },
+  { key: 'iknow_bucci_enabled',    label: 'Spedizione Bucci',                             description: 'Cerca seriali e commesse in iKnow durante scansione e verifica delle spedizioni. Se attivi una sincronizzazione qui sotto, questo interruttore si spegne da solo' },
+  { key: 'iknow_backfill_enabled', label: 'Backfill manuali',                             description: 'Carica iniziale dello storico (pulsante in Aggiornamenti sistema → Azioni manuali), Heatmap, Lead time e correzione commesse (solo su richiesta)' },
 ];
 
 function AvanzataTab() {
@@ -899,7 +899,8 @@ function severityBadge(s: string) {
 }
 
 const JOB_LABELS: Record<string, string> = {
-  sync_incremental:  'Sync WebThron (10 min)',
+  sync_incremental:  'Sync WebThron (30 s)',
+  first_sync:        'Carica iniziale storico iKnow',
   sync_full:         'Sync WebThron — prima esecuzione',
   sync_full_day:     'Sync Full Day (01:00)',
   heatmap_snapshot:  'Snapshot OEE (01:00)',
@@ -1062,6 +1063,7 @@ function AggiornamentiTab() {
               <div className="space-y-2">
                 {([
                   ['force-sync',              'Sync WebThron ora'],
+                  ['first-sync',              'Carica storico iKnow (ultimi 90 giorni)'],
                   ['force-bc-sync',           'Sync Business Central ora'],
                   ['force-lookup',            'Refresh lookup tables'],
                   ['force-snapshot',          'Snapshot OEE ieri'],
