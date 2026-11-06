@@ -78,6 +78,15 @@ const requestSelect = db`
   LEFT JOIN users du ON du.id = r.decided_by_user_id
 `;
 
+// Richieste da decidere (ferie/assenze + modifiche scheda): numero mostrato nella sidebar di HR.
+hrRoutes.get('/requests-pending-count', requireManage('hr'), async (c) => {
+  const [row] = await db<{ n: number }[]>`
+    SELECT ((SELECT COUNT(*) FROM hr_request WHERE stato = 'in_attesa')
+          + (SELECT COUNT(*) FROM hr_change_request WHERE stato = 'in_attesa'))::int AS n
+  `;
+  return c.json({ count: row?.n ?? 0 });
+});
+
 hrRoutes.get('/requests', requireModuleAny('hr', 'hr_team'), async (c) => {
   const user = c.get('user');
   if (hasHrManage(user)) {
