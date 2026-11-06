@@ -117,6 +117,7 @@ export default function DipendentiPage() {
   const [fCitta, setFCitta] = useState('');
   const [fCap, setFCap] = useState('');
   const [fNomeOsti, setFNomeOsti] = useState('');
+  const [fOstiSync, setFOstiSync] = useState<'' | 'si' | 'no'>('');   // abbinato a Osti (ha il Nome Osti) o no
   const [fProv, setFProv] = useState('');
   const [fGruppo, setFGruppo] = useState('');
   const [fNascitaDa, setFNascitaDa] = useState('');
@@ -217,7 +218,7 @@ export default function DipendentiPage() {
   useEffect(() => { load(); }, [load]);
 
   // filtri aggiuntivi attivi: si vedono sul pulsante anche quando il pannello è chiuso
-  const extraCount = [fEmail, fIndirizzo, fCitta, fCap, fNomeOsti, fProv, fGruppo, fMese, fGiorno,
+  const extraCount = [fEmail, fIndirizzo, fCitta, fCap, fNomeOsti, fOstiSync, fProv, fGruppo, fMese, fGiorno,
     fNascitaDa || fNascitaA, fAssunzioneDa || fAssunzioneA, fCessazioneDa || fCessazioneA].filter(Boolean).length;
   const hasFilters = !!(fNominativo || fMatricola || fMansione || fResp || fSesso || fCategoria
     || fNazionalita || fTipoNaz || fLivello || fTipoContratto || funzioneFilter || repartoFilter || plantFilter
@@ -228,7 +229,7 @@ export default function DipendentiPage() {
     setFSesso(''); setFCategoria(''); setFNazionalita(''); setFTipoNaz(''); setFLivello(''); setFTipoContratto('');
     setFunzioneFilter(''); setRepartoFilter(''); setPlantFilter(''); setSocietaFilter('');
     setTagFilter(''); setInProvaFilter(''); setAvvisoFilter(''); setStatoFilter('attivo');
-    setFMese(''); setFGiorno(''); setFEmail(''); setFIndirizzo(''); setFCitta(''); setFCap(''); setFNomeOsti(''); setFProv(''); setFGruppo('');
+    setFMese(''); setFGiorno(''); setFEmail(''); setFIndirizzo(''); setFCitta(''); setFCap(''); setFNomeOsti(''); setFOstiSync(''); setFProv(''); setFGruppo('');
     setFNascitaDa(''); setFNascitaA(''); setFAssunzioneDa(''); setFAssunzioneA(''); setFCessazioneDa(''); setFCessazioneA('');
   }
   // `skip` esclude un filtro dal confronto: serve a calcolare le opzioni di quel menu
@@ -244,6 +245,7 @@ export default function DipendentiPage() {
     return fNominativo.trim().toLowerCase().split(/\s+/).filter(Boolean).every(w => fullName.includes(w))
       && has(e.matricola, fMatricola)
       && has(e.email, fEmail) && has(e.indirizzo, fIndirizzo) && has(e.citta, fCitta) && has(e.cap, fCap) && has(e.nome_osti, fNomeOsti)
+      && (!fOstiSync || (fOstiSync === 'si') === !!e.nome_osti)
       && (skip === 'prov' || !fProv || (e.provincia ?? '') === fProv)
       && (skip === 'gruppo' || !fGruppo || (e.gruppo_orario ?? '') === fGruppo)
       && inRange(e.data_nascita, fNascitaDa, fNascitaA)
@@ -845,6 +847,11 @@ export default function DipendentiPage() {
               <select value={fGruppo} onChange={e => setFGruppo(e.target.value)} className={`input text-sm min-w-0 ${fGruppo ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
                 <option value="">Gruppo orario</option>
                 {gruppiOrari.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
+              </select>
+              <select value={fOstiSync} onChange={e => setFOstiSync(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${fOstiSync ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
+                <option value="">Sincronizzato con Osti</option>
+                <option value="si" className="text-ink-900">Sincronizzati con Osti</option>
+                <option value="no" className="text-ink-900">Non ancora sincronizzati</option>
               </select>
               <input value={fNomeOsti} onChange={e => setFNomeOsti(e.target.value)} placeholder="Nome Osti" className={`input text-sm min-w-0 ${fNomeOsti ? '!border-accent ring-2 ring-accent/40' : ''}`} />
               {([
