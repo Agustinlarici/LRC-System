@@ -124,5 +124,98 @@
         "modello": "gemma4:e2b"
       }
     }
+  },
+  "snapshot_v2": {
+    "versione_sigle": "88ba7a685291ad08ad8e0aae2c2ac0dc563268ec11ab3a0d787c3f0dcdf887f3",
+    "colonne": [
+      "BIC2",
+      "LIVR"
+    ],
+    "sotto_sigle": [
+      {
+        "codice": "TLM13",
+        "padre": "LIVR"
+      }
+    ],
+    "alias": {
+      "TLM15": "TLM16"
+    },
+    "modelli": [
+      "F999XX"
+    ],
+    "esempi": [],
+    "decisioni": [
+      {
+        "modello": "*",
+        "codice": "BIC2",
+        "va": true,
+        "sub": false,
+        "alias": null,
+        "nosigla": false,
+        "padre": null
+      },
+      {
+        "modello": "F999XX",
+        "codice": "LIVR",
+        "va": true,
+        "sub": false,
+        "alias": null,
+        "nosigla": false,
+        "padre": null
+      },
+      {
+        "modello": "F999XX",
+        "codice": "0TMC",
+        "va": false,
+        "sub": false,
+        "alias": null,
+        "nosigla": false,
+        "padre": null
+      },
+      {
+        "modello": "*",
+        "codice": "ROSSO",
+        "va": false,
+        "sub": false,
+        "alias": null,
+        "nosigla": true,
+        "padre": null
+      },
+      {
+        "modello": "F999XX",
+        "codice": "TLM13",
+        "va": true,
+        "sub": true,
+        "alias": null,
+        "nosigla": false,
+        "padre": "LIVR"
+      },
+      {
+        "modello": "*",
+        "codice": "TLM15",
+        "va": true,
+        "sub": false,
+        "alias": "TLM16",
+        "nosigla": false,
+        "padre": null
+      }
+    ],
+    "componenti": [
+      {
+        "modello": "F171VS",
+        "nome": "Cofano",
+        "termini": [
+          "BIC2"
+        ]
+      },
+      {
+        "modello": "F999XX",
+        "nome": "Paraurti",
+        "termini": [
+          "PAR2",
+          "LIVR"
+        ]
+      }
+    ]
   }
 }
