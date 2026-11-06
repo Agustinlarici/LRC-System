@@ -35,6 +35,9 @@ function getModuleForPath(pathname: string): { key: ModuleKey | ModuleKey[]; nee
   if (pathname.startsWith('/qualita'))               return { key: 'qualita' };
   if (pathname.startsWith('/produzione'))            return { key: 'programma_produzione' };
   if (pathname.startsWith('/ferrari'))               return { key: 'ferrari_schede' };
+  // HR: Documenti, Analisi ed Evoluzione solo con il permesso HR completo; il resto anche ai capi (hr_team)
+  if (/^\/hr\/(documenti|analisi|evoluzione)/.test(pathname)) return { key: 'hr' };
+  if (pathname.startsWith('/hr'))                    return { key: ['hr', 'hr_team'] };
   return null;
 }
 

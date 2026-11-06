@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { db } from '../../db/client.js';
-import { requireModule, requireManage, type Env, type AuthUser } from '../../lib/auth.js';
+import { requireModule, requireModuleAny, requireManage, type Env, type AuthUser } from '../../lib/auth.js';
 import { parseBody } from '../../lib/validate.js';
 import { auditLog } from '../../lib/audit.js';
 import { hrAnalyticsRoutes } from './analytics.js';
@@ -78,7 +78,7 @@ const requestSelect = db`
   LEFT JOIN users du ON du.id = r.decided_by_user_id
 `;
 
-hrRoutes.get('/requests', requireModule('hr'), async (c) => {
+hrRoutes.get('/requests', requireModuleAny('hr', 'hr_team'), async (c) => {
   const user = c.get('user');
   if (hasHrManage(user)) {
     return c.json(await db`${requestSelect} ORDER BY (r.stato = 'in_attesa') DESC, r.created_at DESC LIMIT 500`);
@@ -92,7 +92,7 @@ hrRoutes.get('/requests', requireModule('hr'), async (c) => {
 });
 
 // Persone per cui l'utente può fare una richiesta (HR: tutti gli attivi).
-hrRoutes.get('/requests/employees', requireModule('hr'), async (c) => {
+hrRoutes.get('/requests/employees', requireModuleAny('hr', 'hr_team'), async (c) => {
   const user = c.get('user');
   if (hasHrManage(user)) {
     return c.json(await db`
@@ -115,7 +115,7 @@ const requestSchema = z.object({
   motivo:      z.string().max(1000).optional().nullable(),
 }).refine(b => b.data_fine >= b.data_inizio, { message: 'La data fine precede la data inizio' });
 
-hrRoutes.post('/requests', requireModule('hr'), async (c) => {
+hrRoutes.post('/requests', requireModuleAny('hr', 'hr_team'), async (c) => {
   const user = c.get('user');
   const body = await parseBody(c, requestSchema);
 
@@ -138,7 +138,7 @@ const decisionSchema = z.object({
   decision_note: z.string().max(1000).optional().nullable(),
 });
 
-hrRoutes.post('/requests/:id/decide', requireModule('hr'), async (c) => {
+hrRoutes.post('/requests/:id/decide', requireModuleAny('hr', 'hr_team'), async (c) => {
   const user = c.get('user');
   if (!hasHrManage(user)) throw new HTTPException(403, { message: 'Solo HR può approvare o rifiutare' });
   const id = parseInt(c.req.param('id') ?? '', 10);
@@ -174,7 +174,7 @@ hrRoutes.post('/requests/:id/decide', requireModule('hr'), async (c) => {
 });
 
 // Annulla una richiesta ancora in attesa (chi l'ha fatta, o HR).
-hrRoutes.post('/requests/:id/cancel', requireModule('hr'), async (c) => {
+hrRoutes.post('/requests/:id/cancel', requireModuleAny('hr', 'hr_team'), async (c) => {
   const user = c.get('user');
   const id = parseInt(c.req.param('id') ?? '', 10);
   if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
@@ -204,7 +204,7 @@ const changeRequestSchema = z.object({
   changes:     z.record(z.string(), z.union([z.string().max(2000), z.number().int(), z.null()])),
 });
 
-hrRoutes.post('/change-requests', requireModule('hr'), async (c) => {
+hrRoutes.post('/change-requests', requireModuleAny('hr', 'hr_team'), async (c) => {
   const user = c.get('user');
   const body = await parseBody(c, changeRequestSchema);
 
@@ -251,7 +251,7 @@ hrRoutes.post('/change-requests', requireModule('hr'), async (c) => {
   return c.json({ id }, 201);
 });
 
-hrRoutes.get('/change-requests', requireModule('hr'), async (c) => {
+hrRoutes.get('/change-requests', requireModuleAny('hr', 'hr_team'), async (c) => {
   const user = c.get('user');
   const manage = hasHrManage(user);
   const ids = manage ? null : await teamEmployeeIds(user);
@@ -291,7 +291,7 @@ const changeDecisionSchema = z.object({
   decision_note: z.string().max(1000).optional().nullable(),
 });
 
-hrRoutes.post('/change-requests/:id/decide', requireModule('hr'), async (c) => {
+hrRoutes.post('/change-requests/:id/decide', requireModuleAny('hr', 'hr_team'), async (c) => {
   const user = c.get('user');
   if (!hasHrManage(user)) throw new HTTPException(403, { message: 'Solo HR può approvare o rifiutare' });
   const id = parseInt(c.req.param('id') ?? '', 10);
@@ -349,7 +349,7 @@ hrRoutes.post('/change-requests/:id/decide', requireModule('hr'), async (c) => {
   return c.json({ ok: true });
 });
 
-hrRoutes.post('/change-requests/:id/cancel', requireModule('hr'), async (c) => {
+hrRoutes.post('/change-requests/:id/cancel', requireModuleAny('hr', 'hr_team'), async (c) => {
   const user = c.get('user');
   const id = parseInt(c.req.param('id') ?? '', 10);
   if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
@@ -367,7 +367,7 @@ hrRoutes.post('/change-requests/:id/cancel', requireModule('hr'), async (c) => {
 // ─── Cataloghi (reparto, plant, società contratto) — stessa forma per tutti ───
 
 function mountCatalog(table: 'hr_department' | 'hr_plant' | 'hr_contract_company', label: string) {
-  hrRoutes.get(`/${label}`, requireModule('hr'), async (c) => {
+  hrRoutes.get(`/${label}`, requireModuleAny('hr', 'hr_team'), async (c) => {
     const rows = await db`SELECT id, name, is_active FROM ${db(table)} ORDER BY name`;
     return c.json(rows);
   });
@@ -409,7 +409,7 @@ mountCatalog('hr_contract_company', 'contract-companies');
 
 // ─── Etichette (pallino colorato) — catalogo colore + significato ────────────
 
-hrRoutes.get('/tags', requireModule('hr'), async (c) => {
+hrRoutes.get('/tags', requireModuleAny('hr', 'hr_team'), async (c) => {
   const rows = await db`SELECT id, name, color, description, sort_order, is_active FROM hr_employee_tag ORDER BY sort_order, name`;
   return c.json(rows);
 });
@@ -465,7 +465,7 @@ hrRoutes.delete('/tags/:id', requireManage('hr'), async (c) => {
 // filtro = qualsiasi) e dice quanti giorni prima della data_cessazione avvisare.
 // Vince la prima regola attiva che corrisponde, in ordine di sort_order.
 
-hrRoutes.get('/deadline-rules', requireModule('hr'), async (c) => {
+hrRoutes.get('/deadline-rules', requireModuleAny('hr', 'hr_team'), async (c) => {
   const rows = await db`
     SELECT r.id, r.label, r.contract_company_ids,
            (SELECT string_agg(cc.name, ', ' ORDER BY cc.name) FROM hr_contract_company cc WHERE cc.id = ANY(r.contract_company_ids)) AS contract_company_names,
@@ -517,7 +517,9 @@ hrRoutes.delete('/deadline-rules/:id', requireManage('hr'), async (c) => {
 
 // Presa in carico: "preso in carico", con chi e quando. Vale solo per la
 // data_cessazione a cui era riferito (vedi migrate-hr-deadline-acks.sql).
-hrRoutes.get('/deadline-acks', requireModule('hr'), async (c) => {
+hrRoutes.get('/deadline-acks', requireModuleAny('hr', 'hr_team'), async (c) => {
+  // Le "prese in carico" sono un flusso HR: il capo non le vede.
+  if (!hasHrManage(c.get('user'))) return c.json([]);
   const rows = await db`
     SELECT employee_id, to_char(data_cessazione, 'YYYY-MM-DD') AS data_cessazione,
            status, user_name, acted_at
@@ -530,7 +532,7 @@ const deadlineAckSchema = z.object({
   status: z.enum(['preso_in_carico']).nullable(),   // null = rimuovi la marcatura
 });
 
-hrRoutes.put('/deadline-acks/:employeeId', requireModule('hr'), async (c) => {
+hrRoutes.put('/deadline-acks/:employeeId', requireManage('hr'), async (c) => {
   const employeeId = parseInt(c.req.param('employeeId') ?? '', 10);
   if (isNaN(employeeId)) throw new HTTPException(400, { message: 'ID non valido' });
   const { status } = await parseBody(c, deadlineAckSchema);
@@ -560,7 +562,9 @@ hrRoutes.put('/deadline-acks/:employeeId', requireModule('hr'), async (c) => {
 // Scadenze in avviso o scadute non ancora prese in carico — numero mostrato nella
 // sidebar. Stessa logica della pagina: vince la prima regola attiva che corrisponde;
 // una scadenza già passata conta anche senza regola.
-hrRoutes.get('/deadline-pending-count', requireModule('hr'), async (c) => {
+hrRoutes.get('/deadline-pending-count', requireModuleAny('hr', 'hr_team'), async (c) => {
+  // Il contatore della sidebar è il lavoro di HR (scadenze non prese in carico).
+  if (!hasHrManage(c.get('user'))) return c.json({ count: 0 });
   const [row] = await db<{ n: number }[]>`
     SELECT COUNT(*)::int AS n
     FROM hr_employee e
@@ -614,7 +618,7 @@ const employeeSelect = db`
   LEFT JOIN hr_employee_tag tg ON tg.id = e.tag_id
 `;
 
-hrRoutes.get('/employees', requireModule('hr'), async (c) => {
+hrRoutes.get('/employees', requireModuleAny('hr', 'hr_team'), async (c) => {
   const { search, reparto_id, stato, capo_id } = c.req.query();
   const user = c.get('user');
   const manage = hasHrManage(user);
@@ -637,7 +641,7 @@ hrRoutes.get('/employees', requireModule('hr'), async (c) => {
   return c.json(manage ? rows : rows.map(stripSensitive));
 });
 
-hrRoutes.get('/employees/:id', requireModule('hr'), async (c) => {
+hrRoutes.get('/employees/:id', requireModuleAny('hr', 'hr_team'), async (c) => {
   const id = parseInt(c.req.param('id') ?? '', 10);
   if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
 
@@ -653,7 +657,7 @@ hrRoutes.get('/employees/:id', requireModule('hr'), async (c) => {
 const PHOTO_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
 
-hrRoutes.get('/employees/:id/photo', requireModule('hr'), async (c) => {
+hrRoutes.get('/employees/:id/photo', requireModuleAny('hr', 'hr_team'), async (c) => {
   const id = parseInt(c.req.param('id') ?? '', 10);
   if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
   await assertCanSee(c.get('user'), id);
@@ -892,7 +896,7 @@ hrRoutes.patch('/employees/:id', requireModule('hr'), async (c) => {
 
 // ─── Timeline eventi ──────────────────────────────────────────────────────────
 
-hrRoutes.get('/employees/:id/events', requireModule('hr'), async (c) => {
+hrRoutes.get('/employees/:id/events', requireModuleAny('hr', 'hr_team'), async (c) => {
   const id = parseInt(c.req.param('id') ?? '', 10);
   if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
 
@@ -1008,7 +1012,7 @@ hrRoutes.post('/employees/:id/salary', requireModule('hr'), async (c) => {
 
 // ─── Organigramma ─────────────────────────────────────────────────────────────
 
-hrRoutes.get('/org-chart', requireModule('hr'), async (c) => {
+hrRoutes.get('/org-chart', requireModuleAny('hr', 'hr_team'), async (c) => {
 
   const rows = await db`
     SELECT
@@ -1028,7 +1032,7 @@ hrRoutes.get('/org-chart', requireModule('hr'), async (c) => {
 // con lo stesso team sotto a entrambe — invece di avere ciascuna il proprio
 // responsabile singolo e duplicare/spezzare la squadra tra i due.
 
-hrRoutes.get('/capo-pairs', requireModule('hr'), async (c) => {
+hrRoutes.get('/capo-pairs', requireModuleAny('hr', 'hr_team'), async (c) => {
   const rows = await db`
     SELECT p.id, p.employee_a_id, (a.cognome || ' ' || a.nome) AS employee_a_nome,
            p.employee_b_id, (b.cognome || ' ' || b.nome) AS employee_b_nome

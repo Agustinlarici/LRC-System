@@ -12,7 +12,7 @@ type User = {
   phone: string | null; department_id: number | null; department_name: string | null;
   role: 'guest' | 'operator' | 'it' | 'admin'; is_active: boolean;
 };
-type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci' | 'programma_produzione' | 'hr' | 'hr_salary' | 'ferrari_schede' | 'ferrari_supervisore';
+type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci' | 'programma_produzione' | 'hr' | 'hr_salary' | 'hr_team' | 'ferrari_schede' | 'ferrari_supervisore';
 type Permission = { module_key: ModuleKey; can_view: boolean; can_manage: boolean };
 
 const MODULE_CATEGORIES = ['Logistica', 'Produzione', 'Dashboard', 'IT', 'Qualità', 'HR'] as const;
@@ -52,6 +52,7 @@ const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATE
 
   // ── HR ─────────────────────────────────────────────────────────────────────
   { key: 'hr',        label: 'HR — Dipendenti',        category: 'HR' },
+  { key: 'hr_team',   label: 'HR — Capo (solo il proprio team)', category: 'HR' },
   { key: 'hr_salary', label: 'HR — Livello retributivo', category: 'HR' },
 ];
 
