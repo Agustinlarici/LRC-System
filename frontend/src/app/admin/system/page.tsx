@@ -85,7 +85,7 @@ const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATE
 
   // ── HR ─────────────────────────────────────────────────────────────────────
   { key: 'hr',        label: 'HR — Dipendenti',        category: 'HR' },
-  { key: 'hr_team',   label: 'HR — Capo (solo il proprio team)', category: 'HR' },
+  { key: 'hr_team',   label: 'HR — Capo (di norma si attiva da solo; qui solo eccezioni)', category: 'HR' },
   { key: 'hr_salary', label: 'HR — Livello retributivo', category: 'HR' },
 ];
 

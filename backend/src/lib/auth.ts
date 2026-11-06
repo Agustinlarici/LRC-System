@@ -76,13 +76,26 @@ export function clearSessionCookie(c: Context) {
 
 // ─── Load permissions / profile from DB ────────────────────────────────────────
 
-async function loadPermissions(userId: number): Promise<ModulePermission[]> {
+// Il permesso 'hr_team' (capo) è calcolato: chi è collegato a una persona che ha almeno un
+// subordinato attivo ce l'ha, chi smette di averne lo perde — senza interventi manuali.
+// Una riga 'hr_team' assegnata a mano dal pannello IT vale comunque (eccezioni).
+export async function loadPermissions(userId: number): Promise<ModulePermission[]> {
   const rows = await db<ModulePermission[]>`
     SELECT module_key, can_view, can_manage
     FROM user_module_permissions
     WHERE user_id = ${userId}
+    UNION ALL
+    SELECT 'hr_team'::module_key_enum, TRUE, FALSE
+    WHERE EXISTS (
+      SELECT 1 FROM hr_employee capo
+      JOIN hr_employee sub ON sub.capo_id = capo.id
+      WHERE capo.user_id = ${userId} AND capo.stato <> 'cessato' AND sub.stato <> 'cessato'
+    )
   `;
-  return rows;
+  // Se c'è sia la riga manuale sia quella calcolata, vince quella che dà accesso.
+  const team = rows.filter(r => r.module_key === 'hr_team');
+  if (team.length < 2) return rows;
+  return [...rows.filter(r => r.module_key !== 'hr_team'), team.find(r => r.can_view) ?? team[0]];
 }
 
 const EMPTY_PROFILE: UserProfile = { email: null, phone: null, department_id: null, department_name: null, must_change_password: false };
