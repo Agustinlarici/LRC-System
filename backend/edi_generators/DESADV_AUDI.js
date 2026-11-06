@@ -23,7 +23,7 @@
  * @param {object} shipment  Dati della spedizione (dal frontend/backend routes.ts)
  * @param {object} client    Configurazione cliente EDI (da edi_clients DB)
  * @param {number} sequence  Sequenza progressiva annuale (già incrementata)
- * @returns {string}         Contenuto file EDIFACT (segmenti separati da \n)
+ * @returns {string}         Contenuto file EDIFACT (segmenti consecutivi, senza a capo)
  */
 
 // Caratteri speciali EDIFACT che richiedono escape con '?' come release character
@@ -177,5 +177,7 @@ export function generate(shipment, client, sequence) {
   // ── UNZ — Trailer interscambio ────────────────────────────────────────────────
   segs.push(`UNZ+1+${intRef}'`);
 
-  return segs.join('\n') + '\n';
+  // Nessun a capo tra i segmenti: GEFEG segnala come illegali i caratteri tra il
+  // terminatore di segmento e il tag successivo (errore UNA 00001:000)
+  return segs.join('');
 }
