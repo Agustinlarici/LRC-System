@@ -10,7 +10,7 @@
  * letture sono corte, sull'indice di `datain`, una alla volta e con un limite di tempo lato
  * server (vedi mysql-client.ts e webthron-guard.ts).
  *
- *   Incrementale (ogni 30 s, ~5 min di notte): pochi ms, solo gli eventi nuovi
+ *   Incrementale (ogni minuto,~5 min di notte): pochi ms, solo gli eventi nuovi
  *   Rilettura notturna (01:00):                 rebanadine di 4 ore sul giorno prima
  *   Aggiornamento fasi/combos (02:00):          rebanadine di 7 giorni sugli ultimi 90
  */
@@ -117,7 +117,7 @@ export async function syncWebthronToPostgres(): Promise<void> {
     lastSyncAt = null;
   }
 
-  // Fascia notturna: un solo controllo ogni pochi minuti invece che ogni 30 s
+  // Fascia notturna: un solo controllo ogni pochi minuti invece che a ogni ciclo
   if (isQuietHour(new Date(), QUIET_FROM_HOUR, QUIET_TO_HOUR) && Date.now() - lastAttemptAt < QUIET_INTERVAL_MS) return;
   lastAttemptAt = Date.now();
 

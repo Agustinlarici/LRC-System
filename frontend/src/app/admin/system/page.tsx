@@ -126,7 +126,7 @@ interface IKnowFlags {
 }
 
 const IKNOW_QUERIES: { key: keyof Omit<IKnowFlags, 'iknow_enabled'>; label: string; description: string }[] = [
-  { key: 'iknow_andon_enabled',    label: 'Andon / Monitor — sincronizzazione continua', description: 'Legge i nuovi eventi di produzione da iKnow — ogni 30 secondi' },
+  { key: 'iknow_andon_enabled',    label: 'Andon / Monitor — sincronizzazione continua', description: 'Legge i nuovi eventi di produzione da iKnow — ogni minuto' },
   { key: 'iknow_nightly_enabled',  label: 'Rilettura notturna',                           description: 'Rilegge tutta la giornata precedente per sistemare i dati — ogni notte alle 01:00' },
   { key: 'iknow_lookup_enabled',   label: 'Fasi e combinazioni',                          description: 'Aggiorna fasi, modelli e componenti — ogni notte alle 02:00, a mano da Fasi iKnow e all’avvio se le liste sono vuote' },
   { key: 'iknow_buffer_enabled',   label: 'Buffer',                                       description: 'Ricalcola i seriali in pre-area dallo storico locale — ogni 30 minuti' },
@@ -899,7 +899,7 @@ function severityBadge(s: string) {
 }
 
 const JOB_LABELS: Record<string, string> = {
-  sync_incremental:  'Sync WebThron (30 s)',
+  sync_incremental:  'Sync WebThron (1 min)',
   first_sync:        'Carica iniziale storico iKnow',
   sync_full:         'Sync WebThron — prima esecuzione',
   sync_full_day:     'Sync Full Day (01:00)',
