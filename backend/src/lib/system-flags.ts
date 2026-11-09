@@ -12,7 +12,7 @@ import { db } from '../db/client.js';
 
 /** Interruttori per singola query verso iKnow. */
 export const IKNOW_QUERY_FLAGS = [
-  'iknow_andon_enabled',     // sync incrementale Andon/Monitor, ogni 30 s
+  'iknow_andon_enabled',     // sync incrementale Andon/Monitor, ogni minuto
   'iknow_nightly_enabled',   // rilettura notturna della giornata precedente, 01:00
   'iknow_lookup_enabled',    // aggiornamento fasi e combos, 02:00 (+ manuale e all'avvio)
   'iknow_buffer_enabled',    // ricalcolo Buffer, ogni 30 min (legge dallo storico locale)
