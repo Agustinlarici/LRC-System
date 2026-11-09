@@ -13,7 +13,8 @@ import { logger } from '../../lib/logger.js';
 import { isIKnowEnabled } from '../../lib/system-flags.js';
 import { startRun, endRun, failRun } from '../../lib/sync-stats.js';
 import { loadDayIntoHistory } from './pg-webthron-sync.js';
-import { WebthronBusyError } from './webthron-guard.js';
+import { getWebthronGuardState } from './mysql-client.js';
+import { retryWaitMs } from './webthron-guard.js';
 import { pastDays } from './webthron-time.js';
 
 export interface FirstSyncStatus {
@@ -36,6 +37,9 @@ let status: FirstSyncStatus = { ...IDLE };
 let cancelRequested = false;
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+/** Tentativi per giorno prima di darlo per fallito. */
+const MAX_TRIES = 3;
 
 function todayRome(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
@@ -78,14 +82,20 @@ async function run(list: string[], pauseSec: number): Promise<void> {
       }
 
       status.current = day;
-      try {
-        status.rows += await loadDayIntoHistory(day);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        status.errors.push(`${day}: ${msg}`);
-        logger.error(`[FirstSync] ${day}: ${msg}`);
-        // Interruttore di sicurezza aperto: si lascia riposare WebThron prima di riprovare con il giorno dopo
-        if (err instanceof WebthronBusyError) await sleep(30_000);
+      // Un giorno che fallisce (query lenta, interruttore aperto) si riprova dopo aver lasciato
+      // riposare WebThron: non si salta, altrimenti restano buchi nello storico.
+      for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
+        if (cancelRequested) break;
+        try {
+          status.rows += await loadDayIntoHistory(day);
+          break;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.error(`[FirstSync] ${day} (tentativo ${attempt}/${MAX_TRIES}): ${msg}`);
+          if (attempt === MAX_TRIES) { status.errors.push(`${day}: ${msg}`); break; }
+          const { open, openUntil } = getWebthronGuardState();
+          await sleep(retryWaitMs(open, openUntil, Date.now()));
+        }
       }
       status.done++;
       logger.info(`[FirstSync] ${day} (${status.done}/${status.total}) — ${status.rows} eventi finora`);
