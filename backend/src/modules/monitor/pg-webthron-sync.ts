@@ -21,6 +21,7 @@ import { logger } from '../../lib/logger.js';
 import { isIKnowEnabled } from '../../lib/system-flags.js';
 import { startRun, endRun, failRun } from '../../lib/sync-stats.js';
 import { isQuietHour } from './webthron-time.js';
+import { dedupeByKey } from './webthron-dedupe.js';
 
 export type ProdRow = WebthronEvent;
 
@@ -151,7 +152,7 @@ export async function syncWebthronToPostgres(): Promise<void> {
       return;
     }
 
-    const records = rows.map(r => ({
+    const records = dedupeByKey(rows.map(r => ({
       fase:             r.fase,
       modello:          r.modello,
       componente:       r.componente,
@@ -164,7 +165,7 @@ export async function syncWebthronToPostgres(): Promise<void> {
       operatore:        r.operatore ?? null,
       colore:           r.colore ?? null,
       protocollo_cesta: r.protocollo_cesta ?? null,
-    }));
+    })));
 
     // Gli eventi riletti nella sovrapposizione esistono già: si completano solo i campi ancora vuoti
     // (nessuna riscrittura se non cambia nulla, per non gonfiare la tabella).
@@ -221,7 +222,7 @@ export async function loadDayIntoHistory(dateStr: string): Promise<number> {
   const rows = await queryWebthronEvents(combos, deliberaFasi, { mode: 'range', from: dateStr, to: dateStr });
   if (rows.length === 0) return 0;
 
-  const records = rows.map(r => ({
+  const records = dedupeByKey(rows.map(r => ({
     fase:             r.fase,
     modello:          r.modello,
     componente:       r.componente,
@@ -234,7 +235,7 @@ export async function loadDayIntoHistory(dateStr: string): Promise<number> {
     operatore:        r.operatore ?? null,
     colore:           r.colore ?? null,
     protocollo_cesta: r.protocollo_cesta ?? null,
-  }));
+  })));
 
   let changed = 0;
   for (let i = 0; i < records.length; i += INSERT_CHUNK) {
