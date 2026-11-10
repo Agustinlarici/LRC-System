@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { keyMatches, toCsv, BOM_COLUMNS } from '../routes.js';
+import { keyMatches, toCsv, BOM_COLUMNS, EVENTI_COLUMNS } from '../routes.js';
 
 describe('keyMatches', () => {
   it('accetta solo la chiave esatta', () => {
@@ -15,18 +15,23 @@ describe('keyMatches', () => {
 });
 
 describe('toCsv', () => {
-  it('scrive l\'intestazione con i nomi e l\'ordine della query originale', () => {
-    expect(toCsv([]).split('\r\n')[0]).toBe('Data_Inserimento,Descrizione,Codice_Vendita,Modello,Codint,Componente,Versione');
+  it('BOM: intestazione con i nomi e l\'ordine della query originale', () => {
+    expect(toCsv(BOM_COLUMNS, []).split('\r\n')[0]).toBe('Data_Inserimento,Descrizione,Codice_Vendita,Modello,Codint,Componente,Versione');
     expect(BOM_COLUMNS).toHaveLength(7);
   });
 
+  it('eventi: 13 colonne, con i 4 campi extra', () => {
+    expect(EVENTI_COLUMNS).toHaveLength(13);
+    expect(toCsv(EVENTI_COLUMNS, []).split('\r\n')[0]).toContain('Versione,Operatore,Colore,Protocollo_Cesta');
+  });
+
   it('formatta la data senza fuso e lascia vuoti i valori nulli', () => {
-    const csv = toCsv([{ Data_Inserimento: new Date('2026-10-01T08:30:15Z'), Codice_Vendita: 'CV1', Descrizione: null }]);
+    const csv = toCsv(BOM_COLUMNS, [{ Data_Inserimento: new Date('2026-10-01T08:30:15Z'), Codice_Vendita: 'CV1', Descrizione: null }]);
     expect(csv.split('\r\n')[1]).toBe('2026-10-01 08:30:15,,CV1,,,,');
   });
 
   it('mette tra virgolette virgole, virgolette e a capo', () => {
-    const csv = toCsv([{ Descrizione: 'Pannello, "DX"\nnuovo' }]);
+    const csv = toCsv(BOM_COLUMNS, [{ Descrizione: 'Pannello, "DX"\nnuovo' }]);
     expect(csv).toContain('"Pannello, ""DX""\nnuovo"');
   });
 });
