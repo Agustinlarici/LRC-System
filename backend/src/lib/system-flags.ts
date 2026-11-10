@@ -18,6 +18,7 @@ export const IKNOW_QUERY_FLAGS = [
   'iknow_buffer_enabled',    // ricalcolo Buffer, ogni 30 min (legge dallo storico locale)
   'iknow_bucci_enabled',     // lookup seriali/commesse nella Spedizione Bucci
   'iknow_backfill_enabled',  // backfill manuali (heatmap, lead time, patch commessa)
+  'iknow_bom_enabled',       // copia notturna dei BOM (04:15); spento finché non lo si accende
 ] as const;
 
 export type IKnowQueryFlag = (typeof IKNOW_QUERY_FLAGS)[number];
@@ -48,7 +49,10 @@ export type IKnowFlags = { iknow_enabled: boolean } & Record<IKnowQueryFlag, boo
 
 const ALL_KEYS = ['iknow_enabled', ...IKNOW_QUERY_FLAGS] as const;
 
-const DEFAULTS = Object.fromEntries(ALL_KEYS.map(k => [k, true])) as IKnowFlags;
+const DEFAULTS = {
+  ...(Object.fromEntries(ALL_KEYS.map(k => [k, true])) as IKnowFlags),
+  iknow_bom_enabled: false,   // funzione nuova: si accende a mano dopo il primo controllo
+} satisfies IKnowFlags;
 
 /** Lanciata quando si tenta di interrogare iKnow con l'interruttore (generale o della query) spento. */
 export class IKnowDisabledError extends HTTPException {
