@@ -78,6 +78,9 @@ services:
       OSTI_DB:        ${OSTI_DB:-juniorweb}
       OSTI_USER:      ${OSTI_USER:-}
       OSTI_PASS:      ${OSTI_PASS:-}
+      # Power BI per HTTP (/api/powerbi/*): senza chiave gli endpoint sono spenti
+      POWERBI_API_KEY:       ${POWERBI_API_KEY:-}
+      POWERBI_CACHE_SECONDS: ${POWERBI_CACHE_SECONDS:-300}
       TZ:             Europe/Rome
       WEBTHRON_TZ:    ${WEBTHRON_TZ:-+01:00}
       # JWT (Ticket IT)
