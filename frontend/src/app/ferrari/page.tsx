@@ -21,6 +21,7 @@ interface Matrice {
   modelli: { modello: string; schede: number }[];
   modello: string;
   termini: string[];
+  gruppi?: { categoria: string | null; termini: string[] }[];     // colonne per categoria ([] se non ce ne sono)
   etichette?: Record<string, string>;
   descrizioni_proposte?: { codice: string; descrizione: string }[];
   nuove: { codice: string }[];
@@ -141,6 +142,12 @@ export default function VederePage() {
     }
   }
 
+  // colonne nell'ordine delle categorie (senza categorie: com'erano); la prima colonna di ogni gruppo ha un filo di separazione
+  const gruppi = m?.gruppi ?? [];
+  const raggruppata = gruppi.length > 0;
+  const colonne = useMemo(() => raggruppata ? gruppi.flatMap(g => g.termini) : (m?.termini ?? []), [raggruppata, gruppi, m?.termini]);
+  const inizioGruppo = useMemo(() => new Set(raggruppata ? gruppi.map(g => g.termini[0]) : []), [raggruppata, gruppi]);
+
   const righe = useMemo(() => {
     if (!m) return [];
     const c = fCommessa.trim().toLowerCase();
@@ -157,7 +164,7 @@ export default function VederePage() {
     const XLSX = await import('xlsx');
     const dati = righe.map(r => {
       const out: Record<string, string> = { Commessa: r.commessa, Modello: r.modello ?? '' };
-      for (const t of m.termini) out[etichetta(m, t)] = [r.celle[t] ?? '', ...(r.sub?.[t] ?? []).map(s => `${s.codice}: ${s.testo}`)].filter(Boolean).join('\n');
+      for (const t of colonne) out[etichetta(m, t)] = [r.celle[t] ?? '', ...(r.sub?.[t] ?? []).map(s => `${s.codice}: ${s.testo}`)].filter(Boolean).join('\n');
       return out;
     });
     const wb = XLSX.utils.book_new();
@@ -263,9 +270,20 @@ export default function VederePage() {
           <div className="overflow-auto max-h-[75vh] rounded-card border border-line bg-white print:max-h-none print:overflow-visible print:border-0">
             <table className="w-full text-sm operator-sheet">
               <thead>
+                {raggruppata && (
+                  <tr className="bg-stone-50 text-muted">
+                    <th rowSpan={2} className="sticky top-0 left-0 z-20 bg-stone-50 py-2.5 px-4 text-left font-medium">Commessa</th>
+                    {gruppi.map(g => (
+                      <th key={g.categoria ?? '_altre'} colSpan={g.termini.length}
+                        className="sticky top-0 z-10 h-8 border-l border-line bg-stone-50 px-4 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-ink-700">
+                        {g.categoria ?? 'Altre'}
+                      </th>
+                    ))}
+                  </tr>
+                )}
                 <tr className="border-b border-line bg-stone-50 text-muted">
-                  <th className="sticky top-0 left-0 z-20 bg-stone-50 py-2.5 px-4 text-left font-medium">Commessa</th>
-                  {m!.termini.map(t => <th key={t} className="sticky top-0 z-10 bg-stone-50 py-2.5 px-4 text-left font-medium min-w-[140px]">{etichetta(m!, t)}</th>)}
+                  {!raggruppata && <th className="sticky top-0 left-0 z-20 bg-stone-50 py-2.5 px-4 text-left font-medium">Commessa</th>}
+                  {colonne.map(t => <th key={t} className={`sticky ${raggruppata ? 'top-8' : 'top-0'} z-10 bg-stone-50 py-2.5 px-4 text-left font-medium min-w-[140px] ${inizioGruppo.has(t) ? 'border-l border-line' : ''}`}>{etichetta(m!, t)}</th>)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
@@ -275,8 +293,8 @@ export default function VederePage() {
                       <Link href={`/ferrari/${r.id}`} className="text-accent-ink hover:underline print:text-black">{r.commessa}</Link>
                       <div className="d-print-none font-normal"><AnomalieRiga anomalie={r.anomalie} modello={m!.modello} onFatto={() => carica(modello)} onErrore={setErrore} /></div>
                     </td>
-                    {m!.termini.map(t => (
-                      <td key={t} className={`py-2 px-4 max-w-[280px] ${r.rivedere?.[t] ? 'shadow-[inset_3px_0_0_#f0a020]' : ''}`}>
+                    {colonne.map(t => (
+                      <td key={t} className={`py-2 px-4 max-w-[280px] ${inizioGruppo.has(t) ? 'border-l border-line' : ''} ${r.rivedere?.[t] ? 'shadow-[inset_3px_0_0_#f0a020]' : ''}`}>
                         {r.avvisi?.[t] && <div className="text-xs font-semibold text-warning">{r.avvisi[t]}</div>}
                         <Cella testo={r.celle[t]} intero={r.testi[t]} compatta />
                         {r.sub?.[t]?.map(x => <SottoSigla key={x.codice} x={x} modello={m!.modello} onFatto={() => carica(modello)} onErrore={setErrore} compatta />)}

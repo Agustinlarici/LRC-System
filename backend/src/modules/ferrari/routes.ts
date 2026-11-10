@@ -16,6 +16,7 @@ import { aggiungiDaSchede, rifiutaDescrizioni, salvaDescrizioni } from './descri
 import { creaModello, modelloErroreDi, togliModello } from './modelli.js';
 import { iaRoutes } from './ia/routes.js';
 import { accodaDopoCarico, rianalizzaDuplicato } from './ia/aggancio.js';
+import { aggiungiCategorieEsempio, eliminaCategoria, elencoCategorie, riordinaCategorie, salvaCategoria } from './categorie.js';
 import { leggiCartella, leggiConfig, salvaConfig, statoLettura, ultimeLetture } from './cartella.js';
 import { logger } from '../../lib/logger.js';
 import {
@@ -186,6 +187,28 @@ ferrariRoutes.post('/componenti/proposte', requireManage(VISTA), async (c) => {
   }));
   const tutte = b.azione.endsWith('-tutte');
   return c.json({ trattate: await risolviProposteComponenti(utente(c), b.azione.startsWith('accetta'), tutte ? undefined : b.modello, tutte ? undefined : b.nome) });
+});
+
+// ─── Categorie delle colonne (raggruppano la tabella) ───────────────────────────
+
+ferrariRoutes.get('/categorie', requireModule(VISTA), async (c) => c.json({ categorie: await elencoCategorie() }));
+
+ferrariRoutes.post('/categorie', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ id: z.number().int().positive().optional(), nome: z.string().min(1).max(40), termini: z.array(z.string().max(60)).max(150) }));
+  return c.json(await salvaCategoria(utente(c), b));
+});
+
+ferrariRoutes.post('/categorie/ordine', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ ids: z.array(z.number().int().positive()).max(40) }));
+  await riordinaCategorie(utente(c), b.ids);
+  return c.json({ ok: true });
+});
+
+ferrariRoutes.post('/categorie/esempio', requireManage(VISTA), async (c) => c.json({ aggiunte: await aggiungiCategorieEsempio(utente(c)) }));
+
+ferrariRoutes.delete('/categorie/:id', requireManage(VISTA), async (c) => {
+  await eliminaCategoria(utente(c), parseId(c.req.param('id')));
+  return c.json({ ok: true });
 });
 
 ferrariRoutes.post('/sigle', requireManage(VISTA), async (c) => {
