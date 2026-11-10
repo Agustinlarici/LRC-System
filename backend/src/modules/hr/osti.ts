@@ -46,11 +46,18 @@ const TEXT_COLS = [
   'dip_badge', 'dip_terminale', 'dip_indeterminato', 'dip_partime',
 ];
 
+// I codici dip_reparto / dip_ditta / dip_filiale / dip_centrodicosto puntano a tabelle di Osti:
+// escono già risolti in nome, con la chiave del CSV (reparto) più ditta, filiale, centro_di_costo.
 const SQL = `
   SELECT /*+ MAX_EXECUTION_TIME(${TIMEOUT_MS}) */
-    ${TEXT_COLS.map(c => `\`${c}\``).join(', ')},
-    ${DATE_COLS.map(c => `DATE_FORMAT(\`${c}\`, '%d/%m/%Y') AS \`${c}\``).join(', ')}
-  FROM dipendenti
+    ${TEXT_COLS.map(c => `d.\`${c}\``).join(', ')},
+    ${DATE_COLS.map(c => `DATE_FORMAT(d.\`${c}\`, '%d/%m/%Y') AS \`${c}\``).join(', ')},
+    rp.rp_nome AS reparto, az.az_nome AS ditta, fl.fl_nome AS filiale, cdc.cdc_nome AS centro_di_costo
+  FROM dipendenti d
+  LEFT JOIN reparti       rp  ON rp.rp_id   = d.dip_reparto
+  LEFT JOIN aziende       az  ON az.az_id   = d.dip_ditta
+  LEFT JOIN filiali       fl  ON fl.fl_id   = d.dip_filiale
+  LEFT JOIN centridicosto cdc ON cdc.cdc_id = d.dip_centrodicosto
 `;
 
 export type OstiRow = Record<string, string>;
