@@ -5,9 +5,9 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { inviaFile } from '@/lib/ferrari';
-import { iaApi, STATI_IN_CORSO, type StatoIa } from '@/lib/ferrari-ia';
+import { leggiRiprova } from '@/lib/ferrari-ia';
 import { AnomalieRiga, Cella, Errore, SottoSigla, VistaToggle } from '@/components/ferrari/Comuni';
-import { InfoCartella, type StatoCartella } from '@/components/ferrari/InfoCartella';
+import type { StatoCartella } from '@/components/ferrari/InfoCartella';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { IconSettings } from '@/components/icons/ModuleIcons';
 
@@ -38,10 +38,10 @@ export default function VederePage() {
   const [m, setM] = useState<Matrice | null>(null);
   const [cartella, setCartella] = useState<StatoCartella | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
-  const [ia, setIa] = useState<StatoIa | null>(null);
   const [msg, setMsg] = useState('');
   const [occupato, setOccupato] = useState(false);
-  const [riprova, setRiprova] = useState(false);             // solo per prova: un file gia' caricato si rimanda alla IA
+  const [riprova, setRiprova] = useState(false);             // modalita' prova (Impostazioni, Avanzate): un file gia' caricato si rimanda alla IA
+  useEffect(() => { setRiprova(leggiRiprova()); }, []);
   const [trascina, setTrascina] = useState(false);           // un file e' sopra la pagina: si mostra dove rilasciarlo
   const trascinando = useRef(0);                             // dragenter/dragleave scattano anche sugli elementi interni
   const [fCommessa, setFCommessa] = useState('');
@@ -64,14 +64,6 @@ export default function VederePage() {
   }, []);
 
   useEffect(() => { carica(''); caricaCartella(); }, [carica, caricaCartella]);
-  // stato dell'analisi IA (solo il pallino accanto a «Elaborazione»): si aggiorna ogni 10 secondi
-  useEffect(() => {
-    const leggi = () => iaApi.stato().then(setIa).catch(() => {});
-    leggi();
-    const t = setInterval(leggi, 10_000);
-    return () => clearInterval(t);
-  }, []);
-
   // mentre la cartella viene letta si controlla lo stato; a fine lettura la tabella si aggiorna da sola
   const inCorso = !!cartella?.in_corso;
   useEffect(() => {
@@ -86,13 +78,14 @@ export default function VederePage() {
     if (files.length === 0) return;
     setOccupato(true);
     try {
+      const prova = leggiRiprova();                          // si rilegge al momento: la casella e' in un'altra pagina
       const r = await inviaFile<{ risultati: { filename: string; stato?: string; duplicato?: boolean; motivo?: string; errore?: string; riprova?: string }[] }>(
-        `/api/ferrari/files${riprova ? '?riprova=1' : ''}`, 'files', files);
+        `/api/ferrari/files${prova ? '?riprova=1' : ''}`, 'files', files);
       const giaCaricata = (x: { riprova?: string }) => x.riprova === 'accodata' ? 'già caricata, rimandata alla IA'
         : x.riprova === 'gia_in_corso' ? 'già caricata, analisi IA già in corso'
         : x.riprova === 'ia_spenta' ? 'già caricata (IA spenta: niente da rimandare)'
         : x.riprova === 'non_analizzabile' ? 'già caricata (versione sostituita: non si analizza)'
-        : riprova ? 'già caricata' : 'già caricata (per rimandarla alla IA spunta «Rianalizza i già caricati»)';
+        : 'già caricata';
       setMsg(r.risultati.map(x => x.errore ? `${x.filename}: ${x.errore}` : x.stato === 'QUARANTENA' ? `${x.filename}: non è una scheda (${x.motivo})`
         : x.duplicato ? `${x.filename}: ${giaCaricata(x)}` : `${x.filename}: caricata`).join(' · '));
       await carica(modello);
@@ -183,7 +176,6 @@ export default function VederePage() {
       )}
       <PageHeader
         title="Programma produzione (schede)"
-        description={<InfoCartella stato={cartella} />}
         actions={
           <>
             {puoGestire && (
@@ -191,23 +183,11 @@ export default function VederePage() {
                 <input ref={inputRef} type="file" multiple accept=".xls,.xlsx" className="hidden" onChange={e => invia(Array.from(e.target.files ?? []))} />
                 <button className="btn-primary"
                   disabled={occupato} onClick={() => inputRef.current?.click()}>{occupato ? 'Caricamento…' : 'Carica Excel'}</button>
-                <label className="flex items-center gap-1.5 text-sm text-muted"
-                  title="Solo per prova: se un file è già stato caricato, non viene rifiutato ma rimandato alla IA per una nuova analisi (serve la IA accesa)">
-                  <input type="checkbox" checked={riprova} onChange={e => setRiprova(e.target.checked)} />
-                  Rianalizza i già caricati
-                </label>
                 {cartella?.config.percorso && (
                   <button className={btnLink} disabled={inCorso} onClick={leggiCartella} title={`Legge ${cartella.config.percorso}`}>{inCorso ? 'Lettura…' : 'Leggi cartella'}</button>
                 )}
               </>
             )}
-            <Link href="/ferrari/elaborazione" className={btnLink} title={ia ? (ia.config.attiva ? (ia.connessione.stato === 'non_raggiungibile' ? 'PC IA non raggiungibile' : 'Analisi con IA accesa') : 'Analisi con IA spenta') : undefined}>
-              <span className={`h-2 w-2 rounded-full ${!ia || !ia.config.attiva ? 'bg-stone-300' : ia.connessione.stato === 'non_raggiungibile' ? 'bg-amber-500' : 'bg-green-600'}`} aria-hidden />
-              Elaborazione
-              {ia && Object.entries(ia.contatori).filter(([k]) => STATI_IN_CORSO.includes(k)).reduce((a, [, n]) => a + n, 0) > 0 && (
-                <span className="rounded-full bg-accent px-1.5 text-[11px] font-bold leading-4 text-white">{Object.entries(ia.contatori).filter(([k]) => STATI_IN_CORSO.includes(k)).reduce((a, [, n]) => a + n, 0)}</span>
-              )}
-            </Link>
             <button className={btnLink} disabled={!m || righe.length === 0} onClick={esportaExcel}>Scarica Excel</button>
             <button className={btnLink} onClick={() => window.print()}>Stampa</button>
             {puoGestire && (
@@ -282,8 +262,8 @@ export default function VederePage() {
                     {m!.termini.map(t => (
                       <td key={t} className={`py-2 px-4 max-w-[280px] ${r.rivedere?.[t] ? 'shadow-[inset_3px_0_0_#f0a020]' : ''}`}>
                         {r.avvisi?.[t] && <div className="text-xs font-semibold text-warning">{r.avvisi[t]}</div>}
-                        <Cella testo={r.celle[t]} intero={r.testi[t]} />
-                        {r.sub?.[t]?.map(x => <SottoSigla key={x.codice} x={x} modello={m!.modello} onFatto={() => carica(modello)} onErrore={setErrore} />)}
+                        <Cella testo={r.celle[t]} intero={r.testi[t]} compatta />
+                        {r.sub?.[t]?.map(x => <SottoSigla key={x.codice} x={x} modello={m!.modello} onFatto={() => carica(modello)} onErrore={setErrore} compatta />)}
                       </td>
                     ))}
                   </tr>
