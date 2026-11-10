@@ -11,11 +11,6 @@ import { rankCandidates } from '@/lib/hrPhoto';
 
 type Row = Record<string, string>;
 
-// Campi che Osti descrive in modo più generico dei nostri (es. reparto "VERNICIATURA" contro il nostro
-// "CARTEGGIATURA", mansione "addetto allo stampaggio" contro "STAMPATORE"): si compilano solo se vuoti.
-// Anche plant e società contratto: Osti dà una sola filiale/ditta, da noi la scheda può avere più plant scelti a mano.
-const FILL_ONLY = new Set(['reparto_id', 'mansione', 'plant_ids', 'contract_company_id']);
-
 const FIELD_LABEL: Record<string, string> = {
   nome_osti: 'Nome Osti', matricola: 'Matricola', data_assunzione: 'Data assunzione', data_cessazione: 'Data cessazione',
   mansione: 'Mansione', livello: 'Livello', stato: 'Stato', nazionalita: 'Nazionalità', tipo_nazionalita: 'Extra UE / Italia', indirizzo: 'Indirizzo', citta: 'Città',
@@ -184,7 +179,7 @@ function buildPlan(emp: HrEmployee, r: Row, ctx: Ctx): { plan: Plan | null; conf
       continue;
     }
     if (cur === '') plan.fill[f] = v;
-    else if (!FILL_ONLY.has(f)) { plan.change[f] = v; plan.changes.push({ field: f, from: cur, to: show(f, v) }); }
+    else { plan.change[f] = v; plan.changes.push({ field: f, from: cur, to: show(f, v) }); }
   }
   // Cessazione già trascorsa: la persona risulta cessata. Una data futura è solo la fine del contratto.
   if (licenziato && licenziato <= ctx.today && emp.stato !== 'cessato') {
