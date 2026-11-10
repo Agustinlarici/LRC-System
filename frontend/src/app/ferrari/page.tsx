@@ -283,7 +283,10 @@ export default function VederePage() {
                 )}
                 <tr className="border-b border-line bg-stone-50 text-muted">
                   {!raggruppata && <th className="sticky top-0 left-0 z-20 bg-stone-50 py-2.5 px-4 text-left font-medium">Commessa</th>}
-                  {colonne.map(t => <th key={t} className={`sticky ${raggruppata ? 'top-8' : 'top-0'} z-10 bg-stone-50 py-2.5 px-4 text-left font-medium min-w-[140px] ${inizioGruppo.has(t) ? 'border-l border-line' : ''}`}>{etichetta(m!, t)}</th>)}
+                  {colonne.map(t => <th key={t} className={`sticky ${raggruppata ? 'top-8' : 'top-0'} z-10 bg-stone-50 py-2.5 px-4 text-left font-medium min-w-[140px] ${inizioGruppo.has(t) ? 'border-l border-line' : ''}`}>
+                    <span className="font-semibold text-ink-900">{t}</span>
+                    {m!.etichette?.[t] && <span className="block text-xs font-normal leading-snug text-muted">{m!.etichette[t]}</span>}
+                  </th>)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
