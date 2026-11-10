@@ -66,6 +66,15 @@ export async function runWithReaper<T>(
   }
 }
 
+/**
+ * Quanto aspettare prima di riprovare un lavoro lungo: se l'interruttore è aperto, fino a quando
+ * si richiude (più un margine); altrimenti una pausa fissa per lasciar respirare WebThron.
+ */
+export function retryWaitMs(open: boolean, openUntil: number | null, now: number): number {
+  if (open && openUntil !== null) return Math.max(0, openUntil - now) + 5_000;
+  return 60_000;
+}
+
 export function createGuard(opts: GuardOptions) {
   const now   = opts.now   ?? Date.now;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>(r => setTimeout(r, ms)));

@@ -1,5 +1,19 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createGuard, isTimeoutError, runWithReaper, WebthronBusyError } from '../webthron-guard.js';
+import { createGuard, isTimeoutError, retryWaitMs, runWithReaper, WebthronBusyError } from '../webthron-guard.js';
+
+describe('retryWaitMs', () => {
+  it('con l\'interruttore aperto aspetta fino alla chiusura più un margine', () => {
+    expect(retryWaitMs(true, 100_000, 40_000)).toBe(65_000);
+  });
+
+  it('con l\'interruttore già scaduto aspetta solo il margine', () => {
+    expect(retryWaitMs(true, 10_000, 40_000)).toBe(5_000);
+  });
+
+  it('con l\'interruttore chiuso aspetta una pausa fissa', () => {
+    expect(retryWaitMs(false, null, 40_000)).toBe(60_000);
+  });
+});
 
 /** Guardia con orologio finto: `sleep` fa avanzare il tempo senza attese reali. */
 function makeGuard(over: Partial<Parameters<typeof createGuard>[0]> = {}) {
