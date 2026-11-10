@@ -307,6 +307,13 @@ if [ "$CMD" = "update" ]; then
   trap - INT TERM HUP
   echo "$PREV_COMMIT" > .deploy-previous
 
+  # Pulizia di ciò che non serve più: immagini senza etichetta (build vecchie) e cache di build.
+  # Restano le immagini in uso e quelle ":previous" del rollback (hanno un'etichetta). Non tocca i volumi.
+  # Un errore qui non fa fallire l'aggiornamento, che è già completato.
+  info "Pulizia di immagini e cache di build non più usate..."
+  docker image prune -f >/dev/null 2>&1 || warn "Pulizia immagini non riuscita (non è un problema: l'aggiornamento è completato)."
+  docker builder prune -af >/dev/null 2>&1 || warn "Pulizia cache di build non riuscita (non è un problema: l'aggiornamento è completato)."
+
   info "Aggiornamento completato e verificato."
   echo ""
   SERVER_IP_ECHO="$(grep -E '^SERVER_IP=' .env | cut -d= -f2-)"
