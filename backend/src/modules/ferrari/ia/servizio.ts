@@ -56,6 +56,8 @@ export interface RiepilogoTick { saltato?: 'occupato' | 'spenta' | 'non_raggiung
 
 const COLONNE_JOB = db`id::text AS id, file_id, sha256, richiesta_id, id_remoto, stato, passo, avanzamento, tentativi, prossimo_tentativo_at, errore, versione_sigle`;
 
+export type EsitoRianalisi = 'accodata' | 'ia_spenta' | 'gia_in_corso' | 'non_analizzabile';
+
 /** Codici di errore dell'analisi remota che non cambiano riprovando (il file non e' una scheda). */
 const ERRORI_REMOTI_DEFINITIVI = new Set(['non_e_una_scheda']);
 
@@ -74,6 +76,17 @@ export class ServizioIa {
     const cfg = await leggiConfigIa();
     if (!cfg.attiva) return null;
     return this.inserisci(user, fileId);
+  }
+
+  /**
+   * Rimanda alla IA una scheda gia' caricata (nuova analisi), per le prove. Non cambia nulla della scheda.
+   * Esito: accodata, ia_spenta, gia_in_corso (c'e' gia' un'analisi attiva) o non_analizzabile (sostituita, in quarantena...).
+   */
+  async rianalizza(user: Utente, fileId: number): Promise<EsitoRianalisi> {
+    if (!(await leggiConfigIa()).attiva) return 'ia_spenta';
+    const [f] = await db<{ stato: string; canonico: Canonico | null }[]>`SELECT stato, canonico FROM ferrari_file WHERE id = ${fileId}`;
+    if (!f || !f.canonico || ['QUARANTENA', 'SOSTITUITO', 'RIFIUTATO'].includes(f.stato)) return 'non_analizzabile';
+    return (await this.inserisci(user, fileId)) ? 'accodata' : 'gia_in_corso';
   }
 
   private async inserisci(user: Utente, fileId: number): Promise<string | null> {
