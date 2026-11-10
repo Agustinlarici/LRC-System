@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { inviaFile } from '@/lib/ferrari';
-import { leggiRiprova } from '@/lib/ferrari-ia';
+import { iaApi, leggiRiprova, STATI_IN_CORSO, type StatoIa } from '@/lib/ferrari-ia';
 import { AnomalieRiga, Cella, Errore, SottoSigla, VistaToggle } from '@/components/ferrari/Comuni';
 import type { StatoCartella } from '@/components/ferrari/InfoCartella';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -38,6 +38,7 @@ export default function VederePage() {
   const [m, setM] = useState<Matrice | null>(null);
   const [cartella, setCartella] = useState<StatoCartella | null>(null);
   const [errore, setErrore] = useState<string | null>(null);
+  const [ia, setIa] = useState<StatoIa | null>(null);
   const [msg, setMsg] = useState('');
   const [occupato, setOccupato] = useState(false);
   const [riprova, setRiprova] = useState(false);             // modalita' prova (Impostazioni, Avanzate): un file gia' caricato si rimanda alla IA
@@ -64,6 +65,14 @@ export default function VederePage() {
   }, []);
 
   useEffect(() => { carica(''); caricaCartella(); }, [carica, caricaCartella]);
+  // stato dell'analisi IA (solo il pallino accanto a «Elaborazione»): si aggiorna ogni 10 secondi
+  useEffect(() => {
+    const leggi = () => iaApi.stato().then(setIa).catch(() => {});
+    leggi();
+    const t = setInterval(leggi, 10_000);
+    return () => clearInterval(t);
+  }, []);
+
   // mentre la cartella viene letta si controlla lo stato; a fine lettura la tabella si aggiorna da sola
   const inCorso = !!cartella?.in_corso;
   useEffect(() => {
@@ -188,6 +197,13 @@ export default function VederePage() {
                 )}
               </>
             )}
+            <Link href="/ferrari/elaborazione" className={btnLink} title={ia ? (ia.config.attiva ? (ia.connessione.stato === 'non_raggiungibile' ? 'PC IA non raggiungibile' : 'Analisi con IA accesa') : 'Analisi con IA spenta') : undefined}>
+              <span className={`h-2 w-2 rounded-full ${!ia || !ia.config.attiva ? 'bg-stone-300' : ia.connessione.stato === 'non_raggiungibile' ? 'bg-amber-500' : 'bg-green-600'}`} aria-hidden />
+              Elaborazione
+              {ia && Object.entries(ia.contatori).filter(([k]) => STATI_IN_CORSO.includes(k)).reduce((a, [, n]) => a + n, 0) > 0 && (
+                <span className="rounded-full bg-accent px-1.5 text-[11px] font-bold leading-4 text-white">{Object.entries(ia.contatori).filter(([k]) => STATI_IN_CORSO.includes(k)).reduce((a, [, n]) => a + n, 0)}</span>
+              )}
+            </Link>
             <button className={btnLink} disabled={!m || righe.length === 0} onClick={esportaExcel}>Scarica Excel</button>
             <button className={btnLink} onClick={() => window.print()}>Stampa</button>
             {puoGestire && (
