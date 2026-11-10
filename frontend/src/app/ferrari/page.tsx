@@ -29,7 +29,6 @@ interface Matrice {
   righe: Riga[];
 }
 
-const etichetta = (m: { etichette?: Record<string, string> }, t: string) => m.etichette?.[t] ? `${m.etichette[t]} (${t})` : t;
 const btnLink = 'btn-secondary';
 
 export default function VederePage() {
@@ -162,13 +161,30 @@ export default function VederePage() {
   async function esportaExcel() {
     if (!m) return;
     const XLSX = await import('xlsx');
-    const dati = righe.map(r => {
-      const out: Record<string, string> = { Commessa: r.commessa, Modello: r.modello ?? '' };
-      for (const t of colonne) out[etichetta(m, t)] = [r.celle[t] ?? '', ...(r.sub?.[t] ?? []).map(s => `${s.codice}: ${s.testo}`)].filter(Boolean).join('\n');
-      return out;
-    });
+    // Stessa intestazione della tabella: categoria (se ce ne sono), sigla e sotto la descrizione. Le prime due colonne sono Commessa e Modello.
+    const PRIME = 2;
+    const intestazione: string[][] = [];
+    const unioni: import('xlsx').Range[] = [];
+    if (raggruppata) {
+      const riga = ['Commessa', 'Modello', ...colonne.map(() => '')];
+      let c = PRIME;
+      for (const g of gruppi) {
+        riga[c] = g.categoria ?? 'Altre';
+        if (g.termini.length > 1) unioni.push({ s: { r: 0, c }, e: { r: 0, c: c + g.termini.length - 1 } });
+        c += g.termini.length;
+      }
+      intestazione.push(riga);
+    }
+    intestazione.push([raggruppata ? '' : 'Commessa', raggruppata ? '' : 'Modello', ...colonne]);
+    intestazione.push(['', '', ...colonne.map(t => m.etichette?.[t] ?? '')]);
+    for (const c of [0, 1]) unioni.push({ s: { r: 0, c }, e: { r: intestazione.length - 1, c } });   // Commessa e Modello occupano tutta l'intestazione
+    const dati = righe.map(r => [r.commessa, r.modello ?? '',
+      ...colonne.map(t => [r.celle[t] ?? '', ...(r.sub?.[t] ?? []).map(x => `${x.codice}: ${x.testo}`)].filter(Boolean).join('\n'))]);
+    const foglio = XLSX.utils.aoa_to_sheet([...intestazione, ...dati]);
+    foglio['!merges'] = unioni;
+    foglio['!cols'] = [{ wch: 12 }, { wch: 10 }, ...colonne.map(() => ({ wch: 28 }))];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dati), 'Programma Produzione');
+    XLSX.utils.book_append_sheet(wb, foglio, 'Programma Produzione');
     XLSX.writeFile(wb, `programma-produzione-schede-${m.modello}-${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
