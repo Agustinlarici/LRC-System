@@ -123,6 +123,7 @@ interface IKnowFlags {
   iknow_buffer_enabled:   boolean;
   iknow_bucci_enabled:    boolean;
   iknow_backfill_enabled: boolean;
+  iknow_bom_enabled:      boolean;
 }
 
 const IKNOW_QUERIES: { key: keyof Omit<IKnowFlags, 'iknow_enabled'>; label: string; description: string }[] = [
@@ -131,6 +132,7 @@ const IKNOW_QUERIES: { key: keyof Omit<IKnowFlags, 'iknow_enabled'>; label: stri
   { key: 'iknow_lookup_enabled',   label: 'Fasi e combinazioni',                          description: 'Aggiorna fasi, modelli e componenti — ogni notte alle 02:00, a mano da Fasi iKnow e all’avvio se le liste sono vuote' },
   { key: 'iknow_buffer_enabled',   label: 'Buffer',                                       description: 'Ricalcola i seriali in pre-area dallo storico locale — ogni 30 minuti' },
   { key: 'iknow_bucci_enabled',    label: 'Spedizione Bucci',                             description: 'Cerca seriali e commesse in iKnow durante scansione e verifica delle spedizioni. Se attivi una sincronizzazione qui sotto, questo interruttore si spegne da solo' },
+  { key: 'iknow_bom_enabled',      label: 'BOM notturno',                                 description: 'Copia i BOM di iKnow (vista v_iknow_bom per Power BI) — una volta a notte alle 04:15; parte spento' },
   { key: 'iknow_backfill_enabled', label: 'Backfill manuali',                             description: 'Carica iniziale dello storico (pulsante in Aggiornamenti sistema → Azioni manuali), Heatmap, Lead time e correzione commesse (solo su richiesta)' },
 ];
 
@@ -900,6 +902,7 @@ function severityBadge(s: string) {
 
 const JOB_LABELS: Record<string, string> = {
   sync_incremental:  'Sync WebThron (1 min)',
+  bom_sync:          'BOM iKnow (04:15)',
   first_sync:        'Carica iniziale storico iKnow',
   sync_full:         'Sync WebThron — prima esecuzione',
   sync_full_day:     'Sync Full Day (01:00)',

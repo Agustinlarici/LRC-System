@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { syncPackArticles } from './modules/packing/bc-client.js';
 import { snapshotDayFromHistory } from './modules/dashboards/heatmap.js';
 import { syncFullDayToHistory, refreshLookupTables } from './modules/monitor/pg-webthron-sync.js';
+import { syncBom } from './modules/monitor/bom-sync.js';
 import { checkSpmaDelays } from './modules/spma/delay-checker.js';
 import { sendDelayReportEmail, emailConfigured, type SmtpConfig } from './modules/spma/spma-email-notifier.js';
 import { autoGenerateEdi } from './modules/edi/auto-generate.js';
@@ -191,6 +192,17 @@ export function startScheduler() {
     setNextRun('edi_ferrari_scan', nextOccurrence(6));
   }, { timezone: 'Europe/Rome' });
 
+  // 04:15 — copia dei BOM di iKnow → webthron_bom (una volta a notte, a piccoli passi; vedi bom-sync.ts)
+  cron.schedule('15 4 * * *', async () => {
+    logger.info('[scheduler] Sync BOM iKnow...');
+    try {
+      await syncBom();
+    } catch (e) {
+      logger.error(`[scheduler] Sync BOM fallita: ${e instanceof Error ? e.message : e}`);
+    }
+    setNextRun('bom_sync', nextOccurrence(4, 15));
+  }, { timezone: 'Europe/Rome' });
+
   // 03:30 — pulizia analytics di utilizzo: le visite pagina si tengono 180 giorni
   cron.schedule('30 3 * * *', async () => {
     try {
@@ -220,6 +232,7 @@ export function startScheduler() {
   setNextRun('heatmap_snapshot',   nextOccurrence(1));
   setNextRun('lookup_refresh',     nextOccurrence(2));
   setNextRun('bc_sync',            nextOccurrence(3));
+  setNextRun('bom_sync',           nextOccurrence(4, 15));
   setNextRun('spma_onedrive_poll', nextEvery10Min());
   setNextRun('edi_auto_generate',  nextOccurrence(23, 45));
 

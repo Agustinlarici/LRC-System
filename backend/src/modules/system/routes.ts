@@ -6,6 +6,7 @@ import { getIKnowFlags, setIKnowFlags, assertIKnowEnabled, isIKnowEnabled, IKNOW
 import { getAllStats, startRun, endRun, failRun } from '../../lib/sync-stats.js';
 import { refreshLookupTables } from '../monitor/pg-webthron-sync.js';
 import { startFirstSync, getFirstSyncStatus, cancelFirstSync } from '../monitor/first-sync.js';
+import { syncBom, isBomSyncRunning } from '../monitor/bom-sync.js';
 import { executiveRefresh } from '../monitor/executive-cache.js';
 import { syncPackArticles } from '../packing/bc-client.js';
 import { snapshotDayFromHistory } from '../dashboards/heatmap.js';
@@ -54,6 +55,17 @@ const clampInt = (raw: string | undefined, fallback: number, min: number, max: n
   const n = parseInt(raw ?? '', 10);
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
 };
+
+// ─── Copia dei BOM di iKnow (la stessa che gira di notte alle 04:15) ───────────
+// Richiede «iKnow generale» e «BOM notturno»; parte in background (stato in sync-status → bom_sync).
+systemRoutes.post('/bom-sync', requireAuth, async (c) => {
+  if (!(await isIKnowEnabled('iknow_bom_enabled'))) {
+    throw new HTTPException(503, { message: 'Attivare «iKnow generale» e «BOM notturno» in Sistema → Avanzata' });
+  }
+  if (isBomSyncRunning()) return c.json({ message: 'Sync BOM già in corso' }, 409);
+  void syncBom().catch(() => { /* errore già registrato in sync-stats e nel log */ });
+  return c.json({ message: 'Sync BOM avviata' }, 202);
+});
 
 systemRoutes.post('/first-sync', requireAuth, async (c) => {
   if (!(await isIKnowEnabled('iknow_backfill_enabled'))) {
