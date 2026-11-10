@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Errore } from '@/components/ferrari/Comuni';
 import { IconaOk } from '@/components/ferrari/Icone';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { iaApi, type ConfigIa, type StatoIa } from '@/lib/ferrari-ia';
+import { iaApi, leggiRiprova, scriviRiprova, type ConfigIa, type StatoIa } from '@/lib/ferrari-ia';
 
 /** Impostazioni → Avanzate: interruttore della IA, indirizzo della PC IA, tentativi e prova della connessione. */
 export function ImpostazioniIa() {
@@ -15,6 +15,8 @@ export function ImpostazioniIa() {
   const [esito, setEsito] = useState<{ ok: boolean; testo: string } | null>(null);
   const [occupato, setOccupato] = useState(false);
   const [salvato, setSalvato] = useState(false);
+  const [riprova, setRiprova] = useState(false);
+  useEffect(() => { setRiprova(leggiRiprova()); }, []);
 
   const carica = useCallback(async (init = false) => {
     try {
@@ -113,6 +115,12 @@ export function ImpostazioniIa() {
         <Link href="/ferrari/elaborazione" className="btn-secondary">Vedi l&apos;elaborazione</Link>
         {esito && <span className={`text-sm ${esito.ok ? 'text-success' : 'text-danger'}`} role="status">{esito.testo}</span>}
       </div>
+
+      <label className="mt-4 flex items-start gap-2 text-sm text-ink-700"
+        title="Solo per prova: caricando un file già caricato non viene rifiutato ma rimandato alla IA per una nuova analisi (serve la IA accesa)">
+        <input type="checkbox" className="mt-0.5" checked={riprova} onChange={e => { setRiprova(e.target.checked); scriviRiprova(e.target.checked); }} />
+        <span>Modalità prova: rianalizza i file già caricati<span className="block text-xs text-muted">Vale per «Carica Excel» e per i file trascinati, solo su questo browser.</span></span>
+      </label>
 
       {stato.config.attiva && c.stato === 'non_raggiungibile' && (
         <p className="mt-3 text-xs text-warning">Ultimo errore: {c.errore}. Il programma controlla di nuovo ogni minuto.</p>

@@ -46,3 +46,12 @@ export const iaApi = {
   analizza: (fileId: number) => api.post(`${B}/schede/${fileId}/analizza`, {}),
   accodaMancanti: () => api.post<{ accodate: number }>(`${B}/accoda-mancanti`, {}),
 };
+
+/** «Modalita' prova»: un file gia' caricato si rimanda alla IA invece di essere rifiutato. Solo di questo browser (nessun dato sul server). */
+const CHIAVE_RIPROVA = 'ferrari_riprova';
+export function leggiRiprova(): boolean {
+  try { return window.localStorage.getItem(CHIAVE_RIPROVA) === '1'; } catch { return false; }
+}
+export function scriviRiprova(attiva: boolean): void {
+  try { window.localStorage.setItem(CHIAVE_RIPROVA, attiva ? '1' : '0'); } catch { /* browser senza archivio: resta spenta */ }
+}
