@@ -41,6 +41,9 @@ export default function VederePage() {
   const [ia, setIa] = useState<StatoIa | null>(null);
   const [msg, setMsg] = useState('');
   const [occupato, setOccupato] = useState(false);
+  const [riprova, setRiprova] = useState(false);             // solo per prova: un file gia' caricato si rimanda alla IA
+  const [trascina, setTrascina] = useState(false);           // un file e' sopra la pagina: si mostra dove rilasciarlo
+  const trascinando = useRef(0);                             // dragenter/dragleave scattano anche sugli elementi interni
   const [fCommessa, setFCommessa] = useState('');
   const [fTesto, setFTesto] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -83,9 +86,15 @@ export default function VederePage() {
     if (files.length === 0) return;
     setOccupato(true);
     try {
-      const r = await inviaFile<{ risultati: { filename: string; stato?: string; duplicato?: boolean; motivo?: string; errore?: string }[] }>('/api/ferrari/files', 'files', files);
+      const r = await inviaFile<{ risultati: { filename: string; stato?: string; duplicato?: boolean; motivo?: string; errore?: string; riprova?: string }[] }>(
+        `/api/ferrari/files${riprova ? '?riprova=1' : ''}`, 'files', files);
+      const giaCaricata = (x: { riprova?: string }) => x.riprova === 'accodata' ? 'già caricata, rimandata alla IA'
+        : x.riprova === 'gia_in_corso' ? 'già caricata, analisi IA già in corso'
+        : x.riprova === 'ia_spenta' ? 'già caricata (IA spenta: niente da rimandare)'
+        : x.riprova === 'non_analizzabile' ? 'già caricata (versione sostituita: non si analizza)'
+        : riprova ? 'già caricata' : 'già caricata (per rimandarla alla IA spunta «Rianalizza i già caricati»)';
       setMsg(r.risultati.map(x => x.errore ? `${x.filename}: ${x.errore}` : x.stato === 'QUARANTENA' ? `${x.filename}: non è una scheda (${x.motivo})`
-        : x.duplicato ? `${x.filename}: già caricata` : `${x.filename}: caricata`).join(' · '));
+        : x.duplicato ? `${x.filename}: ${giaCaricata(x)}` : `${x.filename}: caricata`).join(' · '));
       await carica(modello);
     } catch (e) {
       setErrore((e as Error).message);
@@ -93,6 +102,31 @@ export default function VederePage() {
       setOccupato(false);
       if (inputRef.current) inputRef.current.value = '';
     }
+  }
+
+  // Un file lasciato per sbaglio fuori dall'area della pagina (per esempio sul menu) non deve farsi aprire dal browser
+  useEffect(() => {
+    if (!puoGestire) return;
+    const blocca = (e: DragEvent) => { if (Array.from(e.dataTransfer?.types ?? []).includes('Files')) e.preventDefault(); };
+    window.addEventListener('dragover', blocca);
+    window.addEventListener('drop', blocca);
+    return () => { window.removeEventListener('dragover', blocca); window.removeEventListener('drop', blocca); };
+  }, [puoGestire]);
+
+  // Trascinare uno o piu' file Excel sulla pagina li carica (come «Carica Excel»)
+  const haFile = (e: React.DragEvent) => puoGestire && Array.from(e.dataTransfer?.types ?? []).includes('Files');
+  function rilascia(e: React.DragEvent) {
+    if (!haFile(e)) return;
+    e.preventDefault();
+    trascinando.current = 0;
+    setTrascina(false);
+    if (occupato) return;
+    const tutti = Array.from(e.dataTransfer.files);
+    const excel = tutti.filter(f => /\.(xls|xlsx)$/i.test(f.name));
+    if (excel.length === 0) { setErrore('Trascina file Excel (.xls o .xlsx)'); return; }
+    setErrore(null);
+    if (excel.length < tutti.length) setMsg(`${tutti.length - excel.length} file ignorati: non sono Excel`);
+    invia(excel);
   }
 
   async function leggiCartella() {
@@ -133,7 +167,20 @@ export default function VederePage() {
   const vuoto = !m || m.modelli.length === 0;
 
   return (
-    <div>
+    <div
+      onDragEnter={e => { if (haFile(e)) { e.preventDefault(); trascinando.current++; setTrascina(true); } }}
+      onDragOver={e => { if (haFile(e)) e.preventDefault(); }}
+      onDragLeave={e => { if (haFile(e) && --trascinando.current <= 0) { trascinando.current = 0; setTrascina(false); } }}
+      onDrop={rilascia}
+    >
+      {trascina && (
+        <div className="d-print-none pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-white/80 p-6" role="status" aria-live="polite">
+          <div className="rounded-card border-2 border-dashed border-accent bg-white px-10 py-8 text-center shadow-float">
+            <p className="text-base font-semibold text-ink">Rilascia i file Excel per caricarli</p>
+            <p className="mt-1 text-sm text-muted">.xls o .xlsx{riprova ? ' · i file già caricati vengono rimandati alla IA' : ''}</p>
+          </div>
+        </div>
+      )}
       <PageHeader
         title="Programma produzione (schede)"
         description={<InfoCartella stato={cartella} />}
@@ -144,6 +191,11 @@ export default function VederePage() {
                 <input ref={inputRef} type="file" multiple accept=".xls,.xlsx" className="hidden" onChange={e => invia(Array.from(e.target.files ?? []))} />
                 <button className="btn-primary"
                   disabled={occupato} onClick={() => inputRef.current?.click()}>{occupato ? 'Caricamento…' : 'Carica Excel'}</button>
+                <label className="flex items-center gap-1.5 text-sm text-muted"
+                  title="Solo per prova: se un file è già stato caricato, non viene rifiutato ma rimandato alla IA per una nuova analisi (serve la IA accesa)">
+                  <input type="checkbox" checked={riprova} onChange={e => setRiprova(e.target.checked)} />
+                  Rianalizza i già caricati
+                </label>
                 {cartella?.config.percorso && (
                   <button className={btnLink} disabled={inCorso} onClick={leggiCartella} title={`Legge ${cartella.config.percorso}`}>{inCorso ? 'Lettura…' : 'Leggi cartella'}</button>
                 )}

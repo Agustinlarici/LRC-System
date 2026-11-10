@@ -15,7 +15,7 @@ import { applicaComponente, configurazioneSigle, decidiTutteDaDecidere, ereditaP
 import { aggiungiDaSchede, rifiutaDescrizioni, salvaDescrizioni } from './descrizioni.js';
 import { creaModello, modelloErroreDi, togliModello } from './modelli.js';
 import { iaRoutes } from './ia/routes.js';
-import { accodaDopoCarico } from './ia/aggancio.js';
+import { accodaDopoCarico, rianalizzaDuplicato } from './ia/aggancio.js';
 import { leggiCartella, leggiConfig, salvaConfig, statoLettura, ultimeLetture } from './cartella.js';
 import { logger } from '../../lib/logger.js';
 import {
@@ -251,6 +251,7 @@ ferrariRoutes.get('/files/:id/original', requireModule(VISTA), async (c) => {
 
 ferrariRoutes.post('/files', requireManage(VISTA), async (c) => {
   const user = utente(c);
+  const riprova = c.req.query('riprova') === '1';
   const files = await leggiFile(c, 'files');
   const risultati = [];
   for (const f of files) {
@@ -265,7 +266,8 @@ ferrariRoutes.post('/files', requireManage(VISTA), async (c) => {
     const r = await caricaScheda(user, f.name, f.buf);
     if (!r.duplicato) await ereditaPerModello(r.modello).catch(() => 0);       // sigle gia' decise da altri modelli: si decidono da sole
     await accodaDopoCarico(user, r);                                            // analisi IA, se l'interruttore e' acceso
-    risultati.push(r);
+    // Solo per prova (?riprova=1): un file gia' caricato non si rifiuta, si rimanda alla IA per una nuova analisi
+    risultati.push(r.duplicato && riprova ? { ...r, riprova: await rianalizzaDuplicato(user, r.id) } : r);
   }
   return c.json({ risultati });
 });
