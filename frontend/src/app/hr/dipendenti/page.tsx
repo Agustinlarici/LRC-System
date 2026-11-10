@@ -353,7 +353,7 @@ export default function DipendentiPage() {
         fetch(`${BACKEND}/api/hr/departments`, { credentials: 'include' }),
       ]);
       if (!empRes.ok || !depRes.ok) return { inserted: 0, skipped: 0, errors: 1, detail: 'Impossibile leggere dipendenti e reparti.' };
-      return runOstiImport(rows, { backend: BACKEND, employees: await empRes.json(), departments: await depRes.json(), confirm, onChanged: refreshEmployees });
+      return runOstiImport(rows, { backend: BACKEND, employees: await empRes.json(), departments: await depRes.json(), plants, companies, confirm, onChanged: refreshEmployees });
     }
     // 'storico': i cambiamenti compaiono nella timeline con la data di oggi.
     // 'sostituisci': i dati si aggiornano senza lasciare eventi, come se fossero sempre stati così.
