@@ -12,6 +12,7 @@ import { ticketRoutes } from './modules/tickets/routes.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { dashboardsRoutes } from './modules/dashboards/routes.js';
 import { systemRoutes } from './modules/system/routes.js';
+import { powerbiRoutes } from './modules/powerbi/routes.js';
 import { spmaRoutes } from './modules/spma/routes.js';
 import { recepcionesRoutes } from './modules/recepciones/routes.js';
 import { ediRoutes } from './modules/edi/routes.js';
@@ -108,6 +109,7 @@ app.route('/api/auth', authRoutes);
 app.route('/api/tickets', ticketRoutes);
 app.route('/api/dashboards', dashboardsRoutes);
 app.route('/api/system', systemRoutes);
+app.route('/api/powerbi', powerbiRoutes);
 
 app.route('/api/spma', spmaRoutes);
 app.route('/api/recepciones', recepcionesRoutes);
