@@ -98,6 +98,19 @@ describe.skipIf(!URL)('Collegamento con la PC IA — servizio', () => {
     expect(await s.tick()).toMatchObject({ inviati: 0, seguiti: 0 });                   // niente piu' da fare
   });
 
+  it('gli avvisi della IA (es. un codice scritto male nel testo) si conservano, si contano nell\'elenco e si leggono nel dettaglio', async () => {
+    const avvisi = [{ codice: 'LI5X', riga: 8, motivo: 'Nel testo c\'e\' TLM5: forse e\' la sigla TML05' }, { codice: 'CEL2', motivo: 'altro avviso' }];
+    const s = await nuovo({ risultato: (file: Buffer) => ({ ...comeLaVm()(file), avvisi }) });
+    const f = await carica(1);
+    const j = (await s.accodaFile(op, f))!;
+    expect((await s.elenco()).find(r => r.file_id === f)!.n_avvisi).toBe(0);          // prima del risultato non ce ne sono
+    for (let i = 0; i < 8 && (await job(j)).stato !== 'fatto'; i++) await s.tick();
+    expect((await job(j)).stato).toBe('fatto');
+    expect((await s.elenco()).find(r => r.file_id === f)!.n_avvisi).toBe(2);
+    const d = await s.dettaglioJob(j);
+    expect((d.risultato as unknown as { avvisi: typeof avvisi }).avvisi).toEqual(avvisi);
+  });
+
   it('un valore diverso nella lettura della IA diventa una discrepanza (ambra); la scheda e\' comunque pronta', async () => {
     const s = await nuovo({ passiPrimaDelFinire: 1, risultato: comeLaVm(l => { l.find(x => x.codice === 'DEDI')!.valore = 'NO'; }) });
     const f = await carica(2);

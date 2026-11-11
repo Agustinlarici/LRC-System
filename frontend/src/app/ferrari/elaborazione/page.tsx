@@ -78,6 +78,23 @@ function Dettaglio({ d }: { d: DettaglioJob | null }) {
             </table>
           )}
       </div>
+      {d.risultato && (d.risultato.avvisi?.length ?? 0) > 0 && (
+        <div className="lg:col-span-2">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Avvisi della IA</h3>
+          <table className="w-full text-xs">
+            <thead><tr className="text-left text-muted"><th className="pb-1 pr-2 font-medium">Sigla</th><th className="pb-1 pr-2 font-medium">Riga</th><th className="pb-1 font-medium">Avviso</th></tr></thead>
+            <tbody className="divide-y divide-line">
+              {d.risultato.avvisi!.map((a, i) => (
+                <tr key={i} className="align-top">
+                  <td className="py-1.5 pr-2 font-semibold">{a.codice ?? '—'}</td>
+                  <td className="py-1.5 pr-2 tabular-nums text-muted">{a.riga ?? ''}</td>
+                  <td className="py-1.5 text-ink-700">{a.motivo}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -174,6 +191,7 @@ export default function ElaborazionePage() {
                           <span className="block font-semibold text-ink-900">{s.commessa ?? '—'} <span className="font-normal text-muted">{s.modello}</span></span>
                           <span className="block max-w-[14rem] truncate text-xs text-muted">{s.filename}</span>
                         </button>
+                        {s.n_avvisi > 0 && <span className="mt-1 block text-xs font-medium text-warning">{s.n_avvisi} {s.n_avvisi === 1 ? 'avviso' : 'avvisi'} della IA</span>}
                       </td>
                       <td className="px-4 py-3"><TappeIa tappe={s.tappe} /></td>
                       <td className="whitespace-nowrap px-4 py-3 text-right">

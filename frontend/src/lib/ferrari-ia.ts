@@ -10,7 +10,7 @@ export const STATI_IN_CORSO: readonly string[] = ['in_coda', 'inviato', 'in_anal
 export interface SchedaIa {
   file_id: number; filename: string; commessa: string | null; modello: string | null; caricato_at: string;
   job_id: string | null; stato: StatoJob | null; tentativi: number | null; errore: string | null;
-  esito: 'uguale' | 'discrepanze' | null; prossimo_tentativo_at: string | null; tappe: Tappa[];
+  esito: 'uguale' | 'discrepanze' | null; n_avvisi: number; prossimo_tentativo_at: string | null; tappe: Tappa[];
 }
 
 export interface ConfigIa { attiva: boolean; url: string; maxTentativi: number; timeoutS: number }
@@ -26,7 +26,11 @@ export interface Discrepanza {
   riga_vm: number | null; riga_ia: number | null; vm?: string; ia?: string; dettaglio: string;
 }
 export interface PassoLog { passo: string; stato: 'in_corso' | 'ok' | 'attenzione' | 'errore' | 'saltato'; dettaglio: string | null; at: string }
-export interface DettaglioJob { job: { id: string; stato: StatoJob; tentativi: number; errore: string | null }; passi: PassoLog[]; risultato: { esito: 'uguale' | 'discrepanze'; discrepanze: Discrepanza[] } | null }
+export interface AvvisoIa { codice?: string; riga?: number; motivo: string }
+export interface DettaglioJob {
+  job: { id: string; stato: StatoJob; tentativi: number; errore: string | null }; passi: PassoLog[];
+  risultato: { esito: 'uguale' | 'discrepanze'; discrepanze: Discrepanza[]; avvisi?: AvvisoIa[] } | null;
+}
 
 export const TIPO_DISCREPANZA: Record<Discrepanza['tipo'], string> = {
   solo_vm: 'Solo nella lettura della VM', solo_ia: 'Solo nella lettura della IA', valore_diverso: 'Valore diverso',
