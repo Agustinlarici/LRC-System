@@ -206,7 +206,7 @@ export type LineaCombo = { fase: string; modello: string; componente: string };
 // ─── Date filter modes ────────────────────────────────────────────────────────
 
 type DateFilter =
-  | { mode: 'since'; since: Date }               // datain > ?  — usa indice, incrementale/giornaliero
+  | { mode: 'since'; since: Date; modifiedSince?: Date }  // datain > ?  (+ OR lastup > ? e senza cancellate, se modifiedSince)
   | { mode: 'range'; from: string; to: string };  // giorni [from, to] letti a rebanadine di datain (indice), backfill
 
 /** Ore per rebanadina nelle letture di giorni interi: ~1000 documenti al massimo, query da pochi ms. */
@@ -250,7 +250,7 @@ export async function queryWebthronEvents(
   const delibModelliPH    = allModelli.map(() => '?').join(', ');
   const delibComponentiPH = allComponenti.map(() => '?').join(', ');
 
-  const buildSql = (dateClause: string, rowLimit: number) => `
+  const buildSql = (dateClause: string, rowLimit: number, excludeDeleted = false) => `
     SELECT
       ikExtra62Tab.stringa  AS fase,
       ikExtra43Tab.stringa  AS modello,
@@ -287,7 +287,9 @@ export async function queryWebthronEvents(
     LEFT JOIN ikExtraTab ikExtra41Tab  ON ikExtra41Tab.id  = Extra41.stringa
     LEFT JOIN ikExtraTab ikExtra44Tab  ON ikExtra44Tab.id  = Extra44.stringa
     LEFT JOIN ikExtraTab ikExtra28Tab  ON ikExtra28Tab.id  = Extra28.stringa
+    ${excludeDeleted ? 'LEFT JOIN deletedubidocum del ON del.iddocu = ubi.iddocu' : ''}
     WHERE
+      ${excludeDeleted ? 'del.iddocu IS NULL AND' : ''}
       ubi.tipdoc IN ('0080','1520','5004','5005','5006','5007','5010','5016','PX01','0160','0090','5019','1040','5009','5018','0480','5020')
       ${dateClause}
       AND Extra186.stringa     IS NOT NULL
@@ -327,6 +329,13 @@ export async function queryWebthronEvents(
   };
 
   if (dateFilter.mode === 'since') {
+    // Con modifiedSince: schede nuove (datain) OR modificate (lastup) nella finestra, senza quelle cancellate
+    if (dateFilter.modifiedSince) {
+      return fetchRows(
+        buildSql('AND (ubi.datain > ? OR ubi.lastup > ?)', 5000, true),
+        [dateFilter.since, dateFilter.modifiedSince],
+      );
+    }
     return fetchRows(buildSql('AND ubi.datain > ?', 5000), [dateFilter.since]);
   }
 

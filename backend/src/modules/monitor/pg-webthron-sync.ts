@@ -38,6 +38,11 @@ function envInt(name: string, fallback: number): number {
 // timestamp, arrivato dopo, andrebbe perso. L'upsert è idempotente, quindi riletture e riavvii non duplicano.
 const OVERLAP_MS = envInt('WEBTHRON_SYNC_OVERLAP_SECONDS', 60) * 1000;
 
+// Frequenza del ciclo (come in index.ts): è la finestra di `lastup` al primo controllo dopo l'avvio
+const SYNC_INTERVAL_MS = Math.max(10, envInt('WEBTHRON_SYNC_INTERVAL_SECONDS', 600)) * 1000;
+// Inizio dell'ultimo controllo riuscito: da lì si guarda `lastup` (in memoria, come lastSyncAt)
+let lastOkStartAt: Date | null = null;
+
 // Di notte (default 23:00–05:00, ora di Roma) non c'è produzione: un controllo ogni pochi minuti basta.
 const QUIET_FROM_HOUR   = envInt('WEBTHRON_QUIET_FROM_HOUR', 23);
 const QUIET_TO_HOUR     = envInt('WEBTHRON_QUIET_TO_HOUR', 5);
@@ -140,11 +145,19 @@ export async function syncWebthronToPostgres(): Promise<void> {
     const ultimo = (last?.ultimo as Date | null) ?? null;
     since = ultimo && ultimo > midnight ? new Date(ultimo.getTime() - OVERLAP_MS) : midnight;
   }
-  const dateFilter = { mode: 'since' as const, since };
+  // Opzione (spenta finché non provata): oltre a `datain` anche `lastup` negli ultimi minuti
+  // (= frequenza del ciclo, dall'ultimo controllo riuscito) ed escluse le schede di `deletedubidocum`.
+  const startedAt = new Date();
+  const useLastup = await isIKnowEnabled('iknow_andon_lastup_enabled');
+  const modifiedSince = useLastup
+    ? new Date((lastOkStartAt ?? new Date(startedAt.getTime() - SYNC_INTERVAL_MS)).getTime() - OVERLAP_MS)
+    : undefined;
+  const dateFilter = { mode: 'since' as const, since, modifiedSince };
   const jobName = since > midnight ? 'sync_incremental' : 'sync_full';
   startRun(jobName);
   try {
     const rows = await queryWebthronEvents(combos, deliberaFasi, dateFilter);
+    lastOkStartAt = startedAt;
 
     if (rows.length === 0) {
       endRun(jobName, 0);

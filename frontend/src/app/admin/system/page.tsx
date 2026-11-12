@@ -124,6 +124,7 @@ interface IKnowFlags {
   iknow_bucci_enabled:    boolean;
   iknow_backfill_enabled: boolean;
   iknow_bom_enabled:      boolean;
+  iknow_andon_lastup_enabled: boolean;
 }
 
 const IKNOW_QUERIES: { key: keyof Omit<IKnowFlags, 'iknow_enabled'>; label: string; description: string }[] = [
@@ -133,7 +134,8 @@ const IKNOW_QUERIES: { key: keyof Omit<IKnowFlags, 'iknow_enabled'>; label: stri
   { key: 'iknow_buffer_enabled',   label: 'Buffer',                                       description: 'Ricalcola i seriali in pre-area dallo storico locale — ogni 30 minuti' },
   { key: 'iknow_bucci_enabled',    label: 'Spedizione Bucci',                             description: 'Cerca seriali e commesse in iKnow durante scansione e verifica delle spedizioni. Se attivi una sincronizzazione qui sotto, questo interruttore si spegne da solo' },
   { key: 'iknow_bom_enabled',      label: 'BOM notturno',                                 description: 'Copia i BOM di iKnow (vista v_iknow_bom per Power BI) — una volta a notte alle 04:15; parte spento' },
-  { key: 'iknow_backfill_enabled', label: 'Backfill manuali',                             description: 'Carica iniziale dello storico (pulsante in Aggiornamenti sistema → Azioni manuali), Heatmap, Lead time e correzione commesse (solo su richiesta)' },
+  { key: 'iknow_andon_lastup_enabled', label: 'Sync continua — anche schede modificate', description: 'Oltre alle schede nuove (datain) legge quelle modificate (lastup) negli ultimi minuti ed esclude le cancellate (deletedubidocum). Parte spento: provare prima con EXPLAIN' },
+  { key: 'iknow_backfill_enabled', label: 'Backfill manuali',                            description: 'Carica iniziale dello storico (pulsante in Aggiornamenti sistema → Azioni manuali), Heatmap, Lead time e correzione commesse (solo su richiesta)' },
 ];
 
 function AvanzataTab() {
