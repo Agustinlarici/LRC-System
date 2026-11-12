@@ -30,7 +30,7 @@ function Group({ title, tone, tasks, people, reload, limit }: GroupProps) {
       </h2>
       {tasks.length === 0
         ? <p className="py-1.5 text-sm text-muted">Niente qui.</p>
-        : shown.map(t => <TaskRow key={t.id} task={t} showProject people={people} onChanged={reload} />)}
+        : shown.map(t => <TaskRow key={t.id} task={t} showProject compact people={people} onChanged={reload} />)}
       {limit && tasks.length > limit && (
         <button type="button" className="mt-2 text-xs font-medium text-accent-ink hover:underline" onClick={() => setAll(a => !a)}>
           {all ? 'Mostra meno' : `Mostra tutte (${tasks.length})`}
@@ -42,6 +42,7 @@ function Group({ title, tone, tasks, people, reload, limit }: GroupProps) {
 
 // Oggi: cosa devo fare e cosa è fermo. Ogni attività sta in un solo gruppo
 // (bloccate → in attesa → in ritardo → oggi → entro 7 giorni → più avanti).
+// Layout: prima riga «Per scadenza» (in ritardo, oggi, entro 7 giorni, più avanti) e seconda riga «Ferme» (bloccate, in attesa).
 export function OggiView({ onCount }: { onCount?: (late: number) => void }) {
   const toast = useToast();
   const [tasks, setTasks] = useState<PTask[] | null>(null);
@@ -108,17 +109,25 @@ export function OggiView({ onCount }: { onCount?: (late: number) => void }) {
       {tasks.length === 0 ? (
         <div className="card"><EmptyState title="Nessuna attività aperta" hint="Aggiungi la prima qui sopra, oppure aprila da un progetto." /></div>
       ) : (
-        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-          <div className="space-y-4">
-            <Group title="In ritardo" tone="danger" tasks={late} {...g} />
-            <Group title="Oggi" tasks={today} {...g} />
-            <Group title="Entro 7 giorni" tasks={soon} {...g} />
-            <Group title="Più avanti o senza scadenza" tasks={later} limit={8} {...g} />
-          </div>
-          <div className="space-y-4">
-            <Group title="In attesa di risposta" tone="warning" tasks={waiting} {...g} />
-            <Group title="Bloccate" tone="danger" tasks={blocked} {...g} />
-          </div>
+        <div className="space-y-6">
+          {/* Riga 1: ciò che scade, dal più urgente al più lontano, una colonna accanto all'altra */}
+          <section aria-label="Per scadenza">
+            <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-muted">Per scadenza</h2>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <Group title="In ritardo" tone="danger" tasks={late} {...g} />
+              <Group title="Oggi" tasks={today} {...g} />
+              <Group title="Entro 7 giorni" tasks={soon} {...g} />
+              <Group title="Più avanti o senza scadenza" tasks={later} limit={8} {...g} />
+            </div>
+          </section>
+          {/* Riga 2: ciò che è fermo */}
+          <section aria-label="Ferme">
+            <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-muted">Ferme</h2>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Group title="Bloccate" tone="danger" tasks={blocked} {...g} />
+              <Group title="In attesa di risposta" tone="warning" tasks={waiting} {...g} />
+            </div>
+          </section>
         </div>
       )}
     </div>
