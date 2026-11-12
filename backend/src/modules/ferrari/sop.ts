@@ -94,6 +94,42 @@ export async function importaSop(user: Utente, filename: string, buf: Buffer): P
 export const elencoImport = () => db<ImportSop[]>`
   SELECT id::int AS id, filename, colonne, righe, con_dati, caricato_da, caricato_at FROM ferrari_sop_import ORDER BY id DESC LIMIT 10`;
 
+// ─── Differenze gia' viste ────────────────────────────────────────────────────
+
+export interface ChiaveDifferenza { commessa: string; colonna: string; sop: string; vm: string }
+const chiaveDifferenza = (d: ChiaveDifferenza) => [d.commessa, d.colonna, d.sop, d.vm].join('\u0000');
+
+async function leggiViste(): Promise<Map<string, { da: string | null; at: string }>> {
+  const righe = await db<{ commessa: string; colonna: string; sop: string; vm: string; visto_da: string | null; visto_at: Date }[]>`
+    SELECT commessa, colonna, sop, vm, visto_da, visto_at FROM ferrari_sop_visto`;
+  return new Map(righe.map(r => [chiaveDifferenza(r), { da: r.visto_da, at: r.visto_at.toISOString() }]));
+}
+
+/** Segna come viste (o torna «da vedere») le differenze indicate. Ritorna quante ne ha cambiate. */
+export async function segnaViste(user: Utente, differenze: ChiaveDifferenza[], viste: boolean): Promise<number> {
+  if (differenze.length === 0) return 0;
+  const unici = [...new Map(differenze.map(d => [chiaveDifferenza(d), d])).values()];
+  return db.begin(async raw => {
+    const tx = raw as unknown as typeof db;
+    let n = 0;
+    for (let i = 0; i < unici.length; i += 500) {
+      const blocco = unici.slice(i, i + 500);
+      const arr = (k: keyof ChiaveDifferenza) => blocco.map(d => d[k]);
+      const r = viste
+        ? await tx`
+            INSERT INTO ferrari_sop_visto (commessa, colonna, sop, vm, visto_da)
+            SELECT t.c, t.col, t.s, t.v, ${user.username} FROM unnest(${arr('commessa')}::text[], ${arr('colonna')}::text[], ${arr('sop')}::text[], ${arr('vm')}::text[]) AS t(c, col, s, v)
+            ON CONFLICT DO NOTHING RETURNING 1`
+        : await tx`
+            DELETE FROM ferrari_sop_visto v USING unnest(${arr('commessa')}::text[], ${arr('colonna')}::text[], ${arr('sop')}::text[], ${arr('vm')}::text[]) AS t(c, col, s, vv)
+            WHERE v.commessa = t.c AND v.colonna = t.col AND v.sop = t.s AND v.vm = t.vv RETURNING 1`;
+      n += r.length;
+    }
+    if (n > 0) await audit(tx, user, viste ? 'sop.viste' : 'sop.da_rivedere', 'sop', null, { differenze: n });
+    return n;
+  });
+}
+
 // ─── Confronto ────────────────────────────────────────────────────────────────
 
 export async function confrontoSop(importId?: number) {
@@ -117,7 +153,8 @@ export async function confrontoSop(importId?: number) {
   const colonne = new Map<string, StatoColonna>(regole.filter(r => imp.colonne.includes(r.colonna)).map(r => [r.colonna, { colonna: r.colonna, ok: 0, diverso: 0, solo_sop: 0, solo_vm: 0 }]));
   const differenze: Differenza[] = [];
   const nonCaricate: string[] = [];
-  let confrontate = 0, tutteOk = 0, conDifferenze = 0, senzaRegolaMercato = 0;
+  const viste = await leggiViste();
+  let confrontate = 0, tutteOk = 0, conDifferenze = 0, senzaRegolaMercato = 0, vedute = 0;
   for (const riga of righe) {
     const f = opzioniPer.get(riga.commessa);
     if (!f) { nonCaricate.push(riga.commessa); continue; }
@@ -126,7 +163,11 @@ export async function confrontoSop(importId?: number) {
     if (r.differenze.length === 0) tutteOk++; else conDifferenze++;
     for (const c of r.celle) colonne.get(c.colonna)![c.esito]++;
     if (r.celle.some(c => c.nota === 'senza_regola')) senzaRegolaMercato++;
-    for (const d of r.differenze) if (differenze.length < MAX_DIFFERENZE) differenze.push(d);
+    for (const d of r.differenze) {
+      const v = viste.get(chiaveDifferenza(d));
+      if (v) vedute++;
+      if (differenze.length < MAX_DIFFERENZE) differenze.push(v ? { ...d, visto: v } : d);
+    }
   }
   const conRegola = new Set(regole.map(r => r.colonna));
   return {
@@ -134,6 +175,7 @@ export async function confrontoSop(importId?: number) {
     riepilogo: {
       righe_sop: imp.righe, con_dati: righe.length, confrontate, non_caricate: nonCaricate.length, tutte_ok: tutteOk, con_differenze: conDifferenze,
       differenze_totali: [...colonne.values()].reduce((a, c) => a + c.diverso + c.solo_sop + c.solo_vm, 0), mercato_senza_regola: senzaRegolaMercato,
+      viste: vedute,
     },
     colonne: [...colonne.values()],
     colonne_senza_regola: imp.colonne.filter(c => !conRegola.has(c)),

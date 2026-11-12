@@ -148,7 +148,11 @@ export function confrontaCella(sop: string, vm: string): EsitoCella {
   return 'diverso';
 }
 
-export interface Differenza { commessa: string; file_id: number; colonna: string; sop: string; vm: string; tipo: Exclude<EsitoCella, 'ok'>; nota?: string }
+export interface Differenza {
+  commessa: string; file_id: number; colonna: string; sop: string; vm: string; tipo: Exclude<EsitoCella, 'ok'>; nota?: string;
+  /** Chi l'ha gia' vista e quando (una differenza identica: stessa commessa, colonna e stessi due valori). */
+  visto?: { da: string | null; at: string };
+}
 export interface StatoColonna { colonna: string; ok: number; diverso: number; solo_sop: number; solo_vm: number }
 
 /** Una riga del SOP contro le opzioni di una scheda: gli esiti di ogni colonna con regola. */

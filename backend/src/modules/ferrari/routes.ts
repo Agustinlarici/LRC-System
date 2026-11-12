@@ -16,7 +16,7 @@ import { aggiungiDaSchede, rifiutaDescrizioni, salvaDescrizioni } from './descri
 import { creaModello, modelloErroreDi, togliModello } from './modelli.js';
 import { iaRoutes } from './ia/routes.js';
 import { accodaDopoCarico, rianalizzaDuplicato } from './ia/aggancio.js';
-import { aggiungiRegoleSuggerite, confrontoSop, elencoImport, importaSop, leggiRegole, RegolaSchema, salvaRegole } from './sop.js';
+import { aggiungiRegoleSuggerite, confrontoSop, elencoImport, importaSop, leggiRegole, RegolaSchema, salvaRegole, segnaViste } from './sop.js';
 import { aggiungiCategorieEsempio, eliminaCategoria, elencoCategorie, riordinaCategorie, salvaCategoria } from './categorie.js';
 import { leggiCartella, leggiConfig, salvaConfig, statoLettura, ultimeLetture } from './cartella.js';
 import { logger } from '../../lib/logger.js';
@@ -225,6 +225,14 @@ ferrariRoutes.post('/sop/import', requireManage(VISTA), async (c) => {
 ferrariRoutes.get('/sop/confronto', requireModule(VISTA), async (c) => {
   const id = c.req.query('import');
   return c.json(await confrontoSop(id ? parseId(id) : undefined));
+});
+
+ferrariRoutes.post('/sop/viste', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({
+    viste: z.boolean(),
+    differenze: z.array(z.object({ commessa: z.string().max(40), colonna: z.string().max(60), sop: z.string().max(500), vm: z.string().max(1000) })).min(1).max(5000),
+  }));
+  return c.json({ cambiate: await segnaViste(utente(c), b.differenze, b.viste) });
 });
 
 ferrariRoutes.get('/sop/regole', requireModule(VISTA), async (c) => c.json({ regole: await leggiRegole() }));
