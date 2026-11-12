@@ -6,10 +6,22 @@ import { useToast } from '@/components/ui/Toast';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonTable } from '@/components/ui/Skeleton';
 import { TaskRow } from './TaskRow';
-import { todayISO, type PTask } from '@/lib/progetti';
+import { todayISO, type PTask, type Person } from '@/lib/progetti';
 
-function Group({ title, tone, tasks, reload }: { title: string; tone?: 'danger' | 'warning'; tasks: PTask[]; reload: () => void }) {
+interface GroupProps {
+  title: string;
+  tone?: 'danger' | 'warning';
+  tasks: PTask[];
+  people: Person[];
+  reload: () => void;
+  /** Dopo questo numero si mostra «Mostra tutte»: nessuna attività sparisce dalla vista */
+  limit?: number;
+}
+
+function Group({ title, tone, tasks, people, reload, limit }: GroupProps) {
+  const [all, setAll] = useState(false);
   const color = tone === 'danger' ? 'text-danger' : tone === 'warning' ? 'text-warning' : 'text-muted';
+  const shown = limit && !all ? tasks.slice(0, limit) : tasks;
   return (
     <section className="card">
       <h2 className={`mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider ${color}`}>
@@ -18,16 +30,22 @@ function Group({ title, tone, tasks, reload }: { title: string; tone?: 'danger' 
       </h2>
       {tasks.length === 0
         ? <p className="py-1.5 text-sm text-muted">Niente qui.</p>
-        : tasks.map(t => <TaskRow key={t.id} task={t} showProject onChanged={reload} />)}
+        : shown.map(t => <TaskRow key={t.id} task={t} showProject people={people} onChanged={reload} />)}
+      {limit && tasks.length > limit && (
+        <button type="button" className="mt-2 text-xs font-medium text-accent-ink hover:underline" onClick={() => setAll(a => !a)}>
+          {all ? 'Mostra meno' : `Mostra tutte (${tasks.length})`}
+        </button>
+      )}
     </section>
   );
 }
 
 // Oggi: cosa devo fare e cosa è fermo. Ogni attività sta in un solo gruppo
-// (bloccate → in attesa → in ritardo → oggi → prossime).
+// (bloccate → in attesa → in ritardo → oggi → entro 7 giorni → più avanti).
 export function OggiView({ onCount }: { onCount?: (late: number) => void }) {
   const toast = useToast();
   const [tasks, setTasks] = useState<PTask[] | null>(null);
+  const [people, setPeople] = useState<Person[]>([]);
   const [scope, setScope] = useState<'mie' | 'tutte'>('mie');
   const [title, setTitle] = useState('');
 
@@ -35,11 +53,12 @@ export function OggiView({ onCount }: { onCount?: (late: number) => void }) {
     api.get<PTask[]>(`/api/progetti/oggi?scope=${scope}`)
       .then(rows => {
         setTasks(rows);
-        onCount?.(rows.filter(t => t.status !== 'bloccata' && t.status !== 'in_attesa' && (t.days_to_due ?? 0) < 0 && t.days_to_due != null).length);
+        onCount?.(rows.filter(t => t.status !== 'bloccata' && t.status !== 'in_attesa' && t.days_to_due != null && t.days_to_due < 0).length);
       })
       .catch(e => toast.error(e instanceof Error ? e.message : 'Errore di caricamento'));
   }, [scope, toast, onCount]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { api.get<Person[]>('/api/tickets/assignable-users').then(setPeople).catch(() => setPeople([])); }, []);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -60,9 +79,12 @@ export function OggiView({ onCount }: { onCount?: (late: number) => void }) {
   const blocked = tasks.filter(t => t.status === 'bloccata');
   const waiting = tasks.filter(t => t.status === 'in_attesa').sort((a, b) => (b.waiting_days ?? 0) - (a.waiting_days ?? 0));
   const rest = tasks.filter(t => t.status !== 'bloccata' && t.status !== 'in_attesa');
-  const late = rest.filter(t => t.days_to_due != null && t.days_to_due < 0);
-  const today = rest.filter(t => t.days_to_due === 0);
-  const next = rest.filter(t => t.days_to_due == null || t.days_to_due > 0).slice(0, 8);
+  const d = (t: PTask) => t.days_to_due;
+  const late = rest.filter(t => d(t) != null && d(t)! < 0);
+  const today = rest.filter(t => d(t) === 0);
+  const soon = rest.filter(t => d(t) != null && d(t)! >= 1 && d(t)! <= 7);
+  const later = rest.filter(t => d(t) == null || d(t)! > 7);
+  const g = { people, reload: load };
 
   return (
     <div className="space-y-4">
@@ -88,13 +110,14 @@ export function OggiView({ onCount }: { onCount?: (late: number) => void }) {
       ) : (
         <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
           <div className="space-y-4">
-            <Group title="In ritardo" tone="danger" tasks={late} reload={load} />
-            <Group title="Oggi" tasks={today} reload={load} />
-            <Group title="Prossime" tasks={next} reload={load} />
+            <Group title="In ritardo" tone="danger" tasks={late} {...g} />
+            <Group title="Oggi" tasks={today} {...g} />
+            <Group title="Entro 7 giorni" tasks={soon} {...g} />
+            <Group title="Più avanti o senza scadenza" tasks={later} limit={8} {...g} />
           </div>
           <div className="space-y-4">
-            <Group title="In attesa di risposta" tone="warning" tasks={waiting} reload={load} />
-            <Group title="Bloccate" tone="danger" tasks={blocked} reload={load} />
+            <Group title="In attesa di risposta" tone="warning" tasks={waiting} {...g} />
+            <Group title="Bloccate" tone="danger" tasks={blocked} {...g} />
           </div>
         </div>
       )}
