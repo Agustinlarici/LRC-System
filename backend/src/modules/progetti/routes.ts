@@ -8,6 +8,7 @@ import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
 import { requireIT } from '../tickets/auth.js';
 import type { Env, AuthUser } from '../../lib/auth.js';
+import { computeHealth } from './health.js';
 
 export const progettiRoutes = new Hono<Env>();
 progettiRoutes.use('*', requireIT);
@@ -24,7 +25,7 @@ const PROJECT_STATUS_LABEL: Record<string, string> = { attivo: 'attivo', in_paus
 // Colonne attività con la data come stringa AAAA-MM-GG (evita fusi orari lato client)
 const TASK_COLS = db`
   t.id, t.project_id, t.ticket_id, t.title, t.status, t.status_note, t.waiting_since, t.assigned_to,
-  to_char(t.due_date, 'YYYY-MM-DD') AS due_date, t.done_at, t.created_at
+  to_char(t.due_date, 'YYYY-MM-DD') AS due_date, t.done_at, t.created_at, t.phase_id
 `;
 
 function intParam(raw: string | undefined, label = 'ID'): number {
@@ -50,7 +51,8 @@ async function writeLog(
 async function loadProject(q: Q, id: number) {
   const [p] = await q`
     SELECT p.id, p.name, p.description, p.status, p.owner_id, u.display_name AS owner_name,
-           to_char(p.due_date, 'YYYY-MM-DD') AS due_date, p.created_at, p.updated_at, p.closed_at
+           to_char(p.due_date, 'YYYY-MM-DD') AS due_date, p.created_at, p.updated_at, p.closed_at,
+           to_char(p.created_at::date, 'YYYY-MM-DD') AS created_day
     FROM projects p LEFT JOIN users u ON u.id = p.owner_id
     WHERE p.id = ${id}
   `;
@@ -77,22 +79,86 @@ async function attachTickets(q: Q, projectId: number, ticketIds: number[], user:
   return found;
 }
 
+// Fasi di un gruppo di progetti. La data d'inizio di una fase è quella fissata a mano oppure la
+// scadenza della precedente (la prima parte dal giorno di creazione del progetto).
+function effectiveStarts(phases: any[], projectStart: string): any[] {
+  let prev: string | null = null;
+  return phases.map(ph => {
+    let start: string = ph.start_date ?? prev ?? projectStart;
+    if (ph.due_date && start > ph.due_date) start = ph.due_date;
+    prev = ph.due_date ?? prev;
+    return { ...ph, start };
+  });
+}
+
+// Aggiunge a ogni progetto: fasi (con avanzamento e inizio), scadenza effettiva e semaforo.
+// La scadenza è quella fissata a mano (due_date) oppure, se manca, quella dell'ultima fase.
+async function enrich(q: Q, projects: any[]) {
+  if (projects.length === 0) return projects;
+  const ids = projects.map(p => p.id);
+  const [phases, tasks, last] = await Promise.all([
+    q`
+      SELECT ph.id, ph.project_id, ph.name, ph.sort_order,
+             to_char(ph.start_date, 'YYYY-MM-DD') AS start_date, to_char(ph.due_date, 'YYYY-MM-DD') AS due_date,
+             (ph.due_date - CURRENT_DATE)::int AS due_days,
+             COUNT(t.id)::int AS tasks_total, (COUNT(t.id) FILTER (WHERE t.status = 'fatta'))::int AS tasks_done
+      FROM project_phases ph LEFT JOIN project_tasks t ON t.phase_id = ph.id
+      WHERE ph.project_id IN ${q(ids)}
+      GROUP BY ph.id ORDER BY ph.project_id, ph.sort_order, ph.id
+    `,
+    q`
+      SELECT t.project_id, t.title, t.status, t.status_note,
+             (t.due_date - CURRENT_DATE)::int AS due_days,
+             CASE WHEN t.status = 'in_attesa' AND t.waiting_since IS NOT NULL
+                  THEN (CURRENT_DATE - t.waiting_since::date)::int END AS waiting_days,
+             (ph.due_date - CURRENT_DATE)::int AS phase_due_days
+      FROM project_tasks t LEFT JOIN project_phases ph ON ph.id = t.phase_id
+      WHERE t.project_id IN ${q(ids)} AND t.status <> 'fatta'
+    `,
+    q`SELECT project_id, (CURRENT_DATE - MAX(created_at)::date)::int AS idle_days
+      FROM project_log WHERE project_id IN ${q(ids)} GROUP BY project_id`,
+  ]);
+  return projects.map(p => {
+    const mine = effectiveStarts(phases.filter((x: any) => x.project_id === p.id), p.created_day ?? new Date().toISOString().slice(0, 10));
+    const lastDue = mine.map((x: any) => x.due_date).filter(Boolean).sort().pop() ?? null;
+    const idle = last.find((x: any) => x.project_id === p.id)?.idle_days ?? null;
+    const health = computeHealth({
+      status: p.status, idle_days: idle,
+      phases: mine.map((x: any) => ({ name: x.name, due_days: x.due_days, open_tasks: x.tasks_total - x.tasks_done })),
+      tasks: tasks.filter((x: any) => x.project_id === p.id).map((x: any) => ({
+        title: x.title, status: x.status, status_note: x.status_note,
+        due_days: x.due_days, waiting_days: x.waiting_days, phase_due_days: x.phase_due_days,
+      })),
+    });
+    return { ...p, phases: mine, effective_due: p.due_date ?? lastDue, due_is_manual: !!p.due_date, health };
+  });
+}
+
+// La fase deve esistere e appartenere allo stesso progetto dell'attività.
+async function checkPhase(q: Q, phaseId: number, projectId: number | null) {
+  if (!projectId) throw new HTTPException(400, { message: 'La fase richiede un progetto' });
+  const [ph] = await q`SELECT project_id FROM project_phases WHERE id = ${phaseId}`;
+  if (!ph || ph.project_id !== projectId) throw new HTTPException(400, { message: 'Fase non valida per questo progetto' });
+}
+
 // ─── Oggi: attività dell'utente (o di tutti con ?scope=tutte) ───────────────
 
 progettiRoutes.get('/oggi', async (c) => {
   const user = c.get('user');
   const all = c.req.query('scope') === 'tutte';
   const rows = await db`
-    SELECT ${TASK_COLS}, p.name AS project_name,
+    SELECT ${TASK_COLS}, p.name AS project_name, a.display_name AS assigned_name, ph.name AS phase_name,
            (t.due_date - CURRENT_DATE)::int AS days_to_due,
            CASE WHEN t.status = 'in_attesa' AND t.waiting_since IS NOT NULL
                 THEN (CURRENT_DATE - t.waiting_since::date)::int END AS waiting_days
     FROM project_tasks t
     LEFT JOIN projects p ON p.id = t.project_id
+    LEFT JOIN project_phases ph ON ph.id = t.phase_id
+    LEFT JOIN users a ON a.id = t.assigned_to
     WHERE t.status <> 'fatta'
       AND (p.id IS NULL OR p.status <> 'chiuso')
       ${all ? db`` : db`AND t.assigned_to = ${user.id}`}
-    ORDER BY t.due_date NULLS LAST, t.created_at
+    ORDER BY t.due_date NULLS LAST, t.created_at DESC
   `;
   return c.json(rows);
 });
@@ -135,6 +201,7 @@ const createTaskSchema = z.object({
   title:       z.string().trim().min(1).max(300),
   due_date:    DATE.nullable().optional(),
   assigned_to: z.number().int().positive().nullable().optional(),
+  phase_id:    z.number().int().positive().nullable().optional(),
 });
 
 progettiRoutes.post('/tasks', async (c) => {
@@ -143,10 +210,11 @@ progettiRoutes.post('/tasks', async (c) => {
   const task = await db.begin(async (tx) => {
     const q = tx as unknown as Q;
     if (body.project_id) await loadProject(q, body.project_id);
+    if (body.phase_id) await checkPhase(q, body.phase_id, body.project_id ?? null);
     const [created] = await q`
-      INSERT INTO project_tasks (project_id, ticket_id, title, due_date, assigned_to, created_by)
+      INSERT INTO project_tasks (project_id, ticket_id, title, due_date, assigned_to, phase_id, created_by)
       VALUES (${body.project_id ?? null}, ${body.ticket_id ?? null}, ${body.title}, ${body.due_date ?? null},
-              ${body.assigned_to ?? user.id}, ${user.id})
+              ${body.assigned_to ?? user.id}, ${body.phase_id ?? null}, ${user.id})
       RETURNING id
     `;
     if (body.project_id) {
@@ -164,6 +232,7 @@ const patchTaskSchema = z.object({
   status_note: z.string().trim().max(300).nullable().optional(),
   due_date:    DATE.nullable().optional(),
   assigned_to: z.number().int().positive().nullable().optional(),
+  phase_id:    z.number().int().positive().nullable().optional(),
 });
 
 progettiRoutes.patch('/tasks/:taskId', async (c) => {
@@ -180,6 +249,10 @@ progettiRoutes.patch('/tasks/:taskId', async (c) => {
     if (body.title !== undefined) updates.title = body.title;
     if (body.due_date !== undefined) updates.due_date = body.due_date;
     if (body.assigned_to !== undefined) updates.assigned_to = body.assigned_to;
+    if (body.phase_id !== undefined) {
+      if (body.phase_id !== null) await checkPhase(q, body.phase_id, task.project_id);
+      updates.phase_id = body.phase_id;
+    }
     if (body.status_note !== undefined) updates.status_note = body.status_note || null;
 
     const newStatus = body.status ?? task.status;
@@ -230,7 +303,7 @@ progettiRoutes.get('/', async (c) => {
   const includeClosed = c.req.query('include_closed') === '1';
   const rows = await db`
     SELECT p.id, p.name, p.status, to_char(p.due_date, 'YYYY-MM-DD') AS due_date, p.owner_id,
-           u.display_name AS owner_name,
+           u.display_name AS owner_name, to_char(p.created_at::date, 'YYYY-MM-DD') AS created_day,
            COALESCE(ts.total, 0)::int AS tasks_total, COALESCE(ts.done, 0)::int AS tasks_done,
            COALESCE(ts.blocked, 0)::int AS tasks_blocked, COALESCE(ts.waiting, 0)::int AS tasks_waiting,
            lg.last_activity,
@@ -260,7 +333,7 @@ progettiRoutes.get('/', async (c) => {
     WHERE ${includeClosed ? db`TRUE` : db`p.status <> 'chiuso'`}
     ORDER BY (p.status = 'attivo') DESC, COALESCE(lg.last_activity, p.created_at) DESC
   `;
-  return c.json(rows);
+  return c.json(await enrich(db, rows));
 });
 
 const createProjectSchema = z.object({
@@ -294,13 +367,14 @@ progettiRoutes.get('/:id', async (c) => {
   const project = await loadProject(db, id);
   const [tasks, tickets] = await Promise.all([
     db`
-      SELECT ${TASK_COLS},
+      SELECT ${TASK_COLS}, a.display_name AS assigned_name,
              (t.due_date - CURRENT_DATE)::int AS days_to_due,
              CASE WHEN t.status = 'in_attesa' AND t.waiting_since IS NOT NULL
                   THEN (CURRENT_DATE - t.waiting_since::date)::int END AS waiting_days
       FROM project_tasks t
+      LEFT JOIN users a ON a.id = t.assigned_to
       WHERE t.project_id = ${id}
-      ORDER BY (t.status = 'fatta'), t.due_date NULLS LAST, t.created_at
+      ORDER BY (t.status = 'fatta'), t.due_date NULLS LAST, t.created_at DESC
     `,
     db`
       SELECT id, ticket_number, title, status, priority, caller_name, created_at
@@ -308,8 +382,9 @@ progettiRoutes.get('/:id', async (c) => {
     `,
   ]);
   const done = tasks.filter((t: any) => t.status === 'fatta').length;
+  const [full] = await enrich(db, [project]);
   return c.json({
-    ...project, tasks, tickets,
+    ...full, tasks, tickets,
     tasks_total: tasks.length, tasks_done: done,
     progress_pct: tasks.length ? Math.round((100 * done) / tasks.length) : 0,
   });
@@ -344,6 +419,72 @@ progettiRoutes.patch('/:id', async (c) => {
     }
   });
   return c.json(await loadProject(db, id));
+});
+
+// ─── Fasi ─────────────────────────────────────────────────────────────────────
+
+const phaseSchema = z.object({
+  name:       z.string().trim().min(1).max(200),
+  due_date:   DATE.nullable().optional(),
+  start_date: DATE.nullable().optional(),
+});
+
+progettiRoutes.post('/:id/phases', async (c) => {
+  const id = intParam(c.req.param('id'));
+  const body = await parseBody(c, phaseSchema);
+  const user = c.get('user');
+  const phase = await db.begin(async (tx) => {
+    const q = tx as unknown as Q;
+    await loadProject(q, id);
+    const [{ next }] = await q`SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM project_phases WHERE project_id = ${id}`;
+    const [row] = await q`
+      INSERT INTO project_phases (project_id, name, due_date, start_date, sort_order)
+      VALUES (${id}, ${body.name}, ${body.due_date ?? null}, ${body.start_date ?? null}, ${next})
+      RETURNING id, project_id, name, sort_order, to_char(start_date, 'YYYY-MM-DD') AS start_date, to_char(due_date, 'YYYY-MM-DD') AS due_date`;
+    await writeLog(q, id, 'sistema', `Fase «${body.name}» aggiunta`, user);
+    return row;
+  });
+  return c.json(phase, 201);
+});
+
+const patchPhaseSchema = z.object({
+  name:       z.string().trim().min(1).max(200).optional(),
+  due_date:   DATE.nullable().optional(),
+  start_date: DATE.nullable().optional(),
+});
+
+progettiRoutes.patch('/phases/:phaseId', async (c) => {
+  const phaseId = intParam(c.req.param('phaseId'), 'ID fase');
+  const body = await parseBody(c, patchPhaseSchema);
+  const user = c.get('user');
+  const row = await db.begin(async (tx) => {
+    const q = tx as unknown as Q;
+    const [ph] = await q`
+      SELECT id, project_id, name, to_char(due_date, 'YYYY-MM-DD') AS due_date FROM project_phases WHERE id = ${phaseId} FOR UPDATE`;
+    if (!ph) throw new HTTPException(404, { message: 'Fase non trovata' });
+    const updates: Record<string, unknown> = { ...body };
+    if (Object.keys(updates).length > 0) await q`UPDATE project_phases SET ${q(updates)} WHERE id = ${phaseId}`;
+    if (body.due_date !== undefined && body.due_date !== ph.due_date) {
+      await writeLog(q, ph.project_id, 'sistema', `Fase «${body.name ?? ph.name}»: scadenza ${body.due_date ?? 'rimossa'}`, user);
+    }
+    const [out] = await q`
+      SELECT id, project_id, name, sort_order, to_char(start_date, 'YYYY-MM-DD') AS start_date, to_char(due_date, 'YYYY-MM-DD') AS due_date
+      FROM project_phases WHERE id = ${phaseId}`;
+    return out;
+  });
+  return c.json(row);
+});
+
+progettiRoutes.delete('/phases/:phaseId', async (c) => {
+  const phaseId = intParam(c.req.param('phaseId'), 'ID fase');
+  const user = c.get('user');
+  await db.begin(async (tx) => {
+    const q = tx as unknown as Q;
+    const [ph] = await q`DELETE FROM project_phases WHERE id = ${phaseId} RETURNING project_id, name`;
+    if (!ph) throw new HTTPException(404, { message: 'Fase non trovata' });
+    await writeLog(q, ph.project_id, 'sistema', `Fase «${ph.name}» eliminata (le attività restano, senza fase)`, user);
+  });
+  return c.body(null, 204);
 });
 
 // ─── Cronologia: diario del progetto + storico dei ticket collegati (letto, non copiato) ───

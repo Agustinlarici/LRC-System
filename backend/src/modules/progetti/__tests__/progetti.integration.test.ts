@@ -181,4 +181,103 @@ describe.skipIf(!URL)('Progetti (integrazione)', () => {
     expect((await call('admin', 'POST', `/${p.id}/log`, { kind: 'sistema', body: 'x' })).status).toBe(400);
     expect((await call('admin', 'GET', '/99999')).status).toBe(404);
   });
+
+  // ─── Fasi con scadenza (0092) ──────────────────────────────────────────────
+  const day = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const phase = async (pid: number, name: string, due: number | null) =>
+    json(await call('admin', 'POST', `/${pid}/phases`, { name, due_date: due === null ? null : day(due) }));
+
+  it('fasi: ordine, inizio dalla scadenza della precedente, scadenza effettiva e scadenza fissata a mano', async () => {
+    const p = await json(await call('admin', 'POST', '/', { name: 'Rete' }));
+    const a = await phase(p.id, 'Rilevamento', 5);
+    const b = await phase(p.id, 'Installazione', 20);
+    expect(a.sort_order).toBe(0);
+    expect(b.sort_order).toBe(1);
+
+    let det = await json(await call('admin', 'GET', `/${p.id}`));
+    expect(det.phases.map((x: any) => x.name)).toEqual(['Rilevamento', 'Installazione']);
+    expect(det.phases[1].start).toBe(day(5));              // parte quando scade la precedente
+    expect(det.effective_due).toBe(day(20));               // dall'ultima fase
+    expect(det.due_is_manual).toBe(false);
+
+    await call('admin', 'PATCH', `/${p.id}`, { due_date: day(40) });   // fissata a mano
+    det = await json(await call('admin', 'GET', `/${p.id}`));
+    expect(det).toMatchObject({ effective_due: day(40), due_is_manual: true });
+    await call('admin', 'PATCH', `/${p.id}`, { due_date: null });      // torna automatica
+    expect((await json(await call('admin', 'GET', `/${p.id}`))).effective_due).toBe(day(20));
+
+    await call('admin', 'PATCH', `/phases/${b.id}`, { due_date: day(30), start_date: day(8) });
+    det = await json(await call('admin', 'GET', `/${p.id}`));
+    expect(det.phases[1]).toMatchObject({ due_date: day(30), start: day(8) });
+    const tl = await json(await call('admin', 'GET', `/${p.id}/timeline`));
+    expect(tl.some((r: any) => r.body?.includes('Fase «Installazione»: scadenza'))).toBe(true);
+    expect((await call('admin', 'PATCH', '/phases/99999', { name: 'x' })).status).toBe(404);
+    expect((await call('admin', 'POST', `/${p.id}/phases`, { name: ' ' })).status).toBe(400);
+  });
+
+  it('attività in una fase: avanzamento per fase, spostamento, fase di un altro progetto rifiutata, eliminare la fase le conserva', async () => {
+    const p = await json(await call('admin', 'POST', '/', { name: 'P1' }));
+    const other = await json(await call('admin', 'POST', '/', { name: 'P2' }));
+    const f1 = await phase(p.id, 'Fase 1', 5);
+    const f2 = await phase(p.id, 'Fase 2', 10);
+    const foreign = await phase(other.id, 'Altrove', 5);
+
+    const t1 = await json(await call('admin', 'POST', '/tasks', { project_id: p.id, phase_id: f1.id, title: 'uno' }));
+    const t2 = await json(await call('admin', 'POST', '/tasks', { project_id: p.id, phase_id: f1.id, title: 'due' }));
+    await call('admin', 'PATCH', `/tasks/${t1.id}`, { status: 'fatta' });
+    let det = await json(await call('admin', 'GET', `/${p.id}`));
+    expect(det.phases[0]).toMatchObject({ tasks_total: 2, tasks_done: 1 });
+    expect(det.phases[1]).toMatchObject({ tasks_total: 0, tasks_done: 0 });
+
+    expect((await call('admin', 'PATCH', `/tasks/${t2.id}`, { phase_id: f2.id })).status).toBe(200);
+    det = await json(await call('admin', 'GET', `/${p.id}`));
+    expect(det.tasks.find((t: any) => t.id === t2.id).phase_id).toBe(f2.id);
+
+    expect((await call('admin', 'PATCH', `/tasks/${t2.id}`, { phase_id: foreign.id })).status).toBe(400);
+    expect((await call('admin', 'POST', '/tasks', { title: 'libera', phase_id: f1.id })).status).toBe(400);          // senza progetto
+    expect((await call('admin', 'POST', '/tasks', { project_id: p.id, phase_id: foreign.id, title: 'x' })).status).toBe(400);
+
+    expect((await call('admin', 'DELETE', `/phases/${f2.id}`)).status).toBe(204);
+    det = await json(await call('admin', 'GET', `/${p.id}`));
+    expect(det.phases).toHaveLength(1);
+    expect(det.tasks.find((t: any) => t.id === t2.id)).toMatchObject({ phase_id: null });   // l'attività resta
+  });
+
+  it('semaforo: rosso con attività scaduta o fase scaduta con attività aperte, verde se tutto è in linea', async () => {
+    const ok = await json(await call('admin', 'POST', '/', { name: 'Verde' }));
+    await call('admin', 'POST', '/tasks', { project_id: ok.id, title: 'ok', due_date: day(5) });
+    const late = await json(await call('admin', 'POST', '/', { name: 'Rosso' }));
+    await call('admin', 'POST', '/tasks', { project_id: late.id, title: 'tardi', due_date: day(-3) });
+    const ph = await json(await call('admin', 'POST', '/', { name: 'Fase scaduta' }));
+    const old = await phase(ph.id, 'Vecchia', -4);
+    await call('admin', 'POST', '/tasks', { project_id: ph.id, phase_id: old.id, title: 'aperta' });
+
+    const list = await json(await call('admin', 'GET', '/'));
+    const by = (n: string) => list.find((x: any) => x.name === n);
+    expect(by('Verde').health).toMatchObject({ tone: 'success', label: 'In linea' });
+    expect(by('Rosso').health).toMatchObject({ tone: 'danger', label: 'In ritardo' });
+    expect(by('Rosso').health.reasons[0]).toContain('«tardi» è in ritardo');
+    expect(by('Fase scaduta').health.tone).toBe('danger');
+    expect(by('Fase scaduta').phases[0]).toMatchObject({ name: 'Vecchia', tasks_total: 1, tasks_done: 0 });
+
+    // completata la sua unica attività, la fase scaduta non da più segnale
+    const t = (await json(await call('admin', 'GET', `/${ph.id}`))).tasks[0];
+    await call('admin', 'PATCH', `/tasks/${t.id}`, { status: 'fatta' });
+    expect((await json(await call('admin', 'GET', `/${ph.id}`))).health.tone).toBe('success');
+
+    await call('admin', 'PATCH', `/${ok.id}`, { status: 'in_pausa' });
+    expect((await json(await call('admin', 'GET', `/${ok.id}`))).health).toMatchObject({ tone: 'neutral', label: 'In pausa' });
+  });
+
+  it('ordine: prima le aperte con scadenza, poi quelle senza data (la più recente per prima), in fondo le fatte', async () => {
+    const p = await json(await call('admin', 'POST', '/', { name: 'Ordine' }));
+    await call('admin', 'POST', '/tasks', { project_id: p.id, title: 'senza data vecchia' });
+    await call('admin', 'POST', '/tasks', { project_id: p.id, title: 'con data', due_date: day(3) });
+    await call('admin', 'POST', '/tasks', { project_id: p.id, title: 'senza data nuova' });
+    const f = await json(await call('admin', 'POST', '/tasks', { project_id: p.id, title: 'finita' }));
+    await call('admin', 'PATCH', `/tasks/${f.id}`, { status: 'fatta' });
+    const det = await json(await call('admin', 'GET', `/${p.id}`));
+    expect(det.tasks.map((t: any) => t.title)).toEqual(['con data', 'senza data nuova', 'senza data vecchia', 'finita']);
+    expect(det.tasks[0].assigned_name).toBe('prog_admin');
+  });
 });
