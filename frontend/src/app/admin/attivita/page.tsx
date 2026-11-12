@@ -14,8 +14,12 @@ import { SkeletonTable } from '@/components/ui/Skeleton';
 // ─── Tipi ─────────────────────────────────────────────────────────────────────
 
 interface Accessi {
-  kpi:   { logins: number; utenti: number; falliti: number; utenti_attivi: number };
-  daily: { day: string; ok: number; ko: number }[];
+  kpi:   { logins: number; utenti: number; falliti: number; logins_dispositivi: number; utenti_attivi: number };
+  daily: { day: string; ok: number; dev: number; ko: number }[];
+  dispositivi: {
+    id: number; label: string; utente: string; created_at: string; last_used_at: string | null;
+    revoked_at: string | null; logins: number; pagine: number; ultimo_segnale: string | null;
+  }[];
   utenti: {
     id: number; username: string; display_name: string; role: string;
     ultimo_login: string | null; logins: number; pagine: number; ultimo_segnale: string | null;
@@ -24,11 +28,12 @@ interface Accessi {
 interface Moduli {
   totale: { pagine: number; da: string | null };
   moduli: { module: string; pagine: number; utenti: number; ultimo: string }[];
+  pagine: { module: string; path: string; visite: number; utenti: number; dispositivi: number; ultimo: string }[];
   heat:   { dow: number; hour: number; n: number }[];
   utenti: { nome: string; module: string; pagine: number }[];
 }
 interface Online {
-  online: { username: string; display_name: string; role: string; last_path: string; last_seen: string; module: string }[];
+  online: { username: string; display_name: string; role: string; device_label: string | null; last_path: string; last_seen: string; module: string }[];
 }
 interface Sicurezza {
   fallitiIp:     { ip: string; tentativi: number; utenti: number; ultimo: string }[];
@@ -45,6 +50,7 @@ const PERIODS = [7, 30, 90, 180];
 
 // Colori dei grafici: stessi valori dei token (recharts non legge le classi Tailwind)
 const C_OK   = '#2B5BA8'; // accent-ink
+const C_DEV  = '#8A8A91'; // dispositivi (grigio neutro)
 const C_KO   = '#B42318'; // danger
 const C_GRID = '#E7E5E4'; // line
 const C_AXIS = '#636369'; // muted
@@ -95,16 +101,20 @@ function Td({ children, right, muted }: { children?: React.ReactNode; right?: bo
 }
 
 // Dati caricati per tab: ricaricati al cambio di scheda o periodo
-function useTabData<T>(path: string, days: number | null) {
+function useTabData<T>(path: string, days: number | null, escludi: boolean) {
   const [data, setData]   = useState<T | null>(null);
   const [error, setError] = useState('');
 
   const load = useCallback(() => {
     setError('');
-    api.get<T>(days != null ? `${path}?days=${days}` : path)
+    const q = new URLSearchParams();
+    if (days != null) q.set('days', String(days));
+    if (escludi) q.set('escludi_me', '1');
+    const qs = q.toString();
+    api.get<T>(qs ? `${path}?${qs}` : path)
       .then(setData)
       .catch(e => setError(e instanceof Error ? e.message : 'Errore'));
-  }, [path, days]);
+  }, [path, days, escludi]);
 
   useEffect(() => { setData(null); load(); }, [load]);
   return { data, error, reload: load };
@@ -112,8 +122,8 @@ function useTabData<T>(path: string, days: number | null) {
 
 // ─── Accessi ──────────────────────────────────────────────────────────────────
 
-function AccessiTab({ days }: { days: number }) {
-  const { data, error } = useTabData<Accessi>('/api/activity/accessi', days);
+function AccessiTab({ days, escludi }: { days: number; escludi: boolean }) {
+  const { data, error } = useTabData<Accessi>('/api/activity/accessi', days, escludi);
   if (error) return <EmptyState title="Impossibile caricare i dati" hint={error} />;
   if (!data) return <SkeletonTable rows={6} cols={5} />;
 
@@ -122,8 +132,9 @@ function AccessiTab({ days }: { days: number }) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <Kpi label="Accessi" value={data.kpi.logins} hint={`ultimi ${days} giorni`} />
+        <Kpi label="Accessi dispositivi" value={data.kpi.logins_dispositivi} hint="kiosk e tablet senza password" />
         <Kpi label="Utenti diversi" value={data.kpi.utenti} hint={`su ${data.kpi.utenti_attivi} attivi`} />
         <Kpi label="Tentativi falliti" value={data.kpi.falliti} />
         <Kpi label="Mai entrati" value={mai} hint="utenti attivi senza alcun accesso" />
@@ -139,11 +150,35 @@ function AccessiTab({ days }: { days: number }) {
               <YAxis allowDecimals={false} tick={{ fill: C_AXIS, fontSize: 11 }} tickLine={false} axisLine={false} />
               <Tooltip cursor={{ fill: 'rgba(20,20,22,0.04)' }} contentStyle={{ borderRadius: 12, border: '1px solid #E7E5E4', fontSize: 12 }} />
               <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="ok" name="Riusciti" stackId="a" fill={C_OK} radius={[0, 0, 0, 0]} />
+              <Bar dataKey="ok"  name="Riusciti"    stackId="a" fill={C_OK}  radius={[0, 0, 0, 0]} />
+              <Bar dataKey="dev" name="Dispositivi" stackId="a" fill={C_DEV} radius={[0, 0, 0, 0]} />
               <Bar dataKey="ko" name="Falliti"  stackId="a" fill={C_KO} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
+      </Panel>
+
+      <Panel title="Dispositivi (accesso senza password)">
+        {data.dispositivi.length === 0 ? <p className="text-sm text-muted">Nessun dispositivo accoppiato.</p> : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="border-b border-line">
+                <tr><Th>Dispositivo</Th><Th>Utente</Th><Th>Ultimo segnale</Th><Th right>Accessi</Th><Th right>Pagine viste</Th></tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {data.dispositivi.map(d => (
+                  <tr key={d.id} className={d.revoked_at ? 'opacity-50' : undefined}>
+                    <Td>{d.label}{d.revoked_at && <span className="ml-2 text-xs text-muted">(revocato)</span>}</Td>
+                    <Td muted>{d.utente}</Td>
+                    <Td muted>{fmtDateTime(d.ultimo_segnale ?? d.last_used_at)}</Td>
+                    <Td right>{d.logins}</Td>
+                    <Td right>{d.pagine}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Panel>
 
       <Panel title="Utenti">
@@ -206,8 +241,8 @@ function HeatMap({ heat }: { heat: Moduli['heat'] }) {
   );
 }
 
-function ModuliTab({ days }: { days: number }) {
-  const { data, error } = useTabData<Moduli>('/api/activity/moduli', days);
+function ModuliTab({ days, escludi }: { days: number; escludi: boolean }) {
+  const { data, error } = useTabData<Moduli>('/api/activity/moduli', days, escludi);
   const [open, setOpen] = useState<string | null>(null);
   if (error) return <EmptyState title="Impossibile caricare i dati" hint={error} />;
   if (!data) return <SkeletonTable rows={6} cols={4} />;
@@ -216,6 +251,7 @@ function ModuliTab({ days }: { days: number }) {
   }
 
   const topUtenti = open ? data.utenti.filter(u => u.module === open).slice(0, 10) : [];
+  const pagineModulo = open ? data.pagine.filter(p => p.module === open).slice(0, 30) : [];
 
   return (
     <div className="space-y-6">
@@ -244,7 +280,7 @@ function ModuliTab({ days }: { days: number }) {
         <HeatMap heat={data.heat} />
       </Panel>
 
-      <Panel title="Dettaglio per modulo">
+      <Panel title="Dettaglio per modulo (clicca un modulo per vedere le pagine)">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="border-b border-line">
@@ -260,13 +296,26 @@ function ModuliTab({ days }: { days: number }) {
           </table>
         </div>
         {open && (
-          <div className="mt-4 rounded-ctl bg-stone-50 p-3">
+          <div className="mt-4 space-y-4 rounded-ctl bg-stone-50 p-3">
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted">Pagine di «{open}»</p>
+              <table className="w-full">
+                <thead className="border-b border-line"><tr><Th>Pagina</Th><Th right>Visite</Th><Th right>Utenti</Th><Th right>Dispositivi</Th><Th>Ultima</Th></tr></thead>
+                <tbody className="divide-y divide-line">
+                  {pagineModulo.map(p => (
+                    <tr key={p.path}><Td>{p.path}</Td><Td right>{p.visite}</Td><Td right>{p.utenti}</Td><Td right>{p.dispositivi}</Td><Td muted>{fmtDateTime(p.ultimo)}</Td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div>
             <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted">Chi usa «{open}»</p>
             <ul className="space-y-1 text-sm">
               {topUtenti.map(u => (
                 <li key={u.nome} className="flex justify-between"><span>{u.nome}</span><span className="tabular-nums text-muted">{u.pagine}</span></li>
               ))}
             </ul>
+            </div>
           </div>
         )}
       </Panel>
@@ -276,8 +325,8 @@ function ModuliTab({ days }: { days: number }) {
 
 // ─── Online ora ───────────────────────────────────────────────────────────────
 
-function OnlineTab() {
-  const { data, error, reload } = useTabData<Online>('/api/activity/online', null);
+function OnlineTab({ escludi }: { escludi: boolean }) {
+  const { data, error, reload } = useTabData<Online>('/api/activity/online', null, escludi);
   useEffect(() => { const id = setInterval(reload, 30_000); return () => clearInterval(id); }, [reload]);
 
   if (error) return <EmptyState title="Impossibile caricare i dati" hint={error} />;
@@ -290,8 +339,8 @@ function OnlineTab() {
         <thead className="border-b border-line"><tr><Th>Utente</Th><Th>Modulo</Th><Th>Pagina</Th><Th>Ultimo segnale</Th></tr></thead>
         <tbody className="divide-y divide-line">
           {data.online.map(o => (
-            <tr key={o.username}>
-              <Td><span className="mr-2 inline-block h-2 w-2 rounded-full bg-success align-middle" aria-hidden />{o.display_name}</Td>
+            <tr key={`${o.username}-${o.device_label ?? ''}`}>
+              <Td><span className="mr-2 inline-block h-2 w-2 rounded-full bg-success align-middle" aria-hidden />{o.device_label ? `${o.device_label} (dispositivo)` : o.display_name}</Td>
               <Td>{o.module}</Td><Td muted>{o.last_path}</Td><Td muted>{ago(o.last_seen)}</Td>
             </tr>
           ))}
@@ -303,8 +352,8 @@ function OnlineTab() {
 
 // ─── Sicurezza ────────────────────────────────────────────────────────────────
 
-function SicurezzaTab({ days }: { days: number }) {
-  const { data, error } = useTabData<Sicurezza>('/api/activity/sicurezza', days);
+function SicurezzaTab({ days, escludi }: { days: number; escludi: boolean }) {
+  const { data, error } = useTabData<Sicurezza>('/api/activity/sicurezza', days, escludi);
   if (error) return <EmptyState title="Impossibile caricare i dati" hint={error} />;
   if (!data) return <SkeletonTable rows={6} cols={4} />;
 
@@ -362,6 +411,12 @@ export default function AttivitaPage() {
   const { user } = useAuth();
   const [tab, setTab]   = useState<Tab>('accessi');
   const [days, setDays] = useState(30);
+  // «Non contare i miei dati»: esclude visite e accessi dell'utente che guarda il pannello (chi sviluppa)
+  const [escludi, setEscludi] = useState(true);
+  useEffect(() => { try { setEscludi(localStorage.getItem('attivita_escludi_me') !== '0'); } catch {} }, []);
+  const toggleEscludi = () => {
+    setEscludi(v => { try { localStorage.setItem('attivita_escludi_me', v ? '0' : '1'); } catch {} return !v; });
+  };
 
   if (user?.role !== 'admin') {
     return <EmptyState title="Accesso riservato" hint="Questa sezione è visibile solo agli amministratori." />;
@@ -373,7 +428,12 @@ export default function AttivitaPage() {
         title="Attività"
         description="Chi entra nel sistema e come lo usa."
         actions={
-          tab !== 'online' && (
+          <>
+            <label className="flex cursor-pointer items-center gap-2 rounded-full bg-white px-3 py-1.5 text-sm text-ink-900 shadow-card">
+              <input type="checkbox" checked={escludi} onChange={toggleEscludi} className="h-4 w-4 accent-ink-800" />
+              Non contare i miei dati
+            </label>
+          {tab !== 'online' && (
             <div className="inline-flex gap-1 rounded-full bg-white p-1 shadow-card" role="group" aria-label="Periodo">
               {PERIODS.map(p => (
                 <button
@@ -388,14 +448,15 @@ export default function AttivitaPage() {
                 </button>
               ))}
             </div>
-          )
+          )}
+          </>
         }
       />
       <Tabs tabs={TABS} value={tab} onChange={setTab} labels={TAB_LABELS} />
-      {tab === 'accessi'   && <AccessiTab days={days} />}
-      {tab === 'moduli'    && <ModuliTab days={days} />}
-      {tab === 'online'    && <OnlineTab />}
-      {tab === 'sicurezza' && <SicurezzaTab days={days} />}
+      {tab === 'accessi'   && <AccessiTab days={days} escludi={escludi} />}
+      {tab === 'moduli'    && <ModuliTab days={days} escludi={escludi} />}
+      {tab === 'online'    && <OnlineTab escludi={escludi} />}
+      {tab === 'sicurezza' && <SicurezzaTab days={days} escludi={escludi} />}
     </div>
   );
 }

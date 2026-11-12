@@ -3,7 +3,7 @@
 
 import { logger } from '../../../lib/logger.js';
 import type { EsitoCaricamento, Utente } from '../service.js';
-import { servizioIa } from './servizio.js';
+import { servizioIa, type EsitoRianalisi } from './servizio.js';
 
 export async function accodaDopoCarico(user: Utente, esito: Pick<EsitoCaricamento, 'id' | 'stato' | 'duplicato'>): Promise<void> {
   if (esito.duplicato || esito.stato === 'QUARANTENA') return;
@@ -11,5 +11,15 @@ export async function accodaDopoCarico(user: Utente, esito: Pick<EsitoCaricament
     await servizioIa().accodaFile(user, esito.id);
   } catch (e) {
     logger.warn(`[ferrari-ia] non riesco ad accodare la scheda ${esito.id}: ${(e as Error).message}`);
+  }
+}
+
+/** Solo per prova: un file gia' caricato si rimanda alla IA (nuova analisi). Mai un guasto verso il chiamante. */
+export async function rianalizzaDuplicato(user: Utente, id: number): Promise<EsitoRianalisi> {
+  try {
+    return await servizioIa().rianalizza(user, id);
+  } catch (e) {
+    logger.warn(`[ferrari-ia] non riesco a rianalizzare la scheda ${id}: ${(e as Error).message}`);
+    return 'non_analizzabile';
   }
 }

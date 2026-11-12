@@ -56,6 +56,8 @@ export interface RiepilogoTick { saltato?: 'occupato' | 'spenta' | 'non_raggiung
 
 const COLONNE_JOB = db`id::text AS id, file_id, sha256, richiesta_id, id_remoto, stato, passo, avanzamento, tentativi, prossimo_tentativo_at, errore, versione_sigle`;
 
+export type EsitoRianalisi = 'accodata' | 'ia_spenta' | 'gia_in_corso' | 'non_analizzabile';
+
 /** Codici di errore dell'analisi remota che non cambiano riprovando (il file non e' una scheda). */
 const ERRORI_REMOTI_DEFINITIVI = new Set(['non_e_una_scheda']);
 
@@ -74,6 +76,17 @@ export class ServizioIa {
     const cfg = await leggiConfigIa();
     if (!cfg.attiva) return null;
     return this.inserisci(user, fileId);
+  }
+
+  /**
+   * Rimanda alla IA una scheda gia' caricata (nuova analisi), per le prove. Non cambia nulla della scheda.
+   * Esito: accodata, ia_spenta, gia_in_corso (c'e' gia' un'analisi attiva) o non_analizzabile (sostituita, in quarantena...).
+   */
+  async rianalizza(user: Utente, fileId: number): Promise<EsitoRianalisi> {
+    if (!(await leggiConfigIa()).attiva) return 'ia_spenta';
+    const [f] = await db<{ stato: string; canonico: Canonico | null }[]>`SELECT stato, canonico FROM ferrari_file WHERE id = ${fileId}`;
+    if (!f || !f.canonico || ['QUARANTENA', 'SOSTITUITO', 'RIFIUTATO'].includes(f.stato)) return 'non_analizzabile';
+    return (await this.inserisci(user, fileId)) ? 'accodata' : 'gia_in_corso';
   }
 
   private async inserisci(user: Utente, fileId: number): Promise<string | null> {
@@ -195,6 +208,20 @@ export class ServizioIa {
       const salute = await (await this.cliente(cfg)).salute();
       this.reteOk(salute);
       return { ok: true, salute };
+    } catch (e) {
+      this.connessione.ultimoControllo = this.d.adesso();
+      this.connessione.errore = (e as Error).message;
+      return { ok: false, errore: (e as Error).message };
+    }
+  }
+
+  /** «Sincronizza le sigle»: manda subito alla PC IA l'elenco attuale (sempre, anche se la versione non e' cambiata). */
+  async sincronizzaSigle(): Promise<{ ok: true; versione: string; colonne: number; sottoSigle: number } | { ok: false; errore: string }> {
+    const cfg = await leggiConfigIa();
+    if (!cfg.url) return { ok: false, errore: 'Scrivi prima l\'indirizzo della PC IA' };
+    try {
+      const snap = await this.snapshotSincronizzato(await this.cliente(cfg), true);
+      return { ok: true, versione: snap.versione_sigle, colonne: snap.colonne.length, sottoSigle: snap.sotto_sigle.length };
     } catch (e) {
       this.connessione.ultimoControllo = this.d.adesso();
       this.connessione.errore = (e as Error).message;
@@ -400,10 +427,11 @@ export class ServizioIa {
     const righe = await db<{
       file_id: number; filename: string; commessa: string | null; modello: string | null; caricato_at: Date;
       job_id: string | null; stato: StatoJob | null; passo: PassoUtente | null; avanzamento: Job['avanzamento'] | null; tentativi: number | null;
-      prossimo_tentativo_at: Date | null; errore: string | null; esito: 'uguale' | 'discrepanze' | null;
+      prossimo_tentativo_at: Date | null; errore: string | null; esito: 'uguale' | 'discrepanze' | null; n_avvisi: number;
     }[]>`
       SELECT f.id AS file_id, f.filename, f.commessa, f.modello, f.caricato_at,
-             j.id::text AS job_id, j.stato, j.passo, j.avanzamento, j.tentativi, j.prossimo_tentativo_at, j.errore, r.esito
+             j.id::text AS job_id, j.stato, j.passo, j.avanzamento, j.tentativi, j.prossimo_tentativo_at, j.errore, r.esito,
+             COALESCE(jsonb_array_length(r.avvisi), 0)::int AS n_avvisi
       FROM ferrari_file f
       LEFT JOIN LATERAL (SELECT * FROM ferrari_ia_job WHERE file_id = f.id ORDER BY id DESC LIMIT 1) j ON TRUE
       LEFT JOIN ferrari_ia_risultato r ON r.job_id = j.id
@@ -411,7 +439,7 @@ export class ServizioIa {
       ORDER BY f.id DESC LIMIT ${limite}`;
     return righe.map(r => ({
       file_id: r.file_id, filename: r.filename, commessa: r.commessa, modello: r.modello, caricato_at: r.caricato_at,
-      job_id: r.job_id, stato: r.stato, tentativi: r.tentativi, errore: r.errore, esito: r.esito,
+      job_id: r.job_id, stato: r.stato, tentativi: r.tentativi, errore: r.errore, esito: r.esito, n_avvisi: r.n_avvisi,
       prossimo_tentativo_at: r.prossimo_tentativo_at,
       tappe: tappe(r.stato && r.passo ? {
         stato: r.stato, passo: r.passo, avanzamento: r.avanzamento && r.avanzamento.totale !== undefined ? { fatti: r.avanzamento.fatti ?? 0, totale: r.avanzamento.totale, etichetta: r.avanzamento.etichetta ?? '' } : null,

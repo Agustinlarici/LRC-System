@@ -10,7 +10,7 @@ export const STATI_IN_CORSO: readonly string[] = ['in_coda', 'inviato', 'in_anal
 export interface SchedaIa {
   file_id: number; filename: string; commessa: string | null; modello: string | null; caricato_at: string;
   job_id: string | null; stato: StatoJob | null; tentativi: number | null; errore: string | null;
-  esito: 'uguale' | 'discrepanze' | null; prossimo_tentativo_at: string | null; tappe: Tappa[];
+  esito: 'uguale' | 'discrepanze' | null; n_avvisi: number; prossimo_tentativo_at: string | null; tappe: Tappa[];
 }
 
 export interface ConfigIa { attiva: boolean; url: string; maxTentativi: number; timeoutS: number }
@@ -26,7 +26,11 @@ export interface Discrepanza {
   riga_vm: number | null; riga_ia: number | null; vm?: string; ia?: string; dettaglio: string;
 }
 export interface PassoLog { passo: string; stato: 'in_corso' | 'ok' | 'attenzione' | 'errore' | 'saltato'; dettaglio: string | null; at: string }
-export interface DettaglioJob { job: { id: string; stato: StatoJob; tentativi: number; errore: string | null }; passi: PassoLog[]; risultato: { esito: 'uguale' | 'discrepanze'; discrepanze: Discrepanza[] } | null }
+export interface AvvisoIa { codice?: string; riga?: number; motivo: string }
+export interface DettaglioJob {
+  job: { id: string; stato: StatoJob; tentativi: number; errore: string | null }; passi: PassoLog[];
+  risultato: { esito: 'uguale' | 'discrepanze'; discrepanze: Discrepanza[]; avvisi?: AvvisoIa[] } | null;
+}
 
 export const TIPO_DISCREPANZA: Record<Discrepanza['tipo'], string> = {
   solo_vm: 'Solo nella lettura della VM', solo_ia: 'Solo nella lettura della IA', valore_diverso: 'Valore diverso',
@@ -40,8 +44,18 @@ export const iaApi = {
   dettaglio: (id: string) => api.get<DettaglioJob>(`${B}/jobs/${encodeURIComponent(id)}`),
   salvaConfig: (c: Partial<ConfigIa>) => api.put<ConfigIa>(`${B}/config`, c),
   prova: () => api.post<{ ok: true; salute: Salute } | { ok: false; errore: string }>(`${B}/prova`, {}),
+  sincronizzaSigle: () => api.post<{ ok: true; versione: string; colonne: number; sottoSigle: number } | { ok: false; errore: string }>(`${B}/sigle/sincronizza`, {}),
   riprova: (id: string) => api.post(`${B}/jobs/${encodeURIComponent(id)}/riprova`, {}),
   annulla: (id: string) => api.post(`${B}/jobs/${encodeURIComponent(id)}/annulla`, {}),
   analizza: (fileId: number) => api.post(`${B}/schede/${fileId}/analizza`, {}),
   accodaMancanti: () => api.post<{ accodate: number }>(`${B}/accoda-mancanti`, {}),
 };
+
+/** «Modalita' prova»: un file gia' caricato si rimanda alla IA invece di essere rifiutato. Solo di questo browser (nessun dato sul server). */
+const CHIAVE_RIPROVA = 'ferrari_riprova';
+export function leggiRiprova(): boolean {
+  try { return window.localStorage.getItem(CHIAVE_RIPROVA) === '1'; } catch { return false; }
+}
+export function scriviRiprova(attiva: boolean): void {
+  try { window.localStorage.setItem(CHIAVE_RIPROVA, attiva ? '1' : '0'); } catch { /* browser senza archivio: resta spenta */ }
+}

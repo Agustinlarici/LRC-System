@@ -124,5 +124,108 @@
         "modello": "gemma4:e2b"
       }
     }
+  },
+  "snapshot_v2": {
+    "versione_sigle": "ee2882bfb9d061692b0a3e113bc99694b34601f3dbff884a9fe70b90ae92c0df",
+    "colonne": [
+      "BIC2",
+      "LIVR"
+    ],
+    "sotto_sigle": [
+      {
+        "codice": "TLM13",
+        "padre": "LIVR"
+      }
+    ],
+    "alias": {
+      "TLM15": "TLM16"
+    },
+    "modelli": [
+      "F999XX"
+    ],
+    "esempi": [],
+    "decisioni": [
+      {
+        "modello": "*",
+        "codice": "BIC2",
+        "va": true,
+        "sub": false,
+        "alias": null,
+        "nosigla": false,
+        "padre": null
+      },
+      {
+        "modello": "F999XX",
+        "codice": "LIVR",
+        "va": true,
+        "sub": false,
+        "alias": null,
+        "nosigla": false,
+        "padre": null
+      },
+      {
+        "modello": "F999XX",
+        "codice": "0TMC",
+        "va": false,
+        "sub": false,
+        "alias": null,
+        "nosigla": false,
+        "padre": null
+      },
+      {
+        "modello": "*",
+        "codice": "ROSSO",
+        "va": false,
+        "sub": false,
+        "alias": null,
+        "nosigla": true,
+        "padre": null
+      },
+      {
+        "modello": "F999XX",
+        "codice": "TLM13",
+        "va": true,
+        "sub": true,
+        "alias": null,
+        "nosigla": false,
+        "padre": "LIVR"
+      },
+      {
+        "modello": "*",
+        "codice": "TLM15",
+        "va": true,
+        "sub": false,
+        "alias": "TLM16",
+        "nosigla": false,
+        "padre": null
+      }
+    ],
+    "componenti": [
+      {
+        "modello": "F171VS",
+        "nome": "Cofano",
+        "termini": [
+          "BIC2"
+        ]
+      },
+      {
+        "modello": "F999XX",
+        "nome": "Paraurti",
+        "termini": [
+          "PAR2",
+          "LIVR"
+        ]
+      }
+    ],
+    "modelli_noti": [
+      "F171VS",
+      "F999XX"
+    ],
+    "modelli_alias": [
+      {
+        "sbagliato": "F171V5",
+        "giusto": "F171VS"
+      }
+    ]
   }
 }

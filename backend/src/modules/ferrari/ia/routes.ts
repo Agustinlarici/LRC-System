@@ -35,6 +35,7 @@ iaRoutes.put('/config', requireManage(VISTA), async (c) => {
 });
 
 iaRoutes.post('/prova', requireManage(VISTA), async (c) => c.json(await servizioIa().prova()));
+iaRoutes.post('/sigle/sincronizza', requireManage(VISTA), async (c) => c.json(await servizioIa().sincronizzaSigle()));
 
 iaRoutes.get('/schede', requireModule(VISTA), async (c) => {
   const limite = Math.min(200, Math.max(1, Number(c.req.query('limite')) || 50));

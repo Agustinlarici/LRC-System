@@ -39,6 +39,7 @@ describe.skipIf(!URL)('Collegamento con la PC IA — rotte', () => {
     expect((await chiama('GET', '/ia/stato', { token: senzaPermessi })).status).toBe(403);
     expect((await chiama('PUT', '/ia/config', { token: senzaPermessi, corpo: { attiva: false } })).status).toBe(403);
     expect((await chiama('POST', '/ia/prova', { token: senzaPermessi })).status).toBe(403);
+    expect((await chiama('POST', '/ia/sigle/sincronizza', { token: senzaPermessi })).status).toBe(403);
   });
 
   it('stato: spenta di default, senza lavori', async () => {
@@ -92,5 +93,29 @@ describe.skipIf(!URL)('Collegamento con la PC IA — rotte', () => {
     expect((await chiama('POST', '/ia/schede/1/analizza', { token: admin })).status).toBe(202);
     const annulla = await chiama('POST', `/ia/jobs/${(await db<{ id: string }[]>`SELECT id::text AS id FROM ferrari_ia_job WHERE file_id = 1`)[0]!.id}/annulla`, { token: admin });
     expect(annulla.status).toBe(200);
+  });
+
+  it('?riprova=1: un file gia\' caricato si rimanda alla IA (solo per prova); senza il parametro resta un duplicato', async () => {
+    const carica = async (commessa: number, riprova = false) => {
+      const f = new FormData();
+      f.append('files', new Blob([toXlsBuffer(schedaSemplice({ commessa }))]), `${commessa}.xls`);
+      const r = await chiama('POST', `/files${riprova ? '?riprova=1' : ''}`, { token: admin, form: f });
+      return (await r.json() as { risultati: { duplicato: boolean; riprova?: string }[] }).risultati[0]!;
+    };
+    expect((await carica(1)).duplicato).toBe(false);
+    // IA spenta: il duplicato non fa niente e lo dice
+    expect(await carica(1, true)).toMatchObject({ duplicato: true, riprova: 'ia_spenta' });
+    expect(await db`SELECT 1 FROM ferrari_ia_job`).toHaveLength(0);
+
+    await chiama('PUT', '/ia/config', { token: admin, corpo: { url: 'http://192.168.1.50:5000', attiva: true } });
+    expect((await carica(1)).riprova).toBeUndefined();                                  // senza ?riprova=1 non cambia niente
+    expect(await db`SELECT 1 FROM ferrari_ia_job`).toHaveLength(0);
+    expect(await carica(1, true)).toMatchObject({ duplicato: true, riprova: 'accodata' });
+    expect(await db<{ file_id: number; stato: string }[]>`SELECT file_id, stato FROM ferrari_ia_job`).toEqual([{ file_id: 1, stato: 'in_coda' }]);
+    expect(await carica(1, true)).toMatchObject({ riprova: 'gia_in_corso' });           // c'e' gia' un'analisi attiva: non se ne crea una seconda
+    expect(await db`SELECT 1 FROM ferrari_ia_job`).toHaveLength(1);
+    // una scheda nuova con ?riprova=1 e' un caricamento normale
+    expect((await carica(2, true)).duplicato).toBe(false);
+    expect(await db`SELECT 1 FROM ferrari_file`).toHaveLength(2);                       // nessuna scheda duplicata nel database
   });
 });

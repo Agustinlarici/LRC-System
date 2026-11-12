@@ -15,7 +15,8 @@ import { applicaComponente, configurazioneSigle, decidiTutteDaDecidere, ereditaP
 import { aggiungiDaSchede, rifiutaDescrizioni, salvaDescrizioni } from './descrizioni.js';
 import { creaModello, modelloErroreDi, togliModello } from './modelli.js';
 import { iaRoutes } from './ia/routes.js';
-import { accodaDopoCarico } from './ia/aggancio.js';
+import { accodaDopoCarico, rianalizzaDuplicato } from './ia/aggancio.js';
+import { aggiungiCategorieEsempio, eliminaCategoria, elencoCategorie, riordinaCategorie, salvaCategoria } from './categorie.js';
 import { leggiCartella, leggiConfig, salvaConfig, statoLettura, ultimeLetture } from './cartella.js';
 import { logger } from '../../lib/logger.js';
 import {
@@ -188,6 +189,28 @@ ferrariRoutes.post('/componenti/proposte', requireManage(VISTA), async (c) => {
   return c.json({ trattate: await risolviProposteComponenti(utente(c), b.azione.startsWith('accetta'), tutte ? undefined : b.modello, tutte ? undefined : b.nome) });
 });
 
+// ─── Categorie delle colonne (raggruppano la tabella) ───────────────────────────
+
+ferrariRoutes.get('/categorie', requireModule(VISTA), async (c) => c.json({ categorie: await elencoCategorie() }));
+
+ferrariRoutes.post('/categorie', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ id: z.number().int().positive().optional(), nome: z.string().min(1).max(40), termini: z.array(z.string().max(60)).max(150) }));
+  return c.json(await salvaCategoria(utente(c), b));
+});
+
+ferrariRoutes.post('/categorie/ordine', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ ids: z.array(z.number().int().positive()).max(40) }));
+  await riordinaCategorie(utente(c), b.ids);
+  return c.json({ ok: true });
+});
+
+ferrariRoutes.post('/categorie/esempio', requireManage(VISTA), async (c) => c.json({ aggiunte: await aggiungiCategorieEsempio(utente(c)) }));
+
+ferrariRoutes.delete('/categorie/:id', requireManage(VISTA), async (c) => {
+  await eliminaCategoria(utente(c), parseId(c.req.param('id')));
+  return c.json({ ok: true });
+});
+
 ferrariRoutes.post('/sigle', requireManage(VISTA), async (c) => {
   const b = await parseBody(c, z.object({
     modello: z.string().max(30), codice: z.string().min(1).max(60), va: z.boolean(), tutti: z.boolean(), sub: z.boolean().optional(),
@@ -251,6 +274,7 @@ ferrariRoutes.get('/files/:id/original', requireModule(VISTA), async (c) => {
 
 ferrariRoutes.post('/files', requireManage(VISTA), async (c) => {
   const user = utente(c);
+  const riprova = c.req.query('riprova') === '1';
   const files = await leggiFile(c, 'files');
   const risultati = [];
   for (const f of files) {
@@ -265,7 +289,8 @@ ferrariRoutes.post('/files', requireManage(VISTA), async (c) => {
     const r = await caricaScheda(user, f.name, f.buf);
     if (!r.duplicato) await ereditaPerModello(r.modello).catch(() => 0);       // sigle gia' decise da altri modelli: si decidono da sole
     await accodaDopoCarico(user, r);                                            // analisi IA, se l'interruttore e' acceso
-    risultati.push(r);
+    // Solo per prova (?riprova=1): un file gia' caricato non si rifiuta, si rimanda alla IA per una nuova analisi
+    risultati.push(r.duplicato && riprova ? { ...r, riprova: await rianalizzaDuplicato(user, r.id) } : r);
   }
   return c.json({ risultati });
 });

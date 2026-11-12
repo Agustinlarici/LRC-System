@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Errore } from '@/components/ferrari/Comuni';
 import { IconaOk } from '@/components/ferrari/Icone';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { iaApi, type ConfigIa, type StatoIa } from '@/lib/ferrari-ia';
+import { iaApi, leggiRiprova, scriviRiprova, type ConfigIa, type StatoIa } from '@/lib/ferrari-ia';
 
 /** Impostazioni → Avanzate: interruttore della IA, indirizzo della PC IA, tentativi e prova della connessione. */
 export function ImpostazioniIa() {
@@ -15,6 +15,8 @@ export function ImpostazioniIa() {
   const [esito, setEsito] = useState<{ ok: boolean; testo: string } | null>(null);
   const [occupato, setOccupato] = useState(false);
   const [salvato, setSalvato] = useState(false);
+  const [riprova, setRiprova] = useState(false);
+  useEffect(() => { setRiprova(leggiRiprova()); }, []);
 
   const carica = useCallback(async (init = false) => {
     try {
@@ -45,6 +47,18 @@ export function ImpostazioniIa() {
       const r = await iaApi.prova();
       setEsito(r.ok
         ? { ok: true, testo: `Raggiungibile · ${r.salute.ollama ? `Ollama acceso${r.salute.modello ? ` (${r.salute.modello})` : ''}` : 'ma Ollama e\' spento'} · ${r.salute.in_coda + r.salute.in_corso} lavori in corso` }
+        : { ok: false, testo: r.errore });
+      await carica(true);
+    } catch (e) { setErrore((e as Error).message); } finally { setOccupato(false); }
+  }
+
+  async function sincronizzaSigle() {
+    setOccupato(true); setEsito(null);
+    try {
+      if (cambiata) await iaApi.salvaConfig({ url: bozza!.url });
+      const r = await iaApi.sincronizzaSigle();
+      setEsito(r.ok
+        ? { ok: true, testo: `Sigle inviate alla PC IA: ${r.colonne} colonne, ${r.sottoSigle} sotto-sigle` }
         : { ok: false, testo: r.errore });
       await carica(true);
     } catch (e) { setErrore((e as Error).message); } finally { setOccupato(false); }
@@ -96,9 +110,17 @@ export function ImpostazioniIa() {
           {salvato ? <span className="inline-flex items-center gap-1"><IconaOk /> Salvato</span> : 'Salva'}
         </button>
         <button className="btn-secondary" disabled={occupato || !bozza.url.trim()} onClick={prova}>Prova la connessione</button>
+        <button className="btn-secondary" disabled={occupato || !bozza.url.trim()} onClick={sincronizzaSigle}
+          title="Manda subito alla PC IA l'elenco attuale di sigle e sotto-sigle (di solito parte da sola prima di ogni scheda)">Sincronizza le sigle</button>
         <Link href="/ferrari/elaborazione" className="btn-secondary">Vedi l&apos;elaborazione</Link>
         {esito && <span className={`text-sm ${esito.ok ? 'text-success' : 'text-danger'}`} role="status">{esito.testo}</span>}
       </div>
+
+      <label className="mt-4 flex items-start gap-2 text-sm text-ink-700"
+        title="Solo per prova: caricando un file già caricato non viene rifiutato ma rimandato alla IA per una nuova analisi (serve la IA accesa)">
+        <input type="checkbox" className="mt-0.5" checked={riprova} onChange={e => { setRiprova(e.target.checked); scriviRiprova(e.target.checked); }} />
+        <span>Modalità prova: rianalizza i file già caricati<span className="block text-xs text-muted">Vale per «Carica Excel» e per i file trascinati, solo su questo browser.</span></span>
+      </label>
 
       {stato.config.attiva && c.stato === 'non_raggiungibile' && (
         <p className="mt-3 text-xs text-warning">Ultimo errore: {c.errore}. Il programma controlla di nuovo ogni minuto.</p>

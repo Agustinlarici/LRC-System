@@ -22,7 +22,7 @@ export type ModuleKey =
   | 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer'
   | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
   | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci'
-  | 'programma_produzione' | 'hr' | 'hr_salary' | 'ferrari_schede' | 'ferrari_supervisore';
+  | 'programma_produzione' | 'hr' | 'hr_salary' | 'hr_team' | 'ferrari_schede' | 'ferrari_supervisore';
 
 export type ModulePermission = {
   module_key: ModuleKey;
@@ -41,6 +41,8 @@ export type AuthUser = {
   department_id:         number | null;
   department_name:       string | null;
   must_change_password:  boolean;
+  /** Presente solo se la sessione è nata dal token di un dispositivo (kiosk, tablet) */
+  device_id?:            number;
 };
 
 export type UserProfile = {
@@ -55,7 +57,7 @@ export type Env = { Variables: { user: AuthUser } };
 
 // ─── Token helpers ────────────────────────────────────────────────────────────
 
-export type TokenPayload = Pick<AuthUser, 'id' | 'username' | 'display_name' | 'role'>;
+export type TokenPayload = Pick<AuthUser, 'id' | 'username' | 'display_name' | 'role' | 'device_id'>;
 
 export function signToken(payload: TokenPayload): string {
   return sign(payload, JWT_SECRET, { expiresIn: '8h' });
@@ -76,13 +78,26 @@ export function clearSessionCookie(c: Context) {
 
 // ─── Load permissions / profile from DB ────────────────────────────────────────
 
-async function loadPermissions(userId: number): Promise<ModulePermission[]> {
+// Il permesso 'hr_team' (capo) è calcolato: chi è collegato a una persona che ha almeno un
+// subordinato attivo ce l'ha, chi smette di averne lo perde — senza interventi manuali.
+// Una riga 'hr_team' assegnata a mano dal pannello IT vale comunque (eccezioni).
+export async function loadPermissions(userId: number): Promise<ModulePermission[]> {
   const rows = await db<ModulePermission[]>`
     SELECT module_key, can_view, can_manage
     FROM user_module_permissions
     WHERE user_id = ${userId}
+    UNION ALL
+    SELECT 'hr_team'::module_key_enum, TRUE, FALSE
+    WHERE EXISTS (
+      SELECT 1 FROM hr_employee capo
+      JOIN hr_employee sub ON sub.capo_id = capo.id
+      WHERE capo.user_id = ${userId} AND capo.stato <> 'cessato' AND sub.stato <> 'cessato'
+    )
   `;
-  return rows;
+  // Se c'è sia la riga manuale sia quella calcolata, vince quella che dà accesso.
+  const team = rows.filter(r => r.module_key === 'hr_team');
+  if (team.length < 2) return rows;
+  return [...rows.filter(r => r.module_key !== 'hr_team'), team.find(r => r.can_view) ?? team[0]];
 }
 
 const EMPTY_PROFILE: UserProfile = { email: null, phone: null, department_id: null, department_name: null, must_change_password: false };
@@ -169,6 +184,21 @@ export function requireModule(moduleKey: ModuleKey) {
       const perm = user.permissions.find(p => p.module_key === moduleKey);
       if (!perm?.can_view) {
         throw new HTTPException(403, { message: `Accesso al modulo '${moduleKey}' negato` });
+      }
+    }
+    await next();
+  };
+}
+
+// Basta uno qualsiasi dei permessi indicati (admin sempre ammesso).
+export function requireModuleAny(...moduleKeys: ModuleKey[]) {
+  return async function (c: Context<Env>, next: Next) {
+    await requireAuth(c, async () => {});
+    const user = c.get('user');
+    if (user.role !== 'admin') {
+      const ok = user.permissions.some(p => moduleKeys.includes(p.module_key) && p.can_view);
+      if (!ok) {
+        throw new HTTPException(403, { message: `Accesso al modulo '${moduleKeys.join("' o '")}' negato` });
       }
     }
     await next();

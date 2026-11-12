@@ -1,34 +1,56 @@
 /**
- * Generatore EDI DESADV VDA 4987 T2 — Gruppo Volkswagen / AUDI
- * Standard: UN/EDIFACT DESADV:D:07A:UN:GAVF24 | VDA 2.4 / VW 3.3
+ * Generatore EDI DESADV VDA 4987 T2 Global — Gruppo Volkswagen / AUDI
+ * Standard: UN/EDIFACT DESADV:D:20B:UN:GAVF30 | VDA 3.0 / VW 4.0 (come il validatore GEFEG di VW)
  * Processo: LAB-ED (call-off con data di consegna — standard forniture serie)
  *
- * Mapping campi cliente (da edi_clients):
- *   cdt_vat                → Odette-ID Mittente (14 char, es. 0940IT0123456789)
- *   csg_establishment_code → Odette-ID Destinatario Audi/VW (14 char, es. 4950VW00000INGOL)
- *   supplier_code          → Codice fornitore (max 9 cifre, NAD+SF, qualif. 92)
- *   csg_supply_point       → Codice impianto destinatario (an..5, NAD+ST / LOC+11)
- *   csg_address_1          → Codice Incoterms (es. FCA, EXW, DDP) — TOD
- *   csg_company_name       → Nome stabilimento (solo display, non inserito nel messaggio)
- *   cdt_company_name       → (non usato in questo generatore)
+ * La struttura segue il messaggio d'esempio validato con GEFEG.FX: un pallet (CPS livello 3)
+ * che contiene una scatola (CPS livello 1) per ogni riga articolo. I dati che il sistema non
+ * conosce (etichette GIN/PCI, COD+NO, tara per imballo) NON sono inventati: se mancano, il
+ * segmento viene omesso e sarà GEFEG a segnalarlo.
  *
- * Mapping campi spedizione:
- *   document_number        → Numero avviso spedizione (BGM / RFF+AAU) — n..8
- *   lines[].contract_number → Numero ordine d'acquisto Audi (RFF+ON, M/R per VDA 4987)
- *   lines[].article_code   → Codice parte cliente (LIN, qualif. IN, an..22)
- *   lines[].quantity       → Quantità spedita (QTY+12)
- *   lines[].unit_of_measure → Unità di misura (es. PCE, MTR, KGM)
- *   lines[].description    → Descrizione articolo (IMD)
+ * Campi cliente (edi_clients):
+ *   supplier_code          → codice fornitore (NAD+SE/SF, qualificatore 92), senza zeri aggiunti
+ *   cdt_vat                → ID mittente in UNB (se non c'è params.unb_sender)
+ *   cdt_company_name, cdt_address_1..4 → mittente: ragione sociale, via, città, CAP, paese
+ *   csg_establishment_code → ID destinatario in UNB (se non c'è params.unb_recipient)
+ *   csg_company_name       → nome destinatario (NAD+ST)
+ *   csg_supply_point       → codice impianto destinatario (NAD+ST, an..5)
+ *   csg_address_1          → Incoterms (TOD), default FCA
+ *
+ * Parametri (edi_clients.edi_params, tutti stringhe):
+ *   unb_sender, unb_recipient       composti UNB così come vanno scritti (es. "763473:AA",
+ *                                   "O0013000001VW      KEY::LAFES")
+ *   test_flag                       "1" → indicatore di test in UNB (0035)
+ *   supplier_duns                   DUNS del fornitore (RFF+ANK di NAD+SE e NAD+SF)
+ *   buyer_code/name/street/city/zip/country        NAD+BY
+ *   shipto_street/city/zip/country                 NAD+ST (il codice è csg_supply_point)
+ *   unloading_code                  codice punto di scarico (LOC+11/LOC+7), default csg_supply_point
+ *   unloading_address               testo LOC+11 (3224): Nome;Via1;Via2;Distretto;CAP;Città;Paese
+ *   fw_code/name/street/city/zip/country/duns      NAD+FW (spedizioniere)
+ *   transport_id                    targa/identificativo mezzo (TDT)
+ *   pallet_code, pallet_stack       imballo principale (es. 0007PAL) e impilabilità (QTY+171)
+ *   box_code                        imballo interno di ogni riga (es. 0009SCH)
+ *   origin_country                  paese d'origine (ALI), default paese del mittente o IT
+ *
+ * Dati della spedizione:
+ *   gross_weight, net_weight, tare_weight (kg) → MEA+AAX+AAD / AAL / T
+ *   lines[].contract_number → RFF+ON (ordine d'acquisto Audi)
+ *   lines[].article_code    → LIN, qualificatore IN (con lo spazio iniziale richiesto da VW)
  *
  * @param {object} shipment  Dati della spedizione (dal frontend/backend routes.ts)
  * @param {object} client    Configurazione cliente EDI (da edi_clients DB)
  * @param {number} sequence  Sequenza progressiva annuale (già incrementata)
- * @returns {string}         Contenuto file EDIFACT (segmenti separati da \n)
+ * @returns {string}         Contenuto file EDIFACT (un segmento per riga)
  */
 
 // Caratteri speciali EDIFACT che richiedono escape con '?' come release character
-function edifactEscape(s) {
+function esc(s) {
   return String(s ?? '').replace(/[?'+:]/g, c => '?' + c);
+}
+
+// Valore di testo: tagliato alla lunghezza massima e con escape
+function txt(s, max) {
+  return esc(String(s ?? '').trim().slice(0, max));
 }
 
 function fmtDate8(d) {
@@ -36,146 +58,147 @@ function fmtDate8(d) {
   return `${dt.getUTCFullYear()}${String(dt.getUTCMonth()+1).padStart(2,'0')}${String(dt.getUTCDate()).padStart(2,'0')}`;
 }
 
-function fmtDateTime12(d) {
-  const dt = d instanceof Date ? d : new Date(d);
-  return `${fmtDate8(dt)}${String(dt.getUTCHours()).padStart(2,'0')}${String(dt.getUTCMinutes()).padStart(2,'0')}`;
-}
-
-function fmtDate6(d) {
-  const dt = d instanceof Date ? d : new Date(d);
-  return `${String(dt.getUTCFullYear()).slice(-2)}${String(dt.getUTCMonth()+1).padStart(2,'0')}${String(dt.getUTCDate()).padStart(2,'0')}`;
-}
-
 function fmtTime4(d) {
   const dt = d instanceof Date ? d : new Date(d);
   return `${String(dt.getUTCHours()).padStart(2,'0')}${String(dt.getUTCMinutes()).padStart(2,'0')}`;
 }
 
+// Unità di misura ammesse da VW: C62, PCE, SET, MTR, CMT, MMT, MTK, LEF, MTQ, LTR, PR, RO, TNE, KGM, GRM, KMT
+const UOM_MAP = { NUMERO: 'PCE', NUM: 'PCE', NR: 'PCE', PZ: 'PCE', PCS: 'PCE', PEZZI: 'PCE' };
+function uom(raw) {
+  const u = String(raw || 'PCE').trim().toUpperCase();
+  return UOM_MAP[u] ?? u.slice(0, 3);
+}
+
+// Peso in kg: numero positivo con punto decimale, altrimenti null (segmento omesso)
+function kg(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? String(Math.round(n * 1000) / 1000) : null;
+}
+
 export function generate(shipment, client, sequence) {
   const now = new Date();
+  const p = (client.edi_params && typeof client.edi_params === 'object') ? client.edi_params : {};
+  const prm = k => String(p[k] ?? '').trim();
 
-  // Odette-ID mittente e destinatario (14 char ciascuno, DE 0004/0010 in UNB)
-  const senderOdette   = String(client.cdt_vat || '').trim();
-  const receiverOdette = String(client.csg_establishment_code || '').trim();
+  const supplierCode = String(client.supplier_code || '').trim();
+  const plantCode    = String(client.csg_supply_point || '').trim().slice(0, 5);
+  const unloadCode   = (prm('unloading_code') || plantCode).slice(0, 3);
+  const incoterms    = String(client.csg_address_1 || 'FCA').trim().toUpperCase().slice(0, 3);
+  const originCountry = (prm('origin_country') || String(client.cdt_address_4 || '').trim() || 'IT').slice(0, 3);
 
-  // Codice fornitore (NAD+SF, qualificatore 92 = accordo tra partner)
-  const supplierCode = String(client.supplier_code || '').padStart(9, '0').slice(0, 9);
+  // Riferimenti: CRN/BGM = anno (2 cifre) + sequenza (6 cifre) = 8 cifre, unico nell'anno;
+  // UNB/UNZ = sequenza a 6 cifre; RFF+AAU (n..8) = sequenza senza zeri iniziali.
+  const seq6     = String(sequence).padStart(6, '0').slice(-6);
+  const asnRef   = `${String(now.getUTCFullYear()).slice(-2)}${seq6}`;
+  const unbRef   = seq6;
+  const msgRef   = `EDDT-${seq6}`;
+  const delivNo  = String(Number(sequence));
 
-  // Codice impianto destinatario (NAD+ST, LOC+11 — an..5 per VDA 4987 §SG20)
-  const plantCode = String(client.csg_supply_point || '').trim().slice(0, 5);
+  const sender    = prm('unb_sender')    || String(client.cdt_vat || '').trim();
+  const recipient = prm('unb_recipient') || String(client.csg_establishment_code || '').trim();
 
-  // Incoterms (TOD — es. FCA, EXW, DDP, CIF)
-  const incoterms = String(client.csg_address_1 || 'FCA').trim().toUpperCase().slice(0, 3);
-
-  // Riferimento interscambio UNB/UNZ: max 8 cifre per VDA 4987 (CRN ≤8)
-  const intRef = String(sequence).padStart(8, '0').slice(0, 8);
-  const msgRef = String(sequence).padStart(5, '0');
-
-  // Numero avviso spedizione (BGM / RFF+AAU): max 8 cifre per VDA 4987
-  const asnRef = String(shipment.document_number || shipment.shipment_id || '').slice(0, 8);
-
-  // Date
-  const txDate6 = fmtDate6(now);
-  const txTime4 = fmtTime4(now);
-  const msgDt12 = fmtDateTime12(shipment.document_date ? new Date(shipment.document_date) : now);
-  const despDate = fmtDate8(shipment.document_date ? new Date(shipment.document_date) : now);
+  const today   = fmtDate8(now);
+  const despDt  = shipment.document_date ? new Date(shipment.document_date) : now;
+  const despDate = fmtDate8(despDt);
 
   const segs = [];
 
-  // ── UNA — Service string ─────────────────────────────────────────────────────
+  // NAD con indirizzo: codice parte (qualificatore 92) + nome, via, città, CAP, paese
+  const nad = (qual, code, name, street, city, zip, country) =>
+    `NAD+${qual}+${txt(code, 17)}::92++${txt(name, 35)}+${txt(street, 35)}+${txt(city, 35)}++${txt(zip, 9)}+${txt(country, 3)}'`;
+
+  // ── Busta ────────────────────────────────────────────────────────────────────
   segs.push("UNA:+.? '");
+  // Sintassi UNOC:X, data a 8 cifre, nessun 0031; flag di test (0035) se richiesto
+  const testFlag = prm('test_flag') === '1' ? '++++++1' : '';
+  segs.push(`UNB+UNOC:X+${sender}+${recipient}+${today}:${fmtTime4(now)}+${unbRef}${testFlag}'`);
+  segs.push(`UNH+${msgRef}+DESADV:D:20B:UN:GAVF30'`);
 
-  // ── UNB — Intestazione interscambio ─────────────────────────────────────────
-  // UNOC:3 = charset C (ISO 8859-1), versione 3 — obbligatorio per VDA 4987
-  segs.push(`UNB+UNOC:3+${senderOdette}:14+${receiverOdette}:14+${txDate6}:${txTime4}+${intRef}++++DESADV'`);
-
-  // ── UNH — Intestazione messaggio ─────────────────────────────────────────────
-  segs.push(`UNH+${msgRef}+DESADV:D:07A:UN:GAVF24'`);
-
-  // ── BGM — Avviso di spedizione anticipato ────────────────────────────────────
-  // C002: 351 (despatch advice) ::: LAB-ED (processo call-off con data consegna)
-  // C106: numero avviso spedizione | 1225: 9 = messaggio originale
+  // ── Testata ──────────────────────────────────────────────────────────────────
   segs.push(`BGM+351:::LAB-ED+${asnRef}+9'`);
-
-  // ── DTM+137 — Data/ora creazione messaggio (formato 203 = CCYYMMDDHHMM) ──────
-  segs.push(`DTM+137:${msgDt12}:203'`);
-
-  // ── DTM+11 — Data di spedizione effettiva (formato 102 = CCYYMMDD) ───────────
+  segs.push(`DTM+137:${today}:102'`);
   segs.push(`DTM+11:${despDate}:102'`);
+  segs.push(`DTM+132:${despDate}:102'`);
 
-  // ── MEA+AAX+AAD — Peso lordo consegna in KGM ─────────────────────────────────
-  // Peso non disponibile da Dynamics — inserire 0; da aggiornare se disponibile
-  segs.push(`MEA+AAX+AAD+KGM:0'`);
+  // Pesi della consegna (valori > 0): lordo, netto, tara; AAE = unità di carico (1 pallet)
+  const gross = kg(shipment.gross_weight);
+  const net   = kg(shipment.net_weight);
+  const tare  = kg(shipment.tare_weight);
+  if (gross) segs.push(`MEA+AAX+AAD+KGM:${gross}'`);
+  if (net)   segs.push(`MEA+AAX+AAL+KGM:${net}'`);
+  if (tare)  segs.push(`MEA+AAX+T+KGM:${tare}'`);
+  segs.push(`MEA+AAE++PCE:1'`);
 
-  // ── MEA+AAE — Numero di unità di carico ──────────────────────────────────────
-  segs.push(`MEA+AAE+SU+1'`);
+  segs.push(`RFF+CRN:${asnRef}'`);
 
-  // ── SG1/RFF+CRN — Numero consegna (≤8 cifre, unico nell'anno) ────────────────
-  segs.push(`RFF+CRN:${intRef}'`);
+  // ── Parti ────────────────────────────────────────────────────────────────────
+  if (prm('buyer_code')) {
+    segs.push(nad('BY', prm('buyer_code'), prm('buyer_name'), prm('buyer_street'), prm('buyer_city'), prm('buyer_zip'), prm('buyer_country')));
+  }
+  const supplierNad = q => nad(q, supplierCode, client.cdt_company_name, client.cdt_address_1, client.cdt_address_2, client.cdt_address_3, client.cdt_address_4);
+  const duns = prm('supplier_duns');
+  segs.push(supplierNad('SE'));
+  if (duns) segs.push(`RFF+ANK:${esc(duns)}'`);
+  segs.push(supplierNad('SF'));
+  if (duns) segs.push(`RFF+ANK:${esc(duns)}'`);
 
-  // ── SG2/NAD+SF — Mittente/Fornitore (ship-from) ──────────────────────────────
-  segs.push(`NAD+SF+${supplierCode}::92'`);
-
-  // ── SG2/NAD+ST — Destinatario stabilimento Audi (ship-to) ────────────────────
   if (plantCode) {
-    segs.push(`NAD+ST+${plantCode}::92'`);
+    segs.push(nad('ST', plantCode, client.csg_company_name, prm('shipto_street'), prm('shipto_city'), prm('shipto_zip'), prm('shipto_country')));
+    // LOC+11: punto di scarico; 3224 = indirizzo (Nome;Via1;Via2;Distretto;CAP;Città;Paese) dal LOC+7 del call-off
+    segs.push(`LOC+11+${txt(unloadCode, 3)}::92:${txt(prm('unloading_address'), 256)}'`);
   }
 
-  // ── SG5/TOD — Condizioni di resa (Incoterms) ─────────────────────────────────
-  segs.push(`TOD+6++${incoterms}'`);
+  if (prm('fw_name')) {
+    segs.push(nad('FW', prm('fw_code') || '7', prm('fw_name'), prm('fw_street'), prm('fw_city'), prm('fw_zip'), prm('fw_country')));
+    if (prm('fw_duns')) segs.push(`RFF+ANK:${esc(prm('fw_duns'))}'`);
+  }
 
-  // ── SG6/TDT+12 — Trasporto (modo 30 = strada) ────────────────────────────────
-  segs.push(`TDT+12++30'`);
+  // ── Condizioni di resa e trasporto ───────────────────────────────────────────
+  segs.push(`TOD+6++${esc(incoterms)}'`);
+  segs.push(prm('transport_id') ? `TDT+12++30+++++${txt(prm('transport_id'), 17)}'` : `TDT+12++30'`);
 
-  // ── SG10/CPS+1 — Gruppo imballaggio esterno (livello 1) ──────────────────────
-  segs.push(`CPS+1'`);
+  // ── Gerarchia imballi: pallet (livello 3) ────────────────────────────────────
+  segs.push(`CPS+1++3'`);
+  segs.push(prm('pallet_code') ? `PAC+1+:35:AAA+${txt(prm('pallet_code'), 17)}::92'` : `PAC+1+:35:AAA'`);
+  if (prm('pallet_stack')) segs.push(`QTY+171:${txt(prm('pallet_stack'), 3)}:C62'`);
+  segs.push(`QTY+189:1:PCE'`);
 
-  // ── SG11/PAC — Unità di imballo (tipo 35 = imballaggio principale) ────────────
-  segs.push(`PAC+${shipment.lines.length}++35'`);
-
-  // ── SG17 — Righe articolo ─────────────────────────────────────────────────────
-  for (let i = 0; i < shipment.lines.length; i++) {
-    const line   = shipment.lines[i];
+  // ── Una scatola (livello 1) per ogni riga articolo ───────────────────────────
+  let cps = 1;
+  const lines = shipment.lines || [];
+  for (let i = 0; i < lines.length; i++) {
+    const line   = lines[i];
     const lineNo = i + 1;
-    const partNo = edifactEscape(String(line.article_code || '').slice(0, 22));
+    const unit   = uom(line.unit_of_measure);
     const qty    = Number(line.quantity || 0);
-    const uom    = String(line.unit_of_measure || 'PCE').toUpperCase().slice(0, 3);
-    const desc   = edifactEscape(String(line.description || '').slice(0, 35));
-    const poNo   = edifactEscape(String(line.contract_number || ''));
-    const docNo  = edifactEscape(asnRef);
+    const desc   = txt(line.description, 35);
+    const poNo   = txt(line.contract_number, 35);
 
-    // LIN — riga articolo: qualificatore IN = codice articolo cliente
-    segs.push(`LIN+${lineNo}++${partNo}:IN'`);
+    cps += 1;
+    segs.push(`CPS+${cps}++1'`);
+    segs.push(prm('box_code') ? `PAC+1+:35:AAC+${txt(prm('box_code'), 17)}::92'` : `PAC+1+:35:AAC'`);
+    // QTY+52 (pezzi per scatola) × 1 scatola = QTY+12
+    segs.push(`QTY+52:${qty}:${unit}'`);
 
-    // IMD+F — descrizione + uso 11 (produzione di serie)
-    if (desc) {
-      segs.push(`IMD+F++:::${desc}:EN'`);
-    }
-
-    // QTY+12 — quantità totale spedita
-    segs.push(`QTY+12:${qty}:${uom}'`);
-
-    // SG18/RFF+AAU — numero avviso di spedizione + posizione riga
-    segs.push(`RFF+AAU:${docNo}:${lineNo}'`);
-
-    // SG18/RFF+ON — numero ordine d'acquisto Audi (M/R per VDA 4987)
-    if (poNo) {
-      segs.push(`RFF+ON:${poNo}'`);
-    }
-
-    // SG20/LOC+11 — punto di scarico (an..5 per VDA 4987)
-    if (plantCode) {
-      segs.push(`LOC+11+${plantCode}'`);
-    }
+    // LIN senza numero di riga; il codice cliente inizia con uno spazio (VW), mai fare trim
+    segs.push(`LIN+++ ${txt(line.article_code, 22)}:IN'`);
+    // IMD: 11 = produzione di serie, descrizione nel 7008
+    segs.push(`IMD+++11::272:${desc}'`);
+    segs.push(`QTY+12:${qty}:${unit}'`);
+    segs.push(`ALI+${txt(originCountry, 3)}+N'`);
+    segs.push(`RFF+AAU:${delivNo}:${lineNo}'`);
+    if (poNo) segs.push(`RFF+ON:${poNo}'`);
+    if (unloadCode) segs.push(`LOC+7+${txt(unloadCode, 3)}::92'`);
   }
 
-  // ── UNT — Trailer messaggio ───────────────────────────────────────────────────
-  // Conta dal UNH fino al UNT incluso (esclude UNA e UNB)
+  // ── UNT / UNZ ────────────────────────────────────────────────────────────────
+  // UNT conta da UNH fino a UNT incluso (esclude UNA e UNB)
   const bodySegCount = segs.length - 2;
   segs.push(`UNT+${bodySegCount + 1}+${msgRef}'`);
+  segs.push(`UNZ+1+${unbRef}'`);
 
-  // ── UNZ — Trailer interscambio ────────────────────────────────────────────────
-  segs.push(`UNZ+1+${intRef}'`);
-
+  // Un segmento per riga (leggibile). GEFEG lo segnala come avviso UNA 00001:000,
+  // ma VW ha confermato che va bene così.
   return segs.join('\n') + '\n';
 }

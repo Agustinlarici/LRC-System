@@ -97,19 +97,76 @@ const EMPTY_CLIENT: Omit<EdiClient, 'id' | 'created_at' | 'updated_at'> = {
   sdt_vat: '', supplier_code: '',
   csg_establishment_code: '', csg_company_name: '',
   csg_address_1: '', csg_address_2: '', csg_address_3: '', csg_address_4: '',
-  csg_supply_point: '', output_folder: '', auto_generate: false,
+  csg_supply_point: '', output_folder: '', auto_generate: false, edi_params: {},
 };
 
+type ClientKey = keyof typeof EMPTY_CLIENT;
+
+// Campi che il generatore del tipo EDI usa davvero nel messaggio: se mancano il file
+// esce incompleto e il cliente lo rifiuta. DESADV_AUDI: vedi backend/edi_generators/DESADV_AUDI.js
+const REQUIRED_BY_TYPE: Record<string, Partial<Record<ClientKey, { label: string; hint: string }>>> = {
+  DESADV_AUDI: {
+    supplier_code:          { label: 'Codice Fornitore',             hint: 'NAD+SE / NAD+SF, senza zeri aggiunti' },
+    csg_supply_point:       { label: 'Punto di scarico / Codice impianto', hint: 'NAD+ST, max 5 caratteri (es. 11)' },
+  },
+};
+
+// Parametri DESADV Audi (D:20B) salvati in edi_params. Vedi l'elenco in backend/edi_generators/DESADV_AUDI.js
+interface ParamDef { key: string; label: string; hint?: string; required?: boolean; mono?: boolean; maxLen?: number }
+const AUDI_PARAMS: { title: string; fields: ParamDef[] }[] = [
+  { title: 'Busta (UNB)', fields: [
+    { key: 'unb_sender',    label: 'Mittente UNB', hint: 'es. 763473:AA', required: true, mono: true, maxLen: 35 },
+    { key: 'unb_recipient', label: 'Destinatario UNB', hint: 'come da VW, spazi inclusi', required: true, mono: true, maxLen: 60 },
+    { key: 'test_flag',     label: 'Messaggio di test (1 = sì)', hint: 'indicatore di test in UNB', mono: true, maxLen: 1 },
+  ] },
+  { title: 'Fornitore', fields: [
+    { key: 'supplier_duns',  label: 'DUNS del fornitore', hint: 'RFF+ANK di NAD+SE e NAD+SF', required: true, mono: true, maxLen: 9 },
+    { key: 'origin_country', label: 'Paese d\'origine', hint: 'ALI, default IT', mono: true, maxLen: 3 },
+  ] },
+  { title: 'Acquirente (NAD+BY)', fields: [
+    { key: 'buyer_code',    label: 'Codice acquirente', hint: 'es. C3096', required: true, mono: true, maxLen: 17 },
+    { key: 'buyer_name',    label: 'Ragione sociale', required: true, maxLen: 35 },
+    { key: 'buyer_street',  label: 'Via', maxLen: 35 },
+    { key: 'buyer_city',    label: 'Città', maxLen: 35 },
+    { key: 'buyer_zip',     label: 'CAP', mono: true, maxLen: 9 },
+    { key: 'buyer_country', label: 'Paese (2 lettere)', mono: true, maxLen: 3 },
+  ] },
+  { title: 'Destinatario (NAD+ST / LOC+11)', fields: [
+    { key: 'shipto_street',  label: 'Via', maxLen: 35 },
+    { key: 'shipto_city',    label: 'Città', maxLen: 35 },
+    { key: 'shipto_zip',     label: 'CAP', mono: true, maxLen: 9 },
+    { key: 'shipto_country', label: 'Paese (2 lettere)', mono: true, maxLen: 3 },
+    { key: 'unloading_code', label: 'Codice punto di scarico', hint: 'LOC+11 / LOC+7, default = codice impianto (es. 02)', mono: true, maxLen: 3 },
+    { key: 'unloading_address', label: 'Indirizzo punto di scarico', hint: 'dal LOC+7 del call-off: Nome;Via1;Via2;Distretto;CAP;Città;Paese', required: true, maxLen: 256 },
+  ] },
+  { title: 'Spedizioniere (NAD+FW)', fields: [
+    { key: 'fw_name',    label: 'Ragione sociale', required: true, maxLen: 35 },
+    { key: 'fw_duns',    label: 'DUNS spedizioniere', required: true, mono: true, maxLen: 9 },
+    { key: 'fw_code',    label: 'Codice parte', hint: 'default 7', mono: true, maxLen: 17 },
+    { key: 'fw_street',  label: 'Via', maxLen: 35 },
+    { key: 'fw_city',    label: 'Città', maxLen: 35 },
+    { key: 'fw_zip',     label: 'CAP', mono: true, maxLen: 9 },
+    { key: 'fw_country', label: 'Paese (2 lettere)', mono: true, maxLen: 3 },
+  ] },
+  { title: 'Trasporto e imballi', fields: [
+    { key: 'transport_id', label: 'Targa / identificativo mezzo', hint: 'TDT', required: true, mono: true, maxLen: 17 },
+    { key: 'pallet_code',  label: 'Codice pallet', hint: 'es. 0007PAL', required: true, mono: true, maxLen: 17 },
+    { key: 'pallet_stack', label: 'Impilabilità pallet', hint: 'QTY+171, es. 9', mono: true, maxLen: 3 },
+    { key: 'box_code',     label: 'Codice scatola', hint: 'es. 0009SCH', required: true, mono: true, maxLen: 17 },
+  ] },
+];
+
 function Field({
-  label, value, onChange, placeholder, required, maxLen, mono,
+  label, value, onChange, placeholder, required, maxLen, mono, hint,
 }: {
   label: string; value: string; onChange: (v: string) => void;
-  placeholder?: string; required?: boolean; maxLen?: number; mono?: boolean;
+  placeholder?: string; required?: boolean; maxLen?: number; mono?: boolean; hint?: string;
 }) {
   return (
     <div>
       <label className="block text-xs font-medium text-gray-600 mb-1">
         {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+        {hint && <span className="ml-1 font-normal text-muted">— {hint}</span>}
       </label>
       <input
         type="text"
@@ -138,11 +195,30 @@ function ClientModal({
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
+  const rules = REQUIRED_BY_TYPE[form.edi_type] ?? {};
+  const requiredKeys = Object.keys(rules) as ClientKey[];
+  const req  = (k: ClientKey) => k in rules;
+  const hint = (k: ClientKey) => rules[k]?.hint;
+
   function set(key: keyof typeof EMPTY_CLIENT) {
     return (v: string) => setForm(f => ({ ...f, [key]: v }));
   }
 
+  function setParam(key: string) {
+    return (v: string) => setForm(f => ({ ...f, edi_params: { ...(f.edi_params ?? {}), [key]: v } }));
+  }
+
   async function handleSave() {
+    const missing = requiredKeys.filter(k => !String(form[k] ?? '').trim()).map(k => rules[k]!.label);
+    if (form.edi_type === 'DESADV_AUDI') {
+      for (const f of AUDI_PARAMS.flatMap(g => g.fields)) {
+        if (f.required && !(form.edi_params?.[f.key] ?? '').trim()) missing.push(f.label);
+      }
+    }
+    if (missing.length > 0) {
+      setError(`Per ${form.edi_type} compilare: ${missing.join(', ')}`);
+      return;
+    }
     setSaving(true);
     setError('');
     try {
@@ -175,6 +251,11 @@ function ClientModal({
 
           <section>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Generale</h3>
+            {requiredKeys.length > 0 && (
+              <p className="mb-3 rounded-ctl bg-info-soft px-3 py-2 text-xs text-info">
+                Per {form.edi_type} da compilare (*) per il messaggio: {requiredKeys.map(k => rules[k]!.label).join(' · ')}.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <Field label="Customer Account Dynamics" value={form.customer_account} onChange={set('customer_account')} required maxLen={20} mono />
               <Field label="Descrizione interna" value={form.description} onChange={set('description')} required />
@@ -208,7 +289,7 @@ function ClientModal({
           <section>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">CDT — Mittente</h3>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="P.IVA mittente (es. 0940XXXXXXXXXXX)" value={form.cdt_vat} onChange={set('cdt_vat')} required maxLen={20} mono />
+              <Field label="P.IVA mittente (es. 0940XXXXXXXXXXX)" value={form.cdt_vat} onChange={set('cdt_vat')} required hint={hint('cdt_vat')} maxLen={20} mono />
               <Field label="Ragione sociale" value={form.cdt_company_name} onChange={set('cdt_company_name')} required maxLen={35} />
               <Field label="Indirizzo 1" value={form.cdt_address_1 ?? ''} onChange={set('cdt_address_1')} maxLen={35} />
               <Field label="Indirizzo 2" value={form.cdt_address_2 ?? ''} onChange={set('cdt_address_2')} maxLen={35} />
@@ -221,7 +302,7 @@ function ClientModal({
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">SDT — Venditore/Fornitore</h3>
             <div className="grid grid-cols-2 gap-3">
               <Field label="P.IVA venditore" value={form.sdt_vat} onChange={set('sdt_vat')} maxLen={20} mono />
-              <Field label="Codice Fornitore (max 9 cifre)" value={form.supplier_code} onChange={set('supplier_code')} required maxLen={9} mono placeholder="001234" />
+              <Field label="Codice Fornitore (max 9 cifre)" value={form.supplier_code} onChange={set('supplier_code')} required hint={hint('supplier_code')} maxLen={9} mono placeholder="001234" />
             </div>
           </section>
 
@@ -232,6 +313,8 @@ function ClientModal({
                 label="Cod. identificativo destinatario"
                 value={form.csg_establishment_code ?? ''}
                 onChange={set('csg_establishment_code')}
+                required={req('csg_establishment_code')}
+                hint={hint('csg_establishment_code')}
                 maxLen={20}
                 mono
                 placeholder="021 (Ferrari) · Odette ID (Audi) · Warehouse (McLaren)"
@@ -241,9 +324,29 @@ function ClientModal({
               <Field label="Indirizzo 2" value={form.csg_address_2 ?? ''} onChange={set('csg_address_2')} maxLen={35} />
               <Field label="Indirizzo 3" value={form.csg_address_3 ?? ''} onChange={set('csg_address_3')} maxLen={35} />
               <Field label="Indirizzo 4" value={form.csg_address_4 ?? ''} onChange={set('csg_address_4')} maxLen={35} />
-              <Field label="Punto di scarico / Codice impianto (an..5)" value={form.csg_supply_point ?? ''} onChange={set('csg_supply_point')} maxLen={17} mono placeholder="es. I05 (Audi Ingolstadt)" />
+              <Field label="Punto di scarico / Codice impianto (an..5)" value={form.csg_supply_point ?? ''} onChange={set('csg_supply_point')} required={req('csg_supply_point')} hint={hint('csg_supply_point')} maxLen={17} mono placeholder="es. I05 (Audi Ingolstadt)" />
             </div>
           </section>
+
+          {form.edi_type === 'DESADV_AUDI' && AUDI_PARAMS.map(g => (
+            <section key={g.title}>
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">DESADV Audi — {g.title}</h3>
+              <div className="grid grid-cols-2 gap-3">
+                {g.fields.map(f => (
+                  <Field
+                    key={f.key}
+                    label={f.label}
+                    value={form.edi_params?.[f.key] ?? ''}
+                    onChange={setParam(f.key)}
+                    required={f.required}
+                    hint={f.hint}
+                    mono={f.mono}
+                    maxLen={f.maxLen}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
         </div>
 
         <div className="px-6 py-4 border-t shrink-0 flex items-center justify-between gap-3">
@@ -382,6 +485,9 @@ function ShipmentDetailModal({
   const [lines, setLines]         = useState<EdiLine[]>([]);
   const [loading, setLoading]     = useState(true);
   const [contracts, setContracts] = useState<Record<number, string>>({});
+  // Pesi della consegna in kg (DESADV_AUDI: MEA+AAX+AAD / AAL / T)
+  const [weights, setWeights] = useState({ gross: '', net: '', tare: '' });
+  const weightNum = (s: string) => { const n = Number(s.replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : null; };
   const [generating, setGenerating] = useState(false);
   const [result, setResult]         = useState<{ filename: string } | null>(null);
   const [error, setError]           = useState('');
@@ -420,6 +526,9 @@ function ShipmentDetailModal({
         document_date:    shipment.document_date,
         is_extra_cee:     shipment.is_extra_cee,
         force,
+        gross_weight:     weightNum(weights.gross),
+        net_weight:       weightNum(weights.net),
+        tare_weight:      weightNum(weights.tare),
         lines: lines.map((l, i) => ({
           ...l,
           contract_number: contracts[i]?.trim() || null,
@@ -471,6 +580,23 @@ function ShipmentDetailModal({
 
           {!loading && lines.length === 0 && !error && (
             <p className="text-sm text-gray-400 text-center py-8">Nessuna riga trovata.</p>
+          )}
+
+          {!loading && lines.length > 0 && client?.edi_type === 'DESADV_AUDI' && (
+            <div className="mb-3 grid grid-cols-3 gap-3">
+              {([['gross', 'Peso lordo (kg)'], ['net', 'Peso netto (kg)'], ['tare', 'Tara (kg)']] as const).map(([k, label]) => (
+                <div key={k}>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={weights[k]}
+                    onChange={e => setWeights(w => ({ ...w, [k]: e.target.value }))}
+                    className="w-full border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              ))}
+            </div>
           )}
 
           {!loading && lines.length > 0 && (

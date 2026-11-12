@@ -1,4 +1,4 @@
-import type { HrEmployee, HrDepartment } from '@/types';
+import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany } from '@/types';
 import type { ImportResult, ImportIssue } from '@/components/ui/ImportExcelButton';
 import { rankCandidates } from '@/lib/hrPhoto';
 
@@ -11,15 +11,11 @@ import { rankCandidates } from '@/lib/hrPhoto';
 
 type Row = Record<string, string>;
 
-// Campi che Osti descrive in modo più generico dei nostri (es. reparto "VERNICIATURA" contro il nostro
-// "CARTEGGIATURA", mansione "addetto allo stampaggio" contro "STAMPATORE"): si compilano solo se vuoti.
-const FILL_ONLY = new Set(['reparto_id', 'mansione']);
-
 const FIELD_LABEL: Record<string, string> = {
   nome_osti: 'Nome Osti', matricola: 'Matricola', data_assunzione: 'Data assunzione', data_cessazione: 'Data cessazione',
   mansione: 'Mansione', livello: 'Livello', stato: 'Stato', nazionalita: 'Nazionalità', tipo_nazionalita: 'Extra UE / Italia', indirizzo: 'Indirizzo', citta: 'Città',
   provincia: 'Provincia', cap: 'CAP', data_nascita: 'Data di nascita', sesso: 'Sesso', codice_fiscale: 'Codice fiscale',
-  telefono: 'Telefono', note: 'Note', email: 'Email', reparto_id: 'Reparto', gruppo_orario: 'Gruppo orario',
+  telefono: 'Telefono', note: 'Note', email: 'Email', reparto_id: 'Reparto', plant_ids: 'Plant', contract_company_id: 'Società contratto', gruppo_orario: 'Gruppo orario',
   badge: 'Badge', transponder: 'Transponder', terminale: 'Terminale', qualifica: 'Qualifica',
   indeterminato: 'Tempo indeterminato', indeterminato_data: 'Data indeterminato', part_time: 'Part-time',
   luogo_nascita: 'Luogo di nascita', domicilio_indirizzo: 'Domicilio', domicilio_citta: 'Città domicilio',
@@ -83,6 +79,10 @@ interface Ctx {
   today: string;
   deptByName: Map<string, number>;
   deptName: Map<number, string>;
+  plantByName: Map<string, number>;
+  plantName: Map<number, string>;
+  companyByName: Map<string, number>;
+  companyName: Map<number, string>;
   matricolaOwner: Map<string, number[]>;   // matricola (senza zeri) → schede che la hanno, con o senza zeri
   matricolaOf: Map<number, string>;        // scheda → matricola com'è salvata
   claimed: Set<string>;                    // matricole già assegnate in questo import
@@ -91,11 +91,12 @@ interface Ctx {
 const json = { 'Content-Type': 'application/json' };
 
 // Valori che Osti propone per una persona, già puliti. Valore assente = null (non tocca nulla).
-function wantOf(r: Row, ctx: Ctx): Record<string, string | number | boolean | null> {
+function wantOf(r: Row, ctx: Ctx): Record<string, string | number | boolean | number[] | null> {
   const email = clean(r.dip_email);
   const sesso = clean(r.dip_sesso).toUpperCase();
   const matricola = noLeadingZeros(r.dip_matricola);
   const livello = clean(r.dip_livello);
+  const plantId = ctx.plantByName.get(norm(clean(r.filiale)));   // filiale/ditta arrivano solo dalla lettura MySQL
   return {
     nome_osti: clean(r.dip_nome),
     matricola: matricola && matricola !== '0' ? matricola : null,
@@ -116,6 +117,8 @@ function wantOf(r: Row, ctx: Ctx): Record<string, string | number | boolean | nu
     note: (r.dip_note ?? '').trim() || null,
     email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : null,
     reparto_id: ctx.deptByName.get(norm(repartoOf(r))) ?? null,
+    plant_ids: plantId != null ? [plantId] : null,
+    contract_company_id: ctx.companyByName.get(norm(clean(r.ditta))) ?? null,
     gruppo_orario: clean(r.gruppo_orario) || null,
     badge: positive(r.dip_badge),
     transponder: positive(r.dip_transponder),
@@ -147,10 +150,16 @@ function buildPlan(emp: HrEmployee, r: Row, ctx: Ctx): { plan: Plan | null; conf
     if (v == null || v === '') return '';
     if (f === 'nazionalita' && TIPI_NAZIONALITA.has(String(v).trim().toUpperCase())) return '';   // vecchia categoria: ora sta in tipo_nazionalita
     if (f === 'reparto_id') return ctx.deptName.get(v as number) ?? '';
+    if (f === 'contract_company_id') return ctx.companyName.get(v as number) ?? '';
+    if (f === 'plant_ids') return (v as number[]).map(id => ctx.plantName.get(id) ?? '').filter(Boolean).join(', ');
     if (f.startsWith('data_')) return String(v).slice(0, 10);
     return String(v);
   };
-  const show = (f: string, v: string | number | boolean) => (f === 'reparto_id' ? ctx.deptName.get(v as number) ?? '' : String(v));
+  const show = (f: string, v: string | number | boolean | number[]) =>
+    f === 'reparto_id' ? ctx.deptName.get(v as number) ?? ''
+    : f === 'contract_company_id' ? ctx.companyName.get(v as number) ?? ''
+    : f === 'plant_ids' ? (v as number[]).map(id => ctx.plantName.get(id) ?? '').join(', ')
+    : String(v);
 
   const plan: Plan = { emp, fill: {}, change: {}, changes: [], cessa: false, takeFrom: [] };
   let conflict: string | null = null;
@@ -170,7 +179,7 @@ function buildPlan(emp: HrEmployee, r: Row, ctx: Ctx): { plan: Plan | null; conf
       continue;
     }
     if (cur === '') plan.fill[f] = v;
-    else if (!FILL_ONLY.has(f)) { plan.change[f] = v; plan.changes.push({ field: f, from: cur, to: show(f, v) }); }
+    else { plan.change[f] = v; plan.changes.push({ field: f, from: cur, to: show(f, v) }); }
   }
   // Cessazione già trascorsa: la persona risulta cessata. Una data futura è solo la fine del contratto.
   if (licenziato && licenziato <= ctx.today && emp.stato !== 'cessato') {
@@ -247,12 +256,12 @@ const empLabel = (e: HrEmployee) => `${e.cognome} ${e.nome}`;
 export async function runOstiImport(
   rows: Row[],
   deps: {
-    backend: string; employees: HrEmployee[]; departments: HrDepartment[];
+    backend: string; employees: HrEmployee[]; departments: HrDepartment[]; plants: HrPlant[]; companies: HrContractCompany[];
     confirm: (o: { title: string; message: string; confirmLabel: string }) => Promise<boolean>;
     onChanged?: () => void;   // dopo ogni scelta fatta nella tabella del dettaglio (ricarica l'elenco)
   },
 ): Promise<ImportResult> {
-  const { backend, employees, departments, confirm, onChanged } = deps;
+  const { backend, employees, departments, plants, companies, confirm, onChanged } = deps;
   if (!rows.some(r => 'dip_nome' in r)) {
     return { inserted: 0, skipped: 0, errors: 1, detail: 'File non riconosciuto: manca la colonna dip_nome (serve l\'elenco dipendenti di Osti).' };
   }
@@ -261,6 +270,10 @@ export async function runOstiImport(
     backend, today,
     deptByName: new Map(departments.map(d => [norm(d.name), d.id])),
     deptName: new Map(departments.map(d => [d.id, d.name])),
+    plantByName: new Map(plants.map(x => [norm(x.name), x.id])),
+    plantName: new Map(plants.map(x => [x.id, x.name])),
+    companyByName: new Map(companies.map(x => [norm(x.name), x.id])),
+    companyName: new Map(companies.map(x => [x.id, x.name])),
     matricolaOwner: employees.reduce((m, e) => { if (e.matricola) m.set(matKey(e.matricola), [...(m.get(matKey(e.matricola)) ?? []), e.id]); return m; }, new Map<string, number[]>()),
     matricolaOf: new Map(employees.filter(e => e.matricola).map(e => [e.id, e.matricola as string])),
     claimed: new Set<string>(),
@@ -357,6 +370,7 @@ export async function runOstiImport(
   const empById = new Map(employees.map(e => [e.id, e]));
   const plans: Plan[] = [];
   const missingDepts = new Map<string, { label: string; emps: HrEmployee[] }>();   // reparto di Osti che da noi non esiste
+  const missingCat = new Map<string, { kind: 'plant' | 'company'; label: string; emps: HrEmployee[] }>();   // filiale/ditta di Osti che da noi non esiste
   let duplicates = 0;
   for (const [id, list] of matched) {
     const emp = empById.get(id)!;
@@ -367,6 +381,12 @@ export async function runOstiImport(
       const m = missingDepts.get(norm(rep)) ?? { label: rep, emps: [] };
       m.emps.push(emp);
       missingDepts.set(norm(rep), m);
+    }
+    for (const [kind, label, known] of [['plant', clean(r.filiale), ctx.plantByName], ['company', clean(r.ditta), ctx.companyByName]] as const) {
+      if (!label || known.has(norm(label))) continue;
+      const m = missingCat.get(kind + norm(label)) ?? { kind, label, emps: [] };
+      m.emps.push(emp);
+      missingCat.set(kind + norm(label), m);
     }
     const { plan, conflict } = buildPlan(emp, r, ctx);
     if (conflict) issues.push({ type: 'Matricola già assegnata', name: empLabel(emp), note: conflict });
@@ -392,6 +412,33 @@ export async function runOstiImport(
           }
           onChanged?.();
           return `Reparto creato, assegnato a ${assegnati} (${emps.length - assegnati} hanno già un reparto)`;
+        },
+      }],
+    });
+  }
+
+  // Plant e società nuovi: si creano una volta sola e si assegnano a chi non ne ha (come per i reparti)
+  for (const { kind, label, emps } of missingCat.values()) {
+    const isPlant = kind === 'plant';
+    issues.push({
+      type: isPlant ? 'Plant non presente' : 'Società non presente', name: label, note: `${emps.length} dipendenti in Osti`,
+      actions: [{
+        label: isPlant ? 'Crea plant' : 'Crea società',
+        run: async () => {
+          const res = await fetch(`${backend}/api/hr/${isPlant ? 'plants' : 'contract-companies'}`, { method: 'POST', headers: json, credentials: 'include', body: JSON.stringify({ name: label }) });
+          if (!res.ok) throw new Error('voce non creata');
+          const created: { id: number } = await res.json();
+          (isPlant ? ctx.plantByName : ctx.companyByName).set(norm(label), created.id);
+          (isPlant ? ctx.plantName : ctx.companyName).set(created.id, label);
+          let assegnati = 0;
+          for (const e of emps) {
+            if (isPlant ? (e.plant_ids ?? []).length : e.contract_company_id != null) continue;
+            const body = isPlant ? { plant_ids: [created.id] } : { contract_company_id: created.id };
+            const p = await fetch(`${backend}/api/hr/employees/${e.id}?storico=0`, { method: 'PATCH', headers: json, credentials: 'include', body: JSON.stringify(body) });
+            if (p.ok) assegnati++;
+          }
+          onChanged?.();
+          return `${isPlant ? 'Plant creato' : 'Società creata'}, assegnata a ${assegnati} (${emps.length - assegnati} ne hanno già una)`;
         },
       }],
     });

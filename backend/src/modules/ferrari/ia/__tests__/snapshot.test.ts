@@ -37,3 +37,34 @@ describe('vettore condiviso con la PC IA (stesso hash in TypeScript e in Python)
     expect(v.snapshot.versione_sigle).toBe('cfdf59342ec54ad64c34779e424e8730e14b94102f8f532329085ae33349de4b');
   });
 });
+
+describe('decisioni complete e componenti (campi facoltativi)', () => {
+  const dec = (modello: string, codice: string, va: boolean) => ({ modello, codice, va, sub: false, alias: null, nosigla: false, padre: null });
+  it('senza decisioni ne\' componenti l\'hash resta quello di prima; con le decisioni cambia', () => {
+    const a = costruisciSnapshot(base);
+    expect('decisioni' in a || 'componenti' in a).toBe(false);
+    const b = costruisciSnapshot({ ...base, decisioni: [dec('*', '0TMC', false)] });
+    expect(b.decisioni).toHaveLength(1);
+    expect(b.versione_sigle).not.toBe(a.versione_sigle);
+  });
+  it('doppioni (stesso modello e codice) si tolgono; l\'ordine della VM si conserva', () => {
+    const s = costruisciSnapshot({ ...base, decisioni: [dec('*', 'B', true), dec('F1', 'A', false), dec('*', 'B', false)] });
+    expect(s.decisioni?.map(d => `${d.modello}:${d.codice}:${d.va}`)).toEqual(['*:B:true', 'F1:A:false']);
+  });
+  it('modelli noti e loro errori di scrittura viaggiano solo se ci sono', () => {
+    const a = costruisciSnapshot(base);
+    expect('modelli_noti' in a || 'modelli_alias' in a).toBe(false);
+    const b = costruisciSnapshot({ ...base, modelli_noti: ['F2', 'F1', 'F2'], modelli_alias: [{ sbagliato: 'Z', giusto: 'F1' }, { sbagliato: 'A', giusto: 'F2' }] });
+    expect(b.modelli_noti).toEqual(['F2', 'F1']);                      // ordine di creazione, senza doppioni
+    expect(b.modelli_alias?.map(x => x.sbagliato)).toEqual(['A', 'Z']);
+  });
+  it('vettore condiviso con le decisioni: stesso hash in TypeScript e in Python', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const v = JSON.parse(readFileSync(fileURLToPath(new URL('./contratto-v1.json', import.meta.url)), 'utf8')) as { snapshot_v2: ReturnType<typeof costruisciSnapshot> };
+    const { versione_sigle: _v, ...corpo } = v.snapshot_v2;
+    expect(costruisciSnapshot(corpo)).toEqual(v.snapshot_v2);
+    expect(SnapshotSigleSchema.parse(v.snapshot_v2)).toEqual(v.snapshot_v2);
+    expect(v.snapshot_v2.versione_sigle).toBe('ee2882bfb9d061692b0a3e113bc99694b34601f3dbff884a9fe70b90ae92c0df');
+  });
+});

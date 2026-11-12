@@ -6,6 +6,7 @@ import { HTTPException } from 'hono/http-exception';
 import { db } from '../../db/client.js';
 import { logger } from '../../lib/logger.js';
 import { analizzaVm } from './analyzer.js';
+import { leggiCategorie, raggruppa, type Gruppo } from './categorie-base.js';
 import {
   BundleError, buildKnowledge, buildSigle, buildToAi, leggiBundle, leggiComponenti, leggiDettagli, leggiRisultatoIa, leggiSigle, sha256, stableStringify,
   type EsempioConoscenza, type VoceComponente, type VoceDettaglio,
@@ -883,7 +884,7 @@ export async function matrice(modello?: string, q?: string, conRighe = true) {
     GROUP BY modello ORDER BY max(caricato_at) DESC`;
   const scelto = (modello?.trim().toUpperCase() || modelli[0]?.modello) ?? '';
   const proposte = await proposteSigle();
-  if (!scelto) return { modelli, modello: '', termini: [] as string[], nuove: [], sigle: [], righe: [], proposte };
+  if (!scelto) return { modelli, modello: '', termini: [] as string[], gruppi: [] as Gruppo[], nuove: [], sigle: [], righe: [], proposte };
 
   // Decisione del modello prevale su quella per tutti
   const rows = await db<{ modello: string; codice: string; va: boolean; ordine: string; sub: boolean; alias: string | null; nosigla: boolean; auto: boolean; padre: string | null }[]>`
@@ -915,9 +916,11 @@ export async function matrice(modello?: string, q?: string, conRighe = true) {
   const mostrate = (cerca ? tutte.filter(s => (s.canonico.header.commessa ?? '').includes(cerca)) : tutte).slice(0, 500);
   const commesse = mostrate.map(s => s.canonico.header.commessa ?? '').filter(Boolean);
   const salvate = await descrizioniSalvate();
+  const gruppi = raggruppa(termini, new Map(termini.map(t => [t, salvate.get(t)?.descrizione || nomi.get(t) || ''] as [string, string])), await leggiCategorie(db));
   const dettagli = conRighe ? await caricaDettagli(commesse) : new Map() as DettagliPerCommessa;
   return {
     modelli, modello: scelto, termini,
+    gruppi,                                   // colonne raggruppate per categoria ([] se non ce ne sono: la tabella resta com'e')
     nuove: nuoveSigle(tutte, new Set(decisioni.keys()), noti),
     sigle: ordinate.map(([codice, d]) => ({ codice, nome: nomi.get(codice) ?? '(parola cercata)', va: d.va, ambito: d.ambito, sub: d.sub, alias: d.alias, nosigla: d.nosigla, padre: d.padre, auto: d.auto })),
     etichette: Object.fromEntries(termini.filter(t => salvate.get(t)?.descrizione).map(t => [t, salvate.get(t)!.descrizione])),

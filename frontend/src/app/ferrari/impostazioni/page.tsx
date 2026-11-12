@@ -11,12 +11,13 @@ import { ImpostazioniSigle, type ConfigSigle } from '@/components/ferrari/Impost
 import { ImpostazioniIa } from '@/components/ferrari/ImpostazioniIa';
 import { ImpostazioniModelli } from '@/components/ferrari/ImpostazioniModelli';
 import { ComponentiGestione } from '@/components/ferrari/ComponentiGestione';
+import { CategorieGestione } from '@/components/ferrari/CategorieGestione';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Tabs } from '@/components/ui/Tabs';
 
-type Scheda = 'sigle' | 'modelli' | 'componenti' | 'cartella' | 'avanzate';
+type Scheda = 'sigle' | 'modelli' | 'componenti' | 'categorie' | 'cartella' | 'avanzate';
 const SCHEDE: { id: Scheda; label: string }[] = [
-  { id: 'sigle', label: 'Sigle' }, { id: 'modelli', label: 'Modelli' }, { id: 'componenti', label: 'Componenti' }, { id: 'cartella', label: 'Cartella Excel' }, { id: 'avanzate', label: 'Avanzate' },
+  { id: 'sigle', label: 'Sigle' }, { id: 'modelli', label: 'Modelli' }, { id: 'componenti', label: 'Componenti' }, { id: 'categorie', label: 'Categorie' }, { id: 'cartella', label: 'Cartella Excel' }, { id: 'avanzate', label: 'Avanzate' },
 ];
 interface Proposta { modello: string; codice: string; va: boolean; sub: boolean; alias: string | null; nome: string | null; conflitto: boolean; da: string | null }
 interface Contatori { da_decidere: Record<string, number>; proposte_sigle: Proposta[]; gestione_modelli: { nuovi: unknown[] }; descrizioni_da_confermare?: number }
@@ -77,7 +78,7 @@ export default function ImpostazioniPage() {
       <PageHeader
         back={{ label: 'Programma produzione (schede)', href: '/ferrari' }}
         title="Impostazioni schede"
-        description="Cartella degli Excel, sigle, modelli e componenti."
+        description="Cartella degli Excel, sigle, modelli, componenti e categorie."
       />
       <Errore messaggio={errore} />
 
@@ -96,6 +97,7 @@ export default function ImpostazioniPage() {
           {tab === 'sigle' && <ImpostazioniSigle onCambia={(c: ConfigSigle) => setCont(c as unknown as Contatori)} />}
           {tab === 'modelli' && <div className="max-w-3xl"><ImpostazioniModelli onCambia={contatori} /></div>}
           {tab === 'componenti' && <div className="max-w-3xl"><ComponentiGestione /></div>}
+          {tab === 'categorie' && <div className="max-w-3xl"><CategorieGestione /></div>}
           {tab === 'cartella' && <div className="max-w-3xl"><ImpostazioniCartella /></div>}
           {tab === 'avanzate' && (
             <div className="space-y-4">

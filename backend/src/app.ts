@@ -12,6 +12,7 @@ import { ticketRoutes } from './modules/tickets/routes.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { dashboardsRoutes } from './modules/dashboards/routes.js';
 import { systemRoutes } from './modules/system/routes.js';
+import { powerbiRoutes } from './modules/powerbi/routes.js';
 import { spmaRoutes } from './modules/spma/routes.js';
 import { recepcionesRoutes } from './modules/recepciones/routes.js';
 import { ediRoutes } from './modules/edi/routes.js';
@@ -60,10 +61,21 @@ app.get('/health', async (c) => {
 
     // Check WebThron MySQL (non-critical) — ping() no query, no data
     // try-finally garantisce che la connessione venga sempre rilasciata al pool
-    let conn;
+    // Con un tetto di 4 s: se WebThron non risponde, /health deve comunque rispondere (il deploy lo aspetta).
+    let conn: Awaited<ReturnType<ReturnType<typeof getWebthronPool>['getConnection']>> | undefined;
+    let timedOut = false;
     try {
-      conn = await getWebthronPool().getConnection();
-      await conn.ping();
+      const attempt = (async () => {
+        const c = await getWebthronPool().getConnection();
+        if (timedOut) { c.release(); return; }   // arrivata in ritardo: la si restituisce subito
+        conn = c;
+        await c.ping();
+      })();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const limit = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => { timedOut = true; reject(new Error('webthron health timeout')); }, 4000);
+      });
+      try { await Promise.race([attempt, limit]); } finally { clearTimeout(timer); }
       deps.webthron = 'ok';
     } catch (e) {
       deps.webthron = e instanceof IKnowDisabledError ? 'disabled' : 'unavailable';
@@ -97,6 +109,7 @@ app.route('/api/auth', authRoutes);
 app.route('/api/tickets', ticketRoutes);
 app.route('/api/dashboards', dashboardsRoutes);
 app.route('/api/system', systemRoutes);
+app.route('/api/powerbi', powerbiRoutes);
 
 app.route('/api/spma', spmaRoutes);
 app.route('/api/recepciones', recepcionesRoutes);

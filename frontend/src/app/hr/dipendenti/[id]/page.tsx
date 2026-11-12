@@ -150,6 +150,11 @@ export default function EmployeeDetailPage() {
           Proposta inviata a HR: la scheda cambierà solo dopo l&apos;approvazione. Vedi lo stato in Risorse Umane → Richieste.
         </p>
       )}
+      {manage && employee.n_riporti > 0 && !employee.user_id && (
+        <p className="mb-4 rounded-ctl bg-warning-soft px-3 py-2 text-sm text-warning">
+          Questo capo non ha un account collegato: non può vedere il suo team né fare richieste. L'account si collega dal menu IT (Sistema → Utenti → campo "Persona").
+        </p>
+      )}
       <PageHeader
         back={{ label: 'Dipendenti', href: '/hr/dipendenti' }}
         title={`${employee.cognome} ${employee.nome}`}
@@ -241,6 +246,7 @@ export default function EmployeeDetailPage() {
             <Field label="Categoria" value={employee.categoria} />
             <Field label="Tipologia" value={employee.tipo_contratto} />
             <Field label="Data assunzione" value={fmtDate(employee.data_assunzione)} />
+            {manage && <Field label="Account di sistema" value={employee.account_username} />}
             <Field label="Anzianità" value={`${employee.anzianita_anni} ${employee.anzianita_anni === 1 ? 'anno' : 'anni'}`} />
             {employee.data_cessazione && <Field label="Fine contratto / cessazione" value={fmtDate(employee.data_cessazione)} />}
           </InfoCard>

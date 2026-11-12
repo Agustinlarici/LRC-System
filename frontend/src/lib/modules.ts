@@ -10,7 +10,7 @@ export interface ModuleConfig {
   hidden:       boolean;
   soon?:        boolean;
   group:        string;
-  moduleKey?:   ModuleKey;  // permesso richiesto per vedere la card in home
+  moduleKey?:   ModuleKey | ModuleKey[];  // permesso richiesto per vedere la card in home (basta uno dei permessi)
   manageOnly?:  boolean;    // true = richiede canManage invece di canView
   adminOnly?:   boolean;    // true = visibile solo agli admin (nessun permesso di modulo)
 }
@@ -163,12 +163,17 @@ export const MODULES: ModuleConfig[] = [
   {
     href: '/hr/dipendenti', label: 'Dipendenti', group: 'HR',
     description: 'Ficha completa, dati anagrafici e lavorativi, storico eventi',
-    sidebar: 'IconUsers', hidden: false, moduleKey: 'hr',
+    sidebar: 'IconUsers', hidden: false, moduleKey: ['hr', 'hr_team'],
+  },
+  {
+    href: '/hr/richieste', label: 'Richieste', group: 'HR',
+    description: 'Ferie, assenze e modifiche scheda proposte dai capi, da approvare da HR',
+    sidebar: 'IconClipboard', hidden: false, moduleKey: ['hr', 'hr_team'],
   },
   {
     href: '/hr/scadenze', label: 'Scadenze', group: 'HR',
     description: 'Contratti in scadenza e regole di avviso per società/periodo di prova',
-    sidebar: 'IconClipboard', hidden: false, moduleKey: 'hr',
+    sidebar: 'IconClipboard', hidden: false, moduleKey: ['hr', 'hr_team'],
   },
   {
     href: '/hr/documenti', label: 'Documenti', group: 'HR',
@@ -178,7 +183,7 @@ export const MODULES: ModuleConfig[] = [
   {
     href: '/hr/organigramma', label: 'Organigramma', group: 'HR',
     description: 'Struttura organizzativa dinamica, capi e team',
-    sidebar: 'IconOrgChart', hidden: false, moduleKey: 'hr',
+    sidebar: 'IconOrgChart', hidden: false, moduleKey: ['hr', 'hr_team'],
   },
   {
     href: '/hr/analisi', label: 'Analisi HR', group: 'HR',

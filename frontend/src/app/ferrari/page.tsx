@@ -5,9 +5,9 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { inviaFile } from '@/lib/ferrari';
-import { iaApi, STATI_IN_CORSO, type StatoIa } from '@/lib/ferrari-ia';
+import { iaApi, leggiRiprova, STATI_IN_CORSO, type StatoIa } from '@/lib/ferrari-ia';
 import { AnomalieRiga, Cella, Errore, SottoSigla, VistaToggle } from '@/components/ferrari/Comuni';
-import { InfoCartella, type StatoCartella } from '@/components/ferrari/InfoCartella';
+import type { StatoCartella } from '@/components/ferrari/InfoCartella';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { IconSettings } from '@/components/icons/ModuleIcons';
 
@@ -21,6 +21,7 @@ interface Matrice {
   modelli: { modello: string; schede: number }[];
   modello: string;
   termini: string[];
+  gruppi?: { categoria: string | null; termini: string[] }[];     // colonne per categoria ([] se non ce ne sono)
   etichette?: Record<string, string>;
   descrizioni_proposte?: { codice: string; descrizione: string }[];
   nuove: { codice: string }[];
@@ -28,7 +29,6 @@ interface Matrice {
   righe: Riga[];
 }
 
-const etichetta = (m: { etichette?: Record<string, string> }, t: string) => m.etichette?.[t] ? `${m.etichette[t]} (${t})` : t;
 const btnLink = 'btn-secondary';
 
 export default function VederePage() {
@@ -41,6 +41,10 @@ export default function VederePage() {
   const [ia, setIa] = useState<StatoIa | null>(null);
   const [msg, setMsg] = useState('');
   const [occupato, setOccupato] = useState(false);
+  const [riprova, setRiprova] = useState(false);             // modalita' prova (Impostazioni, Avanzate): un file gia' caricato si rimanda alla IA
+  useEffect(() => { setRiprova(leggiRiprova()); }, []);
+  const [trascina, setTrascina] = useState(false);           // un file e' sopra la pagina: si mostra dove rilasciarlo
+  const trascinando = useRef(0);                             // dragenter/dragleave scattano anche sugli elementi interni
   const [fCommessa, setFCommessa] = useState('');
   const [fTesto, setFTesto] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -83,9 +87,16 @@ export default function VederePage() {
     if (files.length === 0) return;
     setOccupato(true);
     try {
-      const r = await inviaFile<{ risultati: { filename: string; stato?: string; duplicato?: boolean; motivo?: string; errore?: string }[] }>('/api/ferrari/files', 'files', files);
+      const prova = leggiRiprova();                          // si rilegge al momento: la casella e' in un'altra pagina
+      const r = await inviaFile<{ risultati: { filename: string; stato?: string; duplicato?: boolean; motivo?: string; errore?: string; riprova?: string }[] }>(
+        `/api/ferrari/files${prova ? '?riprova=1' : ''}`, 'files', files);
+      const giaCaricata = (x: { riprova?: string }) => x.riprova === 'accodata' ? 'già caricata, rimandata alla IA'
+        : x.riprova === 'gia_in_corso' ? 'già caricata, analisi IA già in corso'
+        : x.riprova === 'ia_spenta' ? 'già caricata (IA spenta: niente da rimandare)'
+        : x.riprova === 'non_analizzabile' ? 'già caricata (versione sostituita: non si analizza)'
+        : 'già caricata';
       setMsg(r.risultati.map(x => x.errore ? `${x.filename}: ${x.errore}` : x.stato === 'QUARANTENA' ? `${x.filename}: non è una scheda (${x.motivo})`
-        : x.duplicato ? `${x.filename}: già caricata` : `${x.filename}: caricata`).join(' · '));
+        : x.duplicato ? `${x.filename}: ${giaCaricata(x)}` : `${x.filename}: caricata`).join(' · '));
       await carica(modello);
     } catch (e) {
       setErrore((e as Error).message);
@@ -93,6 +104,31 @@ export default function VederePage() {
       setOccupato(false);
       if (inputRef.current) inputRef.current.value = '';
     }
+  }
+
+  // Un file lasciato per sbaglio fuori dall'area della pagina (per esempio sul menu) non deve farsi aprire dal browser
+  useEffect(() => {
+    if (!puoGestire) return;
+    const blocca = (e: DragEvent) => { if (Array.from(e.dataTransfer?.types ?? []).includes('Files')) e.preventDefault(); };
+    window.addEventListener('dragover', blocca);
+    window.addEventListener('drop', blocca);
+    return () => { window.removeEventListener('dragover', blocca); window.removeEventListener('drop', blocca); };
+  }, [puoGestire]);
+
+  // Trascinare uno o piu' file Excel sulla pagina li carica (come «Carica Excel»)
+  const haFile = (e: React.DragEvent) => puoGestire && Array.from(e.dataTransfer?.types ?? []).includes('Files');
+  function rilascia(e: React.DragEvent) {
+    if (!haFile(e)) return;
+    e.preventDefault();
+    trascinando.current = 0;
+    setTrascina(false);
+    if (occupato) return;
+    const tutti = Array.from(e.dataTransfer.files);
+    const excel = tutti.filter(f => /\.(xls|xlsx)$/i.test(f.name));
+    if (excel.length === 0) { setErrore('Trascina file Excel (.xls o .xlsx)'); return; }
+    setErrore(null);
+    if (excel.length < tutti.length) setMsg(`${tutti.length - excel.length} file ignorati: non sono Excel`);
+    invia(excel);
   }
 
   async function leggiCartella() {
@@ -104,6 +140,12 @@ export default function VederePage() {
       setErrore((e as Error).message);
     }
   }
+
+  // colonne nell'ordine delle categorie (senza categorie: com'erano); la prima colonna di ogni gruppo ha un filo di separazione
+  const gruppi = m?.gruppi ?? [];
+  const raggruppata = gruppi.length > 0;
+  const colonne = useMemo(() => raggruppata ? gruppi.flatMap(g => g.termini) : (m?.termini ?? []), [raggruppata, gruppi, m?.termini]);
+  const inizioGruppo = useMemo(() => new Set(raggruppata ? gruppi.map(g => g.termini[0]) : []), [raggruppata, gruppi]);
 
   const righe = useMemo(() => {
     if (!m) return [];
@@ -119,13 +161,30 @@ export default function VederePage() {
   async function esportaExcel() {
     if (!m) return;
     const XLSX = await import('xlsx');
-    const dati = righe.map(r => {
-      const out: Record<string, string> = { Commessa: r.commessa, Modello: r.modello ?? '' };
-      for (const t of m.termini) out[etichetta(m, t)] = [r.celle[t] ?? '', ...(r.sub?.[t] ?? []).map(s => `${s.codice}: ${s.testo}`)].filter(Boolean).join('\n');
-      return out;
-    });
+    // Stessa intestazione della tabella: categoria (se ce ne sono), sigla e sotto la descrizione. Le prime due colonne sono Commessa e Modello.
+    const PRIME = 2;
+    const intestazione: string[][] = [];
+    const unioni: import('xlsx').Range[] = [];
+    if (raggruppata) {
+      const riga = ['Commessa', 'Modello', ...colonne.map(() => '')];
+      let c = PRIME;
+      for (const g of gruppi) {
+        riga[c] = g.categoria ?? 'Altre';
+        if (g.termini.length > 1) unioni.push({ s: { r: 0, c }, e: { r: 0, c: c + g.termini.length - 1 } });
+        c += g.termini.length;
+      }
+      intestazione.push(riga);
+    }
+    intestazione.push([raggruppata ? '' : 'Commessa', raggruppata ? '' : 'Modello', ...colonne]);
+    intestazione.push(['', '', ...colonne.map(t => m.etichette?.[t] ?? '')]);
+    for (const c of [0, 1]) unioni.push({ s: { r: 0, c }, e: { r: intestazione.length - 1, c } });   // Commessa e Modello occupano tutta l'intestazione
+    const dati = righe.map(r => [r.commessa, r.modello ?? '',
+      ...colonne.map(t => [r.celle[t] ?? '', ...(r.sub?.[t] ?? []).map(x => `${x.codice}: ${x.testo}`)].filter(Boolean).join('\n'))]);
+    const foglio = XLSX.utils.aoa_to_sheet([...intestazione, ...dati]);
+    foglio['!merges'] = unioni;
+    foglio['!cols'] = [{ wch: 12 }, { wch: 10 }, ...colonne.map(() => ({ wch: 28 }))];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dati), 'Programma Produzione');
+    XLSX.utils.book_append_sheet(wb, foglio, 'Programma Produzione');
     XLSX.writeFile(wb, `programma-produzione-schede-${m.modello}-${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
@@ -133,10 +192,22 @@ export default function VederePage() {
   const vuoto = !m || m.modelli.length === 0;
 
   return (
-    <div>
+    <div
+      onDragEnter={e => { if (haFile(e)) { e.preventDefault(); trascinando.current++; setTrascina(true); } }}
+      onDragOver={e => { if (haFile(e)) e.preventDefault(); }}
+      onDragLeave={e => { if (haFile(e) && --trascinando.current <= 0) { trascinando.current = 0; setTrascina(false); } }}
+      onDrop={rilascia}
+    >
+      {trascina && (
+        <div className="d-print-none pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-white/80 p-6" role="status" aria-live="polite">
+          <div className="rounded-card border-2 border-dashed border-accent bg-white px-10 py-8 text-center shadow-float">
+            <p className="text-base font-semibold text-ink">Rilascia i file Excel per caricarli</p>
+            <p className="mt-1 text-sm text-muted">.xls o .xlsx{riprova ? ' · i file già caricati vengono rimandati alla IA' : ''}</p>
+          </div>
+        </div>
+      )}
       <PageHeader
         title="Programma produzione (schede)"
-        description={<InfoCartella stato={cartella} />}
         actions={
           <>
             {puoGestire && (
@@ -215,9 +286,23 @@ export default function VederePage() {
           <div className="overflow-auto max-h-[75vh] rounded-card border border-line bg-white print:max-h-none print:overflow-visible print:border-0">
             <table className="w-full text-sm operator-sheet">
               <thead>
+                {raggruppata && (
+                  <tr className="bg-stone-50 text-muted">
+                    <th rowSpan={2} className="sticky top-0 left-0 z-20 bg-stone-50 py-2.5 px-4 text-left font-medium">Commessa</th>
+                    {gruppi.map(g => (
+                      <th key={g.categoria ?? '_altre'} colSpan={g.termini.length}
+                        className="sticky top-0 z-10 h-8 border-l border-line bg-stone-50 px-4 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-ink-700">
+                        {g.categoria ?? 'Altre'}
+                      </th>
+                    ))}
+                  </tr>
+                )}
                 <tr className="border-b border-line bg-stone-50 text-muted">
-                  <th className="sticky top-0 left-0 z-20 bg-stone-50 py-2.5 px-4 text-left font-medium">Commessa</th>
-                  {m!.termini.map(t => <th key={t} className="sticky top-0 z-10 bg-stone-50 py-2.5 px-4 text-left font-medium min-w-[140px]">{etichetta(m!, t)}</th>)}
+                  {!raggruppata && <th className="sticky top-0 left-0 z-20 bg-stone-50 py-2.5 px-4 text-left font-medium">Commessa</th>}
+                  {colonne.map(t => <th key={t} className={`sticky ${raggruppata ? 'top-8' : 'top-0'} z-10 bg-stone-50 py-2.5 px-4 text-left font-medium min-w-[140px] ${inizioGruppo.has(t) ? 'border-l border-line' : ''}`}>
+                    <span className="font-semibold text-ink-900">{t}</span>
+                    {m!.etichette?.[t] && <span className="block text-xs font-normal leading-snug text-muted">{m!.etichette[t]}</span>}
+                  </th>)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
@@ -227,11 +312,11 @@ export default function VederePage() {
                       <Link href={`/ferrari/${r.id}`} className="text-accent-ink hover:underline print:text-black">{r.commessa}</Link>
                       <div className="d-print-none font-normal"><AnomalieRiga anomalie={r.anomalie} modello={m!.modello} onFatto={() => carica(modello)} onErrore={setErrore} /></div>
                     </td>
-                    {m!.termini.map(t => (
-                      <td key={t} className={`py-2 px-4 max-w-[280px] ${r.rivedere?.[t] ? 'shadow-[inset_3px_0_0_#f0a020]' : ''}`}>
+                    {colonne.map(t => (
+                      <td key={t} className={`py-2 px-4 max-w-[280px] ${inizioGruppo.has(t) ? 'border-l border-line' : ''} ${r.rivedere?.[t] ? 'shadow-[inset_3px_0_0_#f0a020]' : ''}`}>
                         {r.avvisi?.[t] && <div className="text-xs font-semibold text-warning">{r.avvisi[t]}</div>}
-                        <Cella testo={r.celle[t]} intero={r.testi[t]} />
-                        {r.sub?.[t]?.map(x => <SottoSigla key={x.codice} x={x} modello={m!.modello} onFatto={() => carica(modello)} onErrore={setErrore} />)}
+                        <Cella testo={r.celle[t]} intero={r.testi[t]} compatta />
+                        {r.sub?.[t]?.map(x => <SottoSigla key={x.codice} x={x} modello={m!.modello} onFatto={() => carica(modello)} onErrore={setErrore} compatta />)}
                       </td>
                     ))}
                   </tr>

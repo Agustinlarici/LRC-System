@@ -6,10 +6,13 @@
  *
  * Sync scope covers both Andon (monitor_linea_combo) AND Buffer (buffer_linea_combo).
  *
- * WebThron lock impact:
- *   Full load  (once/day at startup): ~60 sec
- *   Incremental (every 10 min):       ~2-3 sec
- *   Lookup refresh (once/day at 02:00): ~5-10 sec
+ * WebThron è MariaDB con tabelle MyISAM: ogni SELECT blocca la tabella. Per questo tutte le
+ * letture sono corte, sull'indice di `datain`, una alla volta e con un limite di tempo lato
+ * server (vedi mysql-client.ts e webthron-guard.ts).
+ *
+ *   Incrementale (ogni minuto,~5 min di notte): pochi ms, solo gli eventi nuovi
+ *   Rilettura notturna (01:00):                 rebanadine di 4 ore sul giorno prima
+ *   Aggiornamento fasi/combos (02:00):          rebanadine di 7 giorni sugli ultimi 90
  */
 
 import { db } from '../../db/client.js';
@@ -17,11 +20,32 @@ import { queryWebthronEvents, getWebthronPool, WebthronEvent, LineaCombo } from 
 import { logger } from '../../lib/logger.js';
 import { isIKnowEnabled } from '../../lib/system-flags.js';
 import { startRun, endRun, failRun } from '../../lib/sync-stats.js';
+import { isQuietHour } from './webthron-time.js';
+import { dedupeByKey } from './webthron-dedupe.js';
 
 export type ProdRow = WebthronEvent;
 
 let lastSyncAt: Date | null = null;
 let cacheDay: string = '';
+let lastAttemptAt = 0;
+
+function envInt(name: string, fallback: number): number {
+  const n = parseInt(process.env[name] ?? '', 10);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+// Si rilegge un minuto prima dell'ultimo evento visto: con `datain > ultimo` un evento con lo stesso
+// timestamp, arrivato dopo, andrebbe perso. L'upsert è idempotente, quindi riletture e riavvii non duplicano.
+const OVERLAP_MS = envInt('WEBTHRON_SYNC_OVERLAP_SECONDS', 60) * 1000;
+
+// Di notte (default 23:00–05:00, ora di Roma) non c'è produzione: un controllo ogni pochi minuti basta.
+const QUIET_FROM_HOUR   = envInt('WEBTHRON_QUIET_FROM_HOUR', 23);
+const QUIET_TO_HOUR     = envInt('WEBTHRON_QUIET_TO_HOUR', 5);
+const QUIET_INTERVAL_MS = envInt('WEBTHRON_QUIET_INTERVAL_SECONDS', 300) * 1000;
+
+// Aggiornamento fasi/combos: finestra totale e ampiezza di ogni rebanadina
+const LOOKUP_DAYS       = Math.max(1, envInt('WEBTHRON_LOOKUP_DAYS', 90));
+const LOOKUP_SLICE_DAYS = 7;
 
 function todayItaly(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
@@ -94,16 +118,30 @@ export async function syncWebthronToPostgres(): Promise<void> {
     lastSyncAt = null;
   }
 
+  // Fascia notturna: un solo controllo ogni pochi minuti invece che a ogni ciclo
+  if (isQuietHour(new Date(), QUIET_FROM_HOUR, QUIET_TO_HOUR) && Date.now() - lastAttemptAt < QUIET_INTERVAL_MS) return;
+  lastAttemptAt = Date.now();
+
   const combos       = await getActiveLineeWithCombos();
   const deliberaFasi = getDeliberaFasi();
   if (combos.length === 0) return;
 
-  // Always use 'since' with an index-friendly range — never a full table scan.
-  // On first run of the day, since = midnight Rome time.
-  // On subsequent runs, since = last synced row timestamp.
-  const since = lastSyncAt ?? midnightRome(today);
+  // Sempre un intervallo su `datain` (indice) — mai una scansione di tabella.
+  // L'avanzamento è in memoria; dopo un riavvio riparte dall'ultimo evento già salvato oggi
+  // (non da mezzanotte), così un riavvio del backend non rilegge tutta la giornata.
+  const midnight = midnightRome(today);
+  let since: Date;
+  if (lastSyncAt) {
+    since = new Date(lastSyncAt.getTime() - OVERLAP_MS);
+  } else {
+    const [last] = await db`
+      SELECT MAX(data_inserimento) AS ultimo FROM webthron_events_history WHERE data_cache = ${today}::date
+    `;
+    const ultimo = (last?.ultimo as Date | null) ?? null;
+    since = ultimo && ultimo > midnight ? new Date(ultimo.getTime() - OVERLAP_MS) : midnight;
+  }
   const dateFilter = { mode: 'since' as const, since };
-  const jobName = lastSyncAt ? 'sync_incremental' : 'sync_full';
+  const jobName = since > midnight ? 'sync_incremental' : 'sync_full';
   startRun(jobName);
   try {
     const rows = await queryWebthronEvents(combos, deliberaFasi, dateFilter);
@@ -114,7 +152,7 @@ export async function syncWebthronToPostgres(): Promise<void> {
       return;
     }
 
-    const records = rows.map(r => ({
+    const records = dedupeByKey(rows.map(r => ({
       fase:             r.fase,
       modello:          r.modello,
       componente:       r.componente,
@@ -123,18 +161,38 @@ export async function syncWebthronToPostgres(): Promise<void> {
       esito_delibera:   r.esito_delibera ?? null,
       data_inserimento: r.data_inserimento,
       data_cache:       today,
-    }));
+      versione:         r.versione ?? null,
+      operatore:        r.operatore ?? null,
+      colore:           r.colore ?? null,
+      protocollo_cesta: r.protocollo_cesta ?? null,
+    })));
 
-    await db`
+    // Gli eventi riletti nella sovrapposizione esistono già: si completano solo i campi ancora vuoti
+    // (nessuna riscrittura se non cambia nulla, per non gonfiare la tabella).
+    const result = await db`
       INSERT INTO webthron_events_history ${db(records)}
       ON CONFLICT (fase, cod_seriale, data_inserimento)
-      DO UPDATE SET commessa = EXCLUDED.commessa
-      WHERE webthron_events_history.commessa IS NULL
+      DO UPDATE SET
+        commessa         = COALESCE(webthron_events_history.commessa,         EXCLUDED.commessa),
+        versione         = COALESCE(webthron_events_history.versione,         EXCLUDED.versione),
+        operatore        = COALESCE(webthron_events_history.operatore,        EXCLUDED.operatore),
+        colore           = COALESCE(webthron_events_history.colore,           EXCLUDED.colore),
+        protocollo_cesta = COALESCE(webthron_events_history.protocollo_cesta, EXCLUDED.protocollo_cesta)
+      WHERE (webthron_events_history.commessa         IS NULL AND EXCLUDED.commessa         IS NOT NULL)
+         OR (webthron_events_history.versione         IS NULL AND EXCLUDED.versione         IS NOT NULL)
+         OR (webthron_events_history.operatore        IS NULL AND EXCLUDED.operatore        IS NOT NULL)
+         OR (webthron_events_history.colore           IS NULL AND EXCLUDED.colore           IS NOT NULL)
+         OR (webthron_events_history.protocollo_cesta IS NULL AND EXCLUDED.protocollo_cesta IS NOT NULL)
     `;
 
-    lastSyncAt = rows[rows.length - 1].data_inserimento;
-    endRun(jobName, rows.length);
-    logger.info(`[WebthronSync] +${rows.length} eventi — ultimo: ${lastSyncAt.toISOString()}`);
+    const ultimoVisto = rows[rows.length - 1].data_inserimento;
+    if (!lastSyncAt || ultimoVisto > lastSyncAt) lastSyncAt = ultimoVisto;
+    endRun(jobName, result.count);
+    if (result.count > 0) {
+      logger.info(`[WebthronSync] +${result.count} eventi (${rows.length} letti) — ultimo: ${ultimoVisto.toISOString()}`);
+    } else {
+      logger.debug(`[WebthronSync] Nessun evento nuovo (${rows.length} riletti)`);
+    }
   } catch (err) {
     failRun(jobName, err);
     throw err;
@@ -146,7 +204,56 @@ export async function syncWebthronToPostgres(): Promise<void> {
 // Reads ALL events for a given date from WebThron and upserts them into
 // webthron_events_history. Run once at end-of-day to catch late entries,
 // corrections, or anything missed by the incremental sync during the day.
-// Uses the same 'range' query as the manual backfill — one day, no lock.
+// La lettura è a rebanadine di 4 ore sull'indice di `datain` (vedi mysql-client.ts).
+
+/** Righe per INSERT: 12 colonne × 2000 restano sotto il limite di 65.535 parametri di PostgreSQL. */
+const INSERT_CHUNK = 2000;
+
+/**
+ * Legge un giorno intero da WebThron e lo scrive nello storico (upsert idempotente).
+ * Non controlla gli interruttori: li controllano i chiamanti (rilettura notturna, carica iniziale).
+ * Ritorna le righe lette; lancia l'errore se WebThron non risponde.
+ */
+export async function loadDayIntoHistory(dateStr: string): Promise<number> {
+  const combos       = await getActiveLineeWithCombos();
+  const deliberaFasi = getDeliberaFasi();
+  if (combos.length === 0) return 0;
+
+  const rows = await queryWebthronEvents(combos, deliberaFasi, { mode: 'range', from: dateStr, to: dateStr });
+  if (rows.length === 0) return 0;
+
+  const records = dedupeByKey(rows.map(r => ({
+    fase:             r.fase,
+    modello:          r.modello,
+    componente:       r.componente,
+    cod_seriale:      r.cod_seriale,
+    commessa:         r.commessa ?? null,
+    esito_delibera:   r.esito_delibera ?? null,
+    data_inserimento: r.data_inserimento,
+    data_cache:       dateStr,
+    versione:         r.versione ?? null,
+    operatore:        r.operatore ?? null,
+    colore:           r.colore ?? null,
+    protocollo_cesta: r.protocollo_cesta ?? null,
+  })));
+
+  let changed = 0;
+  for (let i = 0; i < records.length; i += INSERT_CHUNK) {
+    const result = await db`
+      INSERT INTO webthron_events_history ${db(records.slice(i, i + INSERT_CHUNK))}
+      ON CONFLICT (fase, cod_seriale, data_inserimento) DO UPDATE SET
+        esito_delibera   = EXCLUDED.esito_delibera,
+        commessa         = COALESCE(EXCLUDED.commessa,         webthron_events_history.commessa),
+        versione         = COALESCE(EXCLUDED.versione,         webthron_events_history.versione),
+        operatore        = COALESCE(EXCLUDED.operatore,        webthron_events_history.operatore),
+        colore           = COALESCE(EXCLUDED.colore,           webthron_events_history.colore),
+        protocollo_cesta = COALESCE(EXCLUDED.protocollo_cesta, webthron_events_history.protocollo_cesta)
+    `;
+    changed += result.count;
+  }
+  logger.info(`[FullDaySync] ${dateStr} — ${rows.length} eventi da WebThron, ${changed} modificati in history`);
+  return rows.length;
+}
 
 export async function syncFullDayToHistory(dateStr: string): Promise<number> {
   if (!process.env.WEBTHRON_HOST) return 0;
@@ -155,42 +262,11 @@ export async function syncFullDayToHistory(dateStr: string): Promise<number> {
     return 0;
   }
 
-  const combos       = await getActiveLineeWithCombos();
-  const deliberaFasi = getDeliberaFasi();
-  if (combos.length === 0) return 0;
-
   startRun('sync_full_day');
   try {
-    const rows = await queryWebthronEvents(combos, deliberaFasi, {
-      mode: 'range', from: dateStr, to: dateStr,
-    });
-
-    if (rows.length === 0) {
-      endRun('sync_full_day', 0);
-      return 0;
-    }
-
-    const records = rows.map(r => ({
-      fase:             r.fase,
-      modello:          r.modello,
-      componente:       r.componente,
-      cod_seriale:      r.cod_seriale,
-      commessa:         r.commessa ?? null,
-      esito_delibera:   r.esito_delibera ?? null,
-      data_inserimento: r.data_inserimento,
-      data_cache:       dateStr,
-    }));
-
-    const result = await db`
-      INSERT INTO webthron_events_history ${db(records)}
-      ON CONFLICT (fase, cod_seriale, data_inserimento) DO UPDATE SET
-        esito_delibera = EXCLUDED.esito_delibera,
-        commessa       = COALESCE(EXCLUDED.commessa, webthron_events_history.commessa)
-    `;
-
-    endRun('sync_full_day', rows.length);
-    logger.info(`[FullDaySync] ${dateStr} — ${rows.length} eventi da WebThron, ${result.count} modificati in history`);
-    return rows.length;
+    const n = await loadDayIntoHistory(dateStr);
+    endRun('sync_full_day', n);
+    return n;
   } catch (err) {
     failRun('sync_full_day', err);
     logger.error(`[FullDaySync] Errore per ${dateStr}: ${err}`);
@@ -222,37 +298,44 @@ export async function refreshLookupTables(): Promise<void> {
     return;
   }
 
-  const TIMEOUT = 2 * 60 * 1000;
+  const TIMEOUT = 30 * 1000;   // rete di sicurezza lato client; il limite vero è max_statement_time
   const pool = getWebthronPool();
 
   startRun('lookup_refresh');
   try {
     logger.info('[LookupRefresh] Aggiornamento fasi e combos da WebThron...');
 
-    // Una sola query che usa l'indice su datain (ultimi 90gg) invece di scansionare
-    
-    const [rows] = await (pool as any).execute({
-      sql: `
-        SELECT /*+ MAX_EXECUTION_TIME(120000) */ DISTINCT
-          ikExtra62Tab.stringa AS fase,
-          ikExtra43Tab.stringa AS modello,
-          ikExtra45Tab.stringa AS componente
-        FROM ubidocum ubi
-        LEFT JOIN ikExtra    Extra62 ON ubi.iddocu = Extra62.iddocu AND Extra62.idcampo = 62 AND Extra62.idcomm = 0 AND Extra62.seq = 0
-        LEFT JOIN ikExtra    Extra43 ON ubi.iddocu = Extra43.iddocu AND Extra43.idcampo = 43 AND Extra43.idcomm = 0 AND Extra43.seq = 0
-        LEFT JOIN ikExtra    Extra45 ON ubi.iddocu = Extra45.iddocu AND Extra45.idcampo = 45 AND Extra45.idcomm = 0 AND Extra45.seq = 0
-        LEFT JOIN ikExtraTab ikExtra62Tab ON ikExtra62Tab.id = Extra62.stringa
-        LEFT JOIN ikExtraTab ikExtra43Tab ON ikExtra43Tab.id = Extra43.stringa
-        LEFT JOIN ikExtraTab ikExtra45Tab ON ikExtra45Tab.id = Extra45.stringa
-        WHERE ubi.tipdoc IN ('0080','1520','5004','5005','5006','5007','5010','5016','PX01','0160','0090','5019','1040','5009','5018','0480','5020')
-          AND ubi.datain > NOW() - INTERVAL 90 DAY
-          AND ikExtra62Tab.stringa IS NOT NULL
-          AND ikExtra43Tab.stringa IS NOT NULL
-          AND ikExtra45Tab.stringa IS NOT NULL
-        LIMIT 10000
-      `,
-      timeout: TIMEOUT,
-    }) as [Array<{ fase: string; modello: string; componente: string }>];
+    // Rebanadine di 7 giorni sull'indice di datain (invece di una query unica sui 90 giorni, che
+    // faceva scorrere milioni di righe dell'indice tipdoc). La guardia mette una pausa tra l'una e l'altra.
+    // Gli estremi sono interi calcolati qui: si scrivono nella query senza placeholder.
+    const rows: Array<{ fase: string; modello: string; componente: string }> = [];
+    for (let offset = 0; offset < LOOKUP_DAYS; offset += LOOKUP_SLICE_DAYS) {
+      const oldest = Math.min(offset + LOOKUP_SLICE_DAYS, LOOKUP_DAYS);
+      const [part] = await (pool as any).execute({
+        sql: `
+          SELECT DISTINCT
+            ikExtra62Tab.stringa AS fase,
+            ikExtra43Tab.stringa AS modello,
+            ikExtra45Tab.stringa AS componente
+          FROM ubidocum ubi
+          LEFT JOIN ikExtra    Extra62 ON ubi.iddocu = Extra62.iddocu AND Extra62.idcampo = 62 AND Extra62.idcomm = 0 AND Extra62.seq = 0
+          LEFT JOIN ikExtra    Extra43 ON ubi.iddocu = Extra43.iddocu AND Extra43.idcampo = 43 AND Extra43.idcomm = 0 AND Extra43.seq = 0
+          LEFT JOIN ikExtra    Extra45 ON ubi.iddocu = Extra45.iddocu AND Extra45.idcampo = 45 AND Extra45.idcomm = 0 AND Extra45.seq = 0
+          LEFT JOIN ikExtraTab ikExtra62Tab ON ikExtra62Tab.id = Extra62.stringa
+          LEFT JOIN ikExtraTab ikExtra43Tab ON ikExtra43Tab.id = Extra43.stringa
+          LEFT JOIN ikExtraTab ikExtra45Tab ON ikExtra45Tab.id = Extra45.stringa
+          WHERE ubi.tipdoc IN ('0080','1520','5004','5005','5006','5007','5010','5016','PX01','0160','0090','5019','1040','5009','5018','0480','5020')
+            AND ubi.datain >  NOW() - INTERVAL ${oldest} DAY
+            AND ubi.datain <= NOW() - INTERVAL ${offset} DAY
+            AND ikExtra62Tab.stringa IS NOT NULL
+            AND ikExtra43Tab.stringa IS NOT NULL
+            AND ikExtra45Tab.stringa IS NOT NULL
+          LIMIT 10000
+        `,
+        timeout: TIMEOUT,
+      }) as [Array<{ fase: string; modello: string; componente: string }>];
+      rows.push(...part);
+    }
 
     // JS split into fasi (distinct) and combos (distinct modello+componente)
     const fasiSet   = new Set<string>();

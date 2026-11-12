@@ -4,7 +4,7 @@ export type ModuleKey =
   | 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer'
   | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
   | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci'
-  | 'programma_produzione' | 'hr' | 'hr_salary' | 'ferrari_schede' | 'ferrari_supervisore';
+  | 'programma_produzione' | 'hr' | 'hr_salary' | 'hr_team' | 'ferrari_schede' | 'ferrari_supervisore';
 
 export interface ModulePermission {
   module_key: ModuleKey;
@@ -346,6 +346,7 @@ export interface EdiClient {
   csg_supply_point:           string | null;
   output_folder:              string;
   auto_generate:              boolean;
+  edi_params:                 Record<string, string>;
   created_at:                 string;
   updated_at:                 string;
 }
@@ -774,6 +775,7 @@ export interface HrEmployee {
   capo_id:                  number | null;
   capo_nome:                string | null;
   user_id:                  number | null;
+  account_username:         string | null;
   data_assunzione:          string;
   data_cessazione:          string | null;
   stato:                    HrEmployeeStatus;
