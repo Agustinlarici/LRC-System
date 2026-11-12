@@ -51,7 +51,7 @@ export function pastDays(today: string, count: number): string[] {
 
 /**
  * Giorni da rileggere nella rilettura notturna, dal più recente. Con `includeToday` (la lettura
- * delle 23:30) parte da oggi, altrimenti da ieri (quella delle 01:00). `count` conta tutti i giorni.
+ * delle 11:30) parte da oggi, altrimenti da ieri (quella delle 01:00). `count` conta tutti i giorni.
  */
 export function daysToReread(today: string, count: number, includeToday: boolean): string[] {
   if (!includeToday) return pastDays(today, count);

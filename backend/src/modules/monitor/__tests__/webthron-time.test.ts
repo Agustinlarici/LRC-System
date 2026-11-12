@@ -6,7 +6,7 @@ describe('daysToReread', () => {
     expect(daysToReread('2026-11-11', 2, false)).toEqual(['2026-11-10', '2026-11-09']);
   });
 
-  it('alle 23:30 rilegge oggi e ieri', () => {
+  it('alle 11:30 rilegge oggi e ieri', () => {
     expect(daysToReread('2026-11-11', 2, true)).toEqual(['2026-11-11', '2026-11-10']);
   });
 

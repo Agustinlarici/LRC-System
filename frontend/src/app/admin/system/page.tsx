@@ -128,7 +128,7 @@ interface IKnowFlags {
 
 const IKNOW_QUERIES: { key: keyof Omit<IKnowFlags, 'iknow_enabled'>; label: string; description: string }[] = [
   { key: 'iknow_andon_enabled',    label: 'Andon / Monitor — sincronizzazione continua', description: 'Legge i nuovi eventi di produzione da iKnow — ogni 10 minuti' },
-  { key: 'iknow_nightly_enabled',  label: 'Rilettura notturna',                           description: 'Rilegge gli ultimi 2 giorni per sistemare i dati — ogni sera alle 23:30 e ogni notte alle 01:00' },
+  { key: 'iknow_nightly_enabled',  label: 'Rilettura notturna',                           description: 'Rilegge gli ultimi 2 giorni per sistemare i dati — ogni giorno alle 11:30 e ogni notte alle 01:00' },
   { key: 'iknow_lookup_enabled',   label: 'Fasi e combinazioni',                          description: 'Aggiorna fasi, modelli e componenti — ogni notte alle 02:00, a mano da Fasi iKnow e all’avvio se le liste sono vuote' },
   { key: 'iknow_buffer_enabled',   label: 'Buffer',                                       description: 'Ricalcola i seriali in pre-area dallo storico locale — ogni 30 minuti' },
   { key: 'iknow_bucci_enabled',    label: 'Spedizione Bucci',                             description: 'Cerca seriali e commesse in iKnow durante scansione e verifica delle spedizioni. Se attivi una sincronizzazione qui sotto, questo interruttore si spegne da solo' },
@@ -905,7 +905,7 @@ const JOB_LABELS: Record<string, string> = {
   bom_sync:          'BOM iKnow (04:15)',
   first_sync:        'Carica iniziale storico iKnow',
   sync_full:         'Sync WebThron — prima esecuzione',
-  sync_full_day:     'Sync Full Day (23:30 e 01:00)',
+  sync_full_day:     'Sync Full Day (11:30 e 01:00)',
   heatmap_snapshot:  'Snapshot OEE (01:00)',
   lookup_refresh:    'Lookup Tables (02:00)',
   bc_sync:           'Sync Business Central (03:00)',

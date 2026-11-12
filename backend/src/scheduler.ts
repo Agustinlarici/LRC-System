@@ -61,8 +61,8 @@ export function startScheduler() {
     }
   }
 
-  // 23:30 — rilettura di oggi (fin qui) e di ieri
-  cron.schedule('30 23 * * *', async () => {
+  // 11:30 — rilettura di oggi (fin qui) e di ieri
+  cron.schedule('30 11 * * *', async () => {
     await rileggiGiorni(daysToReread(todayRome(), REREAD_DAYS, true));
   }, { timezone: 'Europe/Rome' });
 
@@ -250,5 +250,5 @@ export function startScheduler() {
   setNextRun('spma_onedrive_poll', nextEvery10Min());
   setNextRun('edi_auto_generate',  nextOccurrence(23, 45));
 
-  logger.info('Scheduler avviato — Ferrari DELINS 06:00, EDI auto 23:45, rilettura WebThron 23:30 e 01:00 (2 giorni), snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
+  logger.info('Scheduler avviato — Ferrari DELINS 06:00, EDI auto 23:45, rilettura WebThron 11:30 e 01:00 (2 giorni), snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
 }

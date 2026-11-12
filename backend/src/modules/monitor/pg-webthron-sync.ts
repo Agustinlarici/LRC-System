@@ -11,7 +11,7 @@
  * server (vedi mysql-client.ts e webthron-guard.ts).
  *
  *   Incrementale (ogni 10 minuti):              pochi ms, solo gli eventi nuovi
- *   Rilettura notturna (23:30 e 01:00):         rebanadine di 4 ore sugli ultimi 2 giorni
+ *   Rilettura notturna (11:30 e 01:00):         rebanadine di 4 ore sugli ultimi 2 giorni
  *   Aggiornamento fasi/combos (02:00):          rebanadine di 7 giorni sugli ultimi 90
  */
 
