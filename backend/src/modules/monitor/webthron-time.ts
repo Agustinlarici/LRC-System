@@ -49,6 +49,15 @@ export function pastDays(today: string, count: number): string[] {
   return out;
 }
 
+/**
+ * Giorni da rileggere nella rilettura notturna, dal più recente. Con `includeToday` (la lettura
+ * delle 23:30) parte da oggi, altrimenti da ieri (quella delle 01:00). `count` conta tutti i giorni.
+ */
+export function daysToReread(today: string, count: number, includeToday: boolean): string[] {
+  if (!includeToday) return pastDays(today, count);
+  return [today, ...pastDays(today, Math.max(0, count - 1))];
+}
+
 /** True se `date` cade nella fascia notturna [fromHour, toHour) in ora di Roma (es. 23 → 5). */
 export function isQuietHour(date: Date, fromHour: number, toHour: number): boolean {
   if (fromHour === toHour) return false;
