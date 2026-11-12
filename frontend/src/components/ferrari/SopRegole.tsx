@@ -5,18 +5,19 @@ import { Errore } from '@/components/ferrari/Comuni';
 import { IconaOk } from '@/components/ferrari/Icone';
 import { sopApi, type RegolaSop } from '@/lib/ferrari-sop';
 
-interface Bozza { colonna: string; tipo: RegolaSop['tipo']; sigle: string; base: string; unisci: string; gamma: string; extra: string; mappa: string }
+interface Bozza { colonna: string; tipo: RegolaSop['tipo']; sigle: string; base: string; unisci: string; codici: string; extra: string; mappa: string }
+const CODICI_COLORE = 'PNCC, PNT1, PNTE, PNTN, PNT0, PNTH, PNMT, PNTD, PNTI';
 
 const righe = (t: string) => t.split(/[\n,;]+/).map(x => x.trim()).filter(Boolean);
 const daRegola = (r: RegolaSop): Bozza => ({
   colonna: r.colonna, tipo: r.tipo,
   sigle: r.tipo === 'sigle' ? r.sigle.join(', ') : '', base: r.tipo === 'sigle' ? r.base : '', unisci: r.tipo === 'sigle' ? r.unisci : '/',
-  gamma: r.tipo === 'colore' ? r.gamma.join(', ') : 'PNCC', extra: r.tipo === 'colore' ? r.extra : 'EXTRACAMPIONARIO',
+  codici: r.tipo === 'colore' ? r.codici.join(', ') : CODICI_COLORE, extra: r.tipo === 'colore' ? r.extra : 'EXTRACAMPIONARIO',
   mappa: r.tipo === 'mercato' ? Object.entries(r.mappa).map(([k, v]) => `${k} = ${v}`).join('\n') : '',
 });
 const aRegola = (b: Bozza): RegolaSop => {
   const colonna = b.colonna.trim();
-  if (b.tipo === 'colore') return { colonna, tipo: 'colore', gamma: righe(b.gamma), extra: b.extra.trim() };
+  if (b.tipo === 'colore') return { colonna, tipo: 'colore', codici: righe(b.codici), extra: b.extra.trim() };
   if (b.tipo === 'mercato') {
     const mappa: Record<string, string> = {};
     for (const riga of b.mappa.split('\n')) { const [k, ...v] = riga.split('='); if (k?.trim() && v.length) mappa[k.trim()] = v.join('=').trim(); }
@@ -62,7 +63,7 @@ export function SopRegole({ colonneSop, onCambia }: { colonneSop: string[]; onCa
     <div className="max-w-4xl">
       <p className="mb-3 text-sm text-muted">
         Per ogni colonna del SOP, come ricavarla dalla scheda. <b>Sigle</b>: se la scheda ha una di queste sigle il valore è la sigla (o l&apos;etichetta, se scrivi <code>SURR=SV</code>);
-        se non ne ha nessuna, il <b>valore base</b> (es. CODINI = EXAT quando non c&apos;è EXAB). <b>Colore</b>: la riga EXTC e quella sotto. <b>Mercato</b>: traduce il valore di MRKT.
+        se non ne ha nessuna, il <b>valore base</b> (es. CODINI = EXAT quando non c&apos;è EXAB). <b>Colore</b>: il colore del SOP deve coincidere con il valore di una delle sigle di colore presenti nella scheda. <b>Mercato</b>: traduce il valore di MRKT.
         Le colonne senza regola non si controllano.
       </p>
       <Errore messaggio={errore} />
@@ -84,7 +85,7 @@ export function SopRegole({ colonneSop, onCambia }: { colonneSop: string[]; onCa
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <input className="input !w-48 !py-1 font-semibold" value={b.colonna} aria-label="Colonna del SOP" onChange={e => cambia(i, { colonna: e.target.value })} />
               <select className="input !w-auto !py-1" value={b.tipo} aria-label="Tipo di regola" onChange={e => cambia(i, { tipo: e.target.value as Bozza['tipo'] })}>
-                <option value="sigle">Sigle e valore base</option><option value="colore">Colore (EXTC e riga sotto)</option><option value="mercato">Mercato (MRKT)</option>
+                <option value="sigle">Sigle e valore base</option><option value="colore">Colore (valore di una sigla di colore)</option><option value="mercato">Mercato (MRKT)</option>
               </select>
               <button className="btn-secondary ml-auto !py-1" onClick={() => setBozze(x => x!.filter((_, j) => j !== i))}>Elimina</button>
             </div>
@@ -98,8 +99,9 @@ export function SopRegole({ colonneSop, onCambia }: { colonneSop: string[]; onCa
             )}
             {b.tipo === 'colore' && (
               <div className="grid gap-2 sm:grid-cols-2">
-                <label className="text-xs text-muted">Sigle di gamma (se sono sotto EXTC, il colore è il loro valore)<input className="input mt-1 w-full !py-1 font-mono text-xs" value={b.gamma} onChange={e => cambia(i, { gamma: e.target.value })} /></label>
-                <label className="text-xs text-muted">Altrimenti<input className="input mt-1 w-full !py-1" value={b.extra} onChange={e => cambia(i, { extra: e.target.value })} /></label>
+                <label className="text-xs text-muted">Sigle di colore: il colore del SOP deve coincidere con il valore di una di queste (non mettere EXTC: il suo valore dice «extra» anche quando il colore è di gamma)
+                  <textarea className="input mt-1 w-full font-mono text-xs" rows={2} value={b.codici} onChange={e => cambia(i, { codici: e.target.value })} /></label>
+                <label className="text-xs text-muted">Se il SOP dice questo, basta che il valore di una sigla lo contenga (es. «EXTRACAMPIONARIO-NOT STANDARD»)<input className="input mt-1 w-full !py-1" value={b.extra} onChange={e => cambia(i, { extra: e.target.value })} /></label>
               </div>
             )}
             {b.tipo === 'mercato' && (

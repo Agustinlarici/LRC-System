@@ -10,8 +10,13 @@ import type { Opzione } from './types.js';
 
 /** Un elenco di sigle: se la scheda ne ha, il valore sono quelle (con la loro etichetta se scritta «COD=ETICHETTA»); se no, il valore base. */
 export interface RegolaSigle { tipo: 'sigle'; sigle: string[]; base: string; unisci: string }
-/** Il colore: la riga EXTC e la riga SOTTO. Se sotto c'e' una sigla di gamma (PNCC) il colore e' il suo valore, altrimenti `extra`. */
-export interface RegolaColore { tipo: 'colore'; gamma: string[]; extra: string }
+/**
+ * Il colore: il colore del SOP deve coincidere con il valore di UNA delle sigle di colore presenti nella scheda (PNCC, PNT1, PNTE...).
+ * Se il SOP dice `extra` (EXTRACAMPIONARIO) basta che il valore di una di quelle sigle lo contenga («EXTRACAMPIONARIO-NOT STANDARD»).
+ * EXTC non e' nell'elenco di default: il suo valore dice «extra» anche quando il colore vero e' di gamma.
+ */
+export interface RegolaColore { tipo: 'colore'; codici: string[]; extra: string }
+export const CODICI_COLORE = ['PNCC', 'PNT1', 'PNTE', 'PNTN', 'PNT0', 'PNTH', 'PNMT', 'PNTD', 'PNTI'];
 /** Il mercato: il valore di MRKT tradotto con una tabella (GIAPPONE → EUROPA/GIAPPONE). */
 export interface RegolaMercato { tipo: 'mercato'; mappa: Record<string, string> }
 export type ParametriRegola = RegolaSigle | RegolaColore | RegolaMercato;
@@ -23,7 +28,7 @@ export const REGOLE_SUGGERITE: Regola[] = (() => {
   const s = (colonna: string, sigle: string[], base = '', unisci = '/'): RegolaNominata => ({ colonna, tipo: 'sigle', sigle, base, unisci });
   const lista: RegolaNominata[] = [
     { colonna: 'MERCATO', tipo: 'mercato', mappa: { 'GIAPPONE': 'EUROPA/GIAPPONE', 'U.S.A.': 'USA', 'USA': 'USA', 'CINA': 'CINA' } },
-    { colonna: 'COLORE', tipo: 'colore', gamma: ['PNCC'], extra: 'EXTRACAMPIONARIO' },
+    { colonna: 'COLORE', tipo: 'colore', codici: CODICI_COLORE, extra: 'EXTRACAMPIONARIO' },
     s('ANT', ['PACF'], 'PUR'),
     s('SP. LAT.', ['FCWS']),
     s('SENSORI', ['PAR2'], '-'),
@@ -88,7 +93,7 @@ export function leggiSop(buf: Buffer): FoglioSop {
 
 // ─── Ricavare una colonna dalla scheda ────────────────────────────────────────
 
-export interface Ricavato { valore: string; nota?: 'senza_regola' | 'extc_assente' }
+export interface Ricavato { valore: string; nota?: 'senza_regola'; candidati?: string[] }
 
 const lc = (s: string) => collapse(s);
 
@@ -102,11 +107,9 @@ export function ricava(opzioni: readonly Pick<Opzione, 'codice' | 'valore'>[], r
     return { valore: trovate.length ? [...new Set(trovate)].join(r.unisci || '/') : r.base };
   }
   if (r.tipo === 'colore') {
-    const i = opzioni.findIndex(o => lc(o.codice) === 'EXTC');
-    if (i < 0) return { valore: '', nota: 'extc_assente' };
-    const sotto = opzioni[i + 1];
-    const gamma = r.gamma.map(lc);
-    return { valore: sotto && gamma.includes(lc(sotto.codice)) ? cella(sotto.valore) : r.extra };
+    const codiciColore = new Set(r.codici.map(lc));
+    const candidati = opzioni.filter(o => codiciColore.has(lc(o.codice))).map(o => cella(o.valore)).filter(v => v !== '');
+    return { valore: candidati.join(' | '), candidati };
   }
   const m = opzioni.find(o => lc(o.codice) === 'MRKT');
   const grezzo = cella(m?.valore);
@@ -124,6 +127,18 @@ export function gettoni(v: string): string[] {
 }
 
 export type EsitoCella = 'ok' | 'diverso' | 'solo_sop' | 'solo_vm';
+
+const compatto = (v: string) => v.toUpperCase().replace(/\s+/g, '');
+
+/** Il colore: il SOP coincide con uno dei valori delle sigle di colore della scheda (o dice `extra` e uno di quei valori lo contiene). */
+export function confrontaColore(sop: string, candidati: readonly string[], extra: string): EsitoCella {
+  const a = gettoni(sop).join('/');
+  if (a === '') return candidati.length ? 'solo_vm' : 'ok';
+  if (candidati.length === 0) return 'solo_sop';
+  const e = compatto(extra);
+  const trovato = candidati.some(c => gettoni(c).join('/') === a || (e !== '' && compatto(sop) === e && compatto(c).includes(e)));
+  return trovato ? 'ok' : 'diverso';
+}
 
 export function confrontaCella(sop: string, vm: string): EsitoCella {
   const a = gettoni(sop), b = gettoni(vm);
@@ -143,7 +158,8 @@ export function confrontaRiga(
   const celle = regole.filter(r => r.colonna in riga.valori).map(r => {
     const vm = ricava(opzioni, r);
     const sop = riga.valori[r.colonna] ?? '';
-    return { colonna: r.colonna, esito: confrontaCella(sop, vm.valore), sop, vm: vm.valore, ...(vm.nota ? { nota: vm.nota } : {}) };
+    const esito = r.tipo === 'colore' ? confrontaColore(sop, vm.candidati ?? [], r.extra) : confrontaCella(sop, vm.valore);
+    return { colonna: r.colonna, esito, sop, vm: vm.valore, ...(vm.nota ? { nota: vm.nota } : {}) };
   });
   const differenze = celle.filter(c => c.esito !== 'ok').map(c => ({
     commessa: riga.commessa, file_id: fileId, colonna: c.colonna, sop: c.sop, vm: c.vm, tipo: c.esito as Differenza['tipo'], ...(c.nota ? { nota: c.nota } : {}),
