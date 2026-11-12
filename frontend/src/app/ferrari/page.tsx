@@ -229,6 +229,7 @@ export default function VederePage() {
             </Link>
             <button className={btnLink} disabled={!m || righe.length === 0} onClick={esportaExcel}>Scarica Excel</button>
             <button className={btnLink} onClick={() => window.print()}>Stampa</button>
+            <Link href="/ferrari/sop" className={btnLink} title="Carica l'Excel del SOP e confrontalo con le schede">Controllo SOP</Link>
             {puoGestire && (
               <Link href="/ferrari/impostazioni" className={`${btnLink} group-gear`}>
               <IconSettings className="gear h-4 w-4" />                Impostazioni

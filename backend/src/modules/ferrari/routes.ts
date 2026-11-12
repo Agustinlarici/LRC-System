@@ -16,6 +16,7 @@ import { aggiungiDaSchede, rifiutaDescrizioni, salvaDescrizioni } from './descri
 import { creaModello, modelloErroreDi, togliModello } from './modelli.js';
 import { iaRoutes } from './ia/routes.js';
 import { accodaDopoCarico, rianalizzaDuplicato } from './ia/aggancio.js';
+import { aggiungiRegoleSuggerite, confrontoSop, elencoImport, importaSop, leggiRegole, RegolaSchema, salvaRegole } from './sop.js';
 import { aggiungiCategorieEsempio, eliminaCategoria, elencoCategorie, riordinaCategorie, salvaCategoria } from './categorie.js';
 import { leggiCartella, leggiConfig, salvaConfig, statoLettura, ultimeLetture } from './cartella.js';
 import { logger } from '../../lib/logger.js';
@@ -210,6 +211,30 @@ ferrariRoutes.delete('/categorie/:id', requireManage(VISTA), async (c) => {
   await eliminaCategoria(utente(c), parseId(c.req.param('id')));
   return c.json({ ok: true });
 });
+
+// ─── Controllo con il SOP ─────────────────────────────────────────────────────
+
+ferrariRoutes.get('/sop/importazioni', requireModule(VISTA), async (c) => c.json({ importazioni: await elencoImport() }));
+
+ferrariRoutes.post('/sop/import', requireManage(VISTA), async (c) => {
+  const [f] = await leggiFile(c, 'file', 1);
+  if (!/\.(xls|xlsx)$/i.test(f!.name)) throw new HTTPException(400, { message: 'Estensione non consentita (solo .xls / .xlsx)' });
+  return c.json(await importaSop(utente(c), f!.name, f!.buf));
+});
+
+ferrariRoutes.get('/sop/confronto', requireModule(VISTA), async (c) => {
+  const id = c.req.query('import');
+  return c.json(await confrontoSop(id ? parseId(id) : undefined));
+});
+
+ferrariRoutes.get('/sop/regole', requireModule(VISTA), async (c) => c.json({ regole: await leggiRegole() }));
+
+ferrariRoutes.put('/sop/regole', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ regole: z.array(RegolaSchema).max(60) }));
+  return c.json({ salvate: await salvaRegole(utente(c), b.regole) });
+});
+
+ferrariRoutes.post('/sop/regole/suggerite', requireManage(VISTA), async (c) => c.json({ aggiunte: await aggiungiRegoleSuggerite(utente(c)) }));
 
 ferrariRoutes.post('/sigle', requireManage(VISTA), async (c) => {
   const b = await parseBody(c, z.object({
