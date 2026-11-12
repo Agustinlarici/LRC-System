@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { db } from '../../db/client.js';
 import { audit, type Utente } from './service.js';
 import {
-  confrontaRiga, leggiSop, REGOLE_SUGGERITE, rigaConDati, SopError,
+  CODICI_COLORE, confrontaRiga, leggiSop, REGOLE_SUGGERITE, rigaConDati, SopError,
   type Differenza, type Regola, type RegolaNominata, type StatoColonna,
 } from './sop-base.js';
 import type { Opzione } from './types.js';
@@ -19,7 +19,7 @@ const BLOCCO = 800;
 const Nome = z.string().trim().min(1).max(60);
 export const RegolaSchema = z.discriminatedUnion('tipo', [
   z.object({ colonna: Nome, tipo: z.literal('sigle'), sigle: z.array(z.string().trim().min(1).max(60)).max(200), base: z.string().trim().max(40), unisci: z.string().max(3) }),
-  z.object({ colonna: Nome, tipo: z.literal('colore'), gamma: z.array(z.string().trim().min(1).max(30)).max(20), extra: z.string().trim().max(40) }),
+  z.object({ colonna: Nome, tipo: z.literal('colore'), codici: z.array(z.string().trim().min(1).max(30)).max(40), extra: z.string().trim().max(40) }),
   z.object({ colonna: Nome, tipo: z.literal('mercato'), mappa: z.record(z.string().max(60), z.string().max(60)) }),
 ]);
 
@@ -28,7 +28,9 @@ export async function leggiRegole(): Promise<Regola[]> {
     SELECT colonna, ordine, tipo, parametri FROM ferrari_sop_regola ORDER BY ordine, colonna`;
   const out: Regola[] = [];
   for (const r of righe) {
-    const p = RegolaSchema.safeParse({ colonna: r.colonna, tipo: r.tipo, ...r.parametri });
+    // regola «colore» salvata con la versione precedente (gamma sotto EXTC): passa all'elenco di sigle di colore di default
+    const par = r.tipo === 'colore' && !('codici' in r.parametri) ? { extra: r.parametri['extra'], codici: CODICI_COLORE } : r.parametri;
+    const p = RegolaSchema.safeParse({ colonna: r.colonna, tipo: r.tipo, ...par });
     if (p.success) out.push({ ...p.data, ordine: r.ordine } as Regola);
   }
   return out;

@@ -1,7 +1,7 @@
 // Controllo con il SOP: lettura dell'Excel, regole e confronto. Funzioni pure. I tre casi sono schede vere (194983, 307227, 194070) e le loro righe del SOP.
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
-import { confrontaCella, confrontaRiga, gettoni, leggiSop, REGOLE_SUGGERITE, ricava, SopError, type RigaSop } from '../sop-base.js';
+import { confrontaCella, confrontaColore, confrontaRiga, gettoni, leggiSop, REGOLE_SUGGERITE, ricava, SopError, type RigaSop } from '../sop-base.js';
 
 const o = (codice: string, valore = 'SI') => ({ codice, valore });
 const sopRiga = (commessa: string, v: Record<string, string>): RigaSop => ({ commessa, valori: v });
@@ -55,11 +55,11 @@ describe('ricava', () => {
   it('maiuscole e spazi nei codici della scheda non contano', () => {
     expect(ricava([o(' exab ')], regola('CODINI')).valore).toBe('EXAB');
   });
-  it('colore: la riga sotto EXTC; se e\' di gamma vale il suo valore, altrimenti EXTRACAMPIONARIO', () => {
-    expect(ricava([o('EXTC', 'EXTRA'), o('PNCC', 'ROSSO IMOLA')], regola('COLORE')).valore).toBe('ROSSO IMOLA');
-    expect(ricava([o('EXTC', 'EXTRA'), o('PNT1', 'EXTRA')], regola('COLORE')).valore).toBe('EXTRACAMPIONARIO');
-    expect(ricava([o('PNCC', 'ROSSO IMOLA'), o('EXTC', 'EXTRA')], regola('COLORE')).valore).toBe('EXTRACAMPIONARIO');   // PNCC sopra EXTC non conta: conta quella sotto
-    expect(ricava([o('CEXD')], regola('COLORE'))).toEqual({ valore: '', nota: 'extc_assente' });
+  it('colore: si guardano i valori delle sigle di colore presenti nella scheda, in qualsiasi posizione', () => {
+    expect(ricava([o('EXTC', 'EXTRA'), o('PNCC', 'ROSSO IMOLA')], regola('COLORE'))).toEqual({ valore: 'ROSSO IMOLA', candidati: ['ROSSO IMOLA'] });
+    expect(ricava([o('PNCC', 'ROSSO IMOLA'), o('CEXD'), o('EXTC', 'EXTRA')], regola('COLORE')).candidati).toEqual(['ROSSO IMOLA']);   // non dipende dalla riga sotto EXTC
+    expect(ricava([o('EXTC', 'EXTRA'), o('CEXD')], regola('COLORE'))).toEqual({ valore: '', candidati: [] });                           // EXTC da solo non e' un colore
+    expect(ricava([o('PNT1', ''), o('PNCC', '  ')], regola('COLORE')).candidati).toEqual([]);                                             // valori vuoti non contano
   });
   it('mercato: tradotto con la tabella; un valore senza regola si segnala', () => {
     expect(ricava([o('MRKT', 'U.S.A.')], regola('MERCATO'))).toEqual({ valore: 'USA' });
@@ -79,6 +79,28 @@ describe('confrontaCella', () => {
     expect(confrontaCella('AS06', '')).toBe('solo_sop');
     expect(confrontaCella('', 'EXAT')).toBe('solo_vm');
     expect(confrontaCella('AS06/AS07', 'AS06')).toBe('diverso');
+  });
+});
+
+describe('confrontaColore', () => {
+  const EXTRA = 'EXTRACAMPIONARIO';
+  it('coincide con il valore di una sigla di colore', () => {
+    expect(confrontaColore('rosso  imola', ['ROSSO IMOLA'], EXTRA)).toBe('ok');
+    expect(confrontaColore('NERO DS', ['ROSSO IMOLA', 'NERO DS'], EXTRA)).toBe('ok');                // basta uno
+  });
+  it('il SOP dice extra: basta che il valore di una sigla lo contenga', () => {
+    expect(confrontaColore('EXTRACAMPIONARIO', ['EXTRACAMPIONARIO-NOT STANDARD'], EXTRA)).toBe('ok');
+    expect(confrontaColore('EXTRACAMPIONARIO', ['ROSSO IMOLA'], EXTRA)).toBe('diverso');             // la scheda ha un colore di gamma: il SOP sbaglia
+  });
+  it('i tipi di differenza', () => {
+    expect(confrontaColore('ROSSO CORSA', ['ROSSO IMOLA'], EXTRA)).toBe('diverso');
+    expect(confrontaColore('ROSSO CORSA', [], EXTRA)).toBe('solo_sop');
+    expect(confrontaColore('', ['ROSSO IMOLA'], EXTRA)).toBe('solo_vm');
+    expect(confrontaColore('', [], EXTRA)).toBe('ok');
+  });
+  it('dentro una riga del SOP: un colore di gamma scritto come extra viene segnalato, e la camera mostra i valori trovati', () => {
+    const r = confrontaRiga(sopRiga('1', { COLORE: 'EXTRACAMPIONARIO' }), 1, [o('EXTC', 'EXTRACAMPIONARIO-NOT STANDARD'), o('PNCC', 'ROSSO IMOLA')], REGOLE_SUGGERITE);
+    expect(r.differenze).toEqual([{ commessa: '1', file_id: 1, colonna: 'COLORE', sop: 'EXTRACAMPIONARIO', vm: 'ROSSO IMOLA', tipo: 'diverso' }]);
   });
 });
 

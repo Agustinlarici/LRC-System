@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import jwt from 'jsonwebtoken';
 import * as XLSX from 'xlsx';
 import { schedaSemplice, toXlsBuffer } from './fixtures.js';
-import { REGOLE_SUGGERITE } from '../sop-base.js';
+import { CODICI_COLORE, REGOLE_SUGGERITE } from '../sop-base.js';
 
 const URL = process.env.FERRARI_TEST_DATABASE_URL;
 
@@ -124,5 +124,16 @@ describe.skipIf(!URL)('Controllo con il SOP — rotte e confronto', () => {
     expect(await db`SELECT 1 FROM ferrari_sop_riga`).toHaveLength(15);                                // 5 caricamenti x 3 righe: il resto se ne va con il caricamento
     const storico = await db<{ azione: string }[]>`SELECT azione FROM ferrari_audit WHERE azione LIKE 'sop.%'`;
     expect(storico).toHaveLength(7);
+  });
+
+  it('una regola colore salvata con la versione precedente (gamma sotto EXTC) passa alle sigle di colore di default', async () => {
+    await db`INSERT INTO ferrari_sop_regola (colonna, ordine, tipo, parametri) VALUES ('COLORE', 0, 'colore', ${db.json({ gamma: ['PNCC'], extra: 'EXTRACAMPIONARIO' } as never)})`;
+    const regole = ((await (await chiama('GET', '/sop/regole', { token: admin })).json()) as { regole: { colonna: string; codici?: string[]; gamma?: string[]; extra: string }[] }).regole;
+    expect(regole).toHaveLength(1);
+    expect(regole[0]!.codici).toEqual(CODICI_COLORE);
+    expect(regole[0]!.gamma).toBeUndefined();
+    await carica(SOP());
+    const c = await confronto();
+    expect(c.colonne.find(x => x.colonna === 'COLORE')).toMatchObject({ ok: 1 });                    // ROSSO TEST = PNCC della scheda di prova
   });
 });
