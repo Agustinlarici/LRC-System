@@ -90,6 +90,17 @@ interface Ctx {
 
 const json = { 'Content-Type': 'application/json' };
 
+// Una persona può avere più righe in Osti con nomi diversi (es. riassunta con il nome completo):
+// "Nome Osti" ricorda tutti i nomi collegati, separati da " | " (max 200 caratteri).
+const NOMI_SEP = ' | ';
+const ostiNames = (s: string | null | undefined) => (s ?? '').split('|').map(x => x.trim()).filter(Boolean);
+function mergeOstiName(current: string | null | undefined, name: string): string {
+  const names = ostiNames(current);
+  if (names.some(n => norm(n) === norm(name))) return names.join(NOMI_SEP);
+  const merged = [...names, name].join(NOMI_SEP);
+  return merged.length <= 200 ? merged : name;
+}
+
 // Valori che Osti propone per una persona, già puliti. Valore assente = null (non tocca nulla).
 function wantOf(r: Row, ctx: Ctx): Record<string, string | number | boolean | number[] | null> {
   const email = clean(r.dip_email);
@@ -144,6 +155,7 @@ const repartoOf = (r: Row) => clean(r.reparto).replace(/^reparto\s+/i, '');
 // Confronta la scheda con quanto propone Osti e dice cosa scrivere
 function buildPlan(emp: HrEmployee, r: Row, ctx: Ctx): { plan: Plan | null; conflict: string | null } {
   const want = wantOf(r, ctx);
+  want.nome_osti = mergeOstiName(emp.nome_osti, clean(r.dip_nome));
   const licenziato = ostiDate(r.dip_licenziato);
   const have = (f: string): string => {
     const v = (emp as unknown as Record<string, unknown>)[f];
@@ -178,6 +190,7 @@ function buildPlan(emp: HrEmployee, r: Row, ctx: Ctx): { plan: Plan | null; conf
       else { plan.change.matricola = v; plan.changes.push({ field: f, from: cur, to: String(v) }); }
       continue;
     }
+    if (f === 'nome_osti') { plan.fill[f] = v; continue; }   // un nome in più si aggiunge in silenzio, non è un cambio
     if (cur === '') plan.fill[f] = v;
     else { plan.change[f] = v; plan.changes.push({ field: f, from: cur, to: show(f, v) }); }
   }
@@ -317,7 +330,7 @@ export async function runOstiImport(
   const push = (m: Map<string, HrEmployee[]>, k: string, e: HrEmployee) => m.set(k, [...(m.get(k) ?? []), e]);
   for (const e of employees) {
     push(byName, norm(`${e.cognome} ${e.nome}`), e);
-    if (e.nome_osti) push(byOsti, norm(e.nome_osti), e);
+    for (const n of ostiNames(e.nome_osti)) push(byOsti, norm(n), e);
   }
   // La matricola è unica: se il nome non basta (es. cognome e nome scritti diversamente in Osti) abbina da lì
   const byMatricola = new Map<string, HrEmployee[]>();
