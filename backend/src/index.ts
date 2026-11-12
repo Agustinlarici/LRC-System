@@ -219,8 +219,8 @@ serve({ fetch: app.fetch, port }, async (info) => {
     // 6. Watchdog: parte solo dopo che il sync è operativo (10 min + margine)
     setTimeout(() => startWatchdog(executiveRefresh), 12 * 60_000);
 
-    // Ciclo di sync WebThron: ogni minuto (WEBTHRON_SYNC_INTERVAL_SECONDS, minimo 10 s)
-    const syncSeconds = Math.max(10, parseInt(process.env.WEBTHRON_SYNC_INTERVAL_SECONDS ?? '', 10) || 60);
+    // Ciclo di sync WebThron: ogni 10 minuti (WEBTHRON_SYNC_INTERVAL_SECONDS, minimo 10 s)
+    const syncSeconds = Math.max(10, parseInt(process.env.WEBTHRON_SYNC_INTERVAL_SECONDS ?? '', 10) || 600);
     const cyclesPer30Min = Math.max(1, Math.round(1800 / syncSeconds));
     let cycle = 0;
     setInterval(async () => {

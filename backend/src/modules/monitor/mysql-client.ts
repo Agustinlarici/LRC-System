@@ -216,7 +216,7 @@ const SLICE_ROW_LIMIT   = 20_000;
 // ─── Unified WebThron query ───────────────────────────────────────────────────
 //
 // Single function used by:
-//   - pg-webthron-sync.ts  (sync ogni minuto + rilettura notturna → webthron_events_history)
+//   - pg-webthron-sync.ts  (sync ogni 10 minuti + rilettura notturna → webthron_events_history)
 //   - heatmap.ts           (history backfill → webthron_events_history)
 //
 // Guards:

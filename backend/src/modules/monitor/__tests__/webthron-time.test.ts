@@ -1,5 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import { dayBoundsNaive, buildRangeSlices, isQuietHour, pastDays } from '../webthron-time.js';
+import { dayBoundsNaive, buildRangeSlices, isQuietHour, pastDays, daysToReread } from '../webthron-time.js';
+
+describe('daysToReread', () => {
+  it('alle 01:00 rilegge ieri e l\'altro ieri', () => {
+    expect(daysToReread('2026-11-11', 2, false)).toEqual(['2026-11-10', '2026-11-09']);
+  });
+
+  it('alle 11:30 rilegge oggi e ieri', () => {
+    expect(daysToReread('2026-11-11', 2, true)).toEqual(['2026-11-11', '2026-11-10']);
+  });
+
+  it('attraversa il cambio di mese e con un solo giorno legge solo oggi', () => {
+    expect(daysToReread('2026-12-01', 2, true)).toEqual(['2026-12-01', '2026-11-30']);
+    expect(daysToReread('2026-12-01', 1, true)).toEqual(['2026-12-01']);
+  });
+});
 
 describe('pastDays', () => {
   it('parte da ieri e va indietro, senza includere oggi', () => {

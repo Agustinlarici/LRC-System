@@ -3,6 +3,7 @@ import { syncPackArticles } from './modules/packing/bc-client.js';
 import { snapshotDayFromHistory } from './modules/dashboards/heatmap.js';
 import { syncFullDayToHistory, refreshLookupTables } from './modules/monitor/pg-webthron-sync.js';
 import { syncBom } from './modules/monitor/bom-sync.js';
+import { daysToReread } from './modules/monitor/webthron-time.js';
 import { checkSpmaDelays } from './modules/spma/delay-checker.js';
 import { sendDelayReportEmail, emailConfigured, type SmtpConfig } from './modules/spma/spma-email-notifier.js';
 import { autoGenerateEdi } from './modules/edi/auto-generate.js';
@@ -43,20 +44,33 @@ export function startScheduler() {
     }
   }, { timezone: 'Europe/Rome' });
 
-  // 01:00 — rilettura completa WebThron di ieri + snapshot OEE
-  cron.schedule('0 1 * * *', async () => {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(yesterday);
+  // Rilettura completa WebThron degli ultimi 2 giorni (un giorno alla volta, a rebanadine di 4 ore).
+  const REREAD_DAYS = 2;
+  const todayRome = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
 
-    logger.info(`[scheduler] Rilettura completa WebThron per ${dateStr}...`);
-    startRun('sync_full_day');
-    try {
-      await syncFullDayToHistory(dateStr);
-    } catch (e) {
-      failRun('sync_full_day', e);
-      logger.error(`[scheduler] syncFullDayToHistory fallito: ${e instanceof Error ? e.message : e}`);
+  async function rileggiGiorni(days: string[]) {
+    for (const dateStr of days) {
+      logger.info(`[scheduler] Rilettura completa WebThron per ${dateStr}...`);
+      startRun('sync_full_day');
+      try {
+        await syncFullDayToHistory(dateStr);
+      } catch (e) {
+        failRun('sync_full_day', e);
+        logger.error(`[scheduler] syncFullDayToHistory fallito per ${dateStr}: ${e instanceof Error ? e.message : e}`);
+      }
     }
+  }
+
+  // 11:30 — rilettura di oggi (fin qui) e di ieri
+  cron.schedule('30 11 * * *', async () => {
+    await rileggiGiorni(daysToReread(todayRome(), REREAD_DAYS, true));
+  }, { timezone: 'Europe/Rome' });
+
+  // 01:00 — rilettura completa WebThron di ieri e dell'altro ieri + snapshot OEE di ieri
+  cron.schedule('0 1 * * *', async () => {
+    const days = daysToReread(todayRome(), REREAD_DAYS, false);
+    const dateStr = days[0];   // ieri
+    await rileggiGiorni(days);
 
     logger.info(`[scheduler] Snapshot OEE per ${dateStr}...`);
     startRun('heatmap_snapshot');
@@ -236,5 +250,5 @@ export function startScheduler() {
   setNextRun('spma_onedrive_poll', nextEvery10Min());
   setNextRun('edi_auto_generate',  nextOccurrence(23, 45));
 
-  logger.info('Scheduler avviato — Ferrari DELINS 06:00, EDI auto 23:45, snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
+  logger.info('Scheduler avviato — Ferrari DELINS 06:00, EDI auto 23:45, rilettura WebThron 11:30 e 01:00 (2 giorni), snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
 }

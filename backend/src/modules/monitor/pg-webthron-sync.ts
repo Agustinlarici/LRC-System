@@ -10,8 +10,8 @@
  * letture sono corte, sull'indice di `datain`, una alla volta e con un limite di tempo lato
  * server (vedi mysql-client.ts e webthron-guard.ts).
  *
- *   Incrementale (ogni minuto,~5 min di notte): pochi ms, solo gli eventi nuovi
- *   Rilettura notturna (01:00):                 rebanadine di 4 ore sul giorno prima
+ *   Incrementale (ogni 10 minuti):              pochi ms, solo gli eventi nuovi
+ *   Rilettura notturna (11:30 e 01:00):         rebanadine di 4 ore sugli ultimi 2 giorni
  *   Aggiornamento fasi/combos (02:00):          rebanadine di 7 giorni sugli ultimi 90
  */
 
