@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { inviaFile } from '@/lib/ferrari';
 import { sopApi, TIPO_DIFFERENZA, type ConfrontoSop, type DifferenzaSop, type ImportSop, type TipoDifferenza } from '@/lib/ferrari-sop';
-import { Errore, VistaToggle } from '@/components/ferrari/Comuni';
+import { Errore } from '@/components/ferrari/Comuni';
 import { SopRegole } from '@/components/ferrari/SopRegole';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -91,7 +91,8 @@ export default function ControlloSopPage() {
         </div>
       )}
       <PageHeader
-        title="Programma produzione (schede)"
+        back={{ label: 'Programma produzione (schede)', href: '/ferrari' }}
+        title="Controllo SOP"
         actions={
           <>
             {conf && <button className="btn-secondary" onClick={esporta}>Scarica differenze</button>}
@@ -105,7 +106,6 @@ export default function ControlloSopPage() {
         }
       />
       <Errore messaggio={errore} />
-      <VistaToggle />
       {puoGestire && <Tabs tabs={['confronto', 'regole'] as const} value={tab} onChange={setTab} labels={{ confronto: 'Confronto', regole: 'Regole' }} />}
 
       {tab === 'regole' && puoGestire ? <SopRegole colonneSop={imp?.colonne ?? []} onCambia={() => { if (imp) void confronta(); }} /> : imp === undefined ? (

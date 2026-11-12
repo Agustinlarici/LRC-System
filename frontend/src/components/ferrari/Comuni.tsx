@@ -35,7 +35,6 @@ export function VistaToggle() {
     <div className="d-print-none mb-6 inline-flex gap-1 rounded-full bg-white p-1 shadow-card">
       <Link href="/ferrari" className={cls(pathname === '/ferrari')}>Per sigle</Link>
       <Link href="/ferrari/componenti" className={cls(pathname.startsWith('/ferrari/componenti'))}>Per componente</Link>
-      <Link href="/ferrari/sop" className={cls(pathname.startsWith('/ferrari/sop'))}>Controllo SOP</Link>
     </div>
   );
 }
