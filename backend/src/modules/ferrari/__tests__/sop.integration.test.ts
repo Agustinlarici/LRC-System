@@ -57,7 +57,7 @@ describe.skipIf(!URL)('Controllo con il SOP — rotte e confronto', () => {
   });
   afterAll(async () => { await db?.end(); });
   beforeEach(async () => {
-    await db`TRUNCATE ferrari_sop_riga, ferrari_sop_import, ferrari_sop_regola, ferrari_sigla_proposta, ferrari_sigla, ferrari_termine, ferrari_decisione, ferrari_confronto, ferrari_analisi, ferrari_codice, ferrari_componente, ferrari_audit, ferrari_file RESTART IDENTITY CASCADE`;
+    await db`TRUNCATE ferrari_sop_visto, ferrari_sop_riga, ferrari_sop_import, ferrari_sop_regola, ferrari_sigla_proposta, ferrari_sigla, ferrari_termine, ferrari_decisione, ferrari_confronto, ferrari_analisi, ferrari_codice, ferrari_componente, ferrari_audit, ferrari_file RESTART IDENTITY CASCADE`;
     const f = new FormData();
     f.append('files', new Blob([toXlsBuffer(schedaSemplice({ commessa: 307206 }))]), '307206.xls');
     expect((await chiama('POST', '/files', { token: admin, form: f })).status).toBe(200);
@@ -69,6 +69,7 @@ describe.skipIf(!URL)('Controllo con il SOP — rotte e confronto', () => {
     expect((await carica(SOP(), 'SOP.xlsx', senzaPermessi)).status).toBe(403);
     expect((await chiama('PUT', '/sop/regole', { token: senzaPermessi, corpo: { regole: [] } })).status).toBe(403);
     expect((await chiama('POST', '/sop/regole/suggerite', { token: senzaPermessi })).status).toBe(403);
+    expect((await chiama('POST', '/sop/viste', { token: senzaPermessi, corpo: { viste: true, differenze: [{ commessa: '1', colonna: 'A', sop: '', vm: '' }] } })).status).toBe(403);
   });
 
   it('senza aver caricato il SOP il confronto dice di caricarlo; un file sbagliato si rifiuta', async () => {
@@ -135,5 +136,42 @@ describe.skipIf(!URL)('Controllo con il SOP — rotte e confronto', () => {
     await carica(SOP());
     const c = await confronto();
     expect(c.colonne.find(x => x.colonna === 'COLORE')).toMatchObject({ ok: 1 });                    // ROSSO TEST = PNCC della scheda di prova
+  });
+
+  it('le differenze si segnano come viste: restano viste finche\' la differenza e\' la stessa, tornano da vedere se un valore cambia', async () => {
+    await carica(SOP());
+    await chiama('POST', '/sop/regole/suggerite', { token: admin });
+    const d = { commessa: '307206', colonna: 'TEL. POST', sop: 'SV', vm: 'RACAM' };
+    const viste = (corpo: unknown) => chiama('POST', '/sop/viste', { token: admin, corpo });
+    const c0 = await confronto() as Confronto & { differenze: { visto?: { da: string | null; at: string } }[]; riepilogo: { viste: number } };
+    expect(c0.differenze[0]!.visto).toBeUndefined();
+    expect(c0.riepilogo.viste).toBe(0);
+
+    expect(await (await viste({ viste: true, differenze: [d, d] })).json()).toEqual({ cambiate: 1 });                  // anche se la si manda due volte, e' una
+    const c1 = await confronto() as typeof c0;
+    expect(c1.differenze[0]!.visto).toMatchObject({ da: expect.any(String) });
+    expect(c1.differenze[0]!.visto!.da).toBeTruthy();
+    expect(c1.riepilogo.viste).toBe(1);
+    expect(await (await viste({ viste: true, differenze: [d] })).json()).toEqual({ cambiate: 0 });                     // gia' vista: niente da cambiare
+
+    // la regola cambia: la differenza sparisce e, tornando com'era, e' ancora vista; con un valore diverso e' una differenza nuova, da vedere
+    const regole = ((await (await chiama('GET', '/sop/regole', { token: admin })).json()) as { regole: { colonna: string }[] }).regole;
+    const con = (base: string) => regole.map(r => (r.colonna === 'TEL. POST' ? { colonna: 'TEL. POST', tipo: 'sigle', sigle: ['SURR=SV'], base, unisci: '/' } : r));
+    await chiama('PUT', '/sop/regole', { token: admin, corpo: { regole: con('SV') } });
+    expect((await confronto()).differenze).toEqual([]);
+    await chiama('PUT', '/sop/regole', { token: admin, corpo: { regole: con('RACAM') } });
+    expect(((await confronto()) as typeof c0).differenze[0]!.visto).toBeDefined();
+    await chiama('PUT', '/sop/regole', { token: admin, corpo: { regole: con('ALTRO') } });
+    const c2 = await confronto() as typeof c0;
+    expect(c2.differenze[0]).toMatchObject({ vm: 'ALTRO' });
+    expect(c2.differenze[0]!.visto).toBeUndefined();
+    expect(c2.riepilogo.viste).toBe(0);
+
+    await chiama('PUT', '/sop/regole', { token: admin, corpo: { regole: con('RACAM') } });
+    expect(await (await viste({ viste: false, differenze: [d] })).json()).toEqual({ cambiate: 1 });                    // torna da vedere
+    expect(((await confronto()) as typeof c0).differenze[0]!.visto).toBeUndefined();
+    expect((await viste({ viste: true, differenze: [] })).status).toBe(400);
+    const storico = await db<{ azione: string }[]>`SELECT azione FROM ferrari_audit WHERE azione IN ('sop.viste', 'sop.da_rivedere')`;
+    expect(storico.map(x => x.azione)).toEqual(['sop.viste', 'sop.da_rivedere']);
   });
 });

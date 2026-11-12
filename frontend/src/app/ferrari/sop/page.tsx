@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
 import { inviaFile } from '@/lib/ferrari';
-import { sopApi, TIPO_DIFFERENZA, type ConfrontoSop, type DifferenzaSop, type ImportSop, type TipoDifferenza } from '@/lib/ferrari-sop';
+import { sopApi, TIPO_DIFFERENZA, type ChiaveDifferenza, type ConfrontoSop, type DifferenzaSop, type ImportSop, type TipoDifferenza } from '@/lib/ferrari-sop';
 import { Errore } from '@/components/ferrari/Comuni';
 import { SopRegole } from '@/components/ferrari/SopRegole';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -19,7 +19,7 @@ const data = (iso: string) => new Date(iso).toLocaleString('it-IT', { day: '2-di
 const num = (n: number) => n.toLocaleString('it-IT');
 
 export default function ControlloSopPage() {
-  const { canManage } = useAuth();
+  const { canManage, user } = useAuth();
   const puoGestire = canManage('ferrari_schede');
   const [tab, setTab] = useState<Scheda>('confronto');
   const [imp, setImp] = useState<ImportSop | null | undefined>(undefined);      // undefined = sto leggendo, null = nessun SOP caricato
@@ -31,6 +31,7 @@ export default function ControlloSopPage() {
   const [fCol, setFCol] = useState('');
   const [fTipo, setFTipo] = useState('');
   const [fCom, setFCom] = useState('');
+  const [fStato, setFStato] = useState<'' | 'da_vedere' | 'viste'>('');
   const [limite, setLimite] = useState(PASSO);
 
   const confronta = useCallback(async () => {
@@ -61,14 +62,34 @@ export default function ControlloSopPage() {
   const haFile = (e: React.DragEvent) => puoGestire && Array.from(e.dataTransfer?.types ?? []).includes('Files');
   const differenze = useMemo(() => {
     const c = fCom.trim().toLowerCase();
-    return (conf?.differenze ?? []).filter(d => (!fCol || d.colonna === fCol) && (!fTipo || d.tipo === fTipo) && (!c || d.commessa.toLowerCase().includes(c)));
-  }, [conf, fCol, fTipo, fCom]);
+    return (conf?.differenze ?? []).filter(d => (!fCol || d.colonna === fCol) && (!fTipo || d.tipo === fTipo) && (!c || d.commessa.toLowerCase().includes(c))
+      && (!fStato || (fStato === 'viste') === !!d.visto));
+  }, [conf, fCol, fTipo, fCom, fStato]);
+  const daVedere = useMemo(() => (conf?.differenze ?? []).filter(d => !d.visto).length, [conf]);
+  const chiave = (d: ChiaveDifferenza) => [d.commessa, d.colonna, d.sop, d.vm].join('\u0000');
+
+  /** Segna come viste (o da vedere) delle differenze: prima sul server, poi nella lista che si vede. */
+  async function segna(ds: DifferenzaSop[], viste: boolean) {
+    if (ds.length === 0) return;
+    setErrore(null);
+    try {
+      for (let i = 0; i < ds.length; i += 2000) await sopApi.segnaViste(ds.slice(i, i + 2000).map(({ commessa, colonna, sop, vm }) => ({ commessa, colonna, sop, vm })), viste);
+      const ora = new Date().toISOString();
+      const toccate = new Set(ds.map(chiave));
+      setConf(c => c && ({
+        ...c,
+        differenze: c.differenze.map(d => (toccate.has(chiave(d)) ? { ...d, visto: viste ? { da: user?.display_name ?? user?.username ?? null, at: ora } : undefined } : d)),
+      }));
+    } catch (e) { setErrore((e as Error).message); }
+  }
+  const daSegnare = differenze.filter(d => (fStato === 'viste' ? !!d.visto : !d.visto));
 
   async function esporta() {
     if (!conf) return;
     const XLSX = await import('xlsx');
     const wb = XLSX.utils.book_new();
-    const diff = (d: DifferenzaSop) => ({ Commessa: d.commessa, Colonna: d.colonna, SOP: d.sop, VM: d.vm, Tipo: TIPO_DIFFERENZA[d.tipo], Nota: d.nota === 'senza_regola' ? 'MRKT senza regola' : '' });
+    const diff = (d: DifferenzaSop) => ({ Commessa: d.commessa, Colonna: d.colonna, SOP: d.sop, VM: d.vm, Tipo: TIPO_DIFFERENZA[d.tipo], Nota: d.nota === 'senza_regola' ? 'MRKT senza regola' : '',
+      Visto: d.visto ? 'Sì' : 'No', 'Visto da': d.visto?.da ?? '' });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(differenze.map(diff)), 'Differenze');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(conf.colonne.map(c => ({ Colonna: c.colonna, Coincidono: c.ok, 'Valori diversi': c.diverso, 'Solo nel SOP': c.solo_sop, 'Solo nella VM': c.solo_vm }))), 'Per colonna');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(conf.non_caricate.map(c => ({ Commessa: c }))), 'Non caricate nella VM');
@@ -163,7 +184,7 @@ export default function ControlloSopPage() {
               </div>
               {conf.colonne_senza_regola.length > 0 && <p className="-mt-4 mb-6 text-xs text-muted">Colonne non controllate (senza regola): {conf.colonne_senza_regola.join(', ')}</p>}
 
-              <h2 className="mb-2 text-sm font-semibold text-ink-700">Differenze ({num(differenze.length)}{conf.troncato ? '+' : ''})</h2>
+              <h2 className="mb-2 text-sm font-semibold text-ink-700">Differenze ({num(differenze.length)}{conf.troncato ? '+' : ''}) <span className="font-normal text-muted">· {num(daVedere)} da vedere, {num(conf.differenze.length - daVedere)} viste</span></h2>
               <div className="d-print-none mb-3 flex flex-wrap items-center gap-2">
                 <input className="input !w-44" placeholder="Commessa…" value={fCom} onChange={e => { setFCom(e.target.value); setLimite(PASSO); }} />
                 <select className="input !w-auto" value={fCol} onChange={e => { setFCol(e.target.value); setLimite(PASSO); }}>
@@ -172,7 +193,16 @@ export default function ControlloSopPage() {
                 <select className="input !w-auto" value={fTipo} onChange={e => { setFTipo(e.target.value); setLimite(PASSO); }}>
                   <option value="">Tutti i tipi</option>{(Object.keys(TIPO_DIFFERENZA) as TipoDifferenza[]).map(t => <option key={t} value={t}>{TIPO_DIFFERENZA[t]}</option>)}
                 </select>
-                {(fCol || fTipo || fCom) && <button className="btn-secondary !py-1" onClick={() => { setFCol(''); setFTipo(''); setFCom(''); }}>Azzera i filtri</button>}
+                <select className="input !w-auto" value={fStato} aria-label="Viste o da vedere" onChange={e => { setFStato(e.target.value as typeof fStato); setLimite(PASSO); }}>
+                  <option value="">Viste e da vedere</option><option value="da_vedere">Solo da vedere</option><option value="viste">Solo viste</option>
+                </select>
+                {(fCol || fTipo || fCom || fStato) && <button className="btn-secondary !py-1" onClick={() => { setFCol(''); setFTipo(''); setFCom(''); setFStato(''); }}>Azzera i filtri</button>}
+                {puoGestire && daSegnare.length > 0 && (
+                  <button className="btn-secondary ml-auto !py-1"
+                    onClick={() => { if (daSegnare.length <= 20 || confirm(`${fStato === 'viste' ? 'Rimettere da vedere' : 'Segnare come viste'} ${num(daSegnare.length)} differenze?`)) void segna(daSegnare, fStato !== 'viste'); }}>
+                    {fStato === 'viste' ? `Rimetti da vedere (${num(daSegnare.length)})` : `Segna come viste (${num(daSegnare.length)})`}
+                  </button>
+                )}
               </div>
               {differenze.length === 0 ? (
                 <p className="rounded-card border border-line bg-white px-4 py-8 text-center text-sm text-muted">{conf.differenze.length === 0 ? 'Nessuna differenza: tutto quello che si può controllare coincide.' : 'Nessuna differenza con questi filtri.'}</p>
@@ -180,16 +210,18 @@ export default function ControlloSopPage() {
                 <div className="overflow-x-auto rounded-card border border-line bg-white">
                   <table className="w-full text-sm">
                     <thead><tr className="border-b border-line bg-stone-50 text-left text-muted">
-                      <th className="px-4 py-2 font-medium">Commessa</th><th className="px-4 py-2 font-medium">Colonna</th><th className="px-4 py-2 font-medium">SOP</th><th className="px-4 py-2 font-medium">VM</th><th className="px-4 py-2 font-medium">Differenza</th>
+                      {puoGestire && <th className="w-10 px-4 py-2 font-medium" title="Vista">Vista</th>}<th className="px-4 py-2 font-medium">Commessa</th><th className="px-4 py-2 font-medium">Colonna</th><th className="px-4 py-2 font-medium">SOP</th><th className="px-4 py-2 font-medium">VM</th><th className="px-4 py-2 font-medium">Differenza</th>
                     </tr></thead>
                     <tbody className="divide-y divide-line">
                       {differenze.slice(0, limite).map((d, i) => (
-                        <tr key={`${d.commessa}-${d.colonna}-${i}`} className="hover:bg-stone-50">
+                        <tr key={`${d.commessa}-${d.colonna}-${i}`} className={`hover:bg-stone-50 ${d.visto ? 'text-muted' : ''}`}>
+                          {puoGestire && <td className="px-4 py-2"><input type="checkbox" checked={!!d.visto} aria-label={`Differenza vista: commessa ${d.commessa}, ${d.colonna}`} onChange={e => void segna([d], e.target.checked)} /></td>}
                           <td className="px-4 py-2 font-semibold"><Link href={`/ferrari/${d.file_id}`} className="text-accent-ink hover:underline">{d.commessa}</Link></td>
                           <td className="px-4 py-2">{d.colonna}</td>
                           <td className="px-4 py-2 font-mono text-xs">{d.sop || '—'}</td>
                           <td className="px-4 py-2 font-mono text-xs">{d.vm || '—'}</td>
-                          <td className="px-4 py-2"><StatusBadge tone={TONO[d.tipo]}>{TIPO_DIFFERENZA[d.tipo]}</StatusBadge>{d.nota === 'senza_regola' && <span className="ml-2 text-xs text-muted">MRKT senza traduzione</span>}</td>
+                          <td className="px-4 py-2"><StatusBadge tone={TONO[d.tipo]}>{TIPO_DIFFERENZA[d.tipo]}</StatusBadge>{d.nota === 'senza_regola' && <span className="ml-2 text-xs text-muted">MRKT senza traduzione</span>}
+                            {d.visto && <div className="mt-0.5 text-xs text-muted">Vista{d.visto.da ? ` da ${d.visto.da}` : ''} · {data(d.visto.at)}</div>}</td>
                         </tr>
                       ))}
                     </tbody>

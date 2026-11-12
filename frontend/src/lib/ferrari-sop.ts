@@ -3,11 +3,15 @@ import { api } from '@/lib/api';
 
 export interface ImportSop { id: number; filename: string; colonne: string[]; righe: number; con_dati: number; caricato_da: string | null; caricato_at: string }
 export type TipoDifferenza = 'diverso' | 'solo_sop' | 'solo_vm';
-export interface DifferenzaSop { commessa: string; file_id: number; colonna: string; sop: string; vm: string; tipo: TipoDifferenza; nota?: string }
+export interface DifferenzaSop {
+  commessa: string; file_id: number; colonna: string; sop: string; vm: string; tipo: TipoDifferenza; nota?: string;
+  visto?: { da: string | null; at: string };      // gia' vista: da chi e quando
+}
+export type ChiaveDifferenza = Pick<DifferenzaSop, 'commessa' | 'colonna' | 'sop' | 'vm'>;
 export interface StatoColonnaSop { colonna: string; ok: number; diverso: number; solo_sop: number; solo_vm: number }
 export interface ConfrontoSop {
   import: ImportSop;
-  riepilogo: { righe_sop: number; con_dati: number; confrontate: number; non_caricate: number; tutte_ok: number; con_differenze: number; differenze_totali: number; mercato_senza_regola: number };
+  riepilogo: { righe_sop: number; con_dati: number; confrontate: number; non_caricate: number; tutte_ok: number; con_differenze: number; differenze_totali: number; mercato_senza_regola: number; viste: number };
   colonne: StatoColonnaSop[];
   colonne_senza_regola: string[];
   differenze: DifferenzaSop[];
@@ -29,5 +33,6 @@ export const sopApi = {
   confronto: () => api.get<ConfrontoSop>(`${B}/confronto`, 120_000),
   regole: () => api.get<{ regole: RegolaSop[] }>(`${B}/regole`),
   salvaRegole: (regole: RegolaSop[]) => api.put<{ salvate: number }>(`${B}/regole`, { regole }),
+  segnaViste: (differenze: ChiaveDifferenza[], viste: boolean) => api.post<{ cambiate: number }>(`${B}/viste`, { differenze, viste }),
   suggerite: () => api.post<{ aggiunte: number }>(`${B}/regole/suggerite`),
 };
