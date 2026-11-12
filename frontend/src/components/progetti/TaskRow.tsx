@@ -20,12 +20,14 @@ interface Props {
   phases?: PhaseRow[];
   /** Persone del team: abilita il selettore del responsabile */
   people?: Person[];
+  /** Colonne strette: scadenza e responsabile vanno sotto il titolo invece che a destra */
+  compact?: boolean;
   onChanged: () => void;
 }
 
 // Riga di attività: il quadrato la segna come fatta; il titolo apre l'editor
 // (stato, responsabile, scadenza, fase e, in «in attesa»/«bloccata», di chi o perché).
-export function TaskRow({ task, showProject, phases, people, onChanged }: Props) {
+export function TaskRow({ task, showProject, phases, people, compact, onChanged }: Props) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState(task.status_note ?? '');
@@ -63,11 +65,26 @@ export function TaskRow({ task, showProject, phases, people, onChanged }: Props)
 
   const needsNote = task.status === 'in_attesa' || task.status === 'bloccata';
   const noteLabel = task.status === 'in_attesa' ? 'da' : 'perché';
-  const hasMeta = (!done && task.status !== 'da_fare') || showProject || (task.status_note && needsNote) || overPhase;
+  const dueText = late ? null : (!done && task.due_date ? (task.days_to_due != null && task.days_to_due <= 1 ? dueLabel(task.days_to_due) : fmtShort(task.due_date)) : null);
+  const hasRight = !!task.assigned_name || late || !!dueText;
+  const hasMeta = (!done && task.status !== 'da_fare') || showProject || (task.status_note && needsNote) || overPhase || (compact && hasRight);
   const field = 'input !w-auto !px-2.5 !py-1 text-[13px]';
 
+  const right = (
+    <div className="flex items-center gap-2 whitespace-nowrap pt-0.5 text-xs tabular-nums text-muted">
+      {task.assigned_name && (
+        <span title={task.assigned_name} className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-accent-soft text-[10px] font-semibold text-accent-ink">
+          {initials(task.assigned_name)}
+        </span>
+      )}
+      {late
+        ? <StatusBadge tone="danger">{dueLabel(task.days_to_due)}</StatusBadge>
+        : dueText && <span>{dueText}</span>}
+    </div>
+  );
+
   return (
-    <div className="grid grid-cols-[22px_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 border-t border-stone-100 py-2.5 first:border-t-0">
+    <div className={`grid ${compact ? 'grid-cols-[22px_minmax(0,1fr)]' : 'grid-cols-[22px_minmax(0,1fr)_auto]'} items-start gap-x-3 gap-y-1 border-t border-stone-100 py-2.5 first:border-t-0`}>
       <button
         type="button" disabled={busy} aria-label={done ? 'Segna come da fare' : 'Segna come fatta'}
         onClick={() => patch({ status: done ? 'da_fare' : 'fatta' })}
@@ -102,23 +119,15 @@ export function TaskRow({ task, showProject, phases, people, onChanged }: Props)
                 : <span className="rounded-full bg-stone-100 px-2.5 py-0.5 font-medium text-stone-600">Senza progetto</span>
             )}
             {overPhase && <span className="font-semibold text-warning">oltre la scadenza della fase ({fmtShort(phase!.due_date)})</span>}
+            {compact && hasRight && <span className="ml-auto flex items-center">{right}</span>}
           </div>
         )}
       </div>
 
-      <div className="flex items-center gap-2 whitespace-nowrap pt-0.5 text-xs tabular-nums text-muted">
-        {task.assigned_name && (
-          <span title={task.assigned_name} className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-accent-soft text-[10px] font-semibold text-accent-ink">
-            {initials(task.assigned_name)}
-          </span>
-        )}
-        {late
-          ? <StatusBadge tone="danger">{dueLabel(task.days_to_due)}</StatusBadge>
-          : !done && task.due_date && <span>{task.days_to_due != null && task.days_to_due <= 1 ? dueLabel(task.days_to_due) : fmtShort(task.due_date)}</span>}
-      </div>
+      {!compact && right}
 
       {open && (
-        <div className="col-span-2 col-start-2 flex flex-col gap-2.5 rounded-ctl bg-stone-100 p-3">
+        <div className={`${compact ? 'col-start-2' : 'col-span-2 col-start-2'} flex flex-col gap-2.5 rounded-ctl bg-stone-100 p-3`}>
           <input className="input" aria-label="Titolo" value={title} maxLength={300}
             onChange={e => setTitle(e.target.value)}
             onBlur={() => { const t = title.trim(); if (t && t !== task.title) patch({ title: t }); else setTitle(task.title); }} />
