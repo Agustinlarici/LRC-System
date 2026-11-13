@@ -30,3 +30,15 @@ export function bearerToken(header: string | undefined): string | null {
   const m = /^Bearer ([A-Za-z0-9]{32,128})$/.exec(header ?? '');
   return m ? m[1] : null;
 }
+
+/** Token di iKnow: scelto dall'azienda, quindi più libero del token stazione (solo caratteri sicuri in un header). */
+export function bearerTokenAny(header: string | undefined): string | null {
+  const m = /^Bearer ([\x21-\x7e]{16,200})$/.exec(header ?? '');
+  return m ? m[1] : null;
+}
+
+/** "Delibera Finale" / "delibera-finale" -> "delibera_finale" (codice fase del catalogo). */
+export function normalizePhase(raw: string): string | null {
+  const key = raw.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return /^[a-z0-9_]{1,40}$/.test(key) ? key : null;
+}

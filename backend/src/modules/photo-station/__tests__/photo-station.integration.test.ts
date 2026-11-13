@@ -38,6 +38,8 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
     app = new Hono();
     app.route('/api/photo-station/device', photoStationDeviceRoutes);
     app.route('/api/photo-station', photoStationRoutes);
+    const { iknowRoutes } = await import('../iknow.js');
+    app.route('/api/delibere', iknowRoutes);
     app.onError(errorHandler);
 
     await db`DELETE FROM users WHERE username LIKE 'ps_%'`;
@@ -48,7 +50,8 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
     guest = `${COOKIE_NAME}=${signToken({ id: g, username: 'ps_guest', display_name: 'ps_guest', role: 'guest' })}`;
   });
   beforeEach(async () => {
-    await db`TRUNCATE photo_job_files, photo_jobs, photo_stations, photo_phases RESTART IDENTITY CASCADE`;
+    await db`TRUNCATE photo_job_files, photo_jobs, photo_stations, photo_phases, photo_iknow_config, photo_feed_config RESTART IDENTITY CASCADE`;
+    await db`DELETE FROM webthron_events_history WHERE cod_seriale LIKE 'TST%'`;
     await db`INSERT INTO photo_phases (key, label) VALUES ('delibera_finale', 'Delibera finale'), ('delibera_finale_proximiti', 'Delibera finale Proximiti')`;
     const mkStation = async (name: string, phases: string[]) => {
       const { token, hash } = helpers.newStationToken();
@@ -60,7 +63,8 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
     tok3 = await mkStation('Proximiti', ['delibera_finale_proximiti']);
   });
   afterAll(async () => {
-    await db`TRUNCATE photo_job_files, photo_jobs, photo_stations, photo_phases RESTART IDENTITY CASCADE`;
+    await db`TRUNCATE photo_job_files, photo_jobs, photo_stations, photo_phases, photo_iknow_config, photo_feed_config RESTART IDENTITY CASCADE`;
+    await db`DELETE FROM webthron_events_history WHERE cod_seriale LIKE 'TST%'`;
     await db`DELETE FROM users WHERE username LIKE 'ps_%'`;
   });
 
@@ -213,5 +217,157 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
     const r = await station(`/jobs/${job.id}/fail`, { method: 'POST', body: JSON.stringify({ error: 'Nessuna camera' }), headers: { 'content-type': 'application/json' } });
     expect(r.status).toBe(200);
     expect((await db`SELECT status, error FROM photo_jobs WHERE id = ${job.id}`)[0]).toMatchObject({ status: 'failed', error: 'Nessuna camera' });
+  });
+
+  // ─── Chiamata di iKnow: POST /api/delibere/accettate ─────────────────────────────
+  const IK_TOKEN = 'token-di-prova-iknow-1234';
+  const body = (over: Record<string, unknown> = {}) => ({
+    seriale: '123456789', commessa: '000000', fase: 'delibera_finale', componente: 'COMP-001', versione: 'DX',
+    data_ora: '2026-10-27 10:00:00+01:00', ...over,
+  });
+  const iknow = (payload: unknown, token: string | null = IK_TOKEN) =>
+    app.request('/api/delibere/accettate', {
+      method: 'POST', body: JSON.stringify(payload),
+      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    });
+  const setToken = () => user('/iknow-token', { method: 'PUT', body: JSON.stringify({ token: IK_TOKEN }) });
+
+  it('iKnow: senza token configurato 503; token errato o assente 401', async () => {
+    expect((await iknow(body())).status).toBe(503);
+    expect((await setToken()).status).toBe(200);
+    expect((await iknow(body(), 'token-sbagliato-0000000')).status).toBe(401);
+    expect((await iknow(body(), null)).status).toBe(401);
+    expect((await db`SELECT count(*)::int AS n FROM photo_jobs`)[0].n).toBe(0);
+  });
+
+  it('iKnow: chiamata valida → 200 e ordine in coda con i dati attesi (commessa con zeri)', async () => {
+    await setToken();
+    const r = await iknow(body());
+    expect(r.status).toBe(200);
+    expect((await r.json() as any).result).toBe('created');
+    const [j] = await db`SELECT commessa, phase, source, seriale, componente, versione, status, event_at FROM photo_jobs`;
+    expect(j).toMatchObject({ commessa: '000000', phase: 'delibera_finale', source: 'iknow', seriale: '123456789', componente: 'COMP-001', versione: 'DX', status: 'pending' });
+    expect(new Date(j.event_at).toISOString()).toBe('2026-10-27T09:00:00.000Z');
+    const claim = await (await station('/claim', { method: 'POST' })).json() as any;
+    expect(claim.job).toMatchObject({ commessa: '000000', seriale: '123456789', componente: 'COMP-001', versione: 'DX' });
+  });
+
+  it('iKnow: la stessa chiamata riprovata non crea un doppione (200 anche così)', async () => {
+    await setToken();
+    await iknow(body());
+    const again = await iknow(body());
+    expect(again.status).toBe(200);
+    expect((await again.json() as any).result).toBe('duplicate');
+    // stesso seriale+componente con altra data_ora mentre il primo è ancora aperto: niente doppione e niente 500
+    expect((await iknow(body({ data_ora: '2026-10-27 10:05:00+01:00' }))).status).toBe(200);
+    expect((await db`SELECT count(*)::int AS n FROM photo_jobs`)[0].n).toBe(1);
+  });
+
+  it('iKnow: seriali o componenti diversi della stessa commessa sono ordini distinti', async () => {
+    await setToken();
+    await iknow(body()); await iknow(body({ seriale: '999' })); await iknow(body({ componente: 'COMP-002' }));
+    expect((await db`SELECT count(*)::int AS n FROM photo_jobs`)[0].n).toBe(3);
+  });
+
+  it('iKnow: fase sconosciuta → 200, ordine messo da parte con il motivo; dopo averla creata si rilancia', async () => {
+    await setToken();
+    const r = await iknow(body({ fase: 'Nuova Fase' }));
+    expect(r.status).toBe(200);
+    expect((await r.json() as any).result).toBe('phase_unknown');
+    const [j] = await db`SELECT id, status, error FROM photo_jobs`;
+    expect(j.status).toBe('cancelled');
+    expect(j.error).toContain('nuova_fase');
+    await user('/phases', { method: 'POST', body: JSON.stringify({ key: 'nuova_fase', label: 'Nuova' }) });
+    expect((await user(`/jobs/${j.id}/retry`, { method: 'POST' })).status).toBe(200);
+    expect((await db`SELECT status FROM photo_jobs WHERE id = ${j.id}`)[0].status).toBe('pending');
+  });
+
+  it('iKnow: corpo non valido → 400', async () => {
+    await setToken();
+    expect((await iknow({ ...body(), seriale: undefined })).status).toBe(400);
+    expect((await iknow(body({ data_ora: 'ieri' }))).status).toBe(400);
+    expect((await iknow(body({ fase: '!!!' }))).status).toBe(400);
+    expect((await app.request('/api/delibere/accettate', { method: 'POST', body: 'no json', headers: { authorization: `Bearer ${IK_TOKEN}` } })).status).toBe(400);
+  });
+
+  it('iKnow: il token solo lo cambia chi gestisce, e non si rilegge', async () => {
+    expect((await user('/iknow-token', { method: 'PUT', body: JSON.stringify({ token: IK_TOKEN }) }, guest)).status).toBe(403);
+    expect((await user('/iknow-token', { method: 'PUT', body: JSON.stringify({ token: 'corto' }) })).status).toBe(400);
+    await setToken();
+    const st = JSON.stringify(await (await user('/iknow')).json());
+    expect(st).toContain('"configured":true');
+    expect(st).not.toContain(IK_TOKEN);
+  });
+
+  // ─── Alimentatore dalla copia del DB di iKnow ───────────────────────────────────
+  const hist = (over: Record<string, unknown> = {}) => db`
+    INSERT INTO webthron_events_history (fase, modello, componente, cod_seriale, commessa, versione, esito_delibera, data_inserimento, data_cache)
+    VALUES (${(over.fase as string) ?? 'DELIBERA FINALE'}, 'M1', ${(over.componente as string) ?? 'COMP-001'}, ${(over.seriale as string) ?? 'TST1'},
+            ${(over.commessa as string | null) === null ? null : ((over.commessa as string) ?? '000111')}, ${(over.versione as string) ?? 'DX'},
+            ${(over.esito as string) ?? 'ACCETTATA'}, ${(over.at as Date) ?? new Date()}, CURRENT_DATE)`;
+  const feedOn = async (esiti = ['ACCETTATA']) => {
+    const r = await user('/feed', { method: 'PUT', body: JSON.stringify({ enabled: true, esiti_ok: esiti }) });
+    await db`UPDATE photo_feed_config SET enabled_since = now() - interval '1 hour'`;
+    return r;
+  };
+  const feedRun = async () => (await import('../feed.js')).runPhotoFeed();
+  const count = async () => (await db`SELECT count(*)::int AS n FROM photo_jobs`)[0].n as number;
+
+  it('copia iKnow: spenta di default, e per accenderla serve dire quali esiti valgono "accettata"', async () => {
+    await hist();
+    expect(await feedRun()).toBe(0);
+    expect((await user('/feed', { method: 'PUT', body: JSON.stringify({ enabled: true, esiti_ok: [] }) })).status).toBe(400);
+    expect((await user('/feed', { method: 'PUT', body: JSON.stringify({ enabled: true, esiti_ok: ['X'] }) }, guest)).status).toBe(403);
+    expect(await count()).toBe(0);
+  });
+
+  it('copia iKnow: DELIBERA FINALE → ordine della fase "Delibera finale"; DELIBERA FINALE PROX → su Proximiti', async () => {
+    await db`UPDATE photo_phases SET iknow_fase = 'DELIBERA FINALE PROX' WHERE key = 'delibera_finale_proximiti'`;
+    await feedOn();
+    await hist({ seriale: 'TST1' });
+    await hist({ seriale: 'TST2', fase: 'DELIBERA FINALE PROX' });
+    await hist({ seriale: 'TST3', fase: 'ASSEMBLAGGIO' });                 // fase non nel catalogo: ignorata
+    await hist({ seriale: 'TST4', esito: 'RIFIUTATA' });                    // esito che non vale
+    await hist({ seriale: 'TST5', at: new Date(Date.now() - 3 * 3600_000) });   // prima di enabled_since: storico
+    expect(await feedRun()).toBe(2);
+    const jobs = await db`SELECT phase, seriale, source, versione, commessa FROM photo_jobs ORDER BY seriale`;
+    expect(jobs).toMatchObject([
+      { phase: 'delibera_finale', seriale: 'TST1', source: 'iknow_db', versione: 'DX', commessa: '000111' },
+      { phase: 'delibera_finale_proximiti', seriale: 'TST2', source: 'iknow_db' },
+    ]);
+    // ogni stazione prende solo il suo
+    expect((await (await station('/claim', { method: 'POST' }, tok3)).json() as any).job.seriale).toBe('TST2');
+    expect((await (await station('/claim', { method: 'POST' }, tok)).json() as any).job.seriale).toBe('TST1');
+  });
+
+  it('copia iKnow: girare di nuovo non duplica; commessa che arriva dopo viene presa al giro dopo', async () => {
+    await feedOn();
+    await hist({ seriale: 'TST6', commessa: null });
+    expect(await feedRun()).toBe(0);
+    await db`UPDATE webthron_events_history SET commessa = '000222' WHERE cod_seriale = 'TST6'`;
+    expect(await feedRun()).toBe(1);
+    expect(await feedRun()).toBe(0);
+    expect(await count()).toBe(1);
+  });
+
+  it('copia iKnow → API: lo stesso evento arrivato dopo dall\'API non fa un secondo ordine', async () => {
+    await feedOn();
+    await setToken();
+    const at = new Date(Math.floor(Date.now() / 1000) * 1000 - 60_000);
+    await hist({ seriale: 'TST7', at });
+    expect(await feedRun()).toBe(1);
+    const r = await iknow(body({ seriale: 'TST7', commessa: '000111', data_ora: at.toISOString() }));
+    expect((await r.json() as any).result).toBe('duplicate');
+    expect(await count()).toBe(1);
+  });
+
+  it('copia iKnow: con iKnow spento (interruttore del sistema) non crea ordini', async () => {
+    await feedOn();
+    await hist({ seriale: 'TST8' });
+    const sf = await import('../../../lib/system-flags.js');
+    await sf.setIKnowFlags({ iknow_enabled: false });
+    try { expect(await feedRun()).toBe(0); } finally { await sf.setIKnowFlags({ iknow_enabled: true }); }
+    expect(await count()).toBe(0);
+    expect(await feedRun()).toBe(1);
   });
 });

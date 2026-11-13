@@ -32,6 +32,32 @@ La misma commessa puede tener un pedido abierto **por fase**. Cada fase corre su
 (cuántas fotos, qué se analiza) todavía no está definido: la VM solo enruta; el análisis por fase se define con la PC IA.
 Las fases se crean en la página (código = el que manda iKnow) y no se aceptan pedidos de fases desconocidas o desactivadas.
 
+## Cómo entran los pedidos desde iKnow
+
+Dos vías, **la misma función** (`events.ts`), así que pasar de una a otra no cambia nada ni duplica pedidos
+(clave de idempotencia = seriale + commessa + fase + componente + data_ora al segundo; no incluye la versione ni el origen):
+
+1. **API (definitiva)** — la llamada que pedimos a la empresa:
+   `POST http://<VM>:3000/api/delibere/accettate`, `Authorization: Bearer <token>`, body
+   `{seriale, commessa, fase, componente, versione, data_ora}`. El puerto 3000 funciona porque Next.js ya hace proxy de
+   `/api/*` al backend. Respuestas: **200** siempre que el cuerpo sea válido (también duplicado, o fase aún no
+   configurada: queda un pedido *anulado* con el motivo, visible, y se relanza con «Riprova» tras crear la fase);
+   401 token errado; 503 token aún no cargado (iKnow reintenta); 400 cuerpo inválido. El token lo elige la empresa:
+   se carga en la página (solo se guarda el hash). `data_ora` sin huso horario se interpreta con la hora del servidor.
+2. **Copia del DB de iKnow (provisoria)** — `webthron_events_history`, que ya llena el sync de Andon. Cada minuto
+   (`feed.ts`) busca eventos recientes con esito «aceptado» y fase del catálogo. **Apagada por defecto**; al encenderla
+   se fija `enabled_since` y nunca mira antes (no fotografía el histórico). Hay que elegir qué *esiti* valen como
+   «aceptada» (la página muestra los reales de los últimos 7 días). Respeta el interruptor general de iKnow
+   (`iknow_enabled`/`iknow_andon_enabled`): con iKnow apagado (p. ej. entorno de desarrollo) no crea pedidos.
+
+**Fase → Photo Station:** cada fase del catálogo tiene un *código* y, opcionalmente, el *nombre exacto en iKnow*
+(`DELIBERA FINALE`, `DELIBERA FINALE PROX`); si falta, se usa el nombre normalizado (`delibera_finale`). La estación
+habilitada para esa fase es la que recibe el pedido. Cuando llegue la API se apaga la copia y no se cambia nada más.
+
+Límites conocidos: el pedido se crea por evento (seriale+componente); si dos componentes del mismo paragolpes se
+aceptan por separado se hacen dos pedidos/series de fotos (falta decidir si conviene agruparlos). Si la `versione`
+llega tarde a la copia, el pedido queda con versione vacía.
+
 ## Cómo probarlo hoy (sin iKnow)
 
 1. Admin → Impostazioni sistema: dar el permiso `Photo Station` a quien corresponda (el admin ya lo tiene).
@@ -62,11 +88,6 @@ Estación (`Authorization: Bearer <token>`, solo hash en la DB), prefijo `/api/p
 | `POST /jobs/:id/complete {status, photos:[{camera,sha256}], errors}` | 409 con `missing` si alguna foto no llegó igual; el pedido sigue abierto |
 | `POST /jobs/:id/fail {error}` | la estación no pudo ni intentar (ej. sin cámaras) |
 
-## Cuando llegue la llamada de iKnow
-
-Solo hay que crear el pedido con `source = 'iknow'`, `phase` y `external_ref` (idempotencia: `UNIQUE (source, external_ref)`).
-Hace falta decidir **cómo se autentica iKnow** (token de máquina propio, igual que las estaciones; no una sesión de
-usuario) — **no implementado a propósito** hasta conocer la llamada. El resto del flujo no cambia.
 
 ## Fase PC IA (pendiente)
 

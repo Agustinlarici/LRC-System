@@ -28,3 +28,25 @@ describe('Photo Station — helpers', () => {
     expect(bearerToken(undefined)).toBeNull();
   });
 });
+
+import { bearerTokenAny, normalizePhase } from '../helpers.js';
+import { parseDataOra } from '../iknow.js';
+
+describe('Photo Station — iKnow', () => {
+  it('normalizza la fase come codice del catalogo', () => {
+    expect(normalizePhase('Delibera Finale')).toBe('delibera_finale');
+    expect(normalizePhase(' delibera-finale-proximiti ')).toBe('delibera_finale_proximiti');
+    expect(normalizePhase('!!!')).toBeNull();
+    expect(normalizePhase('x'.repeat(41))).toBeNull();
+  });
+  it('legge data_ora con e senza fuso', () => {
+    expect(parseDataOra('2026-10-27 10:00:00+02:00')?.toISOString()).toBe('2026-10-27T08:00:00.000Z');
+    expect(parseDataOra('2026-10-27T10:00:00Z')?.toISOString()).toBe('2026-10-27T10:00:00.000Z');
+    expect(parseDataOra('ieri')).toBeNull();
+  });
+  it('il token di iKnow ammette solo caratteri sicuri e lunghezza minima', () => {
+    expect(bearerTokenAny('Bearer abcdefghijklmnop')).toBe('abcdefghijklmnop');
+    expect(bearerTokenAny('Bearer corto')).toBeNull();
+    expect(bearerTokenAny('Bearer con spazio nel token')).toBeNull();
+  });
+});

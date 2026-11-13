@@ -13,10 +13,12 @@ import { SkeletonTable } from '@/components/ui/Skeleton';
 type Job = {
   id: number; commessa: string; phase: string; source: string; status: string; attempts: number;
   capture_status: string | null; capture_errors: { camera: string; error: string }[]; error: string | null;
-  created_by: string | null; created_at: string; finished_at: string | null; station_name: string | null; photos: number;
+  created_by: string | null; seriale: string | null; componente: string | null; versione: string | null; created_at: string; finished_at: string | null; station_name: string | null; photos: number;
 };
 type FileRow = { id: number; camera: string; bytes: number };
-type Phase = { key: string; label: string; active: boolean };
+type Phase = { key: string; label: string; iknow_fase: string | null; active: boolean };
+type Iknow = { configured: boolean; updated_at: string | null; last_call_at: string | null };
+type Feed = { enabled: boolean; esiti_ok: string[]; enabled_since: string | null; esiti_visti: string[]; last_run: { at: string | null; created: number; error: string | null } };
 type Station = { id: number; name: string; phases: string[]; last_seen_at: string | null; revoked_at: string | null; online: boolean };
 
 const STATUS: Record<string, { label: string; tone: Tone }> = {
@@ -43,7 +45,11 @@ export default function PhotoStationPage() {
   const [stations, setStations] = useState<Station[]>([]);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [phase, setPhase] = useState('');
-  const [newPhase, setNewPhase] = useState({ key: '', label: '' });
+  const [newPhase, setNewPhase] = useState({ key: '', label: '', iknow_fase: '' });
+  const [iknow, setIknow] = useState<Iknow | null>(null);
+  const [feed, setFeed] = useState<Feed | null>(null);
+  const [iknowToken, setIknowToken] = useState('');
+  const [esitiOk, setEsitiOk] = useState<string[] | null>(null);
   const [stationPhases, setStationPhases] = useState<string[]>([]);
   const [commessa, setCommessa] = useState('');
   const [stationName, setStationName] = useState('');
@@ -53,11 +59,14 @@ export default function PhotoStationPage() {
 
   const load = useCallback(async () => {
     try {
-      const [j, s, f] = await Promise.all([
+      const [j, s, f, ik, fd] = await Promise.all([
         api.get<{ jobs: Job[] }>('/api/photo-station/jobs?limit=50'),
         api.get<{ stations: Station[] }>('/api/photo-station/stations'),
         api.get<{ phases: Phase[] }>('/api/photo-station/phases'),
+        api.get<Iknow>('/api/photo-station/iknow'),
+        api.get<Feed>('/api/photo-station/feed'),
       ]);
+      setIknow(ik); setFeed(fd);
       setJobs(j.jobs); setStations(s.stations); setPhases(f.phases);
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Errore di caricamento'); }
   }, [toast]);
@@ -85,7 +94,7 @@ export default function PhotoStationPage() {
   const phaseLabel = (k: string) => phases.find(f => f.key === k)?.label ?? k;
   const createPhase = (e: React.FormEvent) => {
     e.preventDefault();
-    act(async () => { await api.post('/api/photo-station/phases', newPhase); setNewPhase({ key: '', label: '' }); }, 'Fase creata');
+    act(async () => { await api.post('/api/photo-station/phases', { ...newPhase, iknow_fase: newPhase.iknow_fase.trim() || undefined }); setNewPhase({ key: '', label: '', iknow_fase: '' }); }, 'Fase creata');
   };
   const togglePhase = (st: Station, key: string) => act(() => api.put(`/api/photo-station/stations/${st.id}/phases`, {
     phases: st.phases.includes(key) ? st.phases.filter(k => k !== key) : [...st.phases, key],
@@ -143,7 +152,10 @@ export default function PhotoStationPage() {
                 return (
                   <tr key={j.id} className="border-t border-line align-top">
                     <td className="px-4 py-3 tabular-nums text-muted">{j.id}</td>
-                    <td className="px-4 py-3 font-medium text-ink-900">{j.commessa}</td>
+                    <td className="px-4 py-3 font-medium text-ink-900">
+                      {j.commessa}
+                      {j.seriale && <div className="text-xs font-normal text-muted">{j.seriale} · {j.componente} {j.versione}</div>}
+                    </td>
                     <td className="px-4 py-3 text-muted">{phaseLabel(j.phase)}</td>
                     <td className="px-4 py-3">
                       <StatusBadge tone={j.capture_status === 'partial' && j.status === 'captured' ? 'warning' : st.tone}>
@@ -171,6 +183,62 @@ export default function PhotoStationPage() {
             </tbody>
           </table>
         )}
+      </div>
+
+      <h2 className="mb-3 text-lg font-semibold text-ink-900">Collegamento iKnow</h2>
+      <div className="mb-6 grid gap-4 md:grid-cols-2">
+        <div className="card p-5">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="font-medium text-ink-900">Chiamata API</h3>
+            <StatusBadge tone={iknow?.configured ? 'success' : 'warning'}>{iknow?.configured ? 'Token impostato' : 'Token mancante'}</StatusBadge>
+          </div>
+          <p className="text-sm text-muted">iKnow chiama <code className="break-all">POST {typeof window !== 'undefined' ? window.location.origin : ''}/api/delibere/accettate</code> con <code>Authorization: Bearer &lt;token&gt;</code>.</p>
+          <p className="mt-1 text-xs text-muted">Ultima chiamata: {fmt(iknow?.last_call_at ?? null)}</p>
+          {manage && (
+            <form className="mt-3 flex items-end gap-2" onSubmit={e => { e.preventDefault(); act(async () => { await api.put('/api/photo-station/iknow-token', { token: iknowToken }); setIknowToken(''); }, 'Token salvato'); }}>
+              <div className="flex-1">
+                <label className="label" htmlFor="ikt">{iknow?.configured ? 'Nuovo token' : 'Token ricevuto da iKnow'}</label>
+                <input id="ikt" type="password" autoComplete="off" className="input w-full" value={iknowToken} onChange={e => setIknowToken(e.target.value)} />
+              </div>
+              <Button type="submit" disabled={busy || iknowToken.length < 16}>Salva</Button>
+            </form>
+          )}
+        </div>
+        <div className="card p-5">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="font-medium text-ink-900">Copia del database di iKnow</h3>
+            <StatusBadge tone={feed?.enabled ? 'success' : 'neutral'}>{feed?.enabled ? 'Attiva' : 'Spenta'}</StatusBadge>
+          </div>
+          <p className="text-sm text-muted">Provvisorio: legge la copia locale e crea un ordine per ogni delibera accettata delle fasi qui sotto. Non guarda mai prima del momento in cui la accendi.</p>
+          <div className="mt-3">
+            <span className="label">Esiti che valgono come «accettata»</span>
+            <div className="flex flex-wrap gap-3 py-1 text-sm">
+              {(feed?.esiti_visti ?? []).map(x => {
+                const sel = esitiOk ?? feed?.esiti_ok ?? [];
+                return (
+                  <label key={x} className="inline-flex items-center gap-1.5">
+                    <input type="checkbox" disabled={!manage} checked={sel.includes(x)} onChange={e => setEsitiOk(e.target.checked ? [...sel, x] : sel.filter(k => k !== x))} />
+                    {x}
+                  </label>
+                );
+              })}
+              {(feed?.esiti_visti ?? []).length === 0 && <span className="text-muted">Nessun esito visto negli ultimi 7 giorni per le fasi configurate.</span>}
+            </div>
+          </div>
+          <p className="mt-1 text-xs text-muted">
+            {feed?.enabled_since ? `Attiva da ${fmt(feed.enabled_since)}. ` : ''}
+            {feed?.last_run?.at ? `Ultimo controllo ${fmt(feed.last_run.at)}${feed.last_run.error ? ` — errore: ${feed.last_run.error}` : ''}.` : ''}
+          </p>
+          {manage && feed && (
+            <div className="mt-3 flex gap-2">
+              <Button variant={feed.enabled ? 'secondary' : 'primary'} disabled={busy || (!feed.enabled && (esitiOk ?? feed.esiti_ok).length === 0)}
+                      onClick={() => act(() => api.put('/api/photo-station/feed', { enabled: !feed.enabled, esiti_ok: esitiOk ?? feed.esiti_ok }), feed.enabled ? 'Copia spenta' : 'Copia attivata')}>
+                {feed.enabled ? 'Spegni' : 'Accendi'}
+              </Button>
+              {feed.enabled && esitiOk && <Button disabled={busy} onClick={() => act(async () => { await api.put('/api/photo-station/feed', { enabled: true, esiti_ok: esitiOk }); setEsitiOk(null); }, 'Esiti salvati')}>Salva esiti</Button>}
+            </div>
+          )}
+        </div>
       </div>
 
       <h2 className="mb-3 text-lg font-semibold text-ink-900">Stazioni</h2>
@@ -237,7 +305,7 @@ export default function PhotoStationPage() {
         <ul className="divide-y divide-line">
           {phases.map(f => (
             <li key={f.key} className="flex items-center justify-between gap-3 py-2 text-sm">
-              <span><span className="font-medium text-ink-900">{f.label}</span> <code className="text-xs text-muted">{f.key}</code></span>
+              <span><span className="font-medium text-ink-900">{f.label}</span> <code className="text-xs text-muted">{f.key}</code>{f.iknow_fase && <span className="ml-2 text-xs text-muted">iKnow: {f.iknow_fase}</span>}</span>
               <span className="flex items-center gap-3">
                 <StatusBadge tone={f.active ? 'success' : 'neutral'}>{f.active ? 'Attiva' : 'Disattivata'}</StatusBadge>
                 {manage && <Button variant="ghost" disabled={busy} onClick={() => act(() => api.put(`/api/photo-station/phases/${f.key}`, { active: !f.active }))}>{f.active ? 'Disattiva' : 'Attiva'}</Button>}
@@ -255,6 +323,10 @@ export default function PhotoStationPage() {
             <div className="min-w-[14rem]">
               <label className="label" htmlFor="flabel">Nome</label>
               <input id="flabel" className="input w-full" value={newPhase.label} maxLength={80} onChange={e => setNewPhase({ ...newPhase, label: e.target.value })} placeholder="Delibera finale" />
+            </div>
+            <div className="min-w-[14rem]">
+              <label className="label" htmlFor="fik">Nome in iKnow (se diverso)</label>
+              <input id="fik" className="input w-full" value={newPhase.iknow_fase} maxLength={80} onChange={e => setNewPhase({ ...newPhase, iknow_fase: e.target.value })} placeholder="DELIBERA FINALE PROX" />
             </div>
             <Button type="submit" disabled={busy || !newPhase.key.trim() || !newPhase.label.trim()}>Crea fase</Button>
           </form>
