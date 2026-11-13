@@ -59,7 +59,9 @@ const IMPORT_COLUMNS = [
   'DATA NASCITA', 'EMAIL', 'INDIRIZZO', 'CITTA', 'PROVINCIA', 'CAP', 'GRUPPO ORARIO',
 ];
 
-interface MissingPerson { name: string; similar: string[]; contracts: number }
+interface MissingPerson { key: string; name: string; contracts: number; suggestions: { id: number; label: string }[]; best: number | null }
+// Scelta per ogni persona non trovata: 'new' crea la scheda, 'skip' non importa, numero = collega a quella scheda
+type MissingDecision = 'new' | 'skip' | number;
 
 // CSV del gestionale paghe: una riga = un contratto interinale
 const CONTRACT_COLUMNS = ['MATRICOLA', 'COGNOME', 'NOME', 'QUALIFICA', 'DATA ASSUNZIONE', 'DATA LICENZIAMENTO'];
@@ -172,9 +174,15 @@ export default function DipendentiPage() {
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   // Finestra con la tabella delle persone del CSV che non sono in anagrafica (import contratti)
   const [missingAsk, setMissingAsk] = useState<MissingPerson[] | null>(null);
-  const missingResolver = useRef<((c: 'crea' | 'esistenti' | 'annulla') => void) | null>(null);
-  const askMissing = (list: MissingPerson[]) => new Promise<'crea' | 'esistenti' | 'annulla'>(resolve => { missingResolver.current = resolve; setMissingAsk(list); });
-  const answerMissing = (c: 'crea' | 'esistenti' | 'annulla') => { setMissingAsk(null); missingResolver.current?.(c); missingResolver.current = null; };
+  const [missingChoice, setMissingChoice] = useState<Record<string, MissingDecision>>({});
+  const missingResolver = useRef<((c: Record<string, MissingDecision> | null) => void) | null>(null);
+  const askMissing = (list: MissingPerson[]) => new Promise<Record<string, MissingDecision> | null>(resolve => {
+    missingResolver.current = resolve;
+    // Preselezione: la scheda suggerita se è una sola e coincide bene, altrimenti crea nuova
+    setMissingChoice(Object.fromEntries(list.map(m => [m.key, m.best ?? 'new' as MissingDecision])));
+    setMissingAsk(list);
+  });
+  const answerMissing = (c: Record<string, MissingDecision> | null) => { setMissingAsk(null); missingResolver.current?.(c); missingResolver.current = null; };
 
   // Intestazione "congelata" fuori dall'area che scorre in verticale (invece di
   // position:sticky, che su Chrome dentro un contenitore overflow con bordi arrotondati
@@ -364,21 +372,21 @@ export default function DipendentiPage() {
       matricola: r['matricola'] ?? '', cognome: r['cognome'] ?? '', nome: r['nome'] ?? '', qualifica: r['descriz._qualifica'] ?? r['qualifica'] ?? '',
       data_inizio: parseItalianDate(r['data_assunzione']), data_fine: parseItalianDate(r['data_licenziamento']),
     }));
-    const call = (extra: { dry_run?: boolean; create_missing?: boolean }) => fetch(`${BACKEND}/api/hr/contracts/import`, {
+    const call = (extra: { dry_run?: boolean; decisions?: Record<string, MissingDecision> }) => fetch(`${BACKEND}/api/hr/contracts/import`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ rows: payload, ...extra }),
     });
     // Prova a vuoto: se ci sono persone non in anagrafica si chiede prima di crearle
-    const dry = await call({ dry_run: true, create_missing: true });
+    const dry = await call({ dry_run: true });
     if (!dry.ok) return { inserted: 0, skipped: 0, errors: 1, detail: (await dry.json().catch(() => ({}))).message ?? 'Import rifiutato dal server' };
     const missing: MissingPerson[] = (await dry.json()).new_people ?? [];
-    let createMissing = false;
+    let decisions: Record<string, MissingDecision> = {};
     if (missing.length) {
       const choice = await askMissing(missing);
-      if (choice === 'annulla') return { inserted: 0, skipped: 0, errors: 0, detail: 'Import annullato, nessuna modifica.' };
-      createMissing = choice === 'crea';
+      if (!choice) return { inserted: 0, skipped: 0, errors: 0, detail: 'Import annullato, nessuna modifica.' };
+      decisions = choice;
     }
-    const res = await call({ create_missing: createMissing });
+    const res = await call({ decisions });
     if (!res.ok) return { inserted: 0, skipped: 0, errors: 1, detail: (await res.json().catch(() => ({}))).message ?? 'Import rifiutato dal server' };
     const d: { created: number; linked: number; contracts: number; duplicates: number; skipped: number; issues: ImportIssue[] } = await res.json();
     return {
@@ -795,32 +803,44 @@ export default function DipendentiPage() {
       />
 
       {missingAsk && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] p-4" onClick={() => answerMissing('annulla')}>
-          <div role="dialog" aria-modal="true" className="bg-white rounded-card shadow-float w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] p-4" onClick={() => answerMissing(null)}>
+          <div role="dialog" aria-modal="true" className="bg-white rounded-card shadow-float w-full max-w-4xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="px-5 py-4 border-b border-line">
-              <h2 className="text-base font-medium">{missingAsk.length} persone non sono in anagrafica</h2>
-              <p className="text-sm text-muted mt-1">Se una riga ha una scheda simile, potrebbe essere la stessa persona: scegli «Solo chi esiste» e correggi prima il nome nella scheda.</p>
+              <h2 className="text-base font-medium">{missingAsk.length} persone del CSV non trovate in anagrafica</h2>
+              <p className="text-sm text-muted mt-1">Per ognuna scegli: collegarla a una scheda simile già presente, crearne una nuova o non importare i suoi contratti.</p>
             </div>
             <div className="overflow-auto">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-stone-50 text-left text-xs font-medium text-muted uppercase tracking-wide">
-                  <tr><th className="px-5 py-2">Nel CSV</th><th className="px-3 py-2">Scheda simile già presente</th><th className="px-3 py-2 text-right">Contratti</th></tr>
+                  <tr><th className="px-5 py-2">Nel CSV</th><th className="px-3 py-2 text-right">Contratti</th><th className="px-3 py-2">Cosa fare</th></tr>
                 </thead>
                 <tbody>
                   {missingAsk.map(m => (
-                    <tr key={m.name} className="border-t border-line align-top">
+                    <tr key={m.key} className="border-t border-line align-top">
                       <td className="px-5 py-1.5 font-medium">{m.name}</td>
-                      <td className="px-3 py-1.5">{m.similar.length ? m.similar.map(n => <div key={n}>{n}</div>) : <span className="text-muted">—</span>}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{m.contracts}</td>
+                      <td className="px-3 py-1.5">
+                        <select
+                          className="input text-sm w-full"
+                          value={String(missingChoice[m.key] ?? 'new')}
+                          onChange={e => {
+                            const v = e.target.value;
+                            setMissingChoice(c => ({ ...c, [m.key]: v === 'new' || v === 'skip' ? v : Number(v) }));
+                          }}
+                        >
+                          {m.suggestions.map(x => <option key={x.id} value={x.id}>Collega a: {x.label}</option>)}
+                          <option value="new">Crea nuova scheda interinale</option>
+                          <option value="skip">Non importare</option>
+                        </select>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             <div className="flex justify-end gap-2 px-5 py-3 border-t border-line">
-              <button type="button" onClick={() => answerMissing('annulla')} className="btn-secondary text-sm">Annulla import</button>
-              <button type="button" onClick={() => answerMissing('esistenti')} className="btn-secondary text-sm">Solo chi esiste</button>
-              <button type="button" onClick={() => answerMissing('crea')} className="btn-primary text-sm">Crea e importa</button>
+              <button type="button" onClick={() => answerMissing(null)} className="btn-secondary text-sm">Annulla import</button>
+              <button type="button" onClick={() => answerMissing(missingChoice)} className="btn-primary text-sm">Conferma e importa</button>
             </div>
           </div>
         </div>
