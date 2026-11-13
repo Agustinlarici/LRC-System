@@ -101,13 +101,13 @@ function mergeOstiName(current: string | null | undefined, name: string): string
   return merged.length <= 200 ? merged : name;
 }
 
-// Tipo contratto dalla ditta di Osti: STR → Indeterminato/Determinato (dip_indeterminato), GMG → Esterno,
-// qualsiasi altra ditta → Interinali. Senza ditta (es. CSV) non si propone nulla.
+// Tipo contratto dalla ditta di Osti: STR → INDETERMINATO/DETERMINATO (dip_indeterminato), GMG → ESTERNO,
+// qualsiasi altra ditta → INTERINALE. Senza ditta (es. CSV) non si propone nulla.
 function tipoContratto(r: Row): string | null {
   const ditta = norm(clean(r.ditta));
   if (!ditta) return null;
-  if (ditta.startsWith('str')) return r.dip_indeterminato === '1' ? 'Indeterminato' : r.dip_indeterminato === '0' ? 'Determinato' : null;
-  return ditta.startsWith('gmg') ? 'Esterno' : 'Interinali';
+  if (ditta.startsWith('str')) return r.dip_indeterminato === '1' ? 'INDETERMINATO' : r.dip_indeterminato === '0' ? 'DETERMINATO' : null;
+  return ditta.startsWith('gmg') ? 'ESTERNO' : 'INTERINALE';
 }
 
 // Valori che Osti propone per una persona, già puliti. Valore assente = null (non tocca nulla).
