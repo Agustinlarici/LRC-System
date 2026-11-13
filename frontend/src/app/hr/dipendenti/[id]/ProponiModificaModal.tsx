@@ -18,6 +18,7 @@ const TEXT_FIELDS: { key: keyof HrEmployee & string; label: string }[] = [
   { key: 'taglia_pantaloni', label: 'Taglia pantaloni' },
   { key: 'taglia_maglia', label: 'Taglia maglia' },
   { key: 'taglia_scarpe', label: 'Taglia scarpe' },
+  { key: 'taglia_campera', label: 'Taglia campera' },
   { key: 'note', label: 'Note' },
 ];
 
