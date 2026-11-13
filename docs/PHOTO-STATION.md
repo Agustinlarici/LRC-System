@@ -60,7 +60,7 @@ usuario) — **no implementado a propósito** hasta conocer la llamada. El resto
 ## Fase PC IA (pendiente)
 
 Con `captured`, la VM enviará las fotos a Vision AI (`POST /api/groups/...` ya existe en Vision AI para analizar un
-grupo de fotos de un paraguas) y guardará el resultado; hoy Vision AI no tiene una API "máquina a máquina" con
+grupo de fotos de un mismo paragolpes) y guardará el resultado; hoy Vision AI no tiene una API "máquina a máquina" con
 token ni devuelve resultado por pedido: eso hay que definirlo cuando haya PC para probar.
 
 ## Operación
