@@ -206,7 +206,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
                 >+</button>
               </div>
             </div>
-            <div><label className="label">Reparto</label>
+            <div><label className="label">Reparto<OstiMark /></label>
               <div className="flex gap-1.5">
                 <select className="input" value={form.reparto_id} onChange={e => set('reparto_id', e.target.value)}>
                   <option value="">—</option>
@@ -215,7 +215,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
                 <button type="button" onClick={() => addCatalogEntry('departments', 'reparto', setDepartments, 'reparto_id')} title="Nuovo reparto" className="btn-secondary text-sm px-3 shrink-0">+</button>
               </div>
             </div>
-            <div className="col-span-full"><label className="label">Plant / Sede (anche più di una)</label>
+            <div className="col-span-full"><label className="label">Plant / Sede (anche più di una)<OstiMark /></label>
               <PlantMultiSelect plants={plants} value={plantIds} onChange={setPlantIds} onAdd={() => addCatalogEntry('plants', 'plant', setPlants, 'plant_id')} />
             </div>
             <div><label className="label">Mansione<OstiMark /></label><input className="input" value={form.mansione} onChange={e => set('mansione', e.target.value)} /></div>
@@ -225,7 +225,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
             </label>
             <div><label className="label">Livello<OstiMark /></label><input className="input" value={form.livello} onChange={e => set('livello', e.target.value)} /></div>
             <div><label className="label">Categoria</label><input className="input" value={form.categoria} onChange={e => set('categoria', e.target.value)} placeholder="es. DIRETTO, APL…" /></div>
-            <div><label className="label">Società contratto</label>
+            <div><label className="label">Società contratto<OstiMark /></label>
               <div className="flex gap-1.5">
                 <select className="input" value={form.contract_company_id} onChange={e => set('contract_company_id', e.target.value)}>
                   <option value="">—</option>
@@ -234,7 +234,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
                 <button type="button" onClick={() => addCatalogEntry('contract-companies', 'società contratto', setCompanies, 'contract_company_id')} title="Nuova società" className="btn-secondary text-sm px-3 shrink-0">+</button>
               </div>
             </div>
-            <div><label className="label">Tipo contratto</label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
+            <div><label className="label">Tipo contratto<OstiMark /></label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
             <div><label className="label">Data assunzione *<OstiMark /></label><input type="date" className="input" value={form.data_assunzione} onChange={e => set('data_assunzione', e.target.value)} /></div>
             <div><label className="label">Etichetta</label>
               <select className="input" value={form.tag_id} onChange={e => set('tag_id', e.target.value)}>
