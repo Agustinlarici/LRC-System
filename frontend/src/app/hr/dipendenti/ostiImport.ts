@@ -15,7 +15,7 @@ const FIELD_LABEL: Record<string, string> = {
   nome_osti: 'Nome Osti', matricola: 'Matricola', data_assunzione: 'Data assunzione', data_cessazione: 'Data cessazione',
   mansione: 'Mansione', livello: 'Livello', stato: 'Stato', nazionalita: 'Nazionalità', tipo_nazionalita: 'Extra UE / Italia', indirizzo: 'Indirizzo', citta: 'Città',
   provincia: 'Provincia', cap: 'CAP', data_nascita: 'Data di nascita', sesso: 'Sesso', codice_fiscale: 'Codice fiscale',
-  telefono: 'Telefono', note: 'Note', email: 'Email', reparto_id: 'Reparto', plant_ids: 'Plant', contract_company_id: 'Società contratto', gruppo_orario: 'Gruppo orario',
+  telefono: 'Telefono', note: 'Note', email: 'Email', reparto_id: 'Reparto', plant_ids: 'Plant', contract_company_id: 'Società contratto', tipo_contratto: 'Tipo contratto', gruppo_orario: 'Gruppo orario',
   badge: 'Badge', transponder: 'Transponder', terminale: 'Terminale', qualifica: 'Qualifica',
   indeterminato: 'Tempo indeterminato', indeterminato_data: 'Data indeterminato', part_time: 'Part-time',
   luogo_nascita: 'Luogo di nascita', domicilio_indirizzo: 'Domicilio', domicilio_citta: 'Città domicilio',
@@ -101,6 +101,15 @@ function mergeOstiName(current: string | null | undefined, name: string): string
   return merged.length <= 200 ? merged : name;
 }
 
+// Tipo contratto dalla ditta di Osti: STR → INDETERMINATO/DETERMINATO (dip_indeterminato), GMG → ESTERNO,
+// qualsiasi altra ditta → INTERINALE. Senza ditta (es. CSV) non si propone nulla.
+function tipoContratto(r: Row): string | null {
+  const ditta = norm(clean(r.ditta));
+  if (!ditta) return null;
+  if (ditta.startsWith('str')) return r.dip_indeterminato === '1' ? 'INDETERMINATO' : r.dip_indeterminato === '0' ? 'DETERMINATO' : null;
+  return ditta.startsWith('gmg') ? 'ESTERNO' : 'INTERINALE';
+}
+
 // Valori che Osti propone per una persona, già puliti. Valore assente = null (non tocca nulla).
 function wantOf(r: Row, ctx: Ctx): Record<string, string | number | boolean | number[] | null> {
   const email = clean(r.dip_email);
@@ -130,6 +139,7 @@ function wantOf(r: Row, ctx: Ctx): Record<string, string | number | boolean | nu
     reparto_id: ctx.deptByName.get(norm(repartoOf(r))) ?? null,
     plant_ids: plantId != null ? [plantId] : null,
     contract_company_id: ctx.companyByName.get(norm(clean(r.ditta))) ?? null,
+    tipo_contratto: tipoContratto(r),
     gruppo_orario: clean(r.gruppo_orario) || null,
     badge: positive(r.dip_badge),
     transponder: positive(r.dip_transponder),

@@ -265,14 +265,14 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
               <p className="text-sm font-semibold text-ink-800 mb-2">Contratto</p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div><label className="label">Matricola<OstiMark /></label><input className="input" value={form.matricola} onChange={e => set('matricola', e.target.value)} placeholder="Vuota per contrattisti/agenzia" /></div>
-                <div><label className="label">Società contratto</label>
+                <div><label className="label">Società contratto<OstiMark /></label>
                   <select className="input" value={form.contract_company_id} onChange={e => set('contract_company_id', e.target.value)}>
                     <option value="">—</option>
                     {companies.map(co => <option key={co.id} value={co.id}>{co.name}</option>)}
                   </select>
                 </div>
                 <div><label className="label">Categoria</label><input className="input" value={form.categoria} onChange={e => set('categoria', e.target.value)} /></div>
-                <div><label className="label">Tipo contratto</label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
+                <div><label className="label">Tipo contratto<OstiMark /></label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
                 <div><label className="label">Data cessazione / fine contratto<OstiMark /></label>
                   <input type="date" className="input" value={form.data_cessazione} onChange={e => set('data_cessazione', e.target.value)} />
                   <p className="text-[11px] text-muted mt-1">Con stato Cessato, se vuota verrà usata la data di oggi. Una data futura con stato Attivo indica la scadenza del contratto.</p>
@@ -304,13 +304,13 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
                     >+</button>
                   </div>
                 </div>
-                <div><label className="label">Reparto</label>
+                <div><label className="label">Reparto<OstiMark /></label>
                   <select className="input" value={form.reparto_id} onChange={e => set('reparto_id', e.target.value)}>
                     <option value="">—</option>
                     {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </div>
-                <div className="col-span-full"><label className="label">Plant / Sede (anche più di una)</label>
+                <div className="col-span-full"><label className="label">Plant / Sede (anche più di una)<OstiMark /></label>
                   <PlantMultiSelect plants={plants} value={plantIds} onChange={setPlantIds} />
                 </div>
                 <div><label className="label">Mansione<OstiMark /></label><input className="input" value={form.mansione} onChange={e => set('mansione', e.target.value)} /></div>
