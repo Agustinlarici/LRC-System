@@ -278,7 +278,7 @@ export default function EmployeeDetailPage() {
             <Field label="Taglia pantaloni" value={employee.taglia_pantaloni} />
             <Field label="Taglia maglia" value={employee.taglia_maglia} />
             <Field label="Taglia scarpe" value={employee.taglia_scarpe} />
-            <Field label="Taglia campera" value={employee.taglia_campera} />
+            <Field label="Taglia giubbotto" value={employee.taglia_campera} />
           </InfoCard>
 
           <InfoCard title="Domicilio">

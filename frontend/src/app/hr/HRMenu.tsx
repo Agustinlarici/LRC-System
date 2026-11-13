@@ -9,7 +9,7 @@ const options: { href: string; title: string; desc: string; soloHr?: boolean }[]
   { href: '/hr/richieste',   title: 'Richieste',             desc: 'Ferie, assenze e modifiche scheda proposte dai capi, da approvare da HR' },
   { href: '/hr/scadenze',     title: 'Scadenze',              desc: 'Contratti in scadenza e regole di avviso' },
   { href: '/hr/documenti',     title: 'Documenti',             desc: 'Modelli di lettera (cambio mansione, retribuzione…) e documenti di consultazione', soloHr: true },
-  { href: '/hr/vestiario',    title: 'Vestiario',             desc: 'Taglie di pantaloni, maglia, scarpe e campera da ordinare', soloHr: true },
+  { href: '/hr/vestiario',    title: 'Vestiario',             desc: 'Taglie di pantaloni, maglia, scarpe e giubbotto da ordinare', soloHr: true },
   { href: '/hr/organigramma', title: 'Organigramma',          desc: 'Struttura organizzativa, responsabili e team' },
   { href: '/hr/analisi',      title: 'Analisi HR',            desc: 'Organico, età, anzianità e distribuzioni', soloHr: true },
   { href: '/hr/evoluzione',   title: 'Evoluzione Aziendale',  desc: 'Come è cambiata l\'azienda nel tempo', soloHr: true },

@@ -15,12 +15,12 @@ const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
-type Cat = 'pantaloni' | 'maglia' | 'scarpe' | 'campera';
+type Cat = 'pantaloni' | 'maglia' | 'scarpe' | 'giubbotto';
 const CATS: { key: Cat; label: string; field: 'taglia_pantaloni' | 'taglia_maglia' | 'taglia_scarpe' | 'taglia_campera' }[] = [
   { key: 'pantaloni', label: 'Pantaloni', field: 'taglia_pantaloni' },
   { key: 'maglia',    label: 'Maglia',    field: 'taglia_maglia' },
   { key: 'scarpe',    label: 'Scarpe',    field: 'taglia_scarpe' },
-  { key: 'campera',   label: 'Campera',   field: 'taglia_campera' },
+  { key: 'giubbotto',   label: 'Giubbotto',   field: 'taglia_campera' },
 ];
 
 const TABS = ['riepilogo', 'elenco'] as const;
@@ -144,7 +144,7 @@ export default function VestiarioPage() {
     // Foglio 2: elenco persone
     const persone = elenco.map(e => ({
       Cognome: e.cognome, Nome: e.nome, Matricola: e.matricola ?? '', Funzione: e.funzione_aziendale ?? '', Responsabile: respOf(e) === SENZA_RESP ? '' : respOf(e),
-      Pantaloni: e.taglia_pantaloni ?? '', Maglia: e.taglia_maglia ?? '', Scarpe: e.taglia_scarpe ?? '', Campera: e.taglia_campera ?? '',
+      Pantaloni: e.taglia_pantaloni ?? '', Maglia: e.taglia_maglia ?? '', Scarpe: e.taglia_scarpe ?? '', Giubbotto: e.taglia_campera ?? '',
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(persone), 'Elenco');
     XLSX.writeFile(wb, `vestiario-${new Date().toISOString().slice(0, 10)}.xlsx`);

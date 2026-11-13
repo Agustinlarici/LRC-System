@@ -182,7 +182,7 @@ export const MODULES: ModuleConfig[] = [
   },
   {
     href: '/hr/vestiario', label: 'Vestiario', group: 'HR',
-    description: 'Taglie di pantaloni, maglia, scarpe e campera da ordinare',
+    description: 'Taglie di pantaloni, maglia, scarpe e giubbotto da ordinare',
     sidebar: 'IconClipboard', hidden: false, moduleKey: 'hr',
   },
   {
