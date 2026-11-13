@@ -39,9 +39,16 @@ export function ContractsCard({ employeeId }: { employeeId: number }) {
 
   return (
     <div className="card">
-      <div className="mb-3">
-        <p className="text-sm font-medium text-muted">Contratti</p>
-        <p className="text-xs text-muted mt-0.5">{items.length} contratti · {total} giorni in totale</p>
+      <p className="text-sm font-medium text-muted mb-2">Contratti</p>
+      <div className="flex gap-8 mb-4">
+        <div>
+          <p className="text-3xl font-semibold tabular-nums leading-none">{items.length}</p>
+          <p className="text-xs text-muted mt-1">{items.length === 1 ? 'contratto' : 'contratti'}</p>
+        </div>
+        <div>
+          <p className="text-3xl font-semibold tabular-nums leading-none">{total}</p>
+          <p className="text-xs text-muted mt-1">giorni in totale</p>
+        </div>
       </div>
       <table className="w-full text-sm">
         <thead>
