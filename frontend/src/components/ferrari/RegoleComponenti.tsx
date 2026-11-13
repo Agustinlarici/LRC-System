@@ -156,32 +156,8 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
       <Errore messaggio={errore} />
 
       {bozza === null ? <p className="py-10 text-center text-sm text-muted">Caricamento…</p> : (
-        <div className="max-w-4xl space-y-4">
-          <form className="d-print-none flex flex-wrap items-center gap-2" onSubmit={ev => { ev.preventDefault(); void provaOra(); }}>
-            <input className="input !w-60 !py-1.5" placeholder="Prova con una commessa…" value={commessa} onChange={ev => setCommessa(ev.target.value)} aria-label="Commessa da provare" />
-            <button className="btn-secondary" type="submit" disabled={!commessa.trim() || bozza.length === 0}>Prova</button>
-          </form>
-
-          {prova && (
-            <div className="rounded-card border border-line bg-white p-4 text-sm">
-              <div className="mb-2 flex items-baseline justify-between gap-2">
-                <b>Commessa {prova.commessa}</b>
-                <button className="text-xs text-muted hover:text-ink-900" onClick={() => setProva(null)}>Chiudi</button>
-              </div>
-              {Object.keys(prova.celle).length === 0 ? <p className="text-muted">Nessuna regola ha aggiunto niente.</p> : (
-                <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-[auto_1fr]">
-                  {Object.entries(prova.celle).map(([comp, voci]) => (
-                    <div key={comp} className="contents"><dt className="font-semibold">{comp}</dt><dd><ValoriComp voci={voci} /></dd></div>
-                  ))}
-                </dl>
-              )}
-              <details className="mt-3 text-xs text-muted">
-                <summary className="cursor-pointer">Sigle trovate nella scheda ({prova.sigle.length})</summary>
-                <p className="mt-1 flex flex-wrap gap-1">{prova.sigle.map(s => <span key={s} className="rounded-ctl bg-stone-100 px-1.5 py-0.5 font-mono text-ink-700">{s}</span>)}</p>
-              </details>
-            </div>
-          )}
-
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="min-w-0">
           {bozza.length === 0 ? (
             <div className="rounded-card border border-line bg-white">
               <EmptyState title="Nessuna regola" hint="Esempio: se la scheda ha AS06, aggiungi AS06 a Paraurti."
@@ -282,6 +258,33 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
               })}
             </ol>
           )}
+          </div>
+
+          <aside className="d-print-none order-first h-fit lg:sticky lg:top-4 lg:order-none">
+            <form className="flex gap-2" onSubmit={ev => { ev.preventDefault(); void provaOra(); }}>
+              <input className="input !py-1.5" placeholder="Prova con una commessa…" value={commessa} onChange={ev => setCommessa(ev.target.value)} aria-label="Commessa da provare" />
+              <button className="btn-secondary" type="submit" disabled={!commessa.trim() || bozza.length === 0}>Prova</button>
+            </form>
+            {prova && (
+              <div className="mt-3 rounded-card border border-line bg-white p-4 text-sm">
+                <div className="mb-2 flex items-baseline justify-between gap-2">
+                  <b>Commessa {prova.commessa}</b>
+                  <button className="text-xs text-muted hover:text-ink-900" onClick={() => setProva(null)}>Chiudi</button>
+                </div>
+                {Object.keys(prova.celle).length === 0 ? <p className="text-muted">Nessuna regola ha aggiunto niente.</p> : (
+                  <dl className="space-y-1.5">
+                    {Object.entries(prova.celle).map(([comp, voci]) => (
+                      <div key={comp}><dt className="font-semibold">{comp}</dt><dd><ValoriComp voci={voci} /></dd></div>
+                    ))}
+                  </dl>
+                )}
+                <details className="mt-3 text-xs text-muted">
+                  <summary className="cursor-pointer">Sigle trovate nella scheda ({prova.sigle.length})</summary>
+                  <p className="mt-1 flex flex-wrap gap-1">{prova.sigle.map(x => <span key={x} className="rounded-ctl bg-stone-100 px-1.5 py-0.5 font-mono text-ink-700">{x}</span>)}</p>
+                </details>
+              </div>
+            )}
+          </aside>
         </div>
       )}
     </div>
