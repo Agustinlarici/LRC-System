@@ -720,6 +720,22 @@ hrRoutes.delete('/employees/:id/photo', requireManage('hr'), async (c) => {
   return c.json({ ok: true });
 });
 
+// Elimina la scheda (con contratti, eventi e storico retributivo collegati). Solo HR.
+hrRoutes.delete('/employees/:id', requireManage('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const user = c.get('user');
+  const [existing] = await db`SELECT id, nome, cognome FROM hr_employee WHERE id = ${id}`;
+  if (!existing) throw new HTTPException(404, { message: 'Dipendente non trovato' });
+  try {
+    await db`DELETE FROM hr_employee WHERE id = ${id}`;
+  } catch {
+    throw new HTTPException(409, { message: 'La scheda è collegata ad altri dati (es. è responsabile di qualcuno) e non si può eliminare' });
+  }
+  await auditLog({ userId: user.id, username: user.username, action: 'hr.employee.delete', entity: 'hr_employee', entityId: id, details: { nome: existing.nome, cognome: existing.cognome } });
+  return c.json({ ok: true });
+});
+
 // Nomi e cognomi sempre con l'iniziale maiuscola e il resto minuscolo ("DE LUCA" → "De Luca", "D'ANGELO" → "D'Angelo")
 const titleCase = (s: string) => s.trim().toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
 

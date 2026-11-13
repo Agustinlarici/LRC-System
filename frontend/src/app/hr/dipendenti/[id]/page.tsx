@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { StatusBadge, type Tone } from '@/components/ui/StatusBadge';
 import { useAuth } from '@/lib/auth';
+import { useConfirmDialog } from '@/components/ui/PromptDialog';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
 import { EditEmployeeModal } from './EditEmployeeModal';
 import { ProponiModificaModal } from './ProponiModificaModal';
@@ -61,7 +62,23 @@ export default function EmployeeDetailPage() {
   const id = Number(params.id);
   const { canManage, canView } = useAuth();
   const manage = canManage('hr');
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
+  const [deleteError, setDeleteError] = useState('');
   const salaryView = canView('hr_salary') || canManage('hr_salary');
+
+  async function deleteEmployee() {
+    if (!employee) return;
+    setDeleteError('');
+    const ok = await confirm({
+      title: `Eliminare ${employee.cognome} ${employee.nome}?`,
+      message: 'Si eliminano la scheda e tutti i dati collegati (contratti, eventi, storico). Non si può annullare.',
+      confirmLabel: 'Elimina', cancelLabel: 'Annulla',
+    });
+    if (!ok) return;
+    const res = await fetch(`${BACKEND}/api/hr/employees/${employee.id}`, { method: 'DELETE', credentials: 'include' });
+    if (res.ok) { router.push('/hr/dipendenti'); return; }
+    setDeleteError((await res.json().catch(() => ({}))).message ?? 'Eliminazione non riuscita');
+  }
 
   const [employee, setEmployee] = useState<HrEmployee | null>(null);
   const [departments, setDepartments] = useState<HrDepartment[]>([]);
@@ -156,6 +173,8 @@ export default function EmployeeDetailPage() {
           Questo capo non ha un account collegato: non può vedere il suo team né fare richieste. L'account si collega dal menu IT (Sistema → Utenti → campo "Persona").
         </p>
       )}
+      {deleteError && <p className="mb-4 rounded-ctl bg-danger-soft px-3 py-2 text-sm text-danger">{deleteError}</p>}
+      {confirmDialog}
       <PageHeader
         back={{ label: 'Dipendenti', href: '/hr/dipendenti' }}
         title={`${employee.cognome} ${employee.nome}`}
@@ -173,7 +192,10 @@ export default function EmployeeDetailPage() {
           {employee.l68 && <StatusBadge tone="neutral">Legge 68</StatusBadge>}
         </>}
         actions={manage
-          ? <button onClick={() => setShowEdit(true)} className="btn-primary text-sm">Modifica</button>
+          ? <>
+              <button onClick={deleteEmployee} className="btn-danger text-sm">Elimina</button>
+              <button onClick={() => setShowEdit(true)} className="btn-primary text-sm">Modifica</button>
+            </>
           : <button onClick={() => { setProposeSent(false); setShowPropose(true); }} className="btn-primary text-sm">Proponi modifica</button>}
       />
 
