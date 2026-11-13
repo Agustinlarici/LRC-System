@@ -884,6 +884,9 @@ type SystemAlert = {
   is_active:        boolean;
 };
 
+const ALERTS_COLLAPSED = 4;
+const SEVERITY_ORDER: Record<SystemAlert['severity'], number> = { critical: 0, warning: 1, info: 2 };
+
 function fmt(iso: string | null): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleString('it-IT', { timeZone: 'Europe/Rome', hour12: false });
@@ -960,6 +963,7 @@ function AggiornamentiTab() {
   const [toast,     setToast]     = useState('');
   const [acting,    setActing]    = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [showAllAlerts, setShowAllAlerts] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -1009,6 +1013,13 @@ function AggiornamentiTab() {
   }
 
   const activeAlerts = alerts.filter(a => a.is_active);
+  const sortedActive = [...activeAlerts].sort((a, b) => {
+    const disk = Number(b.alert_key.startsWith('monitor_disk')) - Number(a.alert_key.startsWith('monitor_disk'));
+    if (disk) return disk;
+    const sev = SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity];
+    return sev || new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+  const visibleAlerts = showAllAlerts ? sortedActive : sortedActive.slice(0, ALERTS_COLLAPSED);
   const historyAlerts = alerts.filter(a => !a.is_active);
 
   return (
@@ -1038,19 +1049,29 @@ function AggiornamentiTab() {
         <div className="text-gray-400 text-sm">Caricamento...</div>
       ) : (
         <>
-          {/* Active alerts banner */}
+          {/* Avvisi attivi: i più gravi in alto, il disco sempre visibile; il resto si espande */}
           {activeAlerts.length > 0 && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-red-600 font-semibold text-sm">{activeAlerts.length} alert attivi</span>
+            <div className="rounded-card border border-danger/20 bg-danger-soft p-4">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <span className="text-danger font-semibold text-sm">
+                  {activeAlerts.length} {activeAlerts.length === 1 ? 'alert attivo' : 'alert attivi'}
+                </span>
+                {sortedActive.length > ALERTS_COLLAPSED && (
+                  <button
+                    onClick={() => setShowAllAlerts(v => !v)}
+                    className="text-xs font-medium text-danger underline underline-offset-2"
+                  >
+                    {showAllAlerts ? 'Mostra meno' : `Mostra tutti (${sortedActive.length})`}
+                  </button>
+                )}
               </div>
               <div className="space-y-1">
-                {activeAlerts.map(a => (
+                {visibleAlerts.map(a => (
                   <div key={a.id} className="flex items-start gap-2 text-sm">
                     <span className={severityBadge(a.severity)}>{a.severity}</span>
-                    <span className="font-medium text-red-700">{a.title}</span>
-                    {a.message && <span className="text-red-600">— {a.message}</span>}
-                    <span className="ml-auto text-red-400 text-xs shrink-0">{ago(a.created_at)}</span>
+                    <span className="font-medium text-danger">{a.title}</span>
+                    {a.message && <span className="text-danger/80">— {a.message}</span>}
+                    <span className="ml-auto text-danger/60 text-xs shrink-0">{ago(a.created_at)}</span>
                   </div>
                 ))}
               </div>

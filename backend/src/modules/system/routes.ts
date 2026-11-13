@@ -195,9 +195,9 @@ systemRoutes.get('/alerts', requireAuth, async (c) => {
         LIMIT 100
       `;
 
-  // Arricchisci con flag in-memory per gli alert attivi
-  const activeKeys = new Set(getActiveAlerts().map(a => a.key));
-  return c.json(rows.map(r => ({ ...r, is_active: activeKeys.has(r.alert_key as string) })));
+  // "Attivo" = ancora aperto nel DB. Gli avvisi di scripts/monitor (disco, backup, container)
+  // sono scritti direttamente nel DB e non stanno nella memoria del backend.
+  return c.json(rows.map(r => ({ ...r, is_active: r.resolved_at === null })));
 });
 
 // GET /api/system/alerts/active — alert attivi in-memory (istantaneo, no DB)
