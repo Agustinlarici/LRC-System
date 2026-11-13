@@ -331,7 +331,7 @@ export default function DipendentiPage() {
       Funzione: e.funzione_aziendale ?? '', Reparto: e.reparto_name ?? '', Plant: e.plant_name ?? '',
       Mansione: e.mansione ?? '', Livello: e.livello ?? '', Responsabile: e.capo_nome ?? '',
       'Tipo contratto': e.tipo_contratto ?? '', 'Gruppo orario': e.gruppo_orario ?? '', 'Nome Osti': e.nome_osti ?? '',
-      'Taglia pantaloni': e.taglia_pantaloni ?? '', 'Taglia maglia': e.taglia_maglia ?? '', 'Taglia scarpe': e.taglia_scarpe ?? '', 'Taglia campera': e.taglia_campera ?? '', Assunzione: e.data_assunzione?.slice(0, 10) ?? '',
+      'Taglia pantaloni': e.taglia_pantaloni ?? '', 'Taglia maglia': e.taglia_maglia ?? '', 'Taglia scarpe': e.taglia_scarpe ?? '', 'Taglia giubbotto': e.taglia_campera ?? '', Assunzione: e.data_assunzione?.slice(0, 10) ?? '',
       Cessazione: e.data_cessazione?.slice(0, 10) ?? '', 'In prova': e.in_prova ? 'Sì' : '',
       Stato: STATO_LABEL[e.stato] ?? e.stato,
     }));

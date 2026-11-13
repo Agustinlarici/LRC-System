@@ -66,7 +66,7 @@ const TIPO_LABEL: Record<Tipo, string> = { ferie: 'Ferie', permesso: 'Permesso',
 const CAMPO_LABEL: Record<string, string> = {
   mansione: 'Mansione', qualifica: 'Qualifica', reparto_id: 'Reparto', gruppo_orario: 'Gruppo orario',
   telefono: 'Telefono', email: 'Email', indirizzo: 'Indirizzo', citta: 'Città', provincia: 'Provincia', cap: 'CAP',
-  taglia_pantaloni: 'Taglia pantaloni', taglia_maglia: 'Taglia maglia', taglia_scarpe: 'Taglia scarpe', taglia_campera: 'Taglia campera', note: 'Note',
+  taglia_pantaloni: 'Taglia pantaloni', taglia_maglia: 'Taglia maglia', taglia_scarpe: 'Taglia scarpe', taglia_campera: 'Taglia giubbotto', note: 'Note',
 };
 
 function fmtDate(d: string): string {
