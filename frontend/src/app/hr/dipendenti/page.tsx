@@ -384,6 +384,28 @@ Crearle come interinali o importare solo i contratti di chi esiste già?`,
     };
   }
 
+  // Elimina le schede create dall'import contratti (riconosciute dalla nota), dopo conferma con il numero
+  async function deleteCreatedByImport() {
+    const post = (dry_run: boolean) => fetch(`${BACKEND}/api/hr/contracts/delete-created`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ dry_run }),
+    });
+    const dry = await post(true);
+    if (!dry.ok) { alert("Impossibile leggere le schede create dall'import"); return; }
+    const { count, names } = await dry.json() as { count: number; names: string[] };
+    if (count === 0) { alert("Nessuna scheda creata dall'import contratti da eliminare."); return; }
+    const ok = await confirm({
+      title: `Eliminare ${count} schede?`,
+      message: `${names.slice(0, 15).join(', ')}${count > 15 ? ` … e altre ${count - 15}` : ''}.
+
+Si eliminano anche i loro contratti ed eventi. Non si può annullare.`,
+      confirmLabel: 'Elimina', cancelLabel: 'Annulla',
+    });
+    if (!ok) return;
+    const res = await post(false);
+    if (!res.ok) { alert((await res.json().catch(() => ({}))).message ?? 'Eliminazione non riuscita'); return; }
+    load();
+  }
+
   async function importRows(rows: Record<string, string>[], variant?: string): Promise<ImportResult> {
     if (variant === 'osti' || variant === 'osti-db') {
       const [empRes, depRes] = await Promise.all([
@@ -760,6 +782,12 @@ Crearle come interinali o importare solo i contratti di chi esiste già?`,
                       onClick={() => { setShowMore(false); contractsRef.current?.open(); }}
                       className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
                       Import massivo contratti interinali
+                    </button>
+                    <button type="button" role="menuitem"
+                      title="Elimina le schede create dall'import contratti (con i loro contratti ed eventi)"
+                      onClick={() => { setShowMore(false); deleteCreatedByImport(); }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-stone-50 text-danger">
+                      Elimina schede create dall&apos;import contratti
                     </button>
                     <button type="button" role="menuitem"
                       title="Elenco dipendenti di Osti (CSV): abbina per cognome e nome (o Nome Osti) e aggiorna le schede"

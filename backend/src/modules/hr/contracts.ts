@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { db } from '../../db/client.js';
 import { requireManage, type Env } from '../../lib/auth.js';
@@ -14,6 +15,8 @@ export const hrContractRoutes = new Hono<Env>();
 
 const titleCase = (s: string) => s.trim().toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+// Nota che marca le schede create dall'import: serve a ritrovarle (e a eliminarle) in seguito
+const IMPORT_NOTE = "Creato dall'import massivo contratti interinali";
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 const importSchema = z.object({
@@ -154,7 +157,7 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
             data_assunzione: inizio,
             data_cessazione: ongoing ? null : ultimaFine,
             stato: ongoing ? 'attivo' : 'cessato',
-            note: "Creato dall'import massivo contratti interinali",
+            note: IMPORT_NOTE,
           })}
           RETURNING id`;
         employeeId = emp.id; created++;
@@ -196,4 +199,23 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
 
   await auditLog({ userId: user.id, username: user.username, action: 'hr.contracts.import', entity: 'hr_employee_contract', details: result });
   return c.json({ ...result, skipped, issues, new_people: newPeople });
+});
+
+// Elimina le schede create dall'import contratti (riconosciute dalla nota, ancora intatta).
+// Contratti ed eventi collegati vanno via con la scheda. dry_run: solo l'elenco, nessuna modifica.
+const deleteSchema = z.object({ dry_run: z.boolean().default(false) });
+
+hrContractRoutes.post('/delete-created', requireManage('hr'), async (c) => {
+  const { dry_run } = await parseBody(c, deleteSchema);
+  const user = c.get('user');
+  const people = await db<{ id: number; cognome: string; nome: string }[]>`
+    SELECT id, cognome, nome FROM hr_employee WHERE note = ${IMPORT_NOTE} ORDER BY cognome, nome`;
+  if (dry_run) return c.json({ count: people.length, names: people.map(p => `${p.cognome} ${p.nome}`) });
+  try {
+    await db`DELETE FROM hr_employee WHERE note = ${IMPORT_NOTE}`;
+  } catch {
+    throw new HTTPException(409, { message: 'Alcune schede sono collegate ad altri dati (es. responsabile, richieste) e non si possono eliminare in blocco' });
+  }
+  await auditLog({ userId: user.id, username: user.username, action: 'hr.contracts.delete-created', entity: 'hr_employee', details: { count: people.length } });
+  return c.json({ deleted: people.length });
 });
