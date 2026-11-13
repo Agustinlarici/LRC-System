@@ -230,7 +230,11 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
       method: 'POST', body: JSON.stringify(payload),
       headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
     });
-  const setToken = () => user('/iknow-token', { method: 'PUT', body: JSON.stringify({ token: IK_TOKEN }) });
+  const setToken = async () => {
+    const r = await user('/iknow-token', { method: 'PUT', body: JSON.stringify({ token: IK_TOKEN }) });
+    await user('/feed', { method: 'PUT', body: JSON.stringify({ mode: 'api', esiti_ok: [] }) });   // origine = API
+    return r;
+  };
 
   it('iKnow: senza token configurato 503; token errato o assente 401', async () => {
     expect((await iknow(body())).status).toBe(503);
@@ -306,7 +310,7 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
             ${(over.commessa as string | null) === null ? null : ((over.commessa as string) ?? '000111')}, ${(over.versione as string) ?? 'DX'},
             ${(over.esito as string) ?? 'ACCETTATA'}, ${(over.at as Date) ?? new Date()}, CURRENT_DATE)`;
   const feedOn = async (esiti = ['ACCETTATA']) => {
-    const r = await user('/feed', { method: 'PUT', body: JSON.stringify({ enabled: true, esiti_ok: esiti }) });
+    const r = await user('/feed', { method: 'PUT', body: JSON.stringify({ mode: 'db', esiti_ok: esiti }) });
     await db`UPDATE photo_feed_config SET enabled_since = now() - interval '1 hour'`;
     return r;
   };
@@ -316,8 +320,8 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
   it('copia iKnow: spenta di default, e per accenderla serve dire quali esiti valgono "accettata"', async () => {
     await hist();
     expect(await feedRun()).toBe(0);
-    expect((await user('/feed', { method: 'PUT', body: JSON.stringify({ enabled: true, esiti_ok: [] }) })).status).toBe(400);
-    expect((await user('/feed', { method: 'PUT', body: JSON.stringify({ enabled: true, esiti_ok: ['X'] }) }, guest)).status).toBe(403);
+    expect((await user('/feed', { method: 'PUT', body: JSON.stringify({ mode: 'db', esiti_ok: [] }) })).status).toBe(400);
+    expect((await user('/feed', { method: 'PUT', body: JSON.stringify({ mode: 'db', esiti_ok: ['X'] }) }, guest)).status).toBe(403);
     expect(await count()).toBe(0);
   });
 
@@ -351,11 +355,12 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
   });
 
   it('copia iKnow → API: lo stesso evento arrivato dopo dall\'API non fa un secondo ordine', async () => {
-    await feedOn();
     await setToken();
+    await feedOn();                                                  // origine = copia DB
     const at = new Date(Math.floor(Date.now() / 1000) * 1000 - 60_000);
     await hist({ seriale: 'TST7', at });
     expect(await feedRun()).toBe(1);
+    await user('/feed', { method: 'PUT', body: JSON.stringify({ mode: 'api', esiti_ok: [] }) });   // il giorno del passaggio all'API
     const r = await iknow(body({ seriale: 'TST7', commessa: '000111', data_ora: at.toISOString() }));
     expect((await r.json() as any).result).toBe('duplicate');
     expect(await count()).toBe(1);
@@ -369,5 +374,34 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
     try { expect(await feedRun()).toBe(0); } finally { await sf.setIKnowFlags({ iknow_enabled: true }); }
     expect(await count()).toBe(0);
     expect(await feedRun()).toBe(1);
+  });
+
+  // ─── Interruttore origine: off / db / api ────────────────────────────────────────
+  it('origine: per passare ad API serve il token; con origine db o off la chiamata API è ignorata (200, nessun ordine)', async () => {
+    expect((await user('/feed', { method: 'PUT', body: JSON.stringify({ mode: 'api', esiti_ok: [] }) })).status).toBe(400);   // senza token
+    await user('/iknow-token', { method: 'PUT', body: JSON.stringify({ token: IK_TOKEN }) });
+    const r = await iknow(body());                                   // origine ancora 'off'
+    expect(r.status).toBe(200);
+    expect((await r.json() as any).result).toBe('ignored');
+    await feedOn();                                                  // origine 'db'
+    expect((await (await iknow(body())).json() as any).result).toBe('ignored');
+    expect(await count()).toBe(0);
+    const st = await (await user('/feed')).json() as any;
+    expect(st.mode).toBe('db');
+    expect(st.ignored_api_calls.count).toBeGreaterThanOrEqual(2);
+  });
+
+  it('origine: con api o off la copia del DB non crea nulla; passando a db non fotografa il passato', async () => {
+    await setToken();                                                // origine 'api'
+    await db`UPDATE photo_feed_config SET esiti_ok = '{ACCETTATA}'`;
+    await hist({ seriale: 'TST9' });
+    expect(await feedRun()).toBe(0);
+    await user('/feed', { method: 'PUT', body: JSON.stringify({ mode: 'off', esiti_ok: ['ACCETTATA'] }) });
+    expect(await feedRun()).toBe(0);
+    await user('/feed', { method: 'PUT', body: JSON.stringify({ mode: 'db', esiti_ok: ['ACCETTATA'] }) });   // enabled_since = ora
+    expect(await feedRun()).toBe(0);                                 // TST9 è precedente: storico
+    await user('/feed', { method: 'PUT', body: JSON.stringify({ mode: 'api', esiti_ok: [] }) });
+    expect((await (await iknow(body())).json() as any).result).toBe('created');
+    expect(await count()).toBe(1);
   });
 });

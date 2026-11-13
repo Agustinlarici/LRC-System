@@ -18,7 +18,8 @@ type Job = {
 type FileRow = { id: number; camera: string; bytes: number };
 type Phase = { key: string; label: string; iknow_fase: string | null; active: boolean };
 type Iknow = { configured: boolean; updated_at: string | null; last_call_at: string | null };
-type Feed = { enabled: boolean; esiti_ok: string[]; enabled_since: string | null; esiti_visti: string[]; last_run: { at: string | null; created: number; error: string | null } };
+type Mode = 'off' | 'db' | 'api';
+type Feed = { mode: Mode; ignored_api_calls: { count: number; last_at: string | null }; esiti_ok: string[]; enabled_since: string | null; esiti_visti: string[]; last_run: { at: string | null; created: number; error: string | null } };
 type Station = { id: number; name: string; phases: string[]; last_seen_at: string | null; revoked_at: string | null; online: boolean };
 
 const STATUS: Record<string, { label: string; tone: Tone }> = {
@@ -186,11 +187,37 @@ export default function PhotoStationPage() {
       </div>
 
       <h2 className="mb-3 text-lg font-semibold text-ink-900">Collegamento iKnow</h2>
+      <div className="card mb-4 p-5">
+        <span className="label">Da dove arrivano gli ordini di iKnow (una sola origine alla volta)</span>
+        <div className="mt-1 flex flex-wrap gap-2" role="radiogroup" aria-label="Origine degli ordini">
+          {([['off', 'Spento'], ['db', 'Database (copia)'], ['api', 'Chiamata API']] as [Mode, string][]).map(([m, label]) => {
+            const needsEsiti = m === 'db' && (esitiOk ?? feed?.esiti_ok ?? []).length === 0;
+            const needsToken = m === 'api' && !iknow?.configured;
+            return (
+              <button key={m} type="button" role="radio" aria-checked={feed?.mode === m}
+                      disabled={!manage || busy || !feed || needsEsiti || needsToken}
+                      title={needsEsiti ? 'Scegli prima gli esiti che valgono come accettata' : needsToken ? 'Salva prima il token di iKnow' : undefined}
+                      onClick={() => feed?.mode !== m && act(async () => { await api.put('/api/photo-station/feed', { mode: m, esiti_ok: esitiOk ?? feed?.esiti_ok ?? [] }); setEsitiOk(null); }, m === 'off' ? 'Origine spenta' : `Origine: ${label}`)}
+                      className={`rounded-ctl px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${feed?.mode === m ? 'bg-ink-900 text-white' : 'bg-stone-100 text-ink-800 hover:bg-stone-200'}`}>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-2 text-xs text-muted">
+          Gli ordini manuali da questa pagina funzionano sempre. Con «Database» si usa la copia locale (provvisorio); con «Chiamata API» solo la chiamata di iKnow, e la copia si ferma.
+        </p>
+        {feed && feed.mode !== 'api' && feed.ignored_api_calls.count > 0 && (
+          <p className="mt-2 text-sm text-warning">
+            iKnow ha chiamato {feed.ignored_api_calls.count} volte ({fmt(feed.ignored_api_calls.last_at)}) ma l&apos;origine non è «Chiamata API»: ignorate.
+          </p>
+        )}
+      </div>
       <div className="mb-6 grid gap-4 md:grid-cols-2">
         <div className="card p-5">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="font-medium text-ink-900">Chiamata API</h3>
-            <StatusBadge tone={iknow?.configured ? 'success' : 'warning'}>{iknow?.configured ? 'Token impostato' : 'Token mancante'}</StatusBadge>
+            <StatusBadge tone={feed?.mode === 'api' ? 'success' : iknow?.configured ? 'neutral' : 'warning'}>{feed?.mode === 'api' ? 'Origine attiva' : iknow?.configured ? 'Token impostato · non in uso' : 'Token mancante'}</StatusBadge>
           </div>
           <p className="text-sm text-muted">iKnow chiama <code className="break-all">POST {typeof window !== 'undefined' ? window.location.origin : ''}/api/delibere/accettate</code> con <code>Authorization: Bearer &lt;token&gt;</code>.</p>
           <p className="mt-1 text-xs text-muted">Ultima chiamata: {fmt(iknow?.last_call_at ?? null)}</p>
@@ -207,7 +234,7 @@ export default function PhotoStationPage() {
         <div className="card p-5">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="font-medium text-ink-900">Copia del database di iKnow</h3>
-            <StatusBadge tone={feed?.enabled ? 'success' : 'neutral'}>{feed?.enabled ? 'Attiva' : 'Spenta'}</StatusBadge>
+            <StatusBadge tone={feed?.mode === 'db' ? 'success' : 'neutral'}>{feed?.mode === 'db' ? 'Origine attiva' : 'Non in uso'}</StatusBadge>
           </div>
           <p className="text-sm text-muted">Provvisorio: legge la copia locale e crea un ordine per ogni delibera accettata delle fasi qui sotto. Non guarda mai prima del momento in cui la accendi.</p>
           <div className="mt-3">
@@ -229,13 +256,9 @@ export default function PhotoStationPage() {
             {feed?.enabled_since ? `Attiva da ${fmt(feed.enabled_since)}. ` : ''}
             {feed?.last_run?.at ? `Ultimo controllo ${fmt(feed.last_run.at)}${feed.last_run.error ? ` — errore: ${feed.last_run.error}` : ''}.` : ''}
           </p>
-          {manage && feed && (
-            <div className="mt-3 flex gap-2">
-              <Button variant={feed.enabled ? 'secondary' : 'primary'} disabled={busy || (!feed.enabled && (esitiOk ?? feed.esiti_ok).length === 0)}
-                      onClick={() => act(() => api.put('/api/photo-station/feed', { enabled: !feed.enabled, esiti_ok: esitiOk ?? feed.esiti_ok }), feed.enabled ? 'Copia spenta' : 'Copia attivata')}>
-                {feed.enabled ? 'Spegni' : 'Accendi'}
-              </Button>
-              {feed.enabled && esitiOk && <Button disabled={busy} onClick={() => act(async () => { await api.put('/api/photo-station/feed', { enabled: true, esiti_ok: esitiOk }); setEsitiOk(null); }, 'Esiti salvati')}>Salva esiti</Button>}
+          {manage && feed?.mode === 'db' && esitiOk && (
+            <div className="mt-3">
+              <Button disabled={busy} onClick={() => act(async () => { await api.put('/api/photo-station/feed', { mode: 'db', esiti_ok: esitiOk }); setEsitiOk(null); }, 'Esiti salvati')}>Salva esiti</Button>
             </div>
           )}
         </div>

@@ -13,6 +13,7 @@ import { requireModule, requireManage, type Env } from '../../lib/auth.js';
 import { requireStation, type StationEnv } from './station-auth.js';
 import { activePhaseRules, matchPhase } from './events.js';
 import { lastRun } from './feed.js';
+import { ignoredApiCalls } from './iknow.js';
 import {
   CAMERA_RE, MAX_ATTEMPTS, MAX_PHOTO_BYTES, STALE_CLAIM_MINUTES,
   isJpeg, newStationToken, normalizeCommessa, sha256Hex,
@@ -81,7 +82,7 @@ photoStationRoutes.put('/iknow-token', requireManage('photo_station'), async (c)
 
 // ─── Alimentatore dalla copia del DB di iKnow (provvisorio, finché non c'è l'API) ───────
 photoStationRoutes.get('/feed', requireModule('photo_station'), async (c) => {
-  const [cfg] = await db`SELECT enabled, esiti_ok, enabled_since, updated_by FROM photo_feed_config WHERE id = 1`;
+  const [cfg] = await db`SELECT mode, esiti_ok, enabled_since, updated_by FROM photo_feed_config WHERE id = 1`;
   // Esiti realmente presenti nelle fasi del catalogo (ultimi 7 giorni), per sceglierli senza indovinare
   const rules = await activePhaseRules();
   const names = (await db`
@@ -90,25 +91,32 @@ photoStationRoutes.get('/feed', requireModule('photo_station'), async (c) => {
   `).filter(r => matchPhase(rules, r.fase as string) !== null);
   const esiti_visti = [...new Set(names.map(r => r.esito_delibera as string))].sort();
   return c.json({
-    enabled: cfg?.enabled ?? false, esiti_ok: cfg?.esiti_ok ?? [], enabled_since: cfg?.enabled_since ?? null,
-    esiti_visti, last_run: lastRun,
+    mode: cfg?.mode ?? 'off', esiti_ok: cfg?.esiti_ok ?? [], enabled_since: cfg?.enabled_since ?? null,
+    esiti_visti, last_run: lastRun, ignored_api_calls: ignoredApiCalls,
   });
 });
 
 photoStationRoutes.put('/feed', requireManage('photo_station'), async (c) => {
   const user = c.get('user');
-  const { enabled, esiti_ok } = await parseBody(c, z.object({ enabled: z.boolean(), esiti_ok: z.array(z.string().trim().min(1).max(200)).max(20) }));
-  if (enabled && esiti_ok.length === 0) throw new HTTPException(400, { message: "Indica almeno un esito che vale come 'accettata'" });
-  // enabled_since si fissa quando si accende: lo storico precedente non viene mai fotografato
+  const { mode, esiti_ok } = await parseBody(c, z.object({
+    mode: z.enum(['off', 'db', 'api']), esiti_ok: z.array(z.string().trim().min(1).max(200)).max(20),
+  }));
+  if (mode === 'db' && esiti_ok.length === 0) throw new HTTPException(400, { message: "Indica almeno un esito che vale come 'accettata'" });
+  if (mode === 'api') {
+    const [tok] = await db`SELECT 1 FROM photo_iknow_config WHERE id = 1`;
+    if (!tok) throw new HTTPException(400, { message: 'Carica prima il token di iKnow' });
+  }
+  // enabled_since si fissa quando si passa a 'db': lo storico precedente non viene mai fotografato
   await db`
-    INSERT INTO photo_feed_config (id, enabled, esiti_ok, enabled_since, updated_by)
-    VALUES (1, ${enabled}, ${esiti_ok}, ${enabled ? new Date() : null}, ${user.display_name})
+    INSERT INTO photo_feed_config (id, mode, enabled, esiti_ok, enabled_since, updated_by)
+    VALUES (1, ${mode}, ${mode === 'db'}, ${esiti_ok}, ${mode === 'db' ? new Date() : null}, ${user.display_name})
     ON CONFLICT (id) DO UPDATE SET
-      enabled_since = CASE WHEN EXCLUDED.enabled AND NOT photo_feed_config.enabled THEN now()
-                           WHEN EXCLUDED.enabled THEN photo_feed_config.enabled_since ELSE NULL END,
-      enabled = EXCLUDED.enabled, esiti_ok = EXCLUDED.esiti_ok, updated_at = now(), updated_by = EXCLUDED.updated_by
+      enabled_since = CASE WHEN EXCLUDED.mode = 'db' AND photo_feed_config.mode <> 'db' THEN now()
+                           WHEN EXCLUDED.mode = 'db' THEN photo_feed_config.enabled_since ELSE NULL END,
+      mode = EXCLUDED.mode, enabled = (EXCLUDED.mode = 'db'), esiti_ok = EXCLUDED.esiti_ok,
+      updated_at = now(), updated_by = EXCLUDED.updated_by
   `;
-  await auditLog({ userId: user.id, username: user.username, action: 'photo_feed_set', entity: 'photo_feed', details: { enabled, esiti_ok } });
+  await auditLog({ userId: user.id, username: user.username, action: 'photo_feed_set', entity: 'photo_feed', details: { mode, esiti_ok } });
   return c.json({ ok: true });
 });
 

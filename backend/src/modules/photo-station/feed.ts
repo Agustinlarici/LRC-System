@@ -12,8 +12,8 @@ export const FEED_BATCH = 500;
 export const lastRun: { at: Date | null; created: number; error: string | null } = { at: null, created: 0, error: null };
 
 export async function runPhotoFeed(): Promise<number> {
-  const [cfg] = await db`SELECT enabled, esiti_ok, enabled_since FROM photo_feed_config WHERE id = 1`;
-  if (!cfg?.enabled || !cfg.enabled_since || !(cfg.esiti_ok as string[]).length) return 0;
+  const [cfg] = await db`SELECT mode, esiti_ok, enabled_since FROM photo_feed_config WHERE id = 1`;
+  if (cfg?.mode !== 'db' || !cfg.enabled_since || !(cfg.esiti_ok as string[]).length) return 0;
   // Interruttore generale di iKnow: spento (es. ambiente di sviluppo) → nessun ordine, nessuna camera.
   if (!(await isIKnowEnabled('iknow_andon_enabled'))) return 0;
 

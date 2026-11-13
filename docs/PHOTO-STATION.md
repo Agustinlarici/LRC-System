@@ -34,6 +34,12 @@ Las fases se crean en la página (código = el que manda iKnow) y no se aceptan 
 
 ## Cómo entran los pedidos desde iKnow
 
+**Selector de origen** (página Photo Station → Collegamento iKnow): *Spento / Database (copia) / Chiamata API*,
+una sola a la vez. Por defecto **Spento**. Con «API», la copia deja de leer; con «Database» o «Spento» la llamada de
+iKnow se responde 200 pero **se ignora** (no se crea nada; la página cuenta las llamadas ignoradas para que no pasen
+inadvertidas). Los pedidos manuales de la página funcionan siempre. Para pasar a «API» hace falta haber cargado el token;
+para «Database», haber elegido los esiti.
+
 Dos vías, **la misma función** (`events.ts`), así que pasar de una a otra no cambia nada ni duplica pedidos
 (clave de idempotencia = seriale + commessa + fase + componente + data_ora al segundo; no incluye la versione ni el origen):
 

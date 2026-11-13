@@ -15,6 +15,9 @@ import { activePhaseRules, matchPhase, registerEvent } from './events.js';
 
 export const iknowRoutes = new Hono();
 
+/** Chiamate valide ricevute mentre l'origine non è 'api' (in memoria): la pagina le mostra, così non passano inosservate. */
+export const ignoredApiCalls: { count: number; last_at: Date | null } = { count: 0, last_at: null };
+
 const Body = z.object({
   seriale:    z.string().trim().min(1).max(64),
   commessa:   z.string().min(1).max(64),
@@ -39,6 +42,15 @@ iknowRoutes.post('/accettate', async (c) => {
   if (!token || given.length !== wanted.length || !timingSafeEqual(given, wanted)) {
     logger.warn({ ip: c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip') }, 'iknow: token non valido');
     throw new HTTPException(401, { message: 'Token non valido' });
+  }
+
+  // Solo con l'origine «API» gli ordini nascono da qui. Altrimenti si risponde 200 (iKnow non deve
+  // riprovare per sempre) ma non si crea nulla, e la chiamata si conta.
+  const [mode] = await db`SELECT mode FROM photo_feed_config WHERE id = 1`;
+  if (mode?.mode !== 'api') {
+    ignoredApiCalls.count++; ignoredApiCalls.last_at = new Date();
+    logger.warn({ mode: mode?.mode ?? 'off' }, 'iknow: chiamata ricevuta ma l\'origine non è «API»: ignorata');
+    return c.json({ ok: true, result: 'ignored' });
   }
 
   const b = await parseBody(c, Body);
