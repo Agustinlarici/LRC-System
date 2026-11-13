@@ -59,6 +59,9 @@ const IMPORT_COLUMNS = [
   'DATA NASCITA', 'EMAIL', 'INDIRIZZO', 'CITTA', 'PROVINCIA', 'CAP', 'GRUPPO ORARIO',
 ];
 
+// CSV del gestionale paghe: una riga = un contratto interinale
+const CONTRACT_COLUMNS = ['MATRICOLA', 'COGNOME', 'NOME', 'QUALIFICA', 'DATA ASSUNZIONE', 'DATA LICENZIAMENTO'];
+
 // Valori riconosciuti come "sì" nella colonna IN PROVA (case-insensitive)
 const IN_PROVA_TRUE = new Set(['si', 'sì', 'x', '1', 'true', 'yes']);
 
@@ -133,6 +136,7 @@ export default function DipendentiPage() {
   const [tagMenuFor,    setTagMenuFor]    = useState<number | null>(null);
   const [showMore,      setShowMore]      = useState(false);
   const importRef = useRef<ImportExcelHandle>(null);
+  const contractsRef = useRef<ImportExcelHandle>(null);
   const [tagMenuPos,    setTagMenuPos]    = useState<{ top: number; left: number } | null>(null);
   const [showMatricole, setShowMatricole] = useState(false);
   const [matricoleBands, setMatricoleBands] = useState<{ label: string; from: number; to: number; last: number | null; next: number | null; count: number }[] | null>(null);
@@ -344,6 +348,25 @@ export default function DipendentiPage() {
     const res = await fetch(`${BACKEND}/api/hr/osti/dipendenti`, { credentials: 'include' });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? 'Impossibile leggere i dati da Osti');
     return res.json();
+  }
+
+  // Contratti interinali: il backend collega le righe alle persone (o le crea), salva i contratti
+  // e scrive gli eventi in timeline. Le date si convertono qui (gg/mm/aaaa → aaaa-mm-gg).
+  async function importContracts(rows: Record<string, string>[]): Promise<ImportResult> {
+    const payload = rows.map(r => ({
+      matricola: r['matricola'] ?? '', cognome: r['cognome'] ?? '', nome: r['nome'] ?? '', qualifica: r['descriz._qualifica'] ?? r['qualifica'] ?? '',
+      data_inizio: parseItalianDate(r['data_assunzione']), data_fine: parseItalianDate(r['data_licenziamento']),
+    }));
+    const res = await fetch(`${BACKEND}/api/hr/contracts/import`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ rows: payload }),
+    });
+    if (!res.ok) return { inserted: 0, skipped: 0, errors: 1, detail: (await res.json().catch(() => ({}))).message ?? 'Import rifiutato dal server' };
+    const d: { created: number; linked: number; contracts: number; duplicates: number; skipped: number; issues: ImportIssue[] } = await res.json();
+    return {
+      inserted: d.contracts, skipped: d.skipped + d.duplicates, errors: 0, issues: d.issues,
+      detail: `${d.contracts} contratti registrati · ${d.linked} persone già in anagrafica · ${d.created} persone nuove create · ${d.duplicates} contratti già presenti`,
+    };
   }
 
   async function importRows(rows: Record<string, string>[], variant?: string): Promise<ImportResult> {
@@ -718,6 +741,12 @@ export default function DipendentiPage() {
                       Importa da Excel (senza eventi)
                     </button>
                     <button type="button" role="menuitem"
+                      title={`CSV del gestionale paghe, una riga per contratto. Colonne attese: ${CONTRACT_COLUMNS.join(', ')}`}
+                      onClick={() => { setShowMore(false); contractsRef.current?.open(); }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
+                      Import massivo contratti interinali
+                    </button>
+                    <button type="button" role="menuitem"
                       title="Elenco dipendenti di Osti (CSV): abbina per cognome e nome (o Nome Osti) e aggiorna le schede"
                       onClick={() => { setShowMore(false); importRef.current?.open('osti'); }}
                       className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
@@ -747,6 +776,7 @@ export default function DipendentiPage() {
         </>}
       />
 
+      {manage && <ImportExcelButton ref={contractsRef} hideButton columns={CONTRACT_COLUMNS} processRows={importContracts} onDone={load} />}
       {manage && <ImportExcelButton ref={importRef} hideButton columns={IMPORT_COLUMNS} processRows={importRows} onDone={load} sources={{ 'osti-db': fetchOstiRows }} />}
 
       <div className="card p-0 overflow-hidden">

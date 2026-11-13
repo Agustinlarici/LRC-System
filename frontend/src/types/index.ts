@@ -793,6 +793,15 @@ export interface HrEmployee {
   updated_at:               string;
 }
 
+export interface HrEmployeeContract {
+  id:          number;
+  employee_id: number;
+  matricola:   string | null;
+  qualifica:   string | null;
+  data_inizio: string;
+  data_fine:   string | null;
+}
+
 export interface HrEmployeeEvent {
   id:                 number;
   employee_id:        number;
