@@ -357,10 +357,25 @@ export default function DipendentiPage() {
       matricola: r['matricola'] ?? '', cognome: r['cognome'] ?? '', nome: r['nome'] ?? '', qualifica: r['descriz._qualifica'] ?? r['qualifica'] ?? '',
       data_inizio: parseItalianDate(r['data_assunzione']), data_fine: parseItalianDate(r['data_licenziamento']),
     }));
-    const res = await fetch(`${BACKEND}/api/hr/contracts/import`, {
+    const call = (extra: { dry_run?: boolean; create_missing?: boolean }) => fetch(`${BACKEND}/api/hr/contracts/import`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ rows: payload }),
+      body: JSON.stringify({ rows: payload, ...extra }),
     });
+    // Prova a vuoto: se ci sono persone non in anagrafica si chiede prima di crearle
+    const dry = await call({ dry_run: true, create_missing: true });
+    if (!dry.ok) return { inserted: 0, skipped: 0, errors: 1, detail: (await dry.json().catch(() => ({}))).message ?? 'Import rifiutato dal server' };
+    const missing: string[] = (await dry.json()).new_people ?? [];
+    let createMissing = false;
+    if (missing.length) {
+      createMissing = await confirm({
+        title: `${missing.length} persone non sono in anagrafica`,
+        message: `${missing.slice(0, 15).join(', ')}${missing.length > 15 ? ` … e altre ${missing.length - 15}` : ''}.
+
+Crearle come interinali o importare solo i contratti di chi esiste già?`,
+        confirmLabel: 'Crea e importa', cancelLabel: 'Solo chi esiste',
+      });
+    }
+    const res = await call({ create_missing: createMissing });
     if (!res.ok) return { inserted: 0, skipped: 0, errors: 1, detail: (await res.json().catch(() => ({}))).message ?? 'Import rifiutato dal server' };
     const d: { created: number; linked: number; contracts: number; duplicates: number; skipped: number; issues: ImportIssue[] } = await res.json();
     return {
