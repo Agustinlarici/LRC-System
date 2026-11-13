@@ -164,7 +164,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
             <div><label className="label">Taglia pantaloni</label><input className="input" maxLength={20} value={form.taglia_pantaloni} onChange={e => set('taglia_pantaloni', e.target.value)} placeholder="es. 48" /></div>
             <div><label className="label">Taglia maglia</label><input className="input" maxLength={20} value={form.taglia_maglia} onChange={e => set('taglia_maglia', e.target.value)} placeholder="es. L" /></div>
             <div><label className="label">Taglia scarpe</label><input className="input" maxLength={20} value={form.taglia_scarpe} onChange={e => set('taglia_scarpe', e.target.value)} placeholder="es. 42" /></div>
-            <div><label className="label">Taglia campera</label><input className="input" maxLength={20} value={form.taglia_campera} onChange={e => set('taglia_campera', e.target.value)} placeholder="es. L" /></div>
+            <div><label className="label">Taglia giubbotto</label><input className="input" maxLength={20} value={form.taglia_campera} onChange={e => set('taglia_campera', e.target.value)} placeholder="es. L" /></div>
             <p className="col-span-full text-sm font-semibold text-gray-700 -mb-2">Altri dati (Osti)</p>
             <div><label className="label">Badge<OstiMark /></label><input className="input" maxLength={50} value={form.badge} onChange={e => set('badge', e.target.value)} /></div>
             <div><label className="label">Transponder<OstiMark /></label><input className="input" maxLength={50} value={form.transponder} onChange={e => set('transponder', e.target.value)} /></div>

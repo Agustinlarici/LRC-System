@@ -334,7 +334,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
                 <div><label className="label">Taglia pantaloni</label><input className="input" maxLength={20} value={form.taglia_pantaloni} onChange={e => set('taglia_pantaloni', e.target.value)} placeholder="es. 48" /></div>
                 <div><label className="label">Taglia maglia</label><input className="input" maxLength={20} value={form.taglia_maglia} onChange={e => set('taglia_maglia', e.target.value)} placeholder="es. L" /></div>
                 <div><label className="label">Taglia scarpe</label><input className="input" maxLength={20} value={form.taglia_scarpe} onChange={e => set('taglia_scarpe', e.target.value)} placeholder="es. 42" /></div>
-                <div><label className="label">Taglia campera</label><input className="input" maxLength={20} value={form.taglia_campera} onChange={e => set('taglia_campera', e.target.value)} placeholder="es. L" /></div>
+                <div><label className="label">Taglia giubbotto</label><input className="input" maxLength={20} value={form.taglia_campera} onChange={e => set('taglia_campera', e.target.value)} placeholder="es. L" /></div>
               </div>
             </div>
           )}
