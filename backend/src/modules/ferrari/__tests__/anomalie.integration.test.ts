@@ -211,4 +211,19 @@ describe.skipIf(!URL)('Righe toccate, stati delle sigle, modelli', () => {
     await des.salvaDescrizioni(op, [{ codice: 'CEXS', descrizione: 'MIA DESCRIZIONE' }]);      // una descrizione scritta a mano vince sempre, anche dopo un «no»
     expect((await svc.matrice('F999XX')).etichette?.['CEXS']).toBe('MIA DESCRIZIONE');
   });
+
+  it('senza nessuna scheda si possono gia\' caricare le sigle con le descrizioni; le schede le trovano pronte', async () => {
+    const r = await imp.importaElenco(op, 'BIC2\tCARROZZERIA BICOLORE\nCEXS\tRIVEST.SOTTOPORTA IN CARBONIO\nTLM13', 'colonna', '*');
+    expect(r).toMatchObject({ totale: 3, nuove: 3, descrizioni: 2, senza_descrizione: 1 });
+    const c = await imp.configurazioneSigle();
+    expect(c.modelli).toEqual([]);
+    expect(c.sigle.map(x => [x.codice, x.tutti, x.descrizione])).toEqual(expect.arrayContaining([['BIC2', 'colonna', 'CARROZZERIA BICOLORE'], ['TLM13', 'colonna', null]]));
+    await imp.impostaSigla(op, 'TLM13', 'sub', '*');                                 // senza schede la scelta vale per tutti i modelli
+    expect((await imp.configurazioneSigle()).sigle.find(x => x.codice === 'TLM13')!.tutti).toBe('sub');
+    await carica(1, [['BIC2', 'CARROZZERIA BICOLORE', 'NERO DS 1250'], ['CEXS', 'RIVEST.SOTTOPORTA IN CARBONIO', 'SI']]);      // poi arrivano gli Excel
+    const m = await svc.matrice('F999XX');
+    expect(m.termini).toEqual(['BIC2', 'CEXS']);
+    expect(m.etichette).toEqual({ BIC2: 'CARROZZERIA BICOLORE', CEXS: 'RIVEST.SOTTOPORTA IN CARBONIO' });
+    expect(m.nuove).toEqual([]);
+  });
 });
