@@ -48,21 +48,18 @@ export default function PerComponentePage() {
 
       <VistaToggle />
 
-      {t && t.non_coperte.length > 0 && t.regole_attive > 0 && (
-        <div className="d-print-none mb-4 rounded-card border border-accent/40 bg-accent-soft px-4 py-2.5 text-sm text-accent-ink">
-          <b>{t.non_coperte.length}</b> sigle di {t.modello} presenti nelle schede non sono usate da nessuna regola:{' '}
-          {t.non_coperte.slice(0, 8).map(x => `${x.sigla} (${x.schede})`).join(', ')}{t.non_coperte.length > 8 ? '…' : ''}.{' '}
-          <Link href="/ferrari/regole" className="font-semibold underline">Vai alle regole</Link>
-        </div>
-      )}
-
       {t && t.modelli.length > 0 && (
         <div className="d-print-none mb-4 flex flex-wrap items-center gap-2">
           <select className="input !w-auto" value={modello} onChange={e => setModello(e.target.value)}>
             {t.modelli.map(x => <option key={x.modello} value={x.modello}>{x.modello} ({x.schede})</option>)}
           </select>
           <input className="input !w-48" placeholder="Commessa…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
-          <span className="text-sm text-muted">{t.righe.length} commesse · {t.regole_attive} regole attive</span>
+          <span className="text-sm text-muted">{t.righe.length} commesse</span>
+          {puoModificare && t.regole_attive > 0 && t.non_coperte.length > 0 && (
+            <Link href="/ferrari/regole" className="text-xs text-muted hover:text-ink-900" title={t.non_coperte.map(x => `${x.sigla} (${x.schede})`).join(', ')}>
+              {t.non_coperte.length} sigle senza regola
+            </Link>
+          )}
         </div>
       )}
 
@@ -89,7 +86,6 @@ export default function PerComponentePage() {
                 <tr key={r.file_id} className="align-top hover:bg-stone-50">
                   <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-4 py-2 font-semibold">
                     <Link href={`/ferrari/${r.file_id}`} className="text-accent-ink hover:underline print:text-black">{r.commessa}</Link>
-                    {r.versione && <div className="text-xs font-normal text-muted">{r.versione}</div>}
                   </td>
                   {t.componenti.map(c => (
                     <td key={c} className="max-w-[280px] px-4 py-2">
