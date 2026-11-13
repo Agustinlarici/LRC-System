@@ -206,7 +206,7 @@ hrRoutes.post('/requests/:id/cancel', requireModuleAny('hr', 'hr_team'), async (
 const PROPOSABLE_FIELDS = [
   'mansione', 'qualifica', 'reparto_id', 'gruppo_orario',
   'telefono', 'email', 'indirizzo', 'citta', 'provincia', 'cap',
-  'taglia_pantaloni', 'taglia_maglia', 'taglia_scarpe', 'note',
+  'taglia_pantaloni', 'taglia_maglia', 'taglia_scarpe', 'taglia_campera', 'note',
 ] as const;
 
 const changeRequestSchema = z.object({
@@ -602,7 +602,7 @@ const employeeSelect = db`
   SELECT
     e.id, e.matricola, e.nome, e.cognome, e.sesso, e.data_nascita, e.codice_fiscale,
     e.nazionalita, e.email, e.telefono, e.indirizzo, e.citta, e.provincia, e.cap, e.gruppo_orario,
-    e.nome_osti, e.taglia_pantaloni, e.taglia_maglia, e.taglia_scarpe,
+    e.nome_osti, e.taglia_pantaloni, e.taglia_maglia, e.taglia_scarpe, e.taglia_campera,
     e.badge, e.transponder, e.terminale, e.qualifica, e.indeterminato, e.indeterminato_data, e.part_time,
     e.luogo_nascita, e.domicilio_indirizzo, e.domicilio_citta, e.domicilio_provincia, e.domicilio_cap,
     e.titolo_studio, e.stato_civile, e.note_hr, e.tipo_nazionalita,
@@ -758,6 +758,7 @@ const employeeFieldsSchema = z.object({
   taglia_pantaloni:     z.string().max(20).optional().nullable(),
   taglia_maglia:        z.string().max(20).optional().nullable(),
   taglia_scarpe:        z.string().max(20).optional().nullable(),
+  taglia_campera:       z.string().max(20).optional().nullable(),
   badge:                z.string().max(50).optional().nullable(),
   transponder:          z.string().max(50).optional().nullable(),
   terminale:            z.string().max(50).optional().nullable(),
