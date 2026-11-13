@@ -17,6 +17,8 @@ import { creaModello, modelloErroreDi, togliModello } from './modelli.js';
 import { iaRoutes } from './ia/routes.js';
 import { accodaDopoCarico, rianalizzaDuplicato } from './ia/aggancio.js';
 import { aggiungiRegoleSuggerite, confrontoSop, elencoImport, importaSop, leggiRegole, RegolaSchema, salvaRegole, segnaViste } from './sop.js';
+import { leggiRegoleComp, provaRegoleComp, salvaRegoleComp, tabellaComponenti } from './regole-comp.js';
+import { MAX_REGOLE, RegolaCompSchema } from './regole-comp-base.js';
 import { aggiungiCategorieEsempio, eliminaCategoria, elencoCategorie, riordinaCategorie, salvaCategoria } from './categorie.js';
 import { leggiCartella, leggiConfig, salvaConfig, statoLettura, ultimeLetture } from './cartella.js';
 import { logger } from '../../lib/logger.js';
@@ -240,6 +242,22 @@ ferrariRoutes.get('/sop/regole', requireModule(VISTA), async (c) => c.json({ reg
 ferrariRoutes.put('/sop/regole', requireManage(VISTA), async (c) => {
   const b = await parseBody(c, z.object({ regole: z.array(RegolaSchema).max(60) }));
   return c.json({ salvate: await salvaRegole(utente(c), b.regole) });
+});
+
+// Regole dei componenti (stile Outlook)
+ferrariRoutes.get('/regole-componenti', requireModule(VISTA), async (c) => c.json({ regole: await leggiRegoleComp() }));
+
+ferrariRoutes.put('/regole-componenti', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ regole: z.array(RegolaCompSchema).max(MAX_REGOLE) }));
+  return c.json({ regole: await salvaRegoleComp(utente(c), b.regole) });
+});
+
+ferrariRoutes.get('/regole-componenti/tabella', requireModule(VISTA), async (c) =>
+  c.json(await tabellaComponenti(c.req.query('modello')?.slice(0, 30), c.req.query('q')?.slice(0, 40))));
+
+ferrariRoutes.post('/regole-componenti/prova', requireModule(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ commessa: z.string().min(1).max(40), regole: z.array(RegolaCompSchema).max(MAX_REGOLE).optional() }));
+  return c.json(await provaRegoleComp(b.commessa, b.regole));
 });
 
 ferrariRoutes.post('/sop/regole/suggerite', requireManage(VISTA), async (c) => c.json({ aggiunte: await aggiungiRegoleSuggerite(utente(c)) }));
