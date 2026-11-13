@@ -25,13 +25,18 @@ const importSchema = z.object({
     data_inizio: z.string().optional().nullable(),
     data_fine:   z.string().optional().nullable(),
   })).max(20000),
+  // create_missing: crea chi non è in anagrafica (solo se l'utente l'ha confermato)
+  create_missing: z.boolean().default(false),
+  // dry_run: calcola l'esito e annulla tutto (nessuna scrittura)
+  dry_run: z.boolean().default(false),
 });
 
 interface Issue { type: string; name: string; note: string }
+class DryRun extends Error {}
 interface Person { id: number; cognome: string; nome: string }
 
 hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
-  const { rows } = await parseBody(c, importSchema);
+  const { rows, create_missing, dry_run } = await parseBody(c, importSchema);
   const user = c.get('user');
   const today = new Date().toISOString().slice(0, 10);
   const issues: Issue[] = [];
@@ -65,7 +70,10 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
     return best;
   };
 
-  const result = await db.begin(async (tx) => {
+  const newPeople: string[] = [];
+  let result: { created: number; linked: number; contracts: number; duplicates: number };
+  try {
+  result = await db.begin(async (tx) => {
     const employees = await tx<Person[]>`SELECT id, cognome, nome FROM hr_employee`;
     const byCognome = new Map<string, Person[]>();
     for (const e of employees) byCognome.set(norm(e.cognome), [...(byCognome.get(norm(e.cognome)) ?? []), e]);
@@ -101,6 +109,13 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
       if (found.length === 1) {
         employeeId = found[0].id; linked++;
       } else {
+        if (!create_missing) {
+          skipped += list.length;
+          issues.push({ type: 'Non in anagrafica', name: label, note: `${list.length} contratti non importati (persona non creata)` });
+          continue;
+        }
+        newPeople.push(label);
+        issues.push({ type: 'Creato', name: label, note: `nuova scheda interinale (${list.length} contratti)` });
         // Persona non ancora in anagrafica: si crea come interinale (cessata se tutti i contratti sono finiti)
         const longest = list.reduce((a, b) => (b.nome.length > a.nome.length ? b : a)).nome;
         const inizio = list.map(r => r.inizio).sort()[0];
@@ -145,9 +160,14 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
         }
       }
     }
+    if (dry_run) throw new DryRun();
     return { created, linked, contracts, duplicates };
   });
+  } catch (err) {
+    if (!(err instanceof DryRun)) throw err;
+    return c.json({ dry_run: true, new_people: newPeople, skipped, issues });
+  }
 
   await auditLog({ userId: user.id, username: user.username, action: 'hr.contracts.import', entity: 'hr_employee_contract', details: result });
-  return c.json({ ...result, skipped, issues });
+  return c.json({ ...result, skipped, issues, new_people: newPeople });
 });
