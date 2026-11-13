@@ -15,7 +15,9 @@ progettiRoutes.use('*', requireIT);
 
 type Q = typeof db;
 
-const DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'data non valida (AAAA-MM-GG)');
+// Anni plausibili: un campo data scritto a mano passa per valori intermedi (es. anno 0002)
+const DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'data non valida (AAAA-MM-GG)')
+  .refine(d => { const y = Number(d.slice(0, 4)); return y >= 2000 && y <= 2100; }, 'anno non plausibile');
 const TASK_STATUS = ['da_fare', 'in_corso', 'in_attesa', 'bloccata', 'fatta'] as const;
 const STATUS_LABEL: Record<string, string> = {
   da_fare: 'da fare', in_corso: 'in corso', in_attesa: 'in attesa', bloccata: 'bloccata', fatta: 'fatta',
@@ -135,10 +137,11 @@ async function enrich(q: Q, projects: any[]) {
 }
 
 // La fase deve esistere e appartenere allo stesso progetto dell'attività.
-async function checkPhase(q: Q, phaseId: number, projectId: number | null) {
+async function checkPhase(q: Q, phaseId: number, projectId: number | null): Promise<{ due_date: string | null }> {
   if (!projectId) throw new HTTPException(400, { message: 'La fase richiede un progetto' });
-  const [ph] = await q`SELECT project_id FROM project_phases WHERE id = ${phaseId}`;
+  const [ph] = await q`SELECT project_id, to_char(due_date, 'YYYY-MM-DD') AS due_date FROM project_phases WHERE id = ${phaseId}`;
   if (!ph || ph.project_id !== projectId) throw new HTTPException(400, { message: 'Fase non valida per questo progetto' });
+  return { due_date: ph.due_date };
 }
 
 // ─── Oggi: attività dell'utente (o di tutti con ?scope=tutte) ───────────────
@@ -210,10 +213,12 @@ progettiRoutes.post('/tasks', async (c) => {
   const task = await db.begin(async (tx) => {
     const q = tx as unknown as Q;
     if (body.project_id) await loadProject(q, body.project_id);
-    if (body.phase_id) await checkPhase(q, body.phase_id, body.project_id ?? null);
+    const phase = body.phase_id ? await checkPhase(q, body.phase_id, body.project_id ?? null) : null;
+    // Senza una scadenza esplicita, l'attività eredita quella della fase (così non nasce «vuota»)
+    const due = body.due_date !== undefined ? body.due_date : (phase?.due_date ?? null);
     const [created] = await q`
       INSERT INTO project_tasks (project_id, ticket_id, title, due_date, assigned_to, phase_id, created_by)
-      VALUES (${body.project_id ?? null}, ${body.ticket_id ?? null}, ${body.title}, ${body.due_date ?? null},
+      VALUES (${body.project_id ?? null}, ${body.ticket_id ?? null}, ${body.title}, ${due},
               ${body.assigned_to ?? user.id}, ${body.phase_id ?? null}, ${user.id})
       RETURNING id
     `;
@@ -464,13 +469,27 @@ progettiRoutes.patch('/phases/:phaseId', async (c) => {
     if (!ph) throw new HTTPException(404, { message: 'Fase non trovata' });
     const updates: Record<string, unknown> = { ...body };
     if (Object.keys(updates).length > 0) await q`UPDATE project_phases SET ${q(updates)} WHERE id = ${phaseId}`;
-    if (body.due_date !== undefined && body.due_date !== ph.due_date) {
-      await writeLog(q, ph.project_id, 'sistema', `Fase «${body.name ?? ph.name}»: scadenza ${body.due_date ?? 'rimossa'}`, user);
+
+    // Con una scadenza sulla fase, le attività ancora aperte che non hanno data, ne hanno una
+    // successiva o avevano la vecchia scadenza della fase (la seguono se la fase si sposta) passano
+    // alla nuova scadenza. Quelle già fatte e quelle con una data anteriore restano.
+    let aligned = 0;
+    if (body.due_date) {
+      const moved = await q`
+        UPDATE project_tasks SET due_date = ${body.due_date}::date, updated_at = NOW()
+        WHERE phase_id = ${phaseId} AND status <> 'fatta' AND due_date IS DISTINCT FROM ${body.due_date}::date
+          AND (due_date IS NULL OR due_date > ${body.due_date}::date OR due_date = ${ph.due_date}::date)
+        RETURNING id`;
+      aligned = moved.length;
+    }
+    if (body.due_date !== undefined && (body.due_date !== ph.due_date || aligned > 0)) {
+      const detail = aligned > 0 ? ` · ${aligned} ${aligned === 1 ? 'attività allineata' : 'attività allineate'} alla stessa data` : '';
+      await writeLog(q, ph.project_id, 'sistema', `Fase «${body.name ?? ph.name}»: scadenza ${body.due_date ?? 'rimossa'}${detail}`, user);
     }
     const [out] = await q`
       SELECT id, project_id, name, sort_order, to_char(start_date, 'YYYY-MM-DD') AS start_date, to_char(due_date, 'YYYY-MM-DD') AS due_date
       FROM project_phases WHERE id = ${phaseId}`;
-    return out;
+    return { ...out, tasks_updated: aligned };
   });
   return c.json(row);
 });

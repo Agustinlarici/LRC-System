@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import { useToast } from '@/components/ui/Toast';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import {
-  TASK_LABEL, TASK_TONE, dueLabel, initials, fmtShort,
+  TASK_LABEL, TASK_TONE, dueLabel, initials, fmtShort, isPlausibleDate,
   type PTask, type PhaseRow, type Person, type TaskStatus,
 } from '@/lib/progetti';
 
@@ -157,7 +157,7 @@ export function TaskRow({ task, showProject, phases, people, compact, onChanged 
             )}
             <label className="flex items-center gap-1.5">Scadenza
               <input type="date" className={field} value={task.due_date ?? ''} disabled={busy}
-                onChange={e => patch({ due_date: e.target.value || null })} />
+                onChange={e => { const v = e.target.value; if (!v || isPlausibleDate(v)) patch({ due_date: v || null }); }} />
             </label>
             {phases && phases.length > 0 && task.project_id && (
               <label className="flex items-center gap-1.5">Fase
