@@ -126,15 +126,7 @@ export function cellaTermine(
     }
   }
   for (const o of opzioni) if (rx.test(norm(o.descrizione)) || rx.test(norm(o.nota))) return { testo: SI, completo: null, opzione: o, avviso: null };
-  // una sigla che non c'e': un codice della scheda a un carattere di distanza e MAI deciso e' un probabile errore di scrittura
-  if (t.length >= 4 && /^[A-Z0-9]+$/.test(t) && ctx) {
-    for (const o of opzioni) {
-      const c = o.codice.toUpperCase();
-      if (!ctx.decisi.has(c) && !ctx.alias.has(c) && entroUno(c, t)) {
-        return { testo: cellaOpzione(o, dettagli[o.codice]), completo: testoLibero(o) || null, opzione: o, avviso: `scritta ${c} (suggerito ${t})` };
-      }
-    }
-  }
+  // una sigla simile (AS13 per AS03) NON si assegna da sola: la conferma e' una decisione della persona (alias), poi vale qui sopra
   return { testo: '', completo: null, opzione: null, avviso: null };
 }
 
@@ -248,7 +240,8 @@ export function sottosigleAccettate(
         else if (ctx && !ctx.decisi.has(t) && !propri.has(t)) {
           const vicini = ordinate.filter(s => s.length >= 4 && t.length >= 4 && entroUno(t, s))
             .sort((x, y) => Number(x.length !== t.length) - Number(y.length !== t.length) || (x < y ? -1 : 1));
-          if (vicini.length === 1) trovate.push({ pos: m.index!, codice: vicini[0]!, scritto: t, avviso: `scritta ${t} (suggerito ${vicini[0]})` });
+          // mai assegnata alla sigla simile: resta il codice com'e' scritto, con il suggerimento da confermare
+          if (vicini.length === 1) trovate.push({ pos: m.index!, codice: t, scritto: t, avviso: `scritta ${t} (suggerito ${vicini[0]})` });
           else if (vicini.length > 1) trovate.push({ pos: m.index!, codice: t, scritto: t, avviso: `scritta ${t} (suggeriti ${vicini.join(' o ')})` });
         }
       }
