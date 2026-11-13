@@ -26,7 +26,8 @@ import { activityRoutes } from './modules/activity/routes.js';
 import { progettiRoutes } from './modules/progetti/routes.js';
 import { logger } from './lib/logger.js';
 import { db } from './db/client.js';
-import { getWebthronPool, IKnowDisabledError } from './modules/monitor/mysql-client.js';
+import { getWebthronGuardState } from './modules/monitor/mysql-client.js';
+import { getIKnowFlags } from './lib/system-flags.js';
 
 const app = new Hono();
 
@@ -59,34 +60,17 @@ app.get('/health', async (c) => {
       deps.postgres = 'error';
     }
 
-    // Check WebThron MySQL (non-critical) — ping() no query, no data
-    // try-finally garantisce che la connessione venga sempre rilasciata al pool
-    // Con un tetto di 4 s: se WebThron non risponde, /health deve comunque rispondere (il deploy lo aspetta).
-    let conn: Awaited<ReturnType<ReturnType<typeof getWebthronPool>['getConnection']>> | undefined;
-    let timedOut = false;
-    try {
-      const attempt = (async () => {
-        const c = await getWebthronPool().getConnection();
-        if (timedOut) { c.release(); return; }   // arrivata in ritardo: la si restituisce subito
-        conn = c;
-        await c.ping();
-      })();
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const limit = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => { timedOut = true; reject(new Error('webthron health timeout')); }, 4000);
-      });
-      try { await Promise.race([attempt, limit]); } finally { clearTimeout(timer); }
-      deps.webthron = 'ok';
-    } catch (e) {
-      deps.webthron = e instanceof IKnowDisabledError ? 'disabled' : 'unavailable';
-    } finally {
-      conn?.release();
-    }
+    // WebThron: nessuna connessione né query. /health gira ogni 30 s (Docker) e ogni 15 min (monitor):
+    // su un server già lento non deve aggiungere carico. Si riporta solo lo stato che conosciamo già
+    // (iKnow spento, o interruttore di sicurezza aperto per query lente).
+    deps.webthron = !(await getIKnowFlags()).iknow_enabled
+      ? 'disabled'
+      : getWebthronGuardState().open ? 'unavailable' : 'ok';
 
+    // WebThron è solo informativo: non rende il backend "degraded" (e quindi "unhealthy" per Docker).
     const pgDown = deps.postgres !== 'ok';
-    const degraded = deps.webthron === 'unavailable';
 
-    const status = pgDown ? 'error' : degraded ? 'degraded' : 'ok';
+    const status = pgDown ? 'error' : 'ok';
     const httpStatus = pgDown ? 503 : 200;
 
     return c.json({ status, ts: new Date().toISOString(), deps }, httpStatus);
