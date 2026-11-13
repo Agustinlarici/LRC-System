@@ -54,7 +54,7 @@ export function ContractsCard({ employeeId }: { employeeId: number }) {
         <thead>
           <tr className="text-left text-[11px] text-muted uppercase tracking-wide">
             <th className="font-medium py-1">Inizio</th><th className="font-medium py-1">Fine</th>
-            <th className="font-medium py-1 text-right">Giorni</th><th className="font-medium py-1">Matricola</th><th className="font-medium py-1" />
+            <th className="font-medium py-1 pr-6 text-right">Giorni</th><th className="font-medium py-1 px-6 border-l border-stone-100">Matricola</th><th className="font-medium py-1" />
           </tr>
         </thead>
         <tbody>
@@ -64,8 +64,8 @@ export function ContractsCard({ employeeId }: { employeeId: number }) {
               <tr key={c.id} className="border-t border-stone-100">
                 <td className="py-1.5">{fmtDate(c.data_inizio)}</td>
                 <td className="py-1.5">{c.data_fine ? fmtDate(c.data_fine) : '—'}</td>
-                <td className="py-1.5 text-right tabular-nums">{c.data_fine ? days(c.data_inizio, c.data_fine) : `${days(c.data_inizio, today)}+`}</td>
-                <td className="py-1.5 text-muted">{c.matricola ?? ''}</td>
+                <td className="py-1.5 pr-6 text-right tabular-nums">{c.data_fine ? days(c.data_inizio, c.data_fine) : `${days(c.data_inizio, today)}+`}</td>
+                <td className="py-1.5 px-6 border-l border-stone-100">{c.matricola ?? ''}</td>
                 <td className="py-1.5 text-right">{ongoing && <StatusBadge tone="success">In corso</StatusBadge>}</td>
               </tr>
             );
