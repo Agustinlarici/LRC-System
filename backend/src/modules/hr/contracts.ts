@@ -33,7 +33,7 @@ const importSchema = z.object({
 
 interface Issue { type: string; name: string; note: string }
 class DryRun extends Error {}
-interface Person { id: number; cognome: string; nome: string }
+interface Person { id: number; cognome: string; nome: string; nome_osti: string | null }
 
 hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
   const { rows, create_missing, dry_run } = await parseBody(c, importSchema);
@@ -56,17 +56,24 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
     });
   }
 
-  // Il gestionale tronca i nomi a 8 lettere ("MUHAMMA" per "MUHAMMAD"): dentro lo stesso cognome
-  // un nome che è l'inizio di uno più lungo viene unificato a quello più lungo.
-  const namesByCognome = new Map<string, Set<string>>();
-  for (const r of valid) {
-    const k = norm(r.cognome);
-    namesByCognome.set(k, (namesByCognome.get(k) ?? new Set()).add(norm(r.nome)));
-  }
-  const canonicalName = (cognome: string, nome: string): string => {
-    const n = norm(nome);
-    let best = n;
-    for (const other of namesByCognome.get(norm(cognome)) ?? []) if (other.length > best.length && other.startsWith(n)) best = other;
+  // Il nome completo è cognome + nome concatenati, come nell'import di Osti: nella scheda l'ultima parola
+  // è il nome e il resto il cognome, nel CSV invece cognome e nome sono colonne separate (ABBATE | GIUSEPPE ALESSIO
+  // contro "Abbate Giuseppe" | "Alessio"). Quindi si confronta l'insieme delle parole, senza badare a dove cade il taglio.
+  const tokens = (s: string) => norm(s).split(' ').filter(Boolean);
+  const sortedKey = (s: string) => tokens(s).sort().join(' ');
+  // Il gestionale tronca i nomi ("MUHAMMA" per "MUHAMMAD"): stesse parole tranne l'ultima, una inizio dell'altra
+  const truncOf = (short: string, long: string): boolean => {
+    const a = tokens(short), b = tokens(long);
+    if (a.length !== b.length || a.length === 0) return false;
+    const last = a.length - 1;
+    for (let k = 0; k < last; k++) if (a[k] !== b[k]) return false;
+    return a[last].length >= 3 && a[last].length < b[last].length && b[last].startsWith(a[last]);
+  };
+  const fullNames = new Set(valid.map(r => norm(`${r.cognome} ${r.nome}`)));
+  const canonicalFull = (r: { cognome: string; nome: string }): string => {
+    const own = norm(`${r.cognome} ${r.nome}`);
+    let best = own;
+    for (const other of fullNames) if (truncOf(best, other)) best = other;
     return best;
   };
 
@@ -74,31 +81,48 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
   let result: { created: number; linked: number; contracts: number; duplicates: number };
   try {
   result = await db.begin(async (tx) => {
-    const employees = await tx<Person[]>`SELECT id, cognome, nome FROM hr_employee`;
-    const byCognome = new Map<string, Person[]>();
-    for (const e of employees) byCognome.set(norm(e.cognome), [...(byCognome.get(norm(e.cognome)) ?? []), e]);
+    const employees = await tx<Person[]>`SELECT id, cognome, nome, nome_osti FROM hr_employee`;
+    // Chiavi di ricerca: nome completo della scheda e nomi Osti collegati (separati da |)
+    const byKey = new Map<string, Person[]>();
+    const addKey = (k: string, e: Person) => { const l = byKey.get(k) ?? []; if (!l.includes(e)) l.push(e); byKey.set(k, l); };
+    const indexPerson = (e: Person) => {
+      addKey(sortedKey(`${e.cognome} ${e.nome}`), e);
+      for (const n of (e.nome_osti ?? '').split('|')) if (n.trim()) addKey(sortedKey(n), e);
+    };
+    employees.forEach(indexPerson);
 
-    // Persona della riga: nome uguale, oppure uno dei due è l'inizio dell'altro (nome troncato)
-    const findPerson = (cognome: string, nome: string): Person[] => {
-      const n = canonicalName(cognome, nome);
-      const list = byCognome.get(norm(cognome)) ?? [];
-      const exact = list.filter(e => norm(e.nome) === n);
-      if (exact.length) return exact;
-      return list.filter(e => norm(e.nome).startsWith(n) || n.startsWith(norm(e.nome)));
+    // Persona della riga: stesse parole (in qualsiasi ordine); altrimenti nome troncato da una parte o dall'altra
+    const findPerson = (canon: string): Person[] => {
+      const exact = byKey.get(sortedKey(canon));
+      if (exact?.length) return exact;
+      return employees.filter(e => {
+        const full = norm(`${e.cognome} ${e.nome}`);
+        return truncOf(canon, full) || truncOf(full, canon);
+      });
+    };
+    // Schede con parole in comune (almeno due): si mostrano come "simile a" per evitare doppioni
+    const similarTo = (canon: string): string => {
+      const t = new Set(tokens(canon));
+      return employees
+        .filter(e => tokens(`${e.cognome} ${e.nome}`).filter(w => t.has(w)).length >= 2)
+        .slice(0, 3).map(e => `${e.cognome} ${e.nome}`).join('; ');
     };
 
-    // Raggruppa per persona (stesso cognome + nome unificato)
-    const groups = new Map<string, typeof valid>();
+    // Raggruppa per persona (stesse parole, nomi troncati unificati)
+    const groups = new Map<string, { canon: string; rows: typeof valid }>();
     for (const r of valid) {
-      const k = `${norm(r.cognome)}|${canonicalName(r.cognome, r.nome)}`;
-      groups.set(k, [...(groups.get(k) ?? []), r]);
+      const canon = canonicalFull(r);
+      const k = sortedKey(canon);
+      const g = groups.get(k) ?? { canon, rows: [] };
+      g.rows.push(r);
+      groups.set(k, g);
     }
 
     let created = 0, linked = 0, contracts = 0, duplicates = 0;
-    for (const list of groups.values()) {
+    for (const { canon, rows: list } of groups.values()) {
       const first = list[0];
       const label = `${first.cognome} ${first.nome}`;
-      const found = findPerson(first.cognome, first.nome);
+      const found = findPerson(canon);
       if (found.length > 1) {
         skipped += list.length;
         issues.push({ type: 'Ambiguo', name: label, note: `${found.length} dipendenti con questo nome: ${list.length} contratti non importati` });
@@ -111,11 +135,13 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
       } else {
         if (!create_missing) {
           skipped += list.length;
-          issues.push({ type: 'Non in anagrafica', name: label, note: `${list.length} contratti non importati (persona non creata)` });
+          const sim = similarTo(canon);
+          issues.push({ type: 'Non in anagrafica', name: label, note: `${list.length} contratti non importati (persona non creata)${sim ? ` · simile a: ${sim}` : ''}` });
           continue;
         }
-        newPeople.push(label);
-        issues.push({ type: 'Creato', name: label, note: `nuova scheda interinale (${list.length} contratti)` });
+        const sim = similarTo(canon);
+        newPeople.push(sim ? `${label} (simile a: ${sim})` : label);
+        issues.push({ type: 'Creato', name: label, note: `nuova scheda interinale (${list.length} contratti)${sim ? ` · simile a: ${sim}` : ''}` });
         // Persona non ancora in anagrafica: si crea come interinale (cessata se tutti i contratti sono finiti)
         const longest = list.reduce((a, b) => (b.nome.length > a.nome.length ? b : a)).nome;
         const inizio = list.map(r => r.inizio).sort()[0];
@@ -132,9 +158,9 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
           })}
           RETURNING id`;
         employeeId = emp.id; created++;
-        const list2 = byCognome.get(norm(first.cognome)) ?? [];
-        list2.push({ id: emp.id, cognome: first.cognome, nome: longest });
-        byCognome.set(norm(first.cognome), list2);
+        const nuova: Person = { id: emp.id, cognome: titleCase(first.cognome), nome: titleCase(longest), nome_osti: null };
+        employees.push(nuova);
+        indexPerson(nuova);
       }
 
       for (const r of list) {
