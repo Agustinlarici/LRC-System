@@ -181,6 +181,11 @@ export const MODULES: ModuleConfig[] = [
     sidebar: 'IconClipboard', hidden: false, moduleKey: 'hr',
   },
   {
+    href: '/hr/vestiario', label: 'Vestiario', group: 'HR',
+    description: 'Taglie di pantaloni, maglia e scarpe per reparto, da usare negli ordini',
+    sidebar: 'IconClipboard', hidden: false, moduleKey: 'hr',
+  },
+  {
     href: '/hr/organigramma', label: 'Organigramma', group: 'HR',
     description: 'Struttura organizzativa dinamica, capi e team',
     sidebar: 'IconOrgChart', hidden: false, moduleKey: ['hr', 'hr_team'],
