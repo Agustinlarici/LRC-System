@@ -178,8 +178,8 @@ export default function DipendentiPage() {
   const missingResolver = useRef<((c: Record<string, MissingDecision> | null) => void) | null>(null);
   const askMissing = (list: MissingPerson[]) => new Promise<Record<string, MissingDecision> | null>(resolve => {
     missingResolver.current = resolve;
-    // Preselezione: la scheda suggerita se è una sola e coincide bene, altrimenti crea nuova
-    setMissingChoice(Object.fromEntries(list.map(m => [m.key, m.best ?? 'new' as MissingDecision])));
+    // Preselezione: la scheda suggerita se è una sola e coincide bene, altrimenti non importare (creare è una scelta esplicita)
+    setMissingChoice(Object.fromEntries(list.map(m => [m.key, m.best ?? 'skip' as MissingDecision])));
     setMissingAsk(list);
   });
   const answerMissing = (c: Record<string, MissingDecision> | null) => { setMissingAsk(null); missingResolver.current?.(c); missingResolver.current = null; };
@@ -822,7 +822,7 @@ export default function DipendentiPage() {
                       <td className="px-3 py-1.5">
                         <select
                           className="input text-sm w-full"
-                          value={String(missingChoice[m.key] ?? 'new')}
+                          value={String(missingChoice[m.key] ?? 'skip')}
                           onChange={e => {
                             const v = e.target.value;
                             setMissingChoice(c => ({ ...c, [m.key]: v === 'new' || v === 'skip' ? v : Number(v) }));
