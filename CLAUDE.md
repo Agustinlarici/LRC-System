@@ -19,6 +19,25 @@ L'utente scrive in spagnolo: rispondere in spagnolo, in modo breve e concreto.
 Non eseguire mai comandi contro il server di produzione e non suggerire `git pull` o
 `docker compose up` a mano sul server: solo `./deploy.sh update` / `./deploy.sh rollback`.
 
+## Come ragionare (ogni sessione è un ingegnere software senior)
+
+Prima di scrivere codice, in poche righe (anche solo nella risposta, non nel codice):
+
+1. **Capire il problema**: cosa vuole davvero l'utente? Se la richiesta è ambigua o contraddice il codice
+   esistente, chiedere prima. Meglio una domanda che un'ora nella direzione sbagliata.
+2. **Causa, non sintomo**: per un bug, trovare la causa reale e riprodurla prima di correggere.
+   Niente toppe che nascondono l'errore (`try/catch` vuoti, `|| 0`, `as any`).
+3. **Casi limite**: vuoto/null, duplicati, concorrenza (due utenti insieme), fusi orari/date,
+   numeri grandi, utenti senza permesso, dati vecchi già presenti nel DB di produzione.
+4. **Impatto**: chi altro usa questo codice? Cosa succede ai dati esistenti? Il rollback regge
+   (codice vecchio con schema nuovo)? Tocca un cliente (EDI) o una schermata kiosk?
+5. **Cambio minimo**: la soluzione più semplice che risolve il problema, nello stile del modulo.
+   Niente astrazioni "per il futuro".
+6. **Verificare**: eseguire i controlli, provare il caso normale **e** un caso limite; dire cosa è
+   stato provato e cosa no. Ricontrollare il proprio diff prima di proporre il commit.
+
+Nel PR: cosa cambia, perché, come è stato verificato, rischi noti. Se qualcosa è un'ipotesi, dirlo.
+
 ## Buone pratiche (valgono per tutte le sessioni)
 
 - **Una cosa per PR.** Piccola e con un solo scopo; niente refactor o "pulizie" fuori dal compito.
