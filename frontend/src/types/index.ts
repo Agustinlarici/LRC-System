@@ -743,6 +743,7 @@ export interface HrEmployee {
   taglia_pantaloni:         string | null;
   taglia_maglia:            string | null;
   taglia_scarpe:            string | null;
+  taglia_campera:           string | null;
   badge:                    string | null;
   transponder:              string | null;
   terminale:                string | null;

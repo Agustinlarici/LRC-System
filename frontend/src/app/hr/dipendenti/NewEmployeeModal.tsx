@@ -28,7 +28,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
   const [funzioni, setFunzioni] = useState(initialFunzioni);
   const [form, setForm] = useState({
     matricola: '', nome: '', cognome: '', sesso: '', data_nascita: '', codice_fiscale: '', nazionalita: '',
-    email: '', telefono: '', indirizzo: '', citta: '', provincia: '', cap: '', gruppo_orario: '', nome_osti: '', taglia_pantaloni: '', taglia_maglia: '', taglia_scarpe: '', badge: '', transponder: '', terminale: '', qualifica: '', indeterminato: '', indeterminato_data: '', part_time: '', luogo_nascita: '', titolo_studio: '', stato_civile: '', tipo_nazionalita: '', domicilio_indirizzo: '', domicilio_citta: '', domicilio_provincia: '', domicilio_cap: '', note_hr: '', mansione: '', livello: '', categoria: '', tipo_contratto: '', funzione_aziendale: '',
+    email: '', telefono: '', indirizzo: '', citta: '', provincia: '', cap: '', gruppo_orario: '', nome_osti: '', taglia_pantaloni: '', taglia_maglia: '', taglia_scarpe: '', taglia_campera: '', badge: '', transponder: '', terminale: '', qualifica: '', indeterminato: '', indeterminato_data: '', part_time: '', luogo_nascita: '', titolo_studio: '', stato_civile: '', tipo_nazionalita: '', domicilio_indirizzo: '', domicilio_citta: '', domicilio_provincia: '', domicilio_cap: '', note_hr: '', mansione: '', livello: '', categoria: '', tipo_contratto: '', funzione_aziendale: '',
     reparto_id: '', contract_company_id: '', data_assunzione: '', tag_id: '',
   });
   const [plantIds, setPlantIds] = useState<number[]>([]);
@@ -91,6 +91,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
         taglia_pantaloni: form.taglia_pantaloni || null,
         taglia_maglia: form.taglia_maglia || null,
         taglia_scarpe: form.taglia_scarpe || null,
+        taglia_campera: form.taglia_campera || null,
         badge: form.badge || null,
         transponder: form.transponder || null,
         terminale: form.terminale || null,
@@ -163,6 +164,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
             <div><label className="label">Taglia pantaloni</label><input className="input" maxLength={20} value={form.taglia_pantaloni} onChange={e => set('taglia_pantaloni', e.target.value)} placeholder="es. 48" /></div>
             <div><label className="label">Taglia maglia</label><input className="input" maxLength={20} value={form.taglia_maglia} onChange={e => set('taglia_maglia', e.target.value)} placeholder="es. L" /></div>
             <div><label className="label">Taglia scarpe</label><input className="input" maxLength={20} value={form.taglia_scarpe} onChange={e => set('taglia_scarpe', e.target.value)} placeholder="es. 42" /></div>
+            <div><label className="label">Taglia campera</label><input className="input" maxLength={20} value={form.taglia_campera} onChange={e => set('taglia_campera', e.target.value)} placeholder="es. L" /></div>
             <p className="col-span-full text-sm font-semibold text-gray-700 -mb-2">Altri dati (Osti)</p>
             <div><label className="label">Badge<OstiMark /></label><input className="input" maxLength={50} value={form.badge} onChange={e => set('badge', e.target.value)} /></div>
             <div><label className="label">Transponder<OstiMark /></label><input className="input" maxLength={50} value={form.transponder} onChange={e => set('transponder', e.target.value)} /></div>
