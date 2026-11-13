@@ -124,7 +124,7 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
         const [emp] = await tx<{ id: number }[]>`
           INSERT INTO hr_employee ${tx({
             nome: titleCase(longest), cognome: titleCase(first.cognome),
-            tipo_contratto: 'Interinale',
+            tipo_contratto: 'INTERINALE',
             data_assunzione: inizio,
             data_cessazione: ongoing ? null : ultimaFine,
             stato: ongoing ? 'attivo' : 'cessato',
