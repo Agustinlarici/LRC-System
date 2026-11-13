@@ -59,6 +59,8 @@ const IMPORT_COLUMNS = [
   'DATA NASCITA', 'EMAIL', 'INDIRIZZO', 'CITTA', 'PROVINCIA', 'CAP', 'GRUPPO ORARIO',
 ];
 
+interface MissingPerson { name: string; similar: string[]; contracts: number }
+
 // CSV del gestionale paghe: una riga = un contratto interinale
 const CONTRACT_COLUMNS = ['MATRICOLA', 'COGNOME', 'NOME', 'QUALIFICA', 'DATA ASSUNZIONE', 'DATA LICENZIAMENTO'];
 
@@ -168,6 +170,11 @@ export default function DipendentiPage() {
   const { ask, dialog: promptDialog } = usePromptDialog();
   const { choose, dialog: choiceDialog } = useChoiceDialog();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
+  // Finestra con la tabella delle persone del CSV che non sono in anagrafica (import contratti)
+  const [missingAsk, setMissingAsk] = useState<MissingPerson[] | null>(null);
+  const missingResolver = useRef<((c: 'crea' | 'esistenti' | 'annulla') => void) | null>(null);
+  const askMissing = (list: MissingPerson[]) => new Promise<'crea' | 'esistenti' | 'annulla'>(resolve => { missingResolver.current = resolve; setMissingAsk(list); });
+  const answerMissing = (c: 'crea' | 'esistenti' | 'annulla') => { setMissingAsk(null); missingResolver.current?.(c); missingResolver.current = null; };
 
   // Intestazione "congelata" fuori dall'area che scorre in verticale (invece di
   // position:sticky, che su Chrome dentro un contenitore overflow con bordi arrotondati
@@ -364,16 +371,12 @@ export default function DipendentiPage() {
     // Prova a vuoto: se ci sono persone non in anagrafica si chiede prima di crearle
     const dry = await call({ dry_run: true, create_missing: true });
     if (!dry.ok) return { inserted: 0, skipped: 0, errors: 1, detail: (await dry.json().catch(() => ({}))).message ?? 'Import rifiutato dal server' };
-    const missing: string[] = (await dry.json()).new_people ?? [];
+    const missing: MissingPerson[] = (await dry.json()).new_people ?? [];
     let createMissing = false;
     if (missing.length) {
-      createMissing = await confirm({
-        title: `${missing.length} persone non sono in anagrafica`,
-        message: `${missing.slice(0, 15).join(', ')}${missing.length > 15 ? ` … e altre ${missing.length - 15}` : ''}.
-
-Crearle come interinali o importare solo i contratti di chi esiste già?`,
-        confirmLabel: 'Crea e importa', cancelLabel: 'Solo chi esiste',
-      });
+      const choice = await askMissing(missing);
+      if (choice === 'annulla') return { inserted: 0, skipped: 0, errors: 0, detail: 'Import annullato, nessuna modifica.' };
+      createMissing = choice === 'crea';
     }
     const res = await call({ create_missing: createMissing });
     if (!res.ok) return { inserted: 0, skipped: 0, errors: 1, detail: (await res.json().catch(() => ({}))).message ?? 'Import rifiutato dal server' };
@@ -791,6 +794,37 @@ Crearle come interinali o importare solo i contratti di chi esiste già?`,
         </>}
       />
 
+      {missingAsk && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] p-4" onClick={() => answerMissing('annulla')}>
+          <div role="dialog" aria-modal="true" className="bg-white rounded-card shadow-float w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-line">
+              <h2 className="text-base font-medium">{missingAsk.length} persone non sono in anagrafica</h2>
+              <p className="text-sm text-muted mt-1">Se una riga ha una scheda simile, potrebbe essere la stessa persona: scegli «Solo chi esiste» e correggi prima il nome nella scheda.</p>
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-stone-50 text-left text-xs font-medium text-muted uppercase tracking-wide">
+                  <tr><th className="px-5 py-2">Nel CSV</th><th className="px-3 py-2">Scheda simile già presente</th><th className="px-3 py-2 text-right">Contratti</th></tr>
+                </thead>
+                <tbody>
+                  {missingAsk.map(m => (
+                    <tr key={m.name} className="border-t border-line align-top">
+                      <td className="px-5 py-1.5 font-medium">{m.name}</td>
+                      <td className="px-3 py-1.5">{m.similar.length ? m.similar.map(n => <div key={n}>{n}</div>) : <span className="text-muted">—</span>}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{m.contracts}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3 border-t border-line">
+              <button type="button" onClick={() => answerMissing('annulla')} className="btn-secondary text-sm">Annulla import</button>
+              <button type="button" onClick={() => answerMissing('esistenti')} className="btn-secondary text-sm">Solo chi esiste</button>
+              <button type="button" onClick={() => answerMissing('crea')} className="btn-primary text-sm">Crea e importa</button>
+            </div>
+          </div>
+        </div>
+      )}
       {manage && <ImportExcelButton ref={contractsRef} hideButton columns={CONTRACT_COLUMNS} processRows={importContracts} onDone={load} />}
       {manage && <ImportExcelButton ref={importRef} hideButton columns={IMPORT_COLUMNS} processRows={importRows} onDone={load} sources={{ 'osti-db': fetchOstiRows }} />}
 

@@ -79,7 +79,7 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
     return best;
   };
 
-  const newPeople: string[] = [];
+  const newPeople: { name: string; similar: string[]; contracts: number }[] = [];
   let result: { created: number; linked: number; contracts: number; duplicates: number };
   try {
   result = await db.begin(async (tx) => {
@@ -103,11 +103,12 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
       });
     };
     // Schede con parole in comune (almeno due): si mostrano come "simile a" per evitare doppioni
-    const similarTo = (canon: string): string => {
+    const similarTo = (canon: string): string[] => {
       const t = new Set(tokens(canon));
-      return employees
+      const names = employees
         .filter(e => tokens(`${e.cognome} ${e.nome}`).filter(w => t.has(w)).length >= 2)
-        .slice(0, 3).map(e => `${e.cognome} ${e.nome}`).join('; ');
+        .map(e => `${e.cognome} ${e.nome}`);
+      return [...new Set(names)].slice(0, 3);
     };
 
     // Raggruppa per persona (stesse parole, nomi troncati unificati)
@@ -137,13 +138,13 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
       } else {
         if (!create_missing) {
           skipped += list.length;
-          const sim = similarTo(canon);
+          const sim = similarTo(canon).join('; ');
           issues.push({ type: 'Non in anagrafica', name: label, note: `${list.length} contratti non importati (persona non creata)${sim ? ` · simile a: ${sim}` : ''}` });
           continue;
         }
-        const sim = similarTo(canon);
-        newPeople.push(sim ? `${label} (simile a: ${sim})` : label);
-        issues.push({ type: 'Creato', name: label, note: `nuova scheda interinale (${list.length} contratti)${sim ? ` · simile a: ${sim}` : ''}` });
+        const similar = similarTo(canon);
+        newPeople.push({ name: label, similar, contracts: list.length });
+        issues.push({ type: 'Creato', name: label, note: `nuova scheda interinale (${list.length} contratti)${similar.length ? ` · simile a: ${similar.join('; ')}` : ''}` });
         // Persona non ancora in anagrafica: si crea come interinale (cessata se tutti i contratti sono finiti)
         const longest = list.reduce((a, b) => (b.nome.length > a.nome.length ? b : a)).nome;
         const inizio = list.map(r => r.inizio).sort()[0];
