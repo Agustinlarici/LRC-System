@@ -8,11 +8,13 @@ import { auditLog } from '../../lib/audit.js';
 import { hrAnalyticsRoutes } from './analytics.js';
 import { hrDocumentRoutes } from './documents.js';
 import { hrOstiRoutes } from './osti.js';
+import { hrContractRoutes } from './contracts.js';
 
 export const hrRoutes = new Hono<Env>();
 hrRoutes.route('/analytics', hrAnalyticsRoutes);
 hrRoutes.route('/documents', hrDocumentRoutes);
 hrRoutes.route('/osti', hrOstiRoutes);
+hrRoutes.route('/contracts', hrContractRoutes);
 
 // Eventi il cui inizio/fine deve riflettersi sullo stato del dipendente — altrimenti
 // un evento "in corso" (senza end_date passata) resta invisibile ai filtri per stato
@@ -929,6 +931,21 @@ hrRoutes.get('/employees/:id/events', requireModuleAny('hr', 'hr_team'), async (
     FROM hr_employee_event
     WHERE employee_id = ${id}
     ORDER BY event_date DESC, created_at DESC
+  `;
+  return c.json(rows);
+});
+
+// Contratti (interinali) del dipendente: elenco per la scheda
+hrRoutes.get('/employees/:id/contracts', requireModuleAny('hr', 'hr_team'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+
+  await assertCanSee(c.get('user'), id);
+  const rows = await db`
+    SELECT id, employee_id, matricola, qualifica, data_inizio::text AS data_inizio, data_fine::text AS data_fine
+    FROM hr_employee_contract
+    WHERE employee_id = ${id}
+    ORDER BY data_inizio DESC
   `;
   return c.json(rows);
 });
