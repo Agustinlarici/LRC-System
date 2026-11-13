@@ -210,16 +210,7 @@ export default function VederePage() {
         title="Programma produzione (schede)"
         actions={
           <>
-            {puoGestire && (
-              <>
-                <input ref={inputRef} type="file" multiple accept=".xls,.xlsx" className="hidden" onChange={e => invia(Array.from(e.target.files ?? []))} />
-                <button className="btn-primary"
-                  disabled={occupato} onClick={() => inputRef.current?.click()}>{occupato ? 'Caricamento…' : 'Carica Excel'}</button>
-                {cartella?.config.percorso && (
-                  <button className={btnLink} disabled={inCorso} onClick={leggiCartella} title={`Legge ${cartella.config.percorso}`}>{inCorso ? 'Lettura…' : 'Leggi cartella'}</button>
-                )}
-              </>
-            )}
+            {/* a sinistra le pagine collegate, a destra i comandi per caricare i dati (l'azione principale per ultima) */}
             <Link href="/ferrari/elaborazione" className={btnLink} title={ia ? (ia.config.attiva ? (ia.connessione.stato === 'non_raggiungibile' ? 'PC IA non raggiungibile' : 'Analisi con IA accesa') : 'Analisi con IA spenta') : undefined}>
               <span className={`h-2 w-2 rounded-full ${!ia || !ia.config.attiva ? 'bg-stone-300' : ia.connessione.stato === 'non_raggiungibile' ? 'bg-amber-500' : 'bg-green-600'}`} aria-hidden />
               Elaborazione
@@ -227,14 +218,24 @@ export default function VederePage() {
                 <span className="rounded-full bg-accent px-1.5 text-[11px] font-bold leading-4 text-white">{Object.entries(ia.contatori).filter(([k]) => STATI_IN_CORSO.includes(k)).reduce((a, [, n]) => a + n, 0)}</span>
               )}
             </Link>
-            <button className={btnLink} disabled={!m || righe.length === 0} onClick={esportaExcel}>Scarica Excel</button>
-            <button className={btnLink} onClick={() => window.print()}>Stampa</button>
             <Link href="/ferrari/sop" className={btnLink} title="Carica l'Excel del SOP e confrontalo con le schede">Controllo SOP</Link>
             {puoGestire && (
               <Link href="/ferrari/impostazioni" className={`${btnLink} group-gear`}>
-              <IconSettings className="gear h-4 w-4" />                Impostazioni
+                <IconSettings className="gear h-4 w-4" />
+                Impostazioni
                 {daFare > 0 && <span className="rounded-full bg-brand px-1.5 text-[11px] font-bold leading-4 text-white">{daFare}</span>}
               </Link>
+            )}
+            {puoGestire && (
+              <>
+                <span className="mx-1 hidden h-6 w-px bg-line sm:block" aria-hidden />
+                <input ref={inputRef} type="file" multiple accept=".xls,.xlsx" className="hidden" onChange={e => invia(Array.from(e.target.files ?? []))} />
+                {cartella?.config.percorso && (
+                  <button className={btnLink} disabled={inCorso} onClick={leggiCartella} title={`Legge ${cartella.config.percorso}`}>{inCorso ? 'Lettura…' : 'Leggi cartella'}</button>
+                )}
+                <button className="btn-primary"
+                  disabled={occupato} onClick={() => inputRef.current?.click()}>{occupato ? 'Caricamento…' : 'Carica Excel'}</button>
+              </>
             )}
           </>
         }
@@ -262,6 +263,11 @@ export default function VederePage() {
           <input className="input !w-48" placeholder="Commessa…" value={fCommessa} onChange={e => setFCommessa(e.target.value)} />
           <input className="input !w-56" placeholder="Sigla o caratteristica…" value={fTesto} onChange={e => setFTesto(e.target.value)} />
           <span className="text-sm text-muted">{righe.length === (m?.righe.length ?? 0) ? `${righe.length} commesse` : `${righe.length} di ${m?.righe.length} commesse`}</span>
+          {/* i comandi che riguardano la tabella stanno con i suoi filtri */}
+          <span className="ml-auto flex items-center gap-2">
+            <button className={btnLink} disabled={!m || righe.length === 0} onClick={esportaExcel}>Scarica Excel</button>
+            <button className={btnLink} onClick={() => window.print()}>Stampa</button>
+          </span>
         </div>
       )}
 
