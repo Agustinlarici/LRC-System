@@ -44,3 +44,6 @@ Il design è unificato con token e componenti. **Non usare colori Tailwind diret
 - Chiamate API solo tramite `src/lib/api.ts`; niente URL scritti a mano.
 - Eseguire `npm run type-check && npm run lint` e dire l'esito prima di proporre il commit.
 - Per ogni cambio visivo: controllo con Playwright e, se la pagina è stampabile, anche il PDF.
+- Sicurezza: niente segreti o chiavi in codice frontend né in variabili `NEXT_PUBLIC_*`; evitare
+  `dangerouslySetInnerHTML` (se serve, chiedere); nascondere una voce di menu per permesso è solo UX,
+  il controllo reale è nel backend. Nessun dato reale di persone/clienti in screenshot o fixture.
