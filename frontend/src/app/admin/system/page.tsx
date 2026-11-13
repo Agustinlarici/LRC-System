@@ -132,7 +132,6 @@ const IKNOW_QUERIES: { key: keyof Omit<IKnowFlags, 'iknow_enabled'>; label: stri
   { key: 'iknow_nightly_enabled',  label: 'Rilettura notturna',                           description: 'Rilegge gli ultimi 2 giorni per sistemare i dati — ogni giorno alle 11:30 e ogni notte alle 01:00' },
   { key: 'iknow_lookup_enabled',   label: 'Fasi e combinazioni',                          description: 'Aggiorna fasi, modelli e componenti — ogni notte alle 02:00, a mano da Fasi iKnow e all’avvio se le liste sono vuote' },
   { key: 'iknow_buffer_enabled',   label: 'Buffer',                                       description: 'Ricalcola i seriali in pre-area dallo storico locale — ogni 30 minuti' },
-  { key: 'iknow_bucci_enabled',    label: 'Spedizione Bucci',                             description: 'Cerca seriali e commesse in iKnow durante scansione e verifica delle spedizioni. Se attivi una sincronizzazione qui sotto, questo interruttore si spegne da solo' },
   { key: 'iknow_bom_enabled',      label: 'BOM notturno',                                 description: 'Copia i BOM di iKnow (vista v_iknow_bom per Power BI) — una volta a notte alle 04:15; parte spento' },
   { key: 'iknow_andon_lastup_enabled', label: 'Sync continua — anche schede modificate', description: 'Oltre alle schede nuove (datain) legge quelle modificate (lastup) negli ultimi minuti ed esclude le cancellate (deletedubidocum). Parte spento: provare prima con EXPLAIN' },
   { key: 'iknow_backfill_enabled', label: 'Backfill manuali',                            description: 'Carica iniziale dello storico (pulsante in Aggiornamenti sistema → Azioni manuali), Heatmap, Lead time e correzione commesse (solo su richiesta)' },
@@ -183,6 +182,20 @@ function AvanzataTab() {
             <p className="text-xs text-gray-500">Abilita o disabilita tutte le connessioni iKnow</p>
           </div>
           <Toggle checked={flags.iknow_enabled} onChange={v => toggle('iknow_enabled', v)} disabled={saving === 'iknow_enabled'} />
+        </div>
+      </div>
+
+      <div className="card">
+        <h2 className="font-semibold text-gray-800 mb-1">Spedizione Bucci</h2>
+        <p className="text-xs text-gray-500 mb-4">
+          Interruttore indipendente dalle sincronizzazioni: non si spegne quando ne attivi una. Efficace solo se il toggle generale è attivo.
+        </p>
+        <div className="flex items-center justify-between py-3">
+          <div>
+            <p className={`text-sm font-medium ${masterOff ? 'text-gray-400' : 'text-gray-800'}`}>Ricerca in iKnow</p>
+            <p className="text-xs text-gray-500">Cerca seriali e commesse in iKnow durante scansione e verifica delle spedizioni (connessione separata)</p>
+          </div>
+          <Toggle checked={flags.iknow_bucci_enabled} onChange={v => toggle('iknow_bucci_enabled', v)} disabled={masterOff || saving === 'iknow_bucci_enabled'} />
         </div>
       </div>
 
