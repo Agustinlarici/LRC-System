@@ -85,6 +85,7 @@ const MODULE_KEY_MAP: Record<string, ModuleKey | ModuleKey[]> = {
   '/hr/richieste':            ['hr', 'hr_team'],
   '/hr/scadenze':             ['hr', 'hr_team'],
   '/hr/documenti':            'hr',
+  '/hr/vestiario':            'hr',
   '/hr/organigramma':         ['hr', 'hr_team'],
   '/hr/analisi':              'hr',
   '/hr/evoluzione':           'hr',
