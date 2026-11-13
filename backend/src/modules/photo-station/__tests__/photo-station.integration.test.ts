@@ -14,13 +14,13 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
   let db: typeof import('../../../db/client.js').db;
   let helpers: typeof import('../helpers.js');
   let admin: string, guest: string;
-  let tok: string, tok2: string;
+  let tok: string, tok2: string, tok3: string;
 
   const user = (path: string, init: RequestInit = {}, cookie = admin) =>
     app.request(`/api/photo-station${path}`, { ...init, headers: { cookie, 'content-type': 'application/json', ...(init.headers ?? {}) } });
   const station = (path: string, init: RequestInit = {}, token = tok) =>
     app.request(`/api/photo-station/device${path}`, { ...init, headers: { authorization: `Bearer ${token}`, ...(init.headers ?? {}) } });
-  const newJob = async (commessa: string) => (await (await user('/jobs', { method: 'POST', body: JSON.stringify({ commessa }) })).json() as any).job;
+  const newJob = async (commessa: string, phase = 'delibera_finale') => (await (await user('/jobs', { method: 'POST', body: JSON.stringify({ commessa, phase }) })).json() as any).job;
   const put = (jobId: number, cam: string, body: Buffer = JPEG, token = tok) =>
     station(`/jobs/${jobId}/photos/${cam}`, { method: 'PUT', body: new Uint8Array(body), headers: { 'content-type': 'image/jpeg' } }, token);
   const complete = (jobId: number, body: unknown, token = tok) =>
@@ -48,16 +48,19 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
     guest = `${COOKIE_NAME}=${signToken({ id: g, username: 'ps_guest', display_name: 'ps_guest', role: 'guest' })}`;
   });
   beforeEach(async () => {
-    await db`TRUNCATE photo_job_files, photo_jobs, photo_stations RESTART IDENTITY CASCADE`;
-    const mkStation = async (name: string) => {
+    await db`TRUNCATE photo_job_files, photo_jobs, photo_stations, photo_phases RESTART IDENTITY CASCADE`;
+    await db`INSERT INTO photo_phases (key, label) VALUES ('delibera_finale', 'Delibera finale'), ('delibera_finale_proximiti', 'Delibera finale Proximiti')`;
+    const mkStation = async (name: string, phases: string[]) => {
       const { token, hash } = helpers.newStationToken();
-      await db`INSERT INTO photo_stations (name, token_hash) VALUES (${name}, ${hash})`;
+      await db`INSERT INTO photo_stations (name, token_hash, phases) VALUES (${name}, ${hash}, ${phases})`;
       return token;
     };
-    tok = await mkStation('Camere'); tok2 = await mkStation('Altra');
+    // Entrambe servono 'delibera_finale' (come due PC in competizione); tok3 serve solo Proximiti
+    tok = await mkStation('Camere', ['delibera_finale']); tok2 = await mkStation('Altra', ['delibera_finale']);
+    tok3 = await mkStation('Proximiti', ['delibera_finale_proximiti']);
   });
   afterAll(async () => {
-    await db`TRUNCATE photo_job_files, photo_jobs, photo_stations RESTART IDENTITY CASCADE`;
+    await db`TRUNCATE photo_job_files, photo_jobs, photo_stations, photo_phases RESTART IDENTITY CASCADE`;
     await db`DELETE FROM users WHERE username LIKE 'ps_%'`;
   });
 
@@ -103,10 +106,10 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
 
   it('una sola commessa aperta alla volta (409), ma si può rifare dopo la chiusura', async () => {
     const job = await newJob('ORD-4');
-    const dup = await user('/jobs', { method: 'POST', body: JSON.stringify({ commessa: ' ORD-4\r\n' }) });
+    const dup = await user('/jobs', { method: 'POST', body: JSON.stringify({ commessa: ' ORD-4\r\n', phase: 'delibera_finale' }) });
     expect(dup.status).toBe(409);
     expect((await user(`/jobs/${job.id}/cancel`, { method: 'POST' })).status).toBe(200);
-    expect((await user('/jobs', { method: 'POST', body: JSON.stringify({ commessa: 'ORD-4' }) })).status).toBe(201);
+    expect((await user('/jobs', { method: 'POST', body: JSON.stringify({ commessa: 'ORD-4', phase: 'delibera_finale' }) })).status).toBe(201);
   });
 
   it('complete con una foto non arrivata o diversa → 409 e ordine ancora aperto', async () => {
@@ -137,7 +140,7 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
 
   it('permessi: il guest non vede né crea; il token stazione non apre le rotte utente', async () => {
     expect((await user('/jobs', {}, guest)).status).toBe(403);
-    expect((await user('/jobs', { method: 'POST', body: JSON.stringify({ commessa: 'X' }) }, guest)).status).toBe(403);
+    expect((await user('/jobs', { method: 'POST', body: JSON.stringify({ commessa: 'X', phase: 'delibera_finale' }) }, guest)).status).toBe(403);
     expect((await app.request('/api/photo-station/jobs', { headers: { authorization: `Bearer ${tok}` } })).status).toBe(401);
   });
 
@@ -157,13 +160,51 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
   });
 
   it('crea stazione: il token si vede una sola volta e nel DB c\'è solo l\'hash', async () => {
-    const r = await (await user('/stations', { method: 'POST', body: JSON.stringify({ name: 'Nuova' }) })).json() as any;
+    const r = await (await user('/stations', { method: 'POST', body: JSON.stringify({ name: 'Nuova', phases: ['delibera_finale'] }) })).json() as any;
     expect(r.token).toHaveLength(64);
     const [row] = await db`SELECT token_hash FROM photo_stations WHERE id = ${r.station.id}`;
     expect(row.token_hash).toBe(helpers.sha256Hex(r.token));
     const list = JSON.stringify(await (await user('/stations')).json());
     expect(list).not.toContain(r.token);
     expect(list).not.toContain(row.token_hash);
+  });
+
+  it('ogni fase ha le sue stazioni: una stazione non prende ordini di altre fasi', async () => {
+    const a = await newJob('ORD-9', 'delibera_finale');
+    const b = await newJob('ORD-9', 'delibera_finale_proximiti');   // stessa commessa, altra fase: ammesso
+    expect(b.id).not.toBe(a.id);
+    const prox = await (await station('/claim', { method: 'POST' }, tok3)).json() as any;
+    expect(prox.job).toMatchObject({ id: b.id, phase: 'delibera_finale_proximiti' });
+    expect((await (await station('/claim', { method: 'POST' }, tok3)).json() as any).job.id).toBe(b.id);   // il suo, non quello di tok
+    const main = await (await station('/claim', { method: 'POST' }, tok)).json() as any;
+    expect(main.job).toMatchObject({ id: a.id, phase: 'delibera_finale' });
+    // la stazione Proximiti non può caricare foto dell'ordine dell'altra fase
+    expect((await put(a.id, 'CAM01', JPEG, tok3)).status).toBe(409);
+  });
+
+  it('una stazione senza fasi non prende niente', async () => {
+    await newJob('ORD-10');
+    const { token, hash } = helpers.newStationToken();
+    await db`INSERT INTO photo_stations (name, token_hash) VALUES ('vuota', ${hash})`;
+    expect((await (await station('/claim', { method: 'POST' }, token)).json() as any).job).toBeNull();
+  });
+
+  it('fase sconosciuta o disattivata → 400; fasi della stazione modificabili', async () => {
+    const bad = await user('/jobs', { method: 'POST', body: JSON.stringify({ commessa: 'Z1', phase: 'inventata' }) });
+    expect(bad.status).toBe(400);
+    expect((await user('/phases/delibera_finale', { method: 'PUT', body: JSON.stringify({ active: false }) })).status).toBe(200);
+    expect((await user('/jobs', { method: 'POST', body: JSON.stringify({ commessa: 'Z1', phase: 'delibera_finale' }) })).status).toBe(400);
+    expect((await user('/stations', { method: 'POST', body: JSON.stringify({ name: 'X', phases: ['non_esiste'] }) })).status).toBe(400);
+    const [st] = await db`SELECT id FROM photo_stations WHERE name = 'Camere'`;
+    expect((await user(`/stations/${st.id}/phases`, { method: 'PUT', body: JSON.stringify({ phases: ['delibera_finale_proximiti'] }) })).status).toBe(200);
+    expect((await db`SELECT phases FROM photo_stations WHERE id = ${st.id}`)[0].phases).toEqual(['delibera_finale_proximiti']);
+  });
+
+  it('creare una fase: solo chi gestisce; duplicato → 409', async () => {
+    expect((await user('/phases', { method: 'POST', body: JSON.stringify({ key: 'nuova_fase', label: 'Nuova' }) })).status).toBe(201);
+    expect((await user('/phases', { method: 'POST', body: JSON.stringify({ key: 'nuova_fase', label: 'Nuova' }) })).status).toBe(409);
+    expect((await user('/phases', { method: 'POST', body: JSON.stringify({ key: 'Mala Fase', label: 'x' }) })).status).toBe(400);
+    expect((await user('/phases', { method: 'POST', body: JSON.stringify({ key: 'altra', label: 'x' }) }, guest)).status).toBe(403);
   });
 
   it('fail: la stazione chiude l\'ordine con il motivo', async () => {

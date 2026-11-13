@@ -32,7 +32,7 @@ function idParam(raw: string | undefined, label = 'ID'): number {
 export const photoStationRoutes = new Hono<Env & StationEnv>();
 
 const JOB_COLS = db`
-  j.id::int AS id, j.commessa, j.source, j.status, j.attempts, j.capture_status, j.capture_errors, j.error,
+  j.id::int AS id, j.commessa, j.phase, j.source, j.status, j.attempts, j.capture_status, j.capture_errors, j.error,
   j.created_by, j.created_at, j.claimed_at, j.finished_at, s.name AS station_name,
   (SELECT count(*)::int FROM photo_job_files f WHERE f.job_id = j.id) AS photos
 `;
@@ -56,21 +56,49 @@ photoStationRoutes.get('/jobs/:id', requireModule('photo_station'), async (c) =>
   return c.json({ job, files });
 });
 
-const NewJob = z.object({ commessa: z.string().min(1).max(100) });
+const PHASE = z.string().regex(/^[a-z0-9_]{1,40}$/, 'fase non valida (minuscole, numeri, _)');
+const NewJob = z.object({ commessa: z.string().min(1).max(100), phase: PHASE });
+
+// ─── Fasi (arrivano da iKnow): catalogo, ognuna con le sue stazioni ───────────────
+photoStationRoutes.get('/phases', requireModule('photo_station'), async (c) => {
+  const phases = await db`SELECT key, label, active FROM photo_phases ORDER BY key`;
+  return c.json({ phases });
+});
+
+photoStationRoutes.post('/phases', requireManage('photo_station'), async (c) => {
+  const user = c.get('user');
+  const { key, label } = await parseBody(c, z.object({ key: PHASE, label: z.string().trim().min(1).max(80) }));
+  const [p] = await db`INSERT INTO photo_phases (key, label) VALUES (${key}, ${label}) ON CONFLICT (key) DO NOTHING RETURNING key`;
+  if (!p) throw new HTTPException(409, { message: 'Fase già esistente' });
+  await auditLog({ userId: user.id, username: user.username, action: 'photo_phase_create', entity: 'photo_phase', entityId: key, details: { label } });
+  return c.json({ ok: true }, 201);
+});
+
+photoStationRoutes.put('/phases/:key', requireManage('photo_station'), async (c) => {
+  const user = c.get('user');
+  const key = c.req.param('key') ?? '';
+  const { active } = await parseBody(c, z.object({ active: z.boolean() }));
+  const [p] = await db`UPDATE photo_phases SET active = ${active} WHERE key = ${key} RETURNING key`;
+  if (!p) throw new HTTPException(404, { message: 'Fase non trovata' });
+  await auditLog({ userId: user.id, username: user.username, action: 'photo_phase_active', entity: 'photo_phase', entityId: key, details: { active } });
+  return c.json({ ok: true });
+});
 
 photoStationRoutes.post('/jobs', requireManage('photo_station'), async (c) => {
   const user = c.get('user');
-  const { commessa: raw } = await parseBody(c, NewJob);
+  const { commessa: raw, phase } = await parseBody(c, NewJob);
   const commessa = normalizeCommessa(raw);
   if (!commessa || commessa.length > 64) throw new HTTPException(400, { message: 'Commessa non valida' });
+  const [known] = await db`SELECT 1 FROM photo_phases WHERE key = ${phase} AND active`;
+  if (!known) throw new HTTPException(400, { message: `Fase '${phase}' sconosciuta o disattivata` });
   const [job] = await db`
-    INSERT INTO photo_jobs (commessa, source, created_by)
-    VALUES (${commessa}, 'manual', ${user.display_name})
-    ON CONFLICT (commessa) WHERE status IN ('pending', 'claimed') DO NOTHING
-    RETURNING id::int AS id, commessa, status
+    INSERT INTO photo_jobs (commessa, phase, source, created_by)
+    VALUES (${commessa}, ${phase}, 'manual', ${user.display_name})
+    ON CONFLICT (commessa, phase) WHERE status IN ('pending', 'claimed') DO NOTHING
+    RETURNING id::int AS id, commessa, phase, status
   `;
-  if (!job) throw new HTTPException(409, { message: `Esiste già un ordine aperto per la commessa ${commessa}` });
-  await auditLog({ userId: user.id, username: user.username, action: 'photo_job_create', entity: 'photo_job', entityId: job.id, details: { commessa } });
+  if (!job) throw new HTTPException(409, { message: `Esiste già un ordine aperto per la commessa ${commessa} nella fase ${phase}` });
+  await auditLog({ userId: user.id, username: user.username, action: 'photo_job_create', entity: 'photo_job', entityId: job.id, details: { commessa, phase } });
   return c.json({ job }, 201);
 });
 
@@ -93,7 +121,7 @@ photoStationRoutes.post('/jobs/:id/retry', requireManage('photo_station'), async
     UPDATE photo_jobs SET status = 'pending', attempts = 0, error = NULL, station_id = NULL, claimed_at = NULL,
            finished_at = NULL, updated_at = now()
     WHERE id = ${id} AND status IN ('failed', 'cancelled')
-      AND NOT EXISTS (SELECT 1 FROM photo_jobs o WHERE o.commessa = photo_jobs.commessa AND o.status IN ('pending', 'claimed'))
+      AND NOT EXISTS (SELECT 1 FROM photo_jobs o WHERE o.commessa = photo_jobs.commessa AND o.phase = photo_jobs.phase AND o.status IN ('pending', 'claimed'))
     RETURNING id
   `;
   if (!job) throw new HTTPException(409, { message: 'Ordine non rilanciabile (non fallito/annullato, o esiste già un ordine aperto per la commessa)' });
@@ -113,10 +141,18 @@ photoStationRoutes.get('/jobs/:id/files/:fileId', requireModule('photo_station')
   return c.body(new Uint8Array(data));
 });
 
-// ─── Stazioni: elenco, creazione (token mostrato UNA volta), revoca ───────────────
+// ─── Stazioni: elenco, creazione (token mostrato UNA volta), fasi servite, revoca ──
+const StationBody = z.object({ name: z.string().trim().min(1).max(60), phases: z.array(PHASE).max(20).default([]) });
+
+async function assertPhasesExist(phases: string[]) {
+  if (phases.length === 0) return;
+  const found = await db`SELECT key FROM photo_phases WHERE key IN ${db(phases)}`;
+  const bad = phases.filter(p => !found.some(f => f.key === p));
+  if (bad.length) throw new HTTPException(400, { message: `Fasi sconosciute: ${bad.join(', ')}` });
+}
 photoStationRoutes.get('/stations', requireModule('photo_station'), async (c) => {
   const rows = await db`
-    SELECT id, name, created_at, last_seen_at, revoked_at,
+    SELECT id, name, phases, created_at, last_seen_at, revoked_at,
            (revoked_at IS NULL AND last_seen_at > now() - make_interval(secs => ${ONLINE_SECONDS})) AS online
     FROM photo_stations ORDER BY id
   `;
@@ -125,13 +161,25 @@ photoStationRoutes.get('/stations', requireModule('photo_station'), async (c) =>
 
 photoStationRoutes.post('/stations', requireManage('photo_station'), async (c) => {
   const user = c.get('user');
-  const { name } = await parseBody(c, z.object({ name: z.string().trim().min(1).max(60) }));
+  const { name, phases } = await parseBody(c, StationBody);
+  await assertPhasesExist(phases);
   const { token, hash } = newStationToken();
   const [st] = await db`
-    INSERT INTO photo_stations (name, token_hash, created_by) VALUES (${name}, ${hash}, ${user.id}) RETURNING id, name
+    INSERT INTO photo_stations (name, token_hash, phases, created_by) VALUES (${name}, ${hash}, ${phases}, ${user.id}) RETURNING id, name, phases
   `;
-  await auditLog({ userId: user.id, username: user.username, action: 'photo_station_create', entity: 'photo_station', entityId: st.id, details: { name } });
+  await auditLog({ userId: user.id, username: user.username, action: 'photo_station_create', entity: 'photo_station', entityId: st.id, details: { name, phases } });
   return c.json({ station: st, token }, 201);   // il token non si può rileggere
+});
+
+photoStationRoutes.put('/stations/:id/phases', requireManage('photo_station'), async (c) => {
+  const user = c.get('user');
+  const id = idParam(c.req.param('id'));
+  const { phases } = await parseBody(c, z.object({ phases: z.array(PHASE).max(20) }));
+  await assertPhasesExist(phases);
+  const [st] = await db`UPDATE photo_stations SET phases = ${phases} WHERE id = ${id} AND revoked_at IS NULL RETURNING id`;
+  if (!st) throw new HTTPException(404, { message: 'Stazione non trovata o revocata' });
+  await auditLog({ userId: user.id, username: user.username, action: 'photo_station_phases', entity: 'photo_station', entityId: id, details: { phases } });
+  return c.json({ ok: true });
 });
 
 photoStationRoutes.post('/stations/:id/revoke', requireManage('photo_station'), async (c) => {
@@ -159,20 +207,21 @@ async function releaseStaleClaims() {
   `;
 }
 
+// Prende solo ordini delle fasi abilitate a questa stazione.
 // Chiamata a intervalli (3-5 s): serve anche da "sono vivo" per l'indicatore online.
 photoStationDeviceRoutes.post('/claim', async (c) => {
   const st = c.get('station');
   await releaseStaleClaims();
   // Un ordine già suo (l'app si è riavviata a metà): lo riconsegna invece di prenderne un altro.
   let [job] = await db`
-    SELECT id::int AS id, commessa FROM photo_jobs WHERE status = 'claimed' AND station_id = ${st.id} ORDER BY id LIMIT 1
+    SELECT id::int AS id, commessa, phase FROM photo_jobs WHERE status = 'claimed' AND station_id = ${st.id} ORDER BY id LIMIT 1
   `;
   if (!job) {
     [job] = await db`
       UPDATE photo_jobs SET status = 'claimed', station_id = ${st.id}, claimed_at = now(),
              attempts = attempts + 1, updated_at = now()
-      WHERE id = (SELECT id FROM photo_jobs WHERE status = 'pending' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)
-      RETURNING id::int AS id, commessa
+      WHERE id = (SELECT id FROM photo_jobs WHERE status = 'pending' AND phase = ANY(${st.phases}::text[]) ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)
+      RETURNING id::int AS id, commessa, phase
     `;
   }
   return c.json({ job: job ?? null });

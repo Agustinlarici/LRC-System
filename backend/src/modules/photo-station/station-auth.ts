@@ -5,7 +5,7 @@ import { HTTPException } from 'hono/http-exception';
 import { db } from '../../db/client.js';
 import { bearerToken, sha256Hex } from './helpers.js';
 
-export type StationEnv = { Variables: { station: { id: number; name: string } } };
+export type StationEnv = { Variables: { station: { id: number; name: string; phases: string[] } } };
 
 export async function requireStation(c: Context<StationEnv>, next: Next) {
   const token = bearerToken(c.req.header('Authorization'));
@@ -13,9 +13,9 @@ export async function requireStation(c: Context<StationEnv>, next: Next) {
   const [st] = await db`
     UPDATE photo_stations SET last_seen_at = now()
     WHERE token_hash = ${sha256Hex(token)} AND revoked_at IS NULL
-    RETURNING id, name
+    RETURNING id, name, phases
   `;
   if (!st) throw new HTTPException(401, { message: 'Token stazione non valido' });
-  c.set('station', { id: st.id, name: st.name });
+  c.set('station', { id: st.id, name: st.name, phases: st.phases as string[] });
   await next();
 }
