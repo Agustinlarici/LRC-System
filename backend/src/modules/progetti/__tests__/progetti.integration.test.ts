@@ -280,4 +280,89 @@ describe.skipIf(!URL)('Progetti (integrazione)', () => {
     expect(det.tasks.map((t: any) => t.title)).toEqual(['con data', 'senza data nuova', 'senza data vecchia', 'finita']);
     expect(det.tasks[0].assigned_name).toBe('prog_admin');
   });
+
+  it('fecha de una fase: las tareas abiertas sin fecha o con fecha posterior se alinean; el resto no se toca', async () => {
+    const p = await json(await call('admin', 'POST', '/', { name: 'Alineo' }));
+    const f1 = await phase(p.id, 'Fase 1', null);
+    const f2 = await phase(p.id, 'Fase 2', null);
+    const mk = async (phaseId: number, title: string, due?: number | null) =>
+      json(await call('admin', 'POST', '/tasks', { project_id: p.id, phase_id: phaseId, title, ...(due === undefined ? {} : { due_date: due === null ? null : day(due) }) }));
+    const vacia   = await mk(f1.id, 'vacia');
+    const despues = await mk(f1.id, 'despues', 20);
+    const antes   = await mk(f1.id, 'antes', 2);
+    const igual   = await mk(f1.id, 'igual', 10);
+    const hecha   = await mk(f1.id, 'hecha', 25);
+    await call('admin', 'PATCH', `/tasks/${hecha.id}`, { status: 'fatta' });
+    const otra    = await mk(f2.id, 'otra fase');
+
+    const res = await call('admin', 'PATCH', `/phases/${f1.id}`, { due_date: day(10) });
+    expect(res.status).toBe(200);
+    expect((await json(res)).tasks_updated).toBe(2);                 // vacia + despues
+
+    const det = await json(await call('admin', 'GET', `/${p.id}`));
+    const due = (id: number) => det.tasks.find((t: any) => t.id === id).due_date;
+    expect(due(vacia.id)).toBe(day(10));
+    expect(due(despues.id)).toBe(day(10));
+    expect(due(antes.id)).toBe(day(2));                              // anterior: se queda
+    expect(due(igual.id)).toBe(day(10));
+    expect(due(hecha.id)).toBe(day(25));                             // hecha: no se toca
+    expect(due(otra.id)).toBeNull();                                 // otra fase: no se toca
+
+    const tl = await json(await call('admin', 'GET', `/${p.id}/timeline`));
+    expect(tl.some((r: any) => r.body?.includes('2 attività allineate alla stessa data'))).toBe(true);
+
+    // volver a guardar la misma fecha re-alinea solo lo que quedó fuera (más tarde que la fase)
+    await call('admin', 'PATCH', `/tasks/${antes.id}`, { due_date: day(15) });
+    expect((await json(await call('admin', 'PATCH', `/phases/${f1.id}`, { due_date: day(10) }))).tasks_updated).toBe(1);
+    // quitar la fecha o cambiar solo el nombre no mueve nada
+    expect((await json(await call('admin', 'PATCH', `/phases/${f1.id}`, { name: 'Fase uno' }))).tasks_updated).toBe(0);
+    expect((await json(await call('admin', 'PATCH', `/phases/${f1.id}`, { due_date: null }))).tasks_updated).toBe(0);
+    const det2 = await json(await call('admin', 'GET', `/${p.id}`));
+    expect(det2.tasks.find((t: any) => t.id === vacia.id).due_date).toBe(day(10));
+  });
+
+  it('tarea nueva en una fase con fecha: hereda la fecha, salvo que se indique otra o null', async () => {
+    const p = await json(await call('admin', 'POST', '/', { name: 'Herencia' }));
+    const f = await phase(p.id, 'Con fecha', 12);
+    const sin = await phase(p.id, 'Sin fecha', null);
+    const post = async (body: object) => json(await call('admin', 'POST', '/tasks', { project_id: p.id, ...body }));
+    expect((await post({ phase_id: f.id, title: 'hereda' })).due_date).toBe(day(12));
+    expect((await post({ phase_id: f.id, title: 'propia', due_date: day(3) })).due_date).toBe(day(3));
+    expect((await post({ phase_id: f.id, title: 'explicita-null', due_date: null })).due_date).toBeNull();
+    expect((await post({ phase_id: sin.id, title: 'fase sin fecha' })).due_date).toBeNull();
+    expect((await post({ title: 'sin fase' })).due_date).toBeNull();
+  });
+
+  it('fecha de una fase que se mueve: las tareas que tenían la fecha anterior de la fase la acompañan', async () => {
+    const p = await json(await call('admin', 'POST', '/', { name: 'Mover fase' }));
+    const f = await phase(p.id, 'Fase', 5);
+    const mk = async (title: string, due: number | null) =>
+      json(await call('admin', 'POST', '/tasks', { project_id: p.id, phase_id: f.id, title, due_date: due === null ? null : day(due) }));
+    const hereda = await mk('hereda', 5);        // misma fecha que la fase: la acompaña
+    const propia = await mk('propia', 3);        // fecha propia anterior: se queda
+    const vacia  = await mk('vacia', null);
+
+    // la fase se estira de +5 a +30: solo acompañan la que tenía +5 y la vacía
+    const r = await json(await call('admin', 'PATCH', `/phases/${f.id}`, { due_date: day(30) }));
+    expect(r.tasks_updated).toBe(2);
+    let det = await json(await call('admin', 'GET', `/${p.id}`));
+    const due = (id: number) => det.tasks.find((t: any) => t.id === id).due_date;
+    expect([due(hereda.id), due(propia.id), due(vacia.id)]).toEqual([day(30), day(3), day(30)]);
+
+    // se corrige a mano en pasos (+3 y después +20): el resultado final sigue la fecha de la fase
+    await call('admin', 'PATCH', `/phases/${f.id}`, { due_date: day(3) });
+    await call('admin', 'PATCH', `/phases/${f.id}`, { due_date: day(20) });
+    det = await json(await call('admin', 'GET', `/${p.id}`));
+    expect([due(hereda.id), due(vacia.id)]).toEqual([day(20), day(20)]);
+  });
+
+  it('fechas con año no plausible se rechazan (un campo de fecha escrito a mano pasa por 0002)', async () => {
+    const p = await json(await call('admin', 'POST', '/', { name: 'Años' }));
+    const f = await phase(p.id, 'F', 5);
+    expect((await call('admin', 'PATCH', `/phases/${f.id}`, { due_date: '0002-11-30' })).status).toBe(400);
+    expect((await call('admin', 'PATCH', `/phases/${f.id}`, { due_date: '2101-01-01' })).status).toBe(400);
+    expect((await call('admin', 'POST', '/tasks', { project_id: p.id, title: 'x', due_date: '0020-01-01' })).status).toBe(400);
+    expect((await call('admin', 'PATCH', `/${p.id}`, { due_date: '1999-12-31' })).status).toBe(400);
+    expect((await call('admin', 'PATCH', `/phases/${f.id}`, { due_date: '2030-06-01' })).status).toBe(200);
+  });
 });

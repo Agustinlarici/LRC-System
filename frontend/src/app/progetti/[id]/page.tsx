@@ -14,7 +14,7 @@ import { PhaseList } from '@/components/progetti/PhaseList';
 import { Board } from '@/components/progetti/Board';
 import { ProjectGantt } from '@/components/progetti/Gantt';
 import {
-  KIND_LABEL, LOG_KINDS, PROJECT_LABEL, TICKET_ACTION_LABEL, daysFromToday, fmtDate, fmtDateTime, fmtShort,
+  KIND_LABEL, LOG_KINDS, PROJECT_LABEL, TICKET_ACTION_LABEL, daysFromToday, fmtDate, fmtDateTime, fmtShort, isPlausibleDate,
   type LogKind, type Person, type ProjectDetail, type ProjectStatus, type TicketHit, type TimelineRow,
 } from '@/lib/progetti';
 
@@ -245,7 +245,7 @@ export default function ProgettoPage() {
           hint={
             <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <input type="date" aria-label="Scadenza del progetto" className="input !w-auto !px-2 !py-0.5 text-xs" value={p.due_date ?? ''}
-                onChange={e => run(() => api.patch(`/api/progetti/${p.id}`, { due_date: e.target.value || null }))} />
+                onChange={e => { const v = e.target.value; if (!v || isPlausibleDate(v)) run(() => api.patch(`/api/progetti/${p.id}`, { due_date: v || null })); }} />
               {p.due_is_manual
                 ? <button type="button" className="text-accent-ink hover:underline" onClick={() => run(() => api.patch(`/api/progetti/${p.id}`, { due_date: null }))}>Torna automatica</button>
                 : <span>dall’ultima fase</span>}

@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 import { useToast } from '@/components/ui/Toast';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { TaskRow } from './TaskRow';
-import { todayISO, type PhaseRow, type Person, type ProjectDetail, type PTask } from '@/lib/progetti';
+import { isPlausibleDate, todayISO, type PhaseRow, type Person, type ProjectDetail, type PTask } from '@/lib/progetti';
 
 const field = 'input !w-auto !px-2.5 !py-1 text-[13px]';
 
@@ -83,7 +83,15 @@ function PhaseBlock({ title, phase, tasks, project, people, reload }: BlockProps
         {phase && (
           <label className="flex items-center gap-1.5 text-xs text-muted">Scade
             <input type="date" className={field} value={phase.due_date ?? ''}
-              onChange={e => run(() => api.patch(`/api/progetti/phases/${phase.id}`, { due_date: e.target.value || null }))} />
+              title="Le attività aperte senza data, o con una data successiva, passano a questa scadenza"
+              onChange={e => {
+                const v = e.target.value;
+                if (v && !isPlausibleDate(v)) return;   // data a metà digitazione
+                run(async () => {
+                  const r = await api.patch<{ tasks_updated?: number }>(`/api/progetti/phases/${phase.id}`, { due_date: v || null });
+                  if (r.tasks_updated) toast.success(`${r.tasks_updated} ${r.tasks_updated === 1 ? 'attività allineata' : 'attività allineate'} alla scadenza della fase`);
+                });
+              }} />
           </label>
         )}
         {phase && (confirmDel

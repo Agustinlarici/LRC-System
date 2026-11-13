@@ -111,6 +111,13 @@ export function fmtShort(iso: string | null): string {
 export function initials(name: string | null | undefined): string {
   return (name ?? '').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]!.toUpperCase()).join('');
 }
+/** Un campo data scritto a mano passa per valori intermedi (anno 0002…): si invia solo una data plausibile. */
+export function isPlausibleDate(v: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const y = Number(v.slice(0, 4));
+  return y >= 2000 && y <= 2100;
+}
+
 /** Data AAAA-MM-GG a N giorni da oggi (ora locale). */
 export function isoPlusDays(n: number): string {
   const d = new Date(`${todayISO()}T12:00:00`);
