@@ -16,6 +16,7 @@ import { logger } from './lib/logger.js';
 import { recepcionesEmitter } from './gateway/recepciones-emitter.js';
 import { letturaNotturna } from './modules/ferrari/cartella.js';
 import { pollOneDriveFolder } from './modules/spma/onedrive-watcher.js';
+import { runPhotoFeed } from './modules/photo-station/feed.js';
 
 function nextEvery10Min(): Date {
   const now = new Date();
@@ -152,6 +153,11 @@ export function startScheduler() {
       logger.error(`[scheduler] SPMA OneDrive poll fallito: ${e instanceof Error ? e.message : e}`);
     }
     setNextRun('spma_onedrive_poll', nextEvery10Min());
+  }, { timezone: 'Europe/Rome' });
+
+  // Every minute — Photo Station: ordini di foto dalla copia del DB di iKnow (spento finché non lo si accende)
+  cron.schedule('* * * * *', async () => {
+    try { await runPhotoFeed(); } catch { /* runPhotoFeed registra già i suoi errori */ }
   }, { timezone: 'Europe/Rome' });
 
   // Every minute — rilevamento automatico fermate di linea

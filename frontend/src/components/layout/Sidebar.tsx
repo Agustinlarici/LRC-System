@@ -63,6 +63,7 @@ const MODULE_KEY_MAP: Record<string, ModuleKey | ModuleKey[]> = {
   '/mappa':              'mappa',
   '/tickets':            'tickets',
   '/progetti':           'tickets_it',
+  '/photo-station':      'photo_station',
   '/admin/system':       'impostazioni',
   '/dashboards':              'dashboards',
   '/dashboards/heatmap':      'dashboards',

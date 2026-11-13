@@ -45,7 +45,7 @@ function PersonSelect({ people, value, onChange, currentUserId, className }: {
     </div>
   );
 }
-type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci' | 'programma_produzione' | 'hr' | 'hr_salary' | 'hr_team' | 'ferrari_schede' | 'ferrari_supervisore';
+type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci' | 'programma_produzione' | 'hr' | 'hr_salary' | 'hr_team' | 'ferrari_schede' | 'ferrari_supervisore' | 'photo_station';
 type Permission = { module_key: ModuleKey; can_view: boolean; can_manage: boolean };
 
 const MODULE_CATEGORIES = ['Logistica', 'Produzione', 'Dashboard', 'IT', 'Qualità', 'HR'] as const;
@@ -79,6 +79,7 @@ const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATE
   { key: 'impostazioni',  label: 'Impostazioni',           category: 'IT' },
   { key: 'ferrari_schede',      label: 'Programma produzione (schede)',               category: 'IT' },
   { key: 'ferrari_supervisore', label: 'Programma produzione (schede) — Supervisore',   category: 'IT' },
+  { key: 'photo_station', label: 'Photo Station (ordini di foto)',   category: 'IT' },
 
   // ── Qualità ────────────────────────────────────────────────────────────────
   { key: 'qualita', label: 'Difetti', category: 'Qualità' },

@@ -99,6 +99,11 @@ export const MODULES: ModuleConfig[] = [
     sidebar: 'IconTicket', hidden: false, moduleKey: 'tickets',
   },
   {
+    href: '/photo-station', label: 'Photo Station', group: 'IT',
+    description: 'Ordini di foto per la PC Camere e foto acquisite',
+    sidebar: 'IconScan', hidden: false, moduleKey: 'photo_station',
+  },
+  {
     href: '/progetti', label: 'Progetti', group: 'IT',
     description: 'Progetti, attività, avanzamenti e cronologia: cosa fare oggi e cosa aspetta una risposta',
     sidebar: 'IconProject', hidden: false, moduleKey: 'tickets_it',
