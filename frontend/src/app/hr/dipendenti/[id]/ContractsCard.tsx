@@ -64,6 +64,13 @@ export function ContractsCard({ employeeId }: { employeeId: number }) {
             );
           })}
         </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-stone-200 font-medium">
+            <td className="py-1.5" colSpan={2}>Totale</td>
+            <td className="py-1.5 text-right tabular-nums">{total}{items.some(c => !c.data_fine) ? '+' : ''}</td>
+            <td colSpan={2} />
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
