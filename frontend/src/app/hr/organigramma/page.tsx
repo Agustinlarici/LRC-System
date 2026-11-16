@@ -172,7 +172,7 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
                   onClick={() => onSelect(p.id)}
                   className={`flex items-center gap-1.5 px-2 py-0.5 cursor-pointer hover:bg-stone-50 ${isSelected ? 'bg-accent-soft' : ''}`}
                 >
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: colorFor(p) }} />
+                  <EmployeeAvatar id={p.id} nome={p.nome} cognome={p.cognome} photoVersion={p.photo_version} className="w-5 h-5 text-[8px]" background={colorFor(p)} />
                   <span className={`text-[11px] leading-tight break-words ${matches.has(p.id) ? 'text-warning font-medium' : 'text-ink-800'}`}>
                     {p.cognome} {p.nome}
                   </span>
@@ -240,6 +240,20 @@ function OrgCard({ node, colorFor, expanded, toggle, matches, selectedId, onSele
         </ul>
       )}
     </li>
+  );
+}
+
+// Voce cliccabile nel pannello laterale: foto (o iniziali) + nome + mansione
+function PersonButton({ person, color, onSelect, prefix }: { person: HrOrgNode; color: string; onSelect: (id: number) => void; prefix?: string }) {
+  return (
+    <button onClick={() => onSelect(person.id)} className="btn-secondary text-xs flex items-center gap-2 w-full text-left">
+      {prefix && <span className="text-stone-300">{prefix}</span>}
+      <EmployeeAvatar id={person.id} nome={person.nome} cognome={person.cognome} photoVersion={person.photo_version} className="w-7 h-7 text-[10px]" background={color} />
+      <span className="min-w-0">
+        <span className="block text-ink-800">{person.cognome} {person.nome}</span>
+        {person.mansione && <span className="block text-[11px] text-muted">{person.mansione}</span>}
+      </span>
+    </button>
   );
 }
 
@@ -385,6 +399,11 @@ export default function OrganigrammaPage() {
     return chain;
   }, [selected, byId]);
   const directReports = useMemo(() => selected ? nodes.filter(n => n.capo_id === selected.id) : [], [selected, nodes]);
+  // Colleghi: stesso responsabile diretto della persona selezionata
+  const colleagues = useMemo(
+    () => selected && selected.capo_id != null ? nodes.filter(n => n.capo_id === selected.capo_id && n.id !== selected.id) : [],
+    [selected, nodes],
+  );
   // Partner della persona selezionata, se fa parte di una coppia di co-responsabili configurata
   const coCapi = useMemo(() => {
     if (!selected) return [];
@@ -495,11 +514,7 @@ export default function OrganigrammaPage() {
                 <div>
                   <p className="text-[11px] font-medium text-muted uppercase tracking-wide mb-1.5">Co-responsabile</p>
                   <div className="space-y-1">
-                    {coCapi.map(s => (
-                      <button key={s.id} onClick={() => setSelectedId(s.id)} className="btn-secondary text-xs flex items-center gap-1.5 w-full text-left">
-                        {s.cognome} {s.nome} {s.mansione && <span className="text-xs text-muted">— {s.mansione}</span>}
-                      </button>
-                    ))}
+                    {coCapi.map(s => <PersonButton key={s.id} person={s} color={colorFor(s)} onSelect={setSelectedId} />)}
                   </div>
                 </div>
               )}
@@ -508,13 +523,18 @@ export default function OrganigrammaPage() {
                 <div>
                   <p className="text-[11px] font-medium text-muted uppercase tracking-wide mb-1.5">Catena superiori</p>
                   <div className="space-y-1">
-                    {superiors.map((s, i) => (
-                      <div key={s.id} className="flex items-center gap-1.5 text-sm">
-                        <span className="text-stone-300">{'  '.repeat(i)}↑</span>
-                        <button onClick={() => setSelectedId(s.id)} className="btn-secondary text-xs">{s.cognome} {s.nome}</button>
-                        {s.mansione && <span className="text-xs text-muted">— {s.mansione}</span>}
-                      </div>
-                    ))}
+                    {superiors.map(s => <PersonButton key={s.id} person={s} color={colorFor(s)} onSelect={setSelectedId} prefix="↑" />)}
+                  </div>
+                </div>
+              )}
+
+              {colleagues.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-medium text-muted uppercase tracking-wide mb-1.5">
+                    Colleghi ({colleagues.length})
+                  </p>
+                  <div className="space-y-1">
+                    {colleagues.map(c => <PersonButton key={c.id} person={c} color={colorFor(c)} onSelect={setSelectedId} />)}
                   </div>
                 </div>
               )}
@@ -527,11 +547,7 @@ export default function OrganigrammaPage() {
                   <p className="text-xs text-muted">Nessun riporto diretto</p>
                 ) : (
                   <div className="space-y-1">
-                    {directReports.map(r => (
-                      <button key={r.id} onClick={() => setSelectedId(r.id)} className="btn-secondary text-xs flex items-center gap-1.5 w-full text-left">
-                        <span>↳</span> {r.cognome} {r.nome} {r.mansione && <span className="text-xs text-muted">— {r.mansione}</span>}
-                      </button>
-                    ))}
+                    {directReports.map(r => <PersonButton key={r.id} person={r} color={colorFor(r)} onSelect={setSelectedId} prefix="↳" />)}
                   </div>
                 )}
               </div>
