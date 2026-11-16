@@ -29,6 +29,52 @@ function frase(r: RegolaComp): string {
 const pulita = (b: Bozza): RegolaComp => ({ ...perApi(b), nome: frase(b).slice(0, 80) });      // il nome e' la frase: niente da inventare
 const impronta = (b: Bozza[]) => JSON.stringify(b.map(pulita));
 
+/** Una condizione come etichetta corta: «AS06», «senza EXAB», «MRKT = CINA». */
+function EtichettaCond({ c }: { c: Condizione }) {
+  const base = 'inline-block rounded-ctl px-1.5 py-0.5 text-xs';
+  switch (c.tipo) {
+    case 'presente': return <span className={`${base} bg-stone-100 font-mono font-semibold text-ink-800`}>{c.sigla || '…'}</span>;
+    case 'assente': return <span className={`${base} bg-danger-soft font-mono font-semibold text-danger`}>senza {c.sigla || '…'}</span>;
+    case 'valore': return <span className={`${base} bg-stone-100 text-ink-800`}><span className="font-mono font-semibold">{c.sigla || '…'}</span> = {c.testo}</span>;
+    case 'testo': return <span className={`${base} bg-stone-100 text-ink-800`}>{c.sigla?.trim() ? <><span className="font-mono font-semibold">{c.sigla}</span> contiene</> : 'testo contiene'} «{c.testo}»</span>;
+  }
+}
+
+function SeLeggi({ r }: { r: RegolaComp }) {
+  if (r.condizioni.length === 0) return <span className="text-sm text-muted">sempre</span>;
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {r.condizioni.map((c, i) => (
+        <span key={i} className="inline-flex items-center gap-1">
+          {i > 0 && <span className="text-xs text-muted">{r.logica === 'tutte' ? 'e' : 'oppure'}</span>}
+          <EtichettaCond c={c} />
+        </span>
+      ))}
+      {r.eccezioni.length > 0 && (
+        <span className="inline-flex flex-wrap items-center gap-1">
+          <span className="text-xs text-muted">tranne se</span>
+          {r.eccezioni.map((c, i) => <EtichettaCond key={i} c={c} />)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function Allora({ r }: { r: RegolaComp }) {
+  return (
+    <ul className="space-y-0.5 text-sm">
+      {r.azioni.map((a, i) => (
+        <li key={i}>
+          <span className="font-semibold text-ink-900">{a.componente || '…'}</span>
+          <span className="ml-2 font-mono text-xs text-ink-700">
+            {a.valore.tipo === 'sigla' ? a.valore.sigla || '…' : a.valore.tipo === 'fisso' ? `«${a.valore.testo}»` : `testo di ${a.valore.sigla || '…'}`}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 const TIPI_COND: { v: Condizione['tipo']; t: string }[] = [
   { v: 'presente', t: 'ha' }, { v: 'assente', t: 'NON ha' }, { v: 'valore', t: 'valore di' }, { v: 'testo', t: 'testo contiene' },
 ];
@@ -164,21 +210,32 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
                 action={puoModificare ? <button className="btn-primary" onClick={() => setBozza([nuova()])}>Nuova regola</button> : undefined} />
             </div>
           ) : (
-            <ol className="divide-y divide-line overflow-hidden rounded-card border border-line bg-white">
+            <div className="overflow-hidden rounded-card border border-line bg-white">
+            <div className="hidden grid-cols-[1.25rem_minmax(0,1fr)_1.25rem_minmax(0,1fr)_15rem] gap-x-3 border-b border-line bg-stone-50 px-4 py-2 text-xs font-medium text-muted md:grid">
+              <span /><span>Se la scheda…</span><span /><span>Allora aggiungi a…</span><span />
+            </div>
+            <ol className="divide-y divide-line">
               {bozza.map((r, i) => {
                 const e = prova?.regole[i];
                 return (
                   <li key={r.k} className={r.attiva ? '' : 'bg-stone-50'}>
                     <div className="flex items-center gap-3 px-4 py-3">
                       <span className="w-5 shrink-0 text-center text-xs tabular-nums text-muted">{i + 1}</span>
-                      <button className="min-w-0 flex-1 text-left" onClick={() => setBozza(b => b && b.map(x => (x.k === r.k ? { ...x, aperta: !x.aperta } : x)))} aria-expanded={r.aperta}>
-                        <span className={`text-sm ${r.attiva ? 'text-ink-900' : 'text-muted line-through'}`}>{frase(r)}</span>
-                        <span className="ml-2 text-xs text-muted">
-                          {r.modello !== '*' && <span className="mr-2">solo {r.modello}</span>}
-                          {r.ferma && <span className="mr-2">ferma le seguenti</span>}
+                      <button className="grid min-w-0 flex-1 items-center gap-x-3 gap-y-1 text-left md:grid-cols-[minmax(0,1fr)_1.25rem_minmax(0,1fr)]"
+                        onClick={() => setBozza(b => b && b.map(x => (x.k === r.k ? { ...x, aperta: !x.aperta } : x)))} aria-expanded={r.aperta}>
+                        <span className={r.attiva ? '' : 'opacity-50'}><SeLeggi r={r} /></span>
+                        <span className="hidden text-muted md:block" aria-hidden>→</span>
+                        <span className={r.attiva ? '' : 'opacity-50'}>
+                          <Allora r={r} />
+                          {(r.modello !== '*' || r.ferma || !r.attiva) && (
+                            <span className="mt-0.5 block text-xs text-muted">
+                              {[!r.attiva && 'disattivata', r.modello !== '*' && `solo ${r.modello}`, r.ferma && 'poi si ferma'].filter(Boolean).join(' · ')}
+                            </span>
+                          )}
                         </span>
                       </button>
-                      {e && <span className={`shrink-0 text-xs font-medium ${e.esito === 'scattata' ? 'text-success' : 'text-muted'}`}>{ESITO[e.esito].testo}</span>}
+                      <span className="flex shrink-0 items-center justify-end gap-2 md:w-60">
+                      {e && <span className={`w-20 shrink-0 text-right text-xs font-medium ${e.esito === 'scattata' ? 'text-success' : 'text-muted'}`}>{ESITO[e.esito].testo}</span>}
                       {puoModificare && (
                         <span className="flex shrink-0 items-center gap-1 text-muted">
                           <button className="px-1.5 hover:text-ink-900 disabled:opacity-30" disabled={i === 0} onClick={() => sposta(i, -1)} aria-label="Sposta su">↑</button>
@@ -187,6 +244,7 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
                             onChange={ev => modifica(r.k, x => ({ ...x, attiva: ev.target.checked }))} />attiva</label>
                         </span>
                       )}
+                      </span>
                     </div>
 
                     {r.aperta && (
@@ -257,6 +315,7 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
                 );
               })}
             </ol>
+            </div>
           )}
           </div>
 
