@@ -52,6 +52,8 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
   beforeEach(async () => {
     await db`TRUNCATE photo_job_files, photo_jobs, photo_stations, photo_phases, photo_iknow_config, photo_feed_config RESTART IDENTITY CASCADE`;
     await db`DELETE FROM webthron_events_history WHERE cod_seriale LIKE 'TST%'`;
+    await db`DELETE FROM spma_commessa WHERE commessa_code LIKE '99900%'`;
+    await db`DELETE FROM spma_line WHERE name = 'PSTEST LINEA'`;
     await db`INSERT INTO photo_phases (key, label) VALUES ('delibera_finale', 'Delibera finale'), ('delibera_finale_proximiti', 'Delibera finale Proximiti')`;
     const mkStation = async (name: string, phases: string[]) => {
       const { token, hash } = helpers.newStationToken();
@@ -403,5 +405,49 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
     await user('/feed', { method: 'PUT', body: JSON.stringify({ mode: 'api', esiti_ok: [] }) });
     expect((await (await iknow(body())).json() as any).result).toBe('created');
     expect(await count()).toBe(1);
+  });
+
+  // ─── Modello e linea desde la tabla SPMA (la que actualiza /spma/import) ───────────
+  const spma = async (code: string, model: string, withLine = true) => {
+    const [line] = await db`INSERT INTO spma_line (name) VALUES ('PSTEST LINEA') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id`;
+    await db`INSERT INTO spma_commessa (commessa_code, model_code, line_id) VALUES (${code}, ${model}, ${withLine ? line.id : null})`;
+  };
+  const claimOf = async (commessa: string) => {
+    await newJob(commessa);
+    return (await (await station('/claim', { method: 'POST' })).json() as any).job;
+  };
+
+  it('spma: el pedido toma modello y linea de la commessa', async () => {
+    await spma('9990001', 'F175');
+    const job = await claimOf('9990001');
+    expect(job).toMatchObject({ commessa: '9990001', modello: 'F175', linea: 'PSTEST LINEA' });
+  });
+
+  it('spma: una commessa con ceros delante ("0009990002") encuentra la de la tabla ("9990002") y al revés', async () => {
+    await spma('9990002', 'F8');
+    expect(await claimOf('0009990002')).toMatchObject({ modello: 'F8', linea: 'PSTEST LINEA' });
+    await db`UPDATE photo_jobs SET status = 'captured'`;
+    await spma('0009990003', 'F9');
+    expect(await claimOf('9990003')).toMatchObject({ modello: 'F9' });
+  });
+
+  it('spma: si hay una coincidencia exacta gana sobre la que solo coincide sin ceros', async () => {
+    await spma('9990004', 'EXACTA');
+    await spma('09990004', 'SIN-CEROS');
+    expect((await claimOf('9990004')).modello).toBe('EXACTA');
+  });
+
+  it('spma: sin commessa en la tabla, modelo "-" o sin linea → null, nunca error', async () => {
+    expect(await claimOf('9990005')).toMatchObject({ modello: null, linea: null });
+    await db`UPDATE photo_jobs SET status = 'captured'`;
+    await spma('9990006', '-', false);
+    expect(await claimOf('9990006')).toMatchObject({ modello: null, linea: null });
+  });
+
+  it('spma: la lista de pedidos de la pagina tambien muestra modello y linea', async () => {
+    await spma('9990007', 'F175');
+    await newJob('9990007');
+    const j = ((await (await user('/jobs')).json() as any).jobs as any[]).find(x => x.commessa === '9990007');
+    expect(j).toMatchObject({ modello: 'F175', linea: 'PSTEST LINEA' });
   });
 });

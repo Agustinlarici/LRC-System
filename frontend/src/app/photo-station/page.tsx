@@ -13,7 +13,7 @@ import { SkeletonTable } from '@/components/ui/Skeleton';
 type Job = {
   id: number; commessa: string; phase: string; source: string; status: string; attempts: number;
   capture_status: string | null; capture_errors: { camera: string; error: string }[]; error: string | null;
-  created_by: string | null; seriale: string | null; componente: string | null; versione: string | null; created_at: string; finished_at: string | null; station_name: string | null; photos: number;
+  created_by: string | null; seriale: string | null; componente: string | null; versione: string | null; modello: string | null; linea: string | null; created_at: string; finished_at: string | null; station_name: string | null; photos: number;
 };
 type FileRow = { id: number; camera: string; bytes: number };
 type Phase = { key: string; label: string; iknow_fase: string | null; active: boolean };
@@ -155,6 +155,7 @@ export default function PhotoStationPage() {
                     <td className="px-4 py-3 tabular-nums text-muted">{j.id}</td>
                     <td className="px-4 py-3 font-medium text-ink-900">
                       {j.commessa}
+                      {(j.modello || j.linea) && <div className="text-xs font-normal text-muted">{[j.modello, j.linea].filter(Boolean).join(' · ')}</div>}
                       {j.seriale && <div className="text-xs font-normal text-muted">{j.seriale} · {j.componente} {j.versione}</div>}
                     </td>
                     <td className="px-4 py-3 text-muted">{phaseLabel(j.phase)}</td>
