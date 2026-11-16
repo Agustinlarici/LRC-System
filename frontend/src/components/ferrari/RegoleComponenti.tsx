@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import {
-  descriviAzione, descriviCondizione, ESITO, perApi, regoleApi,
-  type Azione, type Condizione, type ProvaRegole, type RegolaComp, type VoceComp,
+  chiaveRegola, descriviAzione, descriviCondizione, ESITO, perApi, regoleApi, scaricaModelloRegole,
+  type Azione, type Condizione, type ProvaRegole, type RegolaComp, type RisultatoImport, type VoceComp,
 } from '@/lib/ferrari-regole';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -133,8 +133,11 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
   const [errore, setErrore] = useState<string | null>(null);
   const [msg, setMsg] = useState('');
   const [occupato, setOccupato] = useState(false);
+  const [importando, setImportando] = useState(false);
   const [commessa, setCommessa] = useState('');
   const [prova, setProva] = useState<ProvaRegole | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importo, setImporto] = useState<{ nome: string; aggiunte: number; doppie: number; errori: RisultatoImport['errori']; troppe: number } | null>(null);
   const [fTesto, setFTesto] = useState('');                 // cerca una sigla, un testo o un componente
   const [fModello, setFModello] = useState('');             // '' = tutti, '*' = solo le generali, altrimenti un modello
 
@@ -200,9 +203,33 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
     try { setProva(await regoleApi.prova(commessa.trim(), bozza.map(pulita))); } catch (e) { setProva(null); setErrore((e as Error).message); }
   }
 
+  /** Legge l'Excel e aggiunge le regole alla bozza (la persona le controlla e preme Salva). */
+  async function importa(file: File | undefined) {
+    if (!file || !bozza) return;
+    setErrore(null); setImportando(true);
+    try {
+      const r = await regoleApi.importa(file);
+      const esistenti = new Set(bozza.map(b => chiaveRegola(b)));
+      const nuove: RegolaComp[] = [];
+      let doppie = 0;
+      for (const x of r.regole) {
+        const k = chiaveRegola(x);
+        if (esistenti.has(k)) { doppie++; continue; }
+        esistenti.add(k); nuove.push(x);
+      }
+      const posto = Math.max(0, 500 - bozza.length);                              // stesso limite del server
+      const aggiunte = nuove.slice(0, posto);
+      setFTesto(''); setFModello(''); setProva(null);
+      setBozza(b => [...(b ?? []), ...aggiunte.map(x => ({ ...x, k: ++contatore, aperta: false }))]);
+      setImporto({ nome: file.name, aggiunte: aggiunte.length, doppie, errori: r.errori, troppe: nuove.length - aggiunte.length });
+    } catch (e) { setImporto(null); setErrore((e as Error).message); } finally { setImportando(false); if (fileRef.current) fileRef.current.value = ''; }
+  }
+
   const azioniPagina = puoModificare && (
     <>
       {sporca && <button className="btn-secondary" onClick={() => { imposta(JSON.parse(salvate) as RegolaComp[]); setProva(null); }}>Annulla</button>}
+      <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => { void importa(e.target.files?.[0]); }} />
+      <button className="btn-secondary" disabled={importando || bozza === null} onClick={() => fileRef.current?.click()}>{importando ? 'Lettura…' : 'Importa Excel'}</button>
       <button className="btn-secondary" onClick={() => { setFTesto(''); setFModello(''); setBozza(b => [...(b ?? []), nuova()]); setProva(null); }}>Nuova regola</button>
       <button className="btn-primary" disabled={!sporca || occupato} onClick={salva}>{occupato ? 'Salvataggio…' : 'Salva'}</button>
     </>
@@ -211,7 +238,9 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
   return (
     <div>
       <PageHeader back={{ label: 'Per componente', href: '/ferrari/componenti' }} title="Regole dei componenti"
-        description={msg && !sporca ? msg : 'Si applicano dall\'alto in basso.'} actions={azioniPagina} />
+        description={msg && !sporca ? msg : (
+          <>Si applicano dall&apos;alto in basso{puoModificare && <> · <button className="font-semibold text-accent-ink hover:underline" title="Foglio Excel di esempio per caricare molte regole con «Importa Excel»" onClick={() => { void scaricaModelloRegole(); }}>modello Excel</button></>}</>
+        )} actions={azioniPagina} />
       <datalist id="componenti-regole">{nomiComp.map(n => <option key={n} value={n} />)}</datalist>
       <datalist id="sigle-regole">{(prova?.sigle ?? []).map(s => <option key={s} value={s} />)}</datalist>
       <Errore messaggio={errore} />
@@ -219,6 +248,28 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
       {bozza === null ? <p className="py-10 text-center text-sm text-muted">Caricamento…</p> : (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="min-w-0">
+          {importo && (
+            <div className="d-print-none mb-3 rounded-card border border-line bg-white px-4 py-3 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <p>
+                  <b>{importo.nome}</b>: {importo.aggiunte === 0 ? 'nessuna regola nuova' : <><b>{importo.aggiunte}</b> {importo.aggiunte === 1 ? 'regola aggiunta' : 'regole aggiunte'} in fondo alla lista</>}
+                  {importo.doppie > 0 && <span className="text-muted"> · {importo.doppie} già presenti, saltate</span>}
+                  {importo.troppe > 0 && <span className="text-warning"> · {importo.troppe} non aggiunte: massimo 500 regole</span>}
+                  {importo.aggiunte > 0 && <span className="text-muted"> · controllale e premi <b>Salva</b></span>}
+                </p>
+                <button className="shrink-0 text-xs text-muted hover:text-ink-900" onClick={() => setImporto(null)}>Chiudi</button>
+              </div>
+              {importo.errori.length > 0 && (
+                <details className="mt-2" open={importo.errori.length <= 5}>
+                  <summary className="cursor-pointer text-warning">{importo.errori.length} {importo.errori.length === 1 ? 'riga non letta' : 'righe non lette'}</summary>
+                  <ul className="mt-1 space-y-0.5 text-xs text-ink-700">
+                    {importo.errori.slice(0, 50).map(e => <li key={e.riga}>Riga {e.riga}: {e.motivo}</li>)}
+                    {importo.errori.length > 50 && <li className="text-muted">… e altre {importo.errori.length - 50}</li>}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
           {bozza.length > 1 && (
             <div className="d-print-none mb-3 flex flex-wrap items-center gap-2">
               <input className="input !w-60 !py-1.5" placeholder="Cerca sigla, testo o componente…" value={fTesto} onChange={ev => setFTesto(ev.target.value)} aria-label="Cerca nelle regole" />

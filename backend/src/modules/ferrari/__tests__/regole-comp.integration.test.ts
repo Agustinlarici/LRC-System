@@ -92,6 +92,21 @@ describe.skipIf(!URL)('Regole dei componenti — rotte, tabella e prova', () => 
     expect((await tabella('307207')).righe.map(r => r.commessa)).toEqual(['307207']);               // filtro per commessa
   });
 
+  it('l\'importazione da Excel legge le regole senza salvarle; solo chi puo\' modificare', async () => {
+    const XLSX = await import('xlsx');
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Se ha', 'Non ha', 'Aggiungi a', 'Valore'], ['CEL2', '', 'Motore', ''], ['', '', 'X', 'y']]), 'R');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    const invia = (token: string, nome = 'regole.xlsx') => { const f = new FormData(); f.append('file', new Blob([buf]), nome); return chiama('POST', '/regole-componenti/importa', { token, form: f }); };
+    expect((await invia(senzaPermessi)).status).toBe(403);
+    expect((await invia(admin, 'regole.pdf')).status).toBe(400);
+    const r = await invia(admin);
+    expect(r.status).toBe(200);
+    const j = (await r.json()) as { regole: { azioni: unknown[] }[]; errori: { riga: number }[]; righe: number };
+    expect([j.regole.length, j.errori.map(e => e.riga), j.righe]).toEqual([1, [3], 2]);
+    expect(((await (await chiama('GET', '/regole-componenti', { token: admin })).json()) as { regole: unknown[] }).regole).toHaveLength(0);   // non salva
+  });
+
   it('la prova spiega perche\' scatta o no, anche con regole non ancora salvate; commessa sconosciuta = 404', async () => {
     const bozza = [
       regola({ nome: 'specifica', condizioni: [{ tipo: 'presente', sigla: 'CEL2' }, { tipo: 'presente', sigla: 'ZZZZ' }], azioni: [fisso('P', 'a')], ferma: true }),
