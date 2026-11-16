@@ -135,6 +135,8 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
   const [occupato, setOccupato] = useState(false);
   const [commessa, setCommessa] = useState('');
   const [prova, setProva] = useState<ProvaRegole | null>(null);
+  const [fTesto, setFTesto] = useState('');                 // cerca una sigla, un testo o un componente
+  const [fModello, setFModello] = useState('');             // '' = tutti, '*' = solo le generali, altrimenti un modello
 
   const imposta = useCallback((rs: RegolaComp[]) => {
     const b = rs.map(r => ({ ...r, k: ++contatore, aperta: false }));
@@ -149,6 +151,19 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
 
   const sporca = bozza !== null && impronta(bozza) !== salvate;
   const nomiComp = useMemo(() => [...new Set([...componenti, ...(bozza ?? []).flatMap(r => r.azioni.map(a => a.componente.trim()).filter(Boolean))])], [componenti, bozza]);
+
+  const filtrando = fTesto.trim() !== '' || fModello !== '';
+  const visibili = useMemo(() => {
+    const t = fTesto.trim().toLowerCase();
+    const contiene = (r: RegolaComp) => {
+      const pezzi: string[] = [];
+      for (const c of [...r.condizioni, ...r.eccezioni]) pezzi.push(c.sigla ?? '', 'testo' in c ? c.testo : '');
+      for (const a of r.azioni) pezzi.push(a.componente, a.valore.tipo === 'fisso' ? a.valore.testo : a.valore.sigla);
+      return pezzi.some(x => x.toLowerCase().includes(t));
+    };
+    return (bozza ?? []).map((r, i) => ({ r, i })).filter(({ r }) =>
+      (!t || contiene(r)) && (!fModello || (fModello === '*' ? r.modello === '*' : r.modello === '*' || r.modello === fModello)));
+  }, [bozza, fTesto, fModello]);
 
   const modifica = useCallback((k: number, f: (r: Bozza) => Bozza) => { setBozza(b => b && b.map(r => (r.k === k ? f(r) : r))); setProva(null); setMsg(''); }, []);
   const sposta = (i: number, d: -1 | 1) => setBozza(b => {
@@ -188,7 +203,7 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
   const azioniPagina = puoModificare && (
     <>
       {sporca && <button className="btn-secondary" onClick={() => { imposta(JSON.parse(salvate) as RegolaComp[]); setProva(null); }}>Annulla</button>}
-      <button className="btn-secondary" onClick={() => { setBozza(b => [...(b ?? []), nuova()]); setProva(null); }}>Nuova regola</button>
+      <button className="btn-secondary" onClick={() => { setFTesto(''); setFModello(''); setBozza(b => [...(b ?? []), nuova()]); setProva(null); }}>Nuova regola</button>
       <button className="btn-primary" disabled={!sporca || occupato} onClick={salva}>{occupato ? 'Salvataggio…' : 'Salva'}</button>
     </>
   );
@@ -204,6 +219,22 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
       {bozza === null ? <p className="py-10 text-center text-sm text-muted">Caricamento…</p> : (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="min-w-0">
+          {bozza.length > 1 && (
+            <div className="d-print-none mb-3 flex flex-wrap items-center gap-2">
+              <input className="input !w-60 !py-1.5" placeholder="Cerca sigla, testo o componente…" value={fTesto} onChange={ev => setFTesto(ev.target.value)} aria-label="Cerca nelle regole" />
+              <select className="input !w-auto !py-1.5" value={fModello} onChange={ev => setFModello(ev.target.value)} aria-label="Filtra per modello">
+                <option value="">Tutti i modelli</option>
+                <option value="*">Solo le generali</option>
+                {[...new Set([...modelli, ...bozza.map(r => r.modello).filter(m => m !== '*')])].map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              {filtrando && (
+                <>
+                  <span className="text-xs text-muted">{visibili.length} di {bozza.length}</span>
+                  <button className="text-xs font-semibold text-accent-ink hover:underline" onClick={() => { setFTesto(''); setFModello(''); }}>Azzera</button>
+                </>
+              )}
+            </div>
+          )}
           {bozza.length === 0 ? (
             <div className="rounded-card border border-line bg-white">
               <EmptyState title="Nessuna regola" hint="Esempio: se la scheda ha AS06, aggiungi AS06 a Paraurti."
@@ -215,7 +246,8 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
               <span /><span>Se la scheda…</span><span /><span>Allora aggiungi a…</span><span />
             </div>
             <ol className="divide-y divide-line">
-              {bozza.map((r, i) => {
+              {visibili.length === 0 && <li className="px-4 py-8 text-center text-sm text-muted">Nessuna regola corrisponde ai filtri.</li>}
+              {visibili.map(({ r, i }) => {
                 const e = prova?.regole[i];
                 return (
                   <li key={r.k} className={r.attiva ? '' : 'bg-stone-50'}>
@@ -238,8 +270,8 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
                       {e && <span className={`w-20 shrink-0 text-right text-xs font-medium ${e.esito === 'scattata' ? 'text-success' : 'text-muted'}`}>{ESITO[e.esito].testo}</span>}
                       {puoModificare && (
                         <span className="flex shrink-0 items-center gap-1 text-muted">
-                          <button className="px-1.5 hover:text-ink-900 disabled:opacity-30" disabled={i === 0} onClick={() => sposta(i, -1)} aria-label="Sposta su">↑</button>
-                          <button className="px-1.5 hover:text-ink-900 disabled:opacity-30" disabled={i === bozza.length - 1} onClick={() => sposta(i, 1)} aria-label="Sposta giù">↓</button>
+                          <button className="px-1.5 hover:text-ink-900 disabled:opacity-30" disabled={i === 0 || filtrando} title={filtrando ? 'Togli i filtri per cambiare l\'ordine' : undefined} onClick={() => sposta(i, -1)} aria-label="Sposta su">↑</button>
+                          <button className="px-1.5 hover:text-ink-900 disabled:opacity-30" disabled={i === bozza.length - 1 || filtrando} title={filtrando ? 'Togli i filtri per cambiare l\'ordine' : undefined} onClick={() => sposta(i, 1)} aria-label="Sposta giù">↓</button>
                           <label className="ml-1 flex cursor-pointer items-center gap-1 text-xs"><input type="checkbox" checked={r.attiva} aria-label="Attiva"
                             onChange={ev => modifica(r.k, x => ({ ...x, attiva: ev.target.checked }))} />attiva</label>
                         </span>
