@@ -119,7 +119,7 @@ function wantOf(r: Row, ctx: Ctx): Record<string, string | number | boolean | nu
   const sesso = clean(r.dip_sesso).toUpperCase();
   const matricola = noLeadingZeros(r.dip_matricola);
   const livello = clean(r.dip_livello);
-  const plantId = ctx.plantByName.get(norm(clean(r.filiale)));   // filiale/ditta arrivano solo dalla lettura MySQL
+  const plantId = ctx.plantByName.get(norm(plantOf(r)));   // filiale/ditta arrivano solo dalla lettura MySQL
   return {
     nome_osti: r.dip_nome ?? '',   // com'è in Osti, senza ripulire
     matricola: matricola && matricola !== '0' ? matricola : null,
@@ -163,6 +163,9 @@ function wantOf(r: Row, ctx: Ctx): Record<string, string | number | boolean | nu
 }
 
 // "REPARTO VERNICIATURA" in Osti = "VERNICIATURA" da noi
+// Plant: dalla filiale di Osti si usano solo le prime 4 lettere (STR1…STR5); qualsiasi altro valore = nessun plant
+const plantOf = (r: Row) => { const k = clean(r.filiale).slice(0, 4).toUpperCase(); return /^STR[1-5]$/.test(k) ? k : ''; };
+
 const repartoOf = (r: Row) => clean(r.reparto).replace(/^reparto\s+/i, '');
 
 // Confronta la scheda con quanto propone Osti e dice cosa scrivere
@@ -408,7 +411,7 @@ export async function runOstiImport(
       m.emps.push(emp);
       missingDepts.set(norm(rep), m);
     }
-    for (const [kind, label, known] of [['plant', clean(r.filiale), ctx.plantByName], ['company', clean(r.ditta), ctx.companyByName]] as const) {
+    for (const [kind, label, known] of [['plant', plantOf(r), ctx.plantByName], ['company', clean(r.ditta), ctx.companyByName]] as const) {
       if (!label || known.has(norm(label))) continue;
       const m = missingCat.get(kind + norm(label)) ?? { kind, label, emps: [] };
       m.emps.push(emp);
