@@ -107,6 +107,21 @@ describe.skipIf(!URL)('Regole dei componenti — rotte, tabella e prova', () => 
     expect(((await (await chiama('GET', '/regole-componenti', { token: admin })).json()) as { regole: unknown[] }).regole).toHaveLength(0);   // non salva
   });
 
+  it('l\'esportazione scarica le regole salvate in Excel e si puo\' reimportare', async () => {
+    expect((await chiama('GET', '/regole-componenti/esporta')).status).toBe(401);
+    expect((await chiama('GET', '/regole-componenti/esporta', { token: senzaPermessi })).status).toBe(403);
+    await salva([regola({ nome: 'x', condizioni: [{ tipo: 'presente', sigla: 'CEL2' }], azioni: [sigla('Motore', 'CEL2')] }),
+      regola({ nome: 'con eccezione', condizioni: [{ tipo: 'presente', sigla: 'A1' }], eccezioni: [{ tipo: 'presente', sigla: 'B1' }], azioni: [fisso('P', 'x')] })]);
+    const r = await chiama('GET', '/regole-componenti/esporta', { token: admin });
+    expect(r.status).toBe(200);
+    expect(r.headers.get('Content-Disposition')).toMatch(/regole-componenti-\d{4}-\d{2}-\d{2}\.xlsx/);
+    const buf = Buffer.from(await r.arrayBuffer());
+    const f = new FormData();
+    f.append('file', new Blob([buf]), 'regole.xlsx');
+    const j = (await (await chiama('POST', '/regole-componenti/importa', { token: admin, form: f })).json()) as { regole: unknown[]; errori: unknown[] };
+    expect([j.regole.length, j.errori.length]).toEqual([1, 0]);                         // la regola con eccezione resta fuori dal foglio
+  });
+
   it('la prova spiega perche\' scatta o no, anche con regole non ancora salvate; commessa sconosciuta = 404', async () => {
     const bozza = [
       regola({ nome: 'specifica', condizioni: [{ tipo: 'presente', sigla: 'CEL2' }, { tipo: 'presente', sigla: 'ZZZZ' }], azioni: [fisso('P', 'a')], ferma: true }),

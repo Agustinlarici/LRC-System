@@ -6,8 +6,10 @@ import {
   chiaveRegola, descriviAzione, descriviCondizione, ESITO, perApi, regoleApi, scaricaModelloRegole,
   type Azione, type Condizione, type ProvaRegole, type RegolaComp, type RisultatoImport, type VoceComp,
 } from '@/lib/ferrari-regole';
+import { ActionMenu } from '@/components/ui/ActionMenu';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { scaricaFile } from '@/lib/ferrari';
 import { Errore } from '@/components/ferrari/Comuni';
 
 // Pagina delle regole: una riga per regola (una frase), un clic per modificarla. Solo quello che serve.
@@ -229,7 +231,12 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
     <>
       {sporca && <button className="btn-secondary" onClick={() => { imposta(JSON.parse(salvate) as RegolaComp[]); setProva(null); }}>Annulla</button>}
       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => { void importa(e.target.files?.[0]); }} />
-      <button className="btn-secondary" disabled={importando || bozza === null} onClick={() => fileRef.current?.click()}>{importando ? 'Lettura…' : 'Importa Excel'}</button>
+      <ActionMenu label={importando ? 'Lettura…' : 'Excel'} items={[
+        { label: 'Importa da Excel…', onClick: () => fileRef.current?.click(), disabled: importando || bozza === null, title: 'Aggiunge le regole di un foglio Excel in fondo alla lista (una riga = una regola)' },
+        { label: 'Scarica le regole', onClick: () => { scaricaFile('/api/ferrari/regole-componenti/esporta', { nome: 'regole-componenti.xlsx' }).catch(e => setErrore((e as Error).message)); },
+          disabled: sporca || !bozza || bozza.length === 0, title: sporca ? 'Salva le modifiche prima di scaricarle' : 'Le regole salvate, nello stesso formato dell\'importazione', separatore: true },
+        { label: 'Scarica il modello', onClick: () => { void scaricaModelloRegole(); }, title: 'Foglio di esempio con le istruzioni' },
+      ]} />
       <button className="btn-secondary" onClick={() => { setFTesto(''); setFModello(''); setBozza(b => [...(b ?? []), nuova()]); setProva(null); }}>Nuova regola</button>
       <button className="btn-primary" disabled={!sporca || occupato} onClick={salva}>{occupato ? 'Salvataggio…' : 'Salva'}</button>
     </>
@@ -238,9 +245,7 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
   return (
     <div>
       <PageHeader back={{ label: 'Per componente', href: '/ferrari/componenti' }} title="Regole dei componenti"
-        description={msg && !sporca ? msg : (
-          <>Si applicano dall&apos;alto in basso{puoModificare && <> · <button className="font-semibold text-accent-ink hover:underline" title="Foglio Excel di esempio per caricare molte regole con «Importa Excel»" onClick={() => { void scaricaModelloRegole(); }}>modello Excel</button></>}</>
-        )} actions={azioniPagina} />
+        description={msg && !sporca ? msg : 'Si applicano dall\'alto in basso.'} actions={azioniPagina} />
       <datalist id="componenti-regole">{nomiComp.map(n => <option key={n} value={n} />)}</datalist>
       <datalist id="sigle-regole">{(prova?.sigle ?? []).map(s => <option key={s} value={s} />)}</datalist>
       <Errore messaggio={errore} />

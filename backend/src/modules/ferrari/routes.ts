@@ -19,7 +19,7 @@ import { accodaDopoCarico, rianalizzaDuplicato } from './ia/aggancio.js';
 import { aggiungiRegoleSuggerite, confrontoSop, elencoImport, importaSop, leggiRegole, RegolaSchema, salvaRegole, segnaViste } from './sop.js';
 import { leggiRegoleComp, provaRegoleComp, salvaRegoleComp, tabellaComponenti } from './regole-comp.js';
 import { MAX_REGOLE, RegolaCompSchema } from './regole-comp-base.js';
-import { ImportRegoleError, leggiRegoleExcel } from './regole-comp-import.js';
+import { esportaRegoleExcel, ImportRegoleError, leggiRegoleExcel } from './regole-comp-import.js';
 import { aggiungiCategorieEsempio, eliminaCategoria, elencoCategorie, riordinaCategorie, salvaCategoria } from './categorie.js';
 import { leggiCartella, leggiConfig, salvaConfig, statoLettura, ultimeLetture } from './cartella.js';
 import { logger } from '../../lib/logger.js';
@@ -251,6 +251,13 @@ ferrariRoutes.get('/regole-componenti', requireModule(VISTA), async (c) => c.jso
 ferrariRoutes.put('/regole-componenti', requireManage(VISTA), async (c) => {
   const b = await parseBody(c, z.object({ regole: z.array(RegolaCompSchema).max(MAX_REGOLE) }));
   return c.json({ regole: await salvaRegoleComp(utente(c), b.regole) });
+});
+
+// Le regole attuali in Excel (stesso formato dell'importazione)
+ferrariRoutes.get('/regole-componenti/esporta', requireModule(VISTA), async (c) => {
+  const regole = await leggiRegoleComp();
+  const { buffer } = esportaRegoleExcel(regole);
+  return scarica(c, `regole-componenti-${new Date().toISOString().slice(0, 10)}.xlsx`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 });
 
 // Carica molte regole da un Excel (una riga = una regola): ritorna le regole lette e gli errori per riga, senza salvare niente

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
 import { applicaRegole, fattiDaScheda, type RegolaComp } from '../regole-comp-base.js';
-import { ImportRegoleError, leggiRegoleExcel } from '../regole-comp-import.js';
+import { esportaRegoleExcel, ImportRegoleError, leggiRegoleExcel } from '../regole-comp-import.js';
+import type { RegolaCompInput } from '../regole-comp-base.js';
 import type { Canonico, Opzione } from '../types.js';
 
 const xlsx = (righe: unknown[][]): Buffer => {
@@ -79,5 +80,53 @@ describe('carica regole da Excel', () => {
     expect(() => leggiRegoleExcel(xlsx([['Aggiungi a', 'Valore'], ['P', 'x']]))).toThrow(/Se ha/);            // manca la condizione
     expect(() => leggiRegoleExcel(xlsx([INT]))).toThrow(/nessuna regola/);
     expect(() => leggiRegoleExcel(Buffer.from([0, 1, 2, 3]))).toThrow(ImportRegoleError);
+  });
+
+  describe('esportazione', () => {
+    const base: Pick<RegolaCompInput, 'attiva' | 'modello' | 'logica' | 'eccezioni' | 'ferma'> = { attiva: true, modello: '*', logica: 'tutte', eccezioni: [], ferma: false };
+    const sig = (componente: string, sigla: string) => ({ componente, valore: { tipo: 'sigla' as const, sigla } });
+    const fisso = (componente: string, testo: string) => ({ componente, valore: { tipo: 'fisso' as const, testo } });
+    const semplici: RegolaCompInput[] = [
+      { ...base, nome: 'a', condizioni: [{ tipo: 'presente', sigla: 'AS06' }, { tipo: 'presente', sigla: 'AS07' }], azioni: [sig('Paraurti', 'AS06')], ferma: true },
+      { ...base, nome: 'b', condizioni: [{ tipo: 'presente', sigla: 'AS06' }], azioni: [sig('Paraurti', 'AS06'), sig('Minigonne', 'AS06')] },
+      { ...base, nome: 'c', modello: 'F171VS', condizioni: [{ tipo: 'assente', sigla: 'EXAB' }], azioni: [fisso('Paraurti', 'EXAT')] },
+      { ...base, nome: 'd', attiva: false, condizioni: [{ tipo: 'valore', sigla: 'MRKT', testo: 'CINA' }, { tipo: 'assente', sigla: 'CEMP' }], azioni: [fisso('Mercato', 'Cina'), fisso('Altro', 'Cina')] },
+      { ...base, nome: 'e', condizioni: [{ tipo: 'presente', sigla: 'CEXD' }], azioni: [sig('Estrattore', 'CEXD'), fisso('Estrattore', 'carbonio')] },
+    ];
+    const leggi = (b: Buffer) => { const wb = XLSX.read(b, { type: 'buffer' }); return wb.SheetNames; };
+
+    it('esportando e reimportando si ottengono le stesse regole (nome a parte)', () => {
+      const out = esportaRegoleExcel(semplici);
+      expect([out.esportate, out.nonEsportate]).toEqual([5, 0]);
+      expect(leggi(out.buffer)).toEqual(['Regole']);
+      const r = leggiRegoleExcel(out.buffer);
+      expect(r.errori).toEqual([]);
+      const senzaNome = (x: RegolaCompInput) => { const { nome: _n, ...resto } = x; return resto; };
+      expect(r.regole.map(senzaNome)).toEqual(semplici.map(senzaNome));
+    });
+
+    it('la regola con una sola sigla lascia il valore vuoto (come nel modello)', () => {
+      const wb = XLSX.read(esportaRegoleExcel([semplici[1]!]).buffer, { type: 'buffer' });
+      const righe = XLSX.utils.sheet_to_json<string[]>(wb.Sheets['Regole']!, { header: 1, defval: '' });
+      expect(righe[1]).toEqual(['AS06', '', 'Paraurti, Minigonne', '', '', '', '']);
+    });
+
+    it('quello che non sta nel formato va in un secondo foglio con il motivo, e non si perde', () => {
+      const difficili: RegolaCompInput[] = [
+        { ...base, nome: 'con eccezione', condizioni: [{ tipo: 'presente', sigla: 'A1' }], eccezioni: [{ tipo: 'presente', sigla: 'B1' }], azioni: [fisso('P', 'x')] },
+        { ...base, nome: 'oppure', logica: 'qualsiasi', condizioni: [{ tipo: 'presente', sigla: 'A1' }, { tipo: 'presente', sigla: 'B1' }], azioni: [fisso('P', 'x')] },
+        { ...base, nome: 'testo', condizioni: [{ tipo: 'testo', sigla: 'LIVR', testo: 'giallo' }], azioni: [fisso('P', 'x')] },
+        { ...base, nome: 'testo della sigla', condizioni: [{ tipo: 'presente', sigla: 'LIVR' }], azioni: [{ componente: 'C', valore: { tipo: 'testo', sigla: 'LIVR' } }] },
+        { ...base, nome: 'valori diversi', condizioni: [{ tipo: 'presente', sigla: 'A1' }], azioni: [fisso('P', 'x'), fisso('Q', 'y')] },
+        { ...base, nome: 'sigla non in se ha', condizioni: [{ tipo: 'presente', sigla: 'A1' }], azioni: [sig('P', 'ZZ9')] },
+      ];
+      const out = esportaRegoleExcel([...semplici.slice(0, 1), ...difficili]);
+      expect([out.esportate, out.nonEsportate]).toEqual([1, 6]);
+      expect(leggi(out.buffer)).toEqual(['Regole', 'Non esportate']);
+      const f2 = XLSX.utils.sheet_to_json<string[]>(XLSX.read(out.buffer, { type: 'buffer' }).Sheets['Non esportate']!, { header: 1, defval: '' });
+      expect(f2.slice(3).map(x => x[1])).toEqual(difficili.map(d => d.nome));
+      expect(f2[3]![2]).toContain('eccezioni');
+      expect(f2[3]![0]).toBe('2');                                                         // il numero della regola nella lista
+    });
   });
 });

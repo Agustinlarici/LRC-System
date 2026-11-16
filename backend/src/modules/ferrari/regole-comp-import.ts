@@ -9,6 +9,7 @@
 //                altro = un testo fisso. Piu' valori separati da virgola.
 //   Modello      vuoto o «tutti» = tutti i modelli
 //   Ferma        SI = dopo questa regola non si applicano le seguenti
+//   Attiva       NO = la regola si carica disattivata (vuoto = attiva)
 // L'ordine delle righe e' l'ordine di applicazione.
 
 import * as XLSX from 'xlsx';
@@ -21,13 +22,14 @@ export interface ErroreRiga { riga: number; motivo: string }
 export interface RisultatoImport { regole: RegolaCompInput[]; errori: ErroreRiga[]; righe: number }
 
 const MAX_RIGHE = 2000;
-const INTESTAZIONI: Record<'seHa' | 'nonHa' | 'aggiungi' | 'valore' | 'modello' | 'ferma', string[]> = {
+const INTESTAZIONI: Record<'seHa' | 'nonHa' | 'aggiungi' | 'valore' | 'modello' | 'ferma' | 'attiva', string[]> = {
   seHa: ['SE HA', 'HA', 'SIGLA', 'SIGLE', 'CONDIZIONE', 'SE'],
   nonHa: ['NON HA', 'SENZA', 'SE NON HA', 'NON'],
   aggiungi: ['AGGIUNGI A', 'COMPONENTE', 'COMPONENTI', 'ALLORA', 'AGGIUNGI'],
   valore: ['VALORE', 'VALORI', 'COSA'],
   modello: ['MODELLO', 'MODELLI'],
   ferma: ['FERMA', 'STOP', 'ULTIMA'],
+  attiva: ['ATTIVA', 'ATTIVO'],
 };
 
 const cella = (v: unknown) => String(v ?? '').replace(/\s+/g, ' ').trim();
@@ -110,7 +112,7 @@ export function leggiRegoleExcel(buf: Buffer): RisultatoImport {
     const modello = !m || m === 'TUTTI' || m === '*' || m === 'TUTTE' ? '*' : m;
     const nome = `Se ${[...sigleHa, ...sigleNon.map(s => `non ${s}`)].join(' + ')} → ${componenti.join(', ')}`.slice(0, 80);
     const p = RegolaCompSchema.safeParse({
-      nome, attiva: true, modello, logica: 'tutte', condizioni, eccezioni: [], ferma: SI.test(v('ferma')),
+      nome, attiva: !/^(NO|N|0|FALSE|FALSO)$/i.test(v('attiva')), modello, logica: 'tutte', condizioni, eccezioni: [], ferma: SI.test(v('ferma')),
       azioni: componenti.flatMap(componente => lista.map(valore => ({ componente, valore }))),
     });
     if (!p.success) { errori.push({ riga: n, motivo: p.error.issues[0]?.message ?? 'riga non valida' }); continue; }
@@ -118,4 +120,73 @@ export function leggiRegoleExcel(buf: Buffer): RisultatoImport {
   }
   if (lette === 0) throw new ImportRegoleError('Il file non ha nessuna regola sotto l\'intestazione');
   return { regole, errori, righe: lette };
+}
+
+
+// ─── Esportazione: le regole attuali nello stesso formato, per tenerne una copia o modificarle in massa e reimportarle ───
+
+export interface RisultatoEsportazione { buffer: Buffer; esportate: number; nonEsportate: number }
+
+/** La regola come riga di Excel, oppure il motivo per cui non ci sta (oppure, eccezioni, «testo contiene», testo della sigla…). */
+function comeRiga(r: RegolaCompInput): { riga: string[] } | { motivo: string } {
+  if (r.eccezioni.length > 0) return { motivo: 'ha eccezioni (salvo se)' };
+  if (r.logica === 'qualsiasi' && r.condizioni.length > 1) return { motivo: 'usa «almeno una» condizione (oppure)' };
+  if (r.condizioni.length === 0) return { motivo: 'non ha condizioni' };
+  const ha: string[] = [];
+  const non: string[] = [];
+  let presenti = 0;
+  for (const c of r.condizioni) {
+    if (c.tipo === 'testo') return { motivo: 'usa «il testo contiene»' };
+    const sig = norm(c.sigla).trim();
+    if (!SIGLA.test(sig)) return { motivo: `la sigla «${c.sigla}» non e' leggibile in Excel` };
+    if (c.tipo === 'presente') { ha.push(sig); presenti++; }
+    else if (c.tipo === 'assente') non.push(sig);
+    else {
+      if (/[+,;\n]/.test(c.testo)) return { motivo: 'un valore contiene + , o ;' };
+      ha.push(`${sig}=${c.testo}`);
+    }
+  }
+  const sigleHa = new Set(ha.filter(x => !x.includes('=')));
+  const perComponente = new Map<string, string[]>();
+  for (const a of r.azioni) {
+    if (/[,;\n]/.test(a.componente)) return { motivo: `il componente «${a.componente}» contiene una virgola` };
+    let valore: string;
+    if (a.valore.tipo === 'testo') return { motivo: 'aggiunge «il testo della sigla»' };
+    if (a.valore.tipo === 'sigla') {
+      valore = norm(a.valore.sigla).trim();
+      if (!sigleHa.has(valore)) return { motivo: `aggiunge la sigla ${a.valore.sigla}, che non e' tra quelle di «Se ha»` };
+    } else {
+      valore = a.valore.testo.trim();
+      if (/[,;\n]/.test(valore)) return { motivo: 'un testo fisso contiene una virgola' };
+      if (sigleHa.has(norm(valore).trim())) return { motivo: `il testo «${valore}» si confonderebbe con una sigla di «Se ha»` };
+    }
+    const lista = perComponente.get(a.componente) ?? [];
+    lista.push(valore);
+    perComponente.set(a.componente, lista);
+  }
+  const comp = [...perComponente.keys()];
+  const primo = perComponente.get(comp[0]!)!;
+  if (comp.some(k => perComponente.get(k)!.join('\u0000') !== primo.join('\u0000'))) return { motivo: 'aggiunge valori diversi a componenti diversi' };
+  const soloLaSigla = presenti === 1 && primo.length === 1 && primo[0] === ha.find(x => !x.includes('='));
+  return { riga: [ha.join(' + '), non.join(' + '), comp.join(', '), soloLaSigla ? '' : primo.join(', '), r.modello === '*' ? '' : r.modello, r.ferma ? 'SI' : '', r.attiva ? '' : 'NO'] };
+}
+
+export function esportaRegoleExcel(regole: readonly RegolaCompInput[]): RisultatoEsportazione {
+  const righe: string[][] = [];
+  const fuori: string[][] = [];
+  regole.forEach((r, i) => {
+    const x = comeRiga(r);
+    if ('riga' in x) righe.push(x.riga); else fuori.push([String(i + 1), r.nome, x.motivo]);
+  });
+  const wb = XLSX.utils.book_new();
+  const foglio = XLSX.utils.aoa_to_sheet([['Se ha', 'Non ha', 'Aggiungi a', 'Valore', 'Modello', 'Ferma', 'Attiva'], ...righe]);
+  foglio['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 26 }, { wch: 18 }, { wch: 12 }, { wch: 8 }, { wch: 8 }];
+  XLSX.utils.book_append_sheet(wb, foglio, 'Regole');
+  if (fuori.length > 0) {
+    const f2 = XLSX.utils.aoa_to_sheet([['Queste regole non stanno nel formato Excel: restano nella pagina Regole (non si perdono se importi questo file).'], [],
+      ['N. regola', 'Regola', 'Perche\' non e\' qui'], ...fuori]);
+    f2['!cols'] = [{ wch: 10 }, { wch: 80 }, { wch: 50 }];
+    XLSX.utils.book_append_sheet(wb, f2, 'Non esportate');
+  }
+  return { buffer: XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer, esportate: righe.length, nonEsportate: fuori.length };
 }
