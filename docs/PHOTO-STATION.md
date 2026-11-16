@@ -64,6 +64,15 @@ Límites conocidos: el pedido se crea por evento (seriale+componente); si dos co
 aceptan por separado se hacen dos pedidos/series de fotos (falta decidir si conviene agruparlos). Si la `versione`
 llega tarde a la copia, el pedido queda con versione vacía.
 
+## Modello e linea (tabla SPMA)
+
+Al entregar un pedido a la estación (`claim`), la VM busca la commessa en `spma_commessa` (la tabla que actualiza
+`/spma/import`) y agrega **`modello`** (`model_code`) y **`linea`** (`spma_line.name`). Se busca en ese momento,
+no al crear el pedido, porque el import SPMA puede llegar después. Reglas: coincidencia exacta; si no hay, se
+ignoran los ceros iniciales (`000123` = `123`, en ambos sentidos) y la exacta gana. Modelo `-` o sin línea o sin
+commessa en la tabla → `null` (el pedido sigue igual, solo sin esos datos). La página los muestra bajo la commessa
+y Photo Station los imprime en la hoja. Solo lectura: no modifica SPMA.
+
 ## Cómo probarlo hoy (sin iKnow)
 
 1. Admin → Impostazioni sistema: dar el permiso `Photo Station` a quien corresponda (el admin ya lo tiene).

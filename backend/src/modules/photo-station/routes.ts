@@ -13,6 +13,7 @@ import { requireModule, requireManage, type Env } from '../../lib/auth.js';
 import { requireStation, type StationEnv } from './station-auth.js';
 import { activePhaseRules, matchPhase } from './events.js';
 import { lastRun } from './feed.js';
+import { spmaInfo } from './spma-lookup.js';
 import { ignoredApiCalls } from './iknow.js';
 import {
   CAMERA_RE, MAX_ATTEMPTS, MAX_PHOTO_BYTES, STALE_CLAIM_MINUTES,
@@ -37,13 +38,23 @@ export const photoStationRoutes = new Hono<Env & StationEnv>();
 const JOB_COLS = db`
   j.id::int AS id, j.commessa, j.phase, j.seriale, j.componente, j.versione, j.event_at, j.source, j.status, j.attempts, j.capture_status, j.capture_errors, j.error,
   j.created_by, j.created_at, j.claimed_at, j.finished_at, s.name AS station_name,
-  (SELECT count(*)::int FROM photo_job_files f WHERE f.job_id = j.id) AS photos
+  (SELECT count(*)::int FROM photo_job_files f WHERE f.job_id = j.id) AS photos,
+  NULLIF(sp.model_code, '-') AS modello, sp.line_name AS linea
+`;
+
+// Modello e linea dalla tabella SPMA (stessa regola di spma-lookup.ts: codice esatto, altrimenti senza zeri iniziali)
+const SPMA_JOIN = db`
+  LEFT JOIN LATERAL (
+    SELECT c.model_code, l.name AS line_name FROM spma_commessa c LEFT JOIN spma_line l ON l.id = c.line_id
+    WHERE c.commessa_code = j.commessa OR (ltrim(j.commessa, '0') <> '' AND ltrim(c.commessa_code, '0') = ltrim(j.commessa, '0'))
+    ORDER BY (c.commessa_code = j.commessa) DESC, c.id LIMIT 1
+  ) sp ON TRUE
 `;
 
 photoStationRoutes.get('/jobs', requireModule('photo_station'), async (c) => {
   const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 50) || 50, 1), 200);
   const jobs = await db`
-    SELECT ${JOB_COLS} FROM photo_jobs j LEFT JOIN photo_stations s ON s.id = j.station_id
+    SELECT ${JOB_COLS} FROM photo_jobs j LEFT JOIN photo_stations s ON s.id = j.station_id ${SPMA_JOIN}
     ORDER BY j.id DESC LIMIT ${limit}
   `;
   return c.json({ jobs });
@@ -52,7 +63,7 @@ photoStationRoutes.get('/jobs', requireModule('photo_station'), async (c) => {
 photoStationRoutes.get('/jobs/:id', requireModule('photo_station'), async (c) => {
   const id = idParam(c.req.param('id'));
   const [job] = await db`
-    SELECT ${JOB_COLS} FROM photo_jobs j LEFT JOIN photo_stations s ON s.id = j.station_id WHERE j.id = ${id}
+    SELECT ${JOB_COLS} FROM photo_jobs j LEFT JOIN photo_stations s ON s.id = j.station_id ${SPMA_JOIN} WHERE j.id = ${id}
   `;
   if (!job) throw new HTTPException(404, { message: 'Ordine non trovato' });
   const files = await db`SELECT id, camera, bytes, sha256, created_at FROM photo_job_files WHERE job_id = ${id} ORDER BY camera`;
@@ -285,7 +296,8 @@ photoStationDeviceRoutes.post('/claim', async (c) => {
       RETURNING id::int AS id, commessa, phase, seriale, componente, versione
     `;
   }
-  return c.json({ job: job ?? null });
+  // Modello e linea della commessa dalla tabella SPMA, cercati ora (l'import può essere arrivato dopo l'ordine)
+  return c.json({ job: job ? { ...job, ...(await spmaInfo(job.commessa as string)) } : null });
 });
 
 async function ownJob(jobId: number, stationId: number) {
