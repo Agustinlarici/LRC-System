@@ -226,11 +226,11 @@ export default function ScadenzePage() {
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-        <div className="rounded-card border border-warning/30 bg-warning-soft px-4 py-3">
+        <div className="rounded-card border border-warning/30 bg-warning-soft px-4 py-3 text-center">
           <p className="text-[11px] font-medium uppercase tracking-wide text-warning">In avviso</p>
           <p className="text-3xl font-semibold text-warning leading-tight mt-1">{counts.avviso}</p>
         </div>
-        <div className="rounded-card border border-danger/30 bg-danger-soft px-4 py-3">
+        <div className="rounded-card border border-danger/30 bg-danger-soft px-4 py-3 text-center">
           <p className="text-[11px] font-medium uppercase tracking-wide text-danger">Scadute</p>
           <p className="text-3xl font-semibold text-danger leading-tight mt-1">{counts.scadute}</p>
         </div>
@@ -244,14 +244,14 @@ export default function ScadenzePage() {
               <p className="text-sm font-medium text-ink-800 truncate">{rule.label || ruleDescription(rule)}</p>
               <p className="text-[11px] text-muted whitespace-nowrap">{rule.giorni_avviso} giorni</p>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="mt-3 grid grid-cols-2 gap-3 text-center">
               <div>
                 <p className="text-3xl font-semibold leading-none text-warning">{avviso}</p>
-                <p className="mt-1 flex items-center gap-1.5 text-xs text-muted"><span className="w-2 h-2 rounded-full bg-warning" />in avviso</p>
+                <p className="mt-1 text-xs text-muted">in avviso</p>
               </div>
               <div>
                 <p className="text-3xl font-semibold leading-none text-danger">{scadute}</p>
-                <p className="mt-1 flex items-center gap-1.5 text-xs text-muted"><span className="w-2 h-2 rounded-full bg-danger" />scadute</p>
+                <p className="mt-1 text-xs text-muted">scadute</p>
               </div>
             </div>
           </div>
