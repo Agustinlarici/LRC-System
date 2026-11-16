@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
 import { applicaRegole, fattiDaScheda, type RegolaComp } from '../regole-comp-base.js';
-import { esportaRegoleExcel, ImportRegoleError, leggiRegoleExcel } from '../regole-comp-import.js';
+import { esportaRegoleExcel, ImportRegoleError, indiciEsportabili, leggiRegoleExcel } from '../regole-comp-import.js';
 import type { RegolaCompInput } from '../regole-comp-base.js';
 import type { Canonico, Opzione } from '../types.js';
 
@@ -109,6 +109,12 @@ describe('carica regole da Excel', () => {
       const wb = XLSX.read(esportaRegoleExcel([semplici[1]!]).buffer, { type: 'buffer' });
       const righe = XLSX.utils.sheet_to_json<string[]>(wb.Sheets['Regole']!, { header: 1, defval: '' });
       expect(righe[1]).toEqual(['AS06', '', 'Paraurti, Minigonne', '', '', '', '']);
+    });
+
+    it('indiciEsportabili dice quali regole stanno nel formato (le altre non si toccano)', () => {
+      const complessa: RegolaCompInput = { ...base, nome: 'x', condizioni: [{ tipo: 'presente', sigla: 'A1' }], eccezioni: [{ tipo: 'presente', sigla: 'B1' }], azioni: [fisso('P', 'x')] };
+      expect(indiciEsportabili([semplici[0]!, complessa, semplici[2]!, complessa])).toEqual([0, 2]);
+      expect(indiciEsportabili([])).toEqual([]);
     });
 
     it('quello che non sta nel formato va in un secondo foglio con il motivo, e non si perde', () => {

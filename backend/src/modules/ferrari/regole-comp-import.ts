@@ -190,3 +190,8 @@ export function esportaRegoleExcel(regole: readonly RegolaCompInput[]): Risultat
   }
   return { buffer: XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer, esportate: righe.length, nonEsportate: fuori.length };
 }
+
+/** Posizioni (0-based) delle regole che stanno nel formato Excel: quelle che «Sostituisci con Excel» toglie. Le altre restano dove sono. */
+export function indiciEsportabili(regole: readonly RegolaCompInput[]): number[] {
+  return regole.flatMap((r, i) => ('riga' in comeRiga(r) ? [i] : []));
+}

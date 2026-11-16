@@ -139,7 +139,8 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
   const [commessa, setCommessa] = useState('');
   const [prova, setProva] = useState<ProvaRegole | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [importo, setImporto] = useState<{ nome: string; aggiunte: number; doppie: number; errori: RisultatoImport['errori']; troppe: number } | null>(null);
+  const sostituisciRef = useRef(false);                  // il prossimo file sostituisce le regole che stanno nel formato Excel
+  const [importo, setImporto] = useState<{ nome: string; aggiunte: number; doppie: number; errori: RisultatoImport['errori']; troppe: number; sostituite?: number; restano?: number } | null>(null);
   const [fTesto, setFTesto] = useState('');                 // cerca una sigla, un testo o un componente
   const [fModello, setFModello] = useState('');             // '' = tutti, '*' = solo le generali, altrimenti un modello
 
@@ -205,12 +206,26 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
     try { setProva(await regoleApi.prova(commessa.trim(), bozza.map(pulita))); } catch (e) { setProva(null); setErrore((e as Error).message); }
   }
 
-  /** Legge l'Excel e aggiunge le regole alla bozza (la persona le controlla e preme Salva). */
+  /** Legge l'Excel e mette le regole nella bozza (la persona le controlla e preme Salva). Aggiunge in fondo, oppure sostituisce
+   *  quelle che stanno nel formato Excel (le complesse — eccezioni, «oppure»… — restano, in fondo). */
   async function importa(file: File | undefined) {
+    const sostituisci = sostituisciRef.current;
+    sostituisciRef.current = false;
     if (!file || !bozza) return;
     setErrore(null); setImportando(true);
     try {
       const r = await regoleApi.importa(file);
+      setFTesto(''); setFModello(''); setProva(null);
+      if (sostituisci) {
+        if (r.regole.length === 0) throw new Error('Nel file non c\'è nessuna regola valida: non sostituisco niente');
+        const { indici } = await regoleApi.esportabili(bozza.map(pulita));
+        const via = new Set(indici);
+        const restano = bozza.filter((_, i) => !via.has(i));
+        const nuove = r.regole.slice(0, Math.max(0, 500 - restano.length));
+        setBozza([...nuove.map(x => ({ ...x, k: ++contatore, aperta: false })), ...restano]);
+        setImporto({ nome: file.name, aggiunte: nuove.length, doppie: 0, errori: r.errori, troppe: r.regole.length - nuove.length, sostituite: via.size, restano: restano.length });
+        return;
+      }
       const esistenti = new Set(bozza.map(b => chiaveRegola(b)));
       const nuove: RegolaComp[] = [];
       let doppie = 0;
@@ -221,7 +236,6 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
       }
       const posto = Math.max(0, 500 - bozza.length);                              // stesso limite del server
       const aggiunte = nuove.slice(0, posto);
-      setFTesto(''); setFModello(''); setProva(null);
       setBozza(b => [...(b ?? []), ...aggiunte.map(x => ({ ...x, k: ++contatore, aperta: false }))]);
       setImporto({ nome: file.name, aggiunte: aggiunte.length, doppie, errori: r.errori, troppe: nuove.length - aggiunte.length });
     } catch (e) { setImporto(null); setErrore((e as Error).message); } finally { setImportando(false); if (fileRef.current) fileRef.current.value = ''; }
@@ -232,7 +246,13 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
       {sporca && <button className="btn-secondary" onClick={() => { imposta(JSON.parse(salvate) as RegolaComp[]); setProva(null); }}>Annulla</button>}
       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => { void importa(e.target.files?.[0]); }} />
       <ActionMenu label={importando ? 'Lettura…' : 'Excel'} items={[
-        { label: 'Importa da Excel…', onClick: () => fileRef.current?.click(), disabled: importando || bozza === null, title: 'Aggiunge le regole di un foglio Excel in fondo alla lista (una riga = una regola)' },
+        { label: 'Importa da Excel…', onClick: () => { sostituisciRef.current = false; fileRef.current?.click(); }, disabled: importando || bozza === null, title: 'Aggiunge le regole di un foglio Excel in fondo alla lista (una riga = una regola)' },
+        { label: 'Sostituisci con Excel…', disabled: importando || !bozza || bozza.length === 0,
+          title: 'Toglie le regole che stanno nel formato Excel e mette quelle del file. Le regole complesse (eccezioni, «oppure»…) restano. Non salva: si può annullare.',
+          onClick: () => {
+            if (!confirm('Le regole che stanno nel formato Excel verranno sostituite da quelle del file.\nLe regole complesse (con eccezioni, «oppure», «il testo contiene») restano in fondo alla lista.\nNon si salva finché non premi Salva: puoi annullare.\n\nContinuare?')) return;
+            sostituisciRef.current = true; fileRef.current?.click();
+          } },
         { label: 'Scarica le regole', onClick: () => { scaricaFile('/api/ferrari/regole-componenti/esporta', { nome: 'regole-componenti.xlsx' }).catch(e => setErrore((e as Error).message)); },
           disabled: sporca || !bozza || bozza.length === 0, title: sporca ? 'Salva le modifiche prima di scaricarle' : 'Le regole salvate, nello stesso formato dell\'importazione', separatore: true },
         { label: 'Scarica il modello', onClick: () => { void scaricaModelloRegole(); }, title: 'Foglio di esempio con le istruzioni' },
@@ -257,10 +277,12 @@ export function RegoleComponenti({ puoModificare }: { puoModificare: boolean }) 
             <div className="d-print-none mb-3 rounded-card border border-line bg-white px-4 py-3 text-sm">
               <div className="flex items-start justify-between gap-3">
                 <p>
-                  <b>{importo.nome}</b>: {importo.aggiunte === 0 ? 'nessuna regola nuova' : <><b>{importo.aggiunte}</b> {importo.aggiunte === 1 ? 'regola aggiunta' : 'regole aggiunte'} in fondo alla lista</>}
+                  <b>{importo.nome}</b>: {importo.sostituite !== undefined
+                    ? <><b>{importo.sostituite}</b> {importo.sostituite === 1 ? 'regola sostituita' : 'regole sostituite'} da <b>{importo.aggiunte}</b> del file{importo.restano ? <> · <b>{importo.restano}</b> {importo.restano === 1 ? 'regola complessa resta' : 'regole complesse restano'} in fondo</> : null}</>
+                    : importo.aggiunte === 0 ? 'nessuna regola nuova' : <><b>{importo.aggiunte}</b> {importo.aggiunte === 1 ? 'regola aggiunta' : 'regole aggiunte'} in fondo alla lista</>}
                   {importo.doppie > 0 && <span className="text-muted"> · {importo.doppie} già presenti, saltate</span>}
                   {importo.troppe > 0 && <span className="text-warning"> · {importo.troppe} non aggiunte: massimo 500 regole</span>}
-                  {importo.aggiunte > 0 && <span className="text-muted"> · controllale e premi <b>Salva</b></span>}
+                  {(importo.aggiunte > 0 || importo.sostituite !== undefined) && <span className="text-muted"> · controllale e premi <b>Salva</b> (o <b>Annulla</b>)</span>}
                 </p>
                 <button className="shrink-0 text-xs text-muted hover:text-ink-900" onClick={() => setImporto(null)}>Chiudi</button>
               </div>

@@ -122,6 +122,16 @@ describe.skipIf(!URL)('Regole dei componenti — rotte, tabella e prova', () => 
     expect([j.regole.length, j.errori.length]).toEqual([1, 0]);                         // la regola con eccezione resta fuori dal foglio
   });
 
+  it('esportabili: dice quali regole stanno nel formato Excel; solo chi puo\' modificare', async () => {
+    const regole = [regola({ condizioni: [{ tipo: 'presente', sigla: 'A1' }], azioni: [fisso('P', 'x')] }),
+      regola({ condizioni: [{ tipo: 'presente', sigla: 'A1' }], eccezioni: [{ tipo: 'presente', sigla: 'B1' }], azioni: [fisso('P', 'x')] })];
+    expect((await chiama('POST', '/regole-componenti/esportabili', { token: senzaPermessi, corpo: { regole } })).status).toBe(403);
+    const r = await chiama('POST', '/regole-componenti/esportabili', { token: admin, corpo: { regole } });
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { indici: number[] }).indici).toEqual([0]);
+    expect((await chiama('POST', '/regole-componenti/esportabili', { token: admin, corpo: { regole: [{ nome: 'x' }] } })).status).toBe(400);
+  });
+
   it('la prova spiega perche\' scatta o no, anche con regole non ancora salvate; commessa sconosciuta = 404', async () => {
     const bozza = [
       regola({ nome: 'specifica', condizioni: [{ tipo: 'presente', sigla: 'CEL2' }, { tipo: 'presente', sigla: 'ZZZZ' }], azioni: [fisso('P', 'a')], ferma: true }),

@@ -58,6 +58,7 @@ export const regoleApi = {
   elenco: () => api.get<{ regole: RegolaComp[] }>(B),
   salva: (regole: RegolaComp[]) => api.put<{ regole: RegolaComp[] }>(B, { regole: regole.map(perApi) }),
   tabella: (modello: string, q: string) => api.get<TabellaComponenti>(`${B}/tabella?modello=${encodeURIComponent(modello)}&q=${encodeURIComponent(q)}`),
+  esportabili: (regole: RegolaComp[]) => api.post<{ indici: number[] }>(`${B}/esportabili`, { regole: regole.map(perApi) }),
   importa: (file: File) => inviaFile<RisultatoImport>(`${B}/importa`, 'file', [file]),
   prova: (commessa: string, regole?: RegolaComp[]) => api.post<ProvaRegole>(`${B}/prova`, { commessa, regole: regole?.map(perApi) }),
 };
