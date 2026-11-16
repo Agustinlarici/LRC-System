@@ -7,10 +7,28 @@ import { z } from 'zod';
 import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
 import { requireIT } from '../tickets/auth.js';
-import type { Env, AuthUser } from '../../lib/auth.js';
+import { requireAuth, type Env, type AuthUser } from '../../lib/auth.js';
+import { auditLog } from '../../lib/audit.js';
 import { computeHealth } from './health.js';
 
 export const progettiRoutes = new Hono<Env>();
+
+// Per i collaboratori (non serve il permesso IT): solo i progetti di cui l'utente fa parte.
+// Registrata PRIMA del requireIT di sotto, che protegge tutte le altre rotte.
+progettiRoutes.get('/mine', requireAuth, async (c) => {
+  const user = c.get('user');
+  const rows = await db`
+    SELECT p.id, p.name, p.status, to_char(p.due_date, 'YYYY-MM-DD') AS due_date,
+           (SELECT t.ticket_number FROM tickets t WHERE t.project_id = p.id AND t.deleted_at IS NULL ORDER BY t.created_at LIMIT 1) AS ticket_number,
+           (SELECT COUNT(*) FROM project_tasks x WHERE x.project_id = p.id)::int AS tasks_total,
+           (SELECT COUNT(*) FROM project_tasks x WHERE x.project_id = p.id AND x.status = 'fatta')::int AS tasks_done
+    FROM project_members m JOIN projects p ON p.id = m.project_id
+    WHERE m.user_id = ${user.id} AND p.status <> 'chiuso'
+    ORDER BY p.name
+  `;
+  return c.json(rows.map((r: any) => ({ ...r, progress_pct: r.tasks_total ? Math.round((100 * r.tasks_done) / r.tasks_total) : 0 })));
+});
+
 progettiRoutes.use('*', requireIT);
 
 type Q = typeof db;
@@ -27,7 +45,7 @@ const PROJECT_STATUS_LABEL: Record<string, string> = { attivo: 'attivo', in_paus
 // Colonne attività con la data come stringa AAAA-MM-GG (evita fusi orari lato client)
 const TASK_COLS = db`
   t.id, t.project_id, t.ticket_id, t.title, t.status, t.status_note, t.waiting_since, t.assigned_to,
-  to_char(t.due_date, 'YYYY-MM-DD') AS due_date, t.done_at, t.created_at, t.phase_id
+  to_char(t.due_date, 'YYYY-MM-DD') AS due_date, t.done_at, t.created_at, t.phase_id, t.visible_to_requester
 `;
 
 function intParam(raw: string | undefined, label = 'ID'): number {
@@ -67,7 +85,7 @@ async function loadProject(q: Q, id: number) {
 async function attachTickets(q: Q, projectId: number, ticketIds: number[], user: AuthUser) {
   if (ticketIds.length === 0) return [];
   const found = await q`
-    SELECT id, ticket_number, project_id FROM tickets
+    SELECT id, ticket_number, project_id, created_by_user_id FROM tickets
     WHERE id IN ${q(ticketIds)} AND deleted_at IS NULL
   `;
   for (const t of found) {
@@ -77,8 +95,27 @@ async function attachTickets(q: Q, projectId: number, ticketIds: number[], user:
     }
     await q`UPDATE tickets SET project_id = ${projectId} WHERE id = ${t.id}`;
     await writeLog(q, projectId, 'sistema', `Ticket ${t.ticket_number} collegato al progetto`, user);
+    if (t.project_id) await pruneAutoMembers(q, t.project_id);
+    // Chi ha aperto il ticket con il suo account diventa collaboratore (solo lettura)
+    if (t.created_by_user_id) {
+      await q`
+        INSERT INTO project_members (project_id, user_id, source, added_by)
+        SELECT ${projectId}, u.id, 'auto', ${user.id} FROM users u
+        WHERE u.id = ${t.created_by_user_id} AND u.is_active = TRUE AND u.role <> 'guest'
+        ON CONFLICT DO NOTHING`;
+    }
   }
   return found;
+}
+
+// I collaboratori «auto» restano solo finché c'è un ticket collegato aperto da loro.
+// Quelli aggiunti a mano non si toccano.
+async function pruneAutoMembers(q: Q, projectId: number) {
+  await q`
+    DELETE FROM project_members m
+    WHERE m.project_id = ${projectId} AND m.source = 'auto'
+      AND NOT EXISTS (SELECT 1 FROM tickets t WHERE t.project_id = m.project_id
+                      AND t.created_by_user_id = m.user_id AND t.deleted_at IS NULL)`;
 }
 
 // Fasi di un gruppo di progetti. La data d'inizio di una fase è quella fissata a mano oppure la
@@ -180,6 +217,15 @@ progettiRoutes.get('/pending-tickets', async (c) => {
   return c.json(rows);
 });
 
+// ─── Persone selezionabili come collaboratori ────────────────────────────────
+
+progettiRoutes.get('/people', async (c) => {
+  // Solo account reali e attivi (mai l'account condiviso «guest») e solo colonne non sensibili
+  const rows = await db`
+    SELECT id, display_name FROM users WHERE is_active = TRUE AND role <> 'guest' ORDER BY display_name`;
+  return c.json(rows);
+});
+
 // ─── Cerca ticket da collegare ───────────────────────────────────────────────
 
 progettiRoutes.get('/ticket-search', async (c) => {
@@ -205,6 +251,7 @@ const createTaskSchema = z.object({
   due_date:    DATE.nullable().optional(),
   assigned_to: z.number().int().positive().nullable().optional(),
   phase_id:    z.number().int().positive().nullable().optional(),
+  visible_to_requester: z.boolean().optional(),
 });
 
 progettiRoutes.post('/tasks', async (c) => {
@@ -217,9 +264,9 @@ progettiRoutes.post('/tasks', async (c) => {
     // Senza una scadenza esplicita, l'attività eredita quella della fase (così non nasce «vuota»)
     const due = body.due_date !== undefined ? body.due_date : (phase?.due_date ?? null);
     const [created] = await q`
-      INSERT INTO project_tasks (project_id, ticket_id, title, due_date, assigned_to, phase_id, created_by)
+      INSERT INTO project_tasks (project_id, ticket_id, title, due_date, assigned_to, phase_id, visible_to_requester, created_by)
       VALUES (${body.project_id ?? null}, ${body.ticket_id ?? null}, ${body.title}, ${due},
-              ${body.assigned_to ?? user.id}, ${body.phase_id ?? null}, ${user.id})
+              ${body.assigned_to ?? user.id}, ${body.phase_id ?? null}, ${body.visible_to_requester ?? false}, ${user.id})
       RETURNING id
     `;
     if (body.project_id) {
@@ -238,6 +285,7 @@ const patchTaskSchema = z.object({
   due_date:    DATE.nullable().optional(),
   assigned_to: z.number().int().positive().nullable().optional(),
   phase_id:    z.number().int().positive().nullable().optional(),
+  visible_to_requester: z.boolean().optional(),
 });
 
 progettiRoutes.patch('/tasks/:taskId', async (c) => {
@@ -254,6 +302,7 @@ progettiRoutes.patch('/tasks/:taskId', async (c) => {
     if (body.title !== undefined) updates.title = body.title;
     if (body.due_date !== undefined) updates.due_date = body.due_date;
     if (body.assigned_to !== undefined) updates.assigned_to = body.assigned_to;
+    if (body.visible_to_requester !== undefined) updates.visible_to_requester = body.visible_to_requester;
     if (body.phase_id !== undefined) {
       if (body.phase_id !== null) await checkPhase(q, body.phase_id, task.project_id);
       updates.phase_id = body.phase_id;
@@ -572,6 +621,57 @@ progettiRoutes.delete('/:id/tickets/:ticketId', async (c) => {
     `;
     if (!t) throw new HTTPException(404, { message: 'Ticket non collegato a questo progetto' });
     await writeLog(q, id, 'sistema', `Ticket ${t.ticket_number} scollegato dal progetto`, user);
+    await pruneAutoMembers(q, id);
   });
+  return c.body(null, 204);
+});
+
+// ─── Collaboratori (solo lettura: vedono avanzamento, fasi, novità e le attività visibili) ───
+
+progettiRoutes.get('/:id/members', async (c) => {
+  const id = intParam(c.req.param('id'));
+  await loadProject(db, id);
+  const rows = await db`
+    SELECT m.user_id, u.display_name, m.source, m.created_at
+    FROM project_members m JOIN users u ON u.id = m.user_id
+    WHERE m.project_id = ${id} ORDER BY u.display_name`;
+  return c.json(rows);
+});
+
+progettiRoutes.post('/:id/members', async (c) => {
+  const id = intParam(c.req.param('id'));
+  const { user_id } = await parseBody(c, z.object({ user_id: z.number().int().positive() }));
+  const user = c.get('user');
+  const member = await db.begin(async (tx) => {
+    const q = tx as unknown as Q;
+    const project = await loadProject(q, id);
+    const [u] = await q`SELECT id, display_name FROM users WHERE id = ${user_id} AND is_active = TRUE AND role <> 'guest'`;
+    if (!u) throw new HTTPException(404, { message: 'Utente non trovato' });
+    // Se era già collaboratore «auto», passa a «manual»: l'aggiunta a mano non si perde togliendo il ticket
+    await q`
+      INSERT INTO project_members (project_id, user_id, source, added_by) VALUES (${id}, ${u.id}, 'manual', ${user.id})
+      ON CONFLICT (project_id, user_id) DO UPDATE SET source = 'manual'`;
+    await writeLog(q, id, 'sistema', `${u.display_name} aggiunto/a come collaboratore`, user);
+    return { user_id: u.id as number, display_name: u.display_name as string, project: project.name as string };
+  });
+  await auditLog({ userId: user.id, username: user.username, action: 'progetti.collaboratore_aggiunto', entity: 'project', entityId: id,
+    details: { user_id: member.user_id } });
+  return c.json({ user_id: member.user_id, display_name: member.display_name, source: 'manual' }, 201);
+});
+
+progettiRoutes.delete('/:id/members/:userId', async (c) => {
+  const id = intParam(c.req.param('id'));
+  const userId = intParam(c.req.param('userId'), 'ID utente');
+  const user = c.get('user');
+  await db.begin(async (tx) => {
+    const q = tx as unknown as Q;
+    const [m] = await q`
+      DELETE FROM project_members WHERE project_id = ${id} AND user_id = ${userId}
+      RETURNING (SELECT display_name FROM users WHERE id = ${userId}) AS display_name`;
+    if (!m) throw new HTTPException(404, { message: 'Collaboratore non trovato' });
+    await writeLog(q, id, 'sistema', `${m.display_name} rimosso/a dai collaboratori`, user);
+  });
+  await auditLog({ userId: user.id, username: user.username, action: 'progetti.collaboratore_rimosso', entity: 'project', entityId: id,
+    details: { user_id: userId } });
   return c.body(null, 204);
 });

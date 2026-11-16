@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { PublicProjectCard } from '@/components/progetti/PublicProjectCard';
+import type { PublicProject } from '@/lib/progetti';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -77,11 +79,6 @@ type HistoryEntry = {
   created_at: string;
 };
 
-type PublicProject = {
-  name: string; status: string; due_date: string | null; progress_pct: number;
-  news: { body: string; created_at: string }[];
-};
-
 function fmt(iso: string) {
   return new Date(iso).toLocaleString('it-IT', { dateStyle: 'medium', timeStyle: 'short' });
 }
@@ -98,7 +95,8 @@ export default function TicketStatoPage() {
     if (!number) return;
     // Pass number without # — backend accepts both forms
     const ticketNum = number.replace(/^#/, '');
-    fetch(`${BACKEND}/api/tickets/numero/${ticketNum}`)
+    // con le credenziali: il backend riconosce IT e collaboratori e mostra anche fasi e attività condivise
+    fetch(`${BACKEND}/api/tickets/numero/${ticketNum}`, { credentials: 'include' })
       .then(async r => {
         if (!r.ok) { setError('Ticket non trovato'); return; }
         const data = await r.json();
@@ -171,40 +169,8 @@ export default function TicketStatoPage() {
         )}
       </div>
 
-      {/* Progetto collegato: solo avanzamento generale e novità segnate come visibili */}
-      {project && (
-        <div className="bg-white rounded-card shadow-card p-6 space-y-4">
-          <h2 className="font-semibold text-ink-900">Progetto</h2>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-            <dt className="text-muted">Nome</dt><dd className="text-ink-900">{project.name}</dd>
-            {project.due_date && (
-              <><dt className="text-muted">Scadenza prevista</dt>
-              <dd className="text-ink-900">{new Date(`${project.due_date}T12:00:00Z`).toLocaleDateString('it-IT', { dateStyle: 'medium' })}</dd></>
-            )}
-            <dt className="text-muted">Avanzamento</dt>
-            <dd className="flex items-center gap-3">
-              <span className="h-2 flex-1 overflow-hidden rounded-full bg-stone-100">
-                <span className="block h-full rounded-full bg-accent-ink" style={{ width: `${project.progress_pct}%` }} />
-              </span>
-              <span className="text-xs tabular-nums text-muted">{project.progress_pct}%</span>
-            </dd>
-          </dl>
-          {project.news.length > 0 && (
-            <div>
-              <p className="text-sm font-medium text-ink-900 mb-3">Novità</p>
-              <ol className="relative border-l border-line space-y-4 ml-2">
-                {project.news.map((n, i) => (
-                  <li key={i} className="ml-4">
-                    <div className="absolute w-2.5 h-2.5 bg-accent rounded-full -left-1.5 border-2 border-white" />
-                    <p className="text-xs text-stone-400">{fmt(n.created_at)}</p>
-                    <p className="text-sm text-ink-800 whitespace-pre-wrap">{n.body}</p>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
-        </div>
-      )}
+      {/* Progetto collegato: avanzamento e novità visibili a tutti; fasi e attività condivise a IT e collaboratori */}
+      {project && <PublicProjectCard project={project} fmt={fmt} />}
 
       {/* History */}
       {history.length > 0 && (

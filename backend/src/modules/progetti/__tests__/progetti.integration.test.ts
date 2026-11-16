@@ -11,7 +11,7 @@ describe.skipIf(!URL)('Progetti (integrazione)', () => {
   let db: typeof import('../../../db/client.js').db;
   let pub: typeof import('../public.js');
   let cookie: Record<string, string> = {};
-  let ids: { admin: number; other: number; guest: number };
+  let ids: { admin: number; other: number; guest: number; member: number; outsider: number; it: number };
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL!;
@@ -19,20 +19,27 @@ describe.skipIf(!URL)('Progetti (integrazione)', () => {
     db = (await import('../../../db/client.js')).db;
     pub = await import('../public.js');
     const { progettiRoutes } = await import('../routes.js');
+    const { ticketRoutes } = await import('../../tickets/routes.js');
     const { errorHandler } = await import('../../../middleware/error-handler.js');
     const { signToken, COOKIE_NAME } = await import('../../../lib/auth.js');
     app = new Hono();
     app.route('/api/progetti', progettiRoutes);
+    app.route('/api/tickets', ticketRoutes);
     app.onError(errorHandler);
 
     await db`TRUNCATE project_log, project_tasks, ticket_history, tickets, projects RESTART IDENTITY CASCADE`;
     await db`DELETE FROM users WHERE username LIKE 'prog_%'`;
     const mk = async (username: string, role: string) =>
       (await db`INSERT INTO users (username, password_hash, display_name, role) VALUES (${username}, 'x', ${username}, ${role}::user_role_enum) RETURNING id`)[0].id as number;
-    ids = { admin: await mk('prog_admin', 'admin'), other: await mk('prog_it2', 'admin'), guest: await mk('prog_guest', 'guest') };
+    ids = {
+      admin: await mk('prog_admin', 'admin'), other: await mk('prog_it2', 'admin'), guest: await mk('prog_guest', 'guest'),
+      member: await mk('prog_member', 'operator'), outsider: await mk('prog_outsider', 'operator'), it: await mk('prog_it', 'it'),
+    };
+    // «it»: IT senza ruolo admin, con il permesso del modulo ticket IT (solo vista)
+    await db`INSERT INTO user_module_permissions (user_id, module_key, can_view, can_manage) VALUES (${ids.it}, 'tickets_it', TRUE, FALSE)`;
+    const roles: Record<string, 'admin' | 'guest' | 'operator' | 'it'> = { guest: 'guest', member: 'operator', outsider: 'operator', it: 'it' };
     for (const [k, v] of Object.entries(ids)) {
-      const role = k === 'guest' ? 'guest' : 'admin';
-      cookie[k] = `${COOKIE_NAME}=${signToken({ id: v, username: `prog_${k}`, display_name: `prog_${k}`, role: role as 'admin' | 'guest' })}`;
+      cookie[k] = `${COOKIE_NAME}=${signToken({ id: v, username: `prog_${k}`, display_name: `prog_${k}`, role: roles[k] ?? 'admin' })}`;
     }
   });
   afterAll(async () => {
@@ -51,10 +58,10 @@ describe.skipIf(!URL)('Progetti (integrazione)', () => {
       body: body ? JSON.stringify(body) : undefined,
     });
   const json = async (r: Response) => r.json() as Promise<any>;
-  async function ticket(n: number, title = 'Telecamere magazzino', category = 'Progetto nuovo') {
+  async function ticket(n: number, title = 'Telecamere magazzino', category = 'Progetto nuovo', createdBy: number | null = null) {
     const [t] = await db`
-      INSERT INTO tickets (ticket_number, year, seq, caller_name, title, description, category)
-      VALUES (${`#TK-2026-${String(n).padStart(4, '0')}`}, 2026, ${n}, 'Marco', ${title}, 'descrizione lunga abbastanza', ${category})
+      INSERT INTO tickets (ticket_number, year, seq, caller_name, title, description, category, created_by_user_id)
+      VALUES (${`#TK-2026-${String(n).padStart(4, '0')}`}, 2026, ${n}, 'Marco', ${title}, 'descrizione lunga abbastanza', ${category}, ${createdBy})
       RETURNING id, ticket_number`;
     await db`INSERT INTO ticket_history (ticket_id, changed_by_name, action, note) VALUES (${t.id}, 'Marco', 'creato', ${title})`;
     return t as { id: number; ticket_number: string };
@@ -364,5 +371,128 @@ describe.skipIf(!URL)('Progetti (integrazione)', () => {
     expect((await call('admin', 'POST', '/tasks', { project_id: p.id, title: 'x', due_date: '0020-01-01' })).status).toBe(400);
     expect((await call('admin', 'PATCH', `/${p.id}`, { due_date: '1999-12-31' })).status).toBe(400);
     expect((await call('admin', 'PATCH', `/phases/${f.id}`, { due_date: '2030-06-01' })).status).toBe(200);
+  });
+
+  // ─── Collaboratori e attività condivise (0102) ─────────────────────────────
+  // Pagina di stato del ticket come la vede chi guarda: anonimo, utente qualsiasi, collaboratore o IT.
+  const stato = async (who: keyof typeof ids | null, number: string) => {
+    const res = await app.request(`/api/tickets/numero/${number.replace('#', '')}`, { headers: who ? { cookie: cookie[who]! } : {} });
+    expect(res.status).toBe(200);
+    return json(res);
+  };
+  const members = async (pid: number) => json(await call('admin', 'GET', `/${pid}/members`));
+
+  it('collaboratori: solo IT li gestisce; account guest non ammesso; si aggiungono, si elencano e si tolgono con audit', async () => {
+    const p = await json(await call('admin', 'POST', '/', { name: 'Team' }));
+    expect((await call('member', 'GET', `/${p.id}/members`)).status).toBe(403);
+    expect((await call('member', 'POST', `/${p.id}/members`, { user_id: ids.member })).status).toBe(403);
+    expect((await call('admin', 'POST', `/${p.id}/members`, { user_id: ids.guest })).status).toBe(404);   // account condiviso «guest»
+    expect((await call('admin', 'POST', `/${p.id}/members`, { user_id: 999999 })).status).toBe(404);
+
+    expect((await call('admin', 'POST', `/${p.id}/members`, { user_id: ids.member })).status).toBe(201);
+    expect((await call('admin', 'POST', `/${p.id}/members`, { user_id: ids.member })).status).toBe(201);   // ripetere non duplica
+    const list = await members(p.id);
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ user_id: ids.member, display_name: 'prog_member', source: 'manual' });
+    expect(JSON.stringify(list)).not.toContain('password');
+
+    const people = await json(await call('admin', 'GET', '/people'));
+    expect(people.some((u: any) => u.id === ids.member)).toBe(true);
+    expect(people.some((u: any) => u.id === ids.guest)).toBe(false);                                     // mai l'account guest
+    expect(Object.keys(people[0]).sort()).toEqual(['display_name', 'id']);                              // nessuna colonna sensibile
+
+    expect((await call('admin', 'DELETE', `/${p.id}/members/${ids.member}`)).status).toBe(204);
+    expect((await call('admin', 'DELETE', `/${p.id}/members/${ids.member}`)).status).toBe(404);
+    expect(await members(p.id)).toHaveLength(0);
+    const tl = await json(await call('admin', 'GET', `/${p.id}/timeline`));
+    expect(tl.some((r: any) => r.body?.includes('aggiunto/a come collaboratore'))).toBe(true);
+    expect(tl.some((r: any) => r.body?.includes('rimosso/a dai collaboratori'))).toBe(true);
+    const audit = await db`SELECT action FROM audit_log WHERE entity = 'project' AND entity_id = ${String(p.id)} AND action LIKE 'progetti.collaboratore%' ORDER BY id`;
+    expect(audit.map((r: any) => r.action)).toEqual(['progetti.collaboratore_aggiunto', 'progetti.collaboratore_aggiunto', 'progetti.collaboratore_rimosso']);
+  });
+
+  it('il richiedente di un ticket collegato entra da solo; esce se il ticket si scollega o si sposta; quelli a mano restano', async () => {
+    const t = await ticket(1, 'Wi-Fi', 'Rete', ids.member);
+    const a = await json(await call('admin', 'POST', '/', { name: 'A', ticket_ids: [t.id] }));
+    expect(await members(a.id)).toEqual([expect.objectContaining({ user_id: ids.member, source: 'auto' })]);
+
+    // aggiunto a mano diventa «manual»: non si perde scollegando il ticket
+    await call('admin', 'POST', `/${a.id}/members`, { user_id: ids.member });
+    await call('admin', 'DELETE', `/${a.id}/tickets/${t.id}`);
+    expect(await members(a.id)).toEqual([expect.objectContaining({ user_id: ids.member, source: 'manual' })]);
+    await call('admin', 'DELETE', `/${a.id}/members/${ids.member}`);
+
+    // sposta il ticket: il vecchio progetto perde il collaboratore auto, il nuovo lo riceve
+    await call('admin', 'POST', `/${a.id}/tickets`, { ticket_id: t.id });
+    expect(await members(a.id)).toHaveLength(1);
+    const b = await json(await call('admin', 'POST', '/', { name: 'B' }));
+    await call('admin', 'POST', `/${b.id}/tickets`, { ticket_id: t.id });
+    expect(await members(a.id)).toHaveLength(0);
+    expect(await members(b.id)).toEqual([expect.objectContaining({ user_id: ids.member, source: 'auto' })]);
+
+    // un ticket aperto senza account (created_by nullo) non crea collaboratori
+    const anon = await ticket(2, 'Senza account', 'Rete', null);
+    const c = await json(await call('admin', 'POST', '/', { name: 'C', ticket_ids: [anon.id] }));
+    expect(await members(c.id)).toHaveLength(0);
+  });
+
+  it('«I miei progetti»: ogni collaboratore vede solo i suoi, senza dettagli interni', async () => {
+    const p = await json(await call('admin', 'POST', '/', { name: 'Condiviso' }));
+    const other = await json(await call('admin', 'POST', '/', { name: 'Riservato' }));
+    await call('admin', 'POST', `/${p.id}/members`, { user_id: ids.member });
+    const t = await json(await call('admin', 'POST', '/tasks', { project_id: p.id, title: 'x' }));
+    await call('admin', 'PATCH', `/tasks/${t.id}`, { status: 'fatta' });
+    await call('admin', 'POST', '/tasks', { project_id: p.id, title: 'y' });
+
+    const mine = await (await app.request('/api/progetti/mine', { headers: { cookie: cookie.member! } })).json() as any[];
+    expect(mine.map(x => x.name)).toEqual(['Condiviso']);
+    expect(mine[0]).toMatchObject({ progress_pct: 50, tasks_total: 2, tasks_done: 1 });
+    expect(Object.keys(mine[0]).sort()).toEqual(['due_date', 'id', 'name', 'progress_pct', 'status', 'tasks_done', 'tasks_total', 'ticket_number']);
+    expect(JSON.stringify(mine)).not.toContain('Riservato');
+    expect(other.id).toBeGreaterThan(0);
+    const outsider = await (await app.request('/api/progetti/mine', { headers: { cookie: cookie.outsider! } })).json();
+    expect(outsider).toEqual([]);
+    expect((await app.request('/api/progetti/mine')).status).toBe(401);                                  // senza login
+    expect((await app.request('/api/progetti', { headers: { cookie: cookie.member! } })).status).toBe(403); // il resto resta solo IT
+  });
+
+  it('pagina di stato: fasi e attività visibili solo a IT e collaboratori, e solo quelle segnate; mai note interne', async () => {
+    const t = await ticket(1, 'Rete', 'Rete', ids.member);
+    const p = await json(await call('admin', 'POST', '/', { name: 'Rete', ticket_ids: [t.id] }));
+    const ph = await phase(p.id, 'Installazione', 10);
+    const mk = async (body: object) => json(await call('admin', 'POST', '/tasks', { project_id: p.id, phase_id: ph.id, ...body }));
+    const shown = await mk({ title: 'Verifica cablaggio', visible_to_requester: true });
+    const hidden = await mk({ title: 'SEGRETO interno', status_note: 'x' });
+    const blocked = await mk({ title: 'Con motivo', visible_to_requester: true });
+    await call('admin', 'PATCH', `/tasks/${blocked.id}`, { status: 'bloccata', status_note: 'MOTIVO riservato' });
+    await call('admin', 'POST', `/${p.id}/log`, { kind: 'avanzamento', body: 'Novità visibile', visible_to_requester: true });
+    expect(hidden.visible_to_requester).toBe(false);                                                     // default: nulla si espone da solo
+    expect(shown.visible_to_requester).toBe(true);
+
+    for (const viewer of [null, 'outsider'] as const) {                                                  // anonimo e utente qualsiasi
+      const r = await stato(viewer, t.ticket_number);
+      expect(r.project).toMatchObject({ name: 'Rete', shared: false, phases: [], tasks: [] });
+      expect(r.project.news.map((n: any) => n.body)).toEqual(['Novità visibile']);
+      expect(r.project.due_date).toBe(day(10));                                                          // scadenza dalle fasi
+    }
+    for (const viewer of ['member', 'admin', 'it'] as const) {                                           // collaboratore, admin, IT non admin
+      const r = await stato(viewer, t.ticket_number);
+      expect(r.project.shared).toBe(true);
+      expect(r.project.phases).toEqual([expect.objectContaining({ name: 'Installazione', tasks_total: 3, tasks_done: 0 })]);
+      expect(r.project.tasks.map((x: any) => x.title).sort()).toEqual(['Con motivo', 'Verifica cablaggio']);
+      expect(r.project.tasks[0]).toHaveProperty('assigned_name');
+      const text = JSON.stringify(r.project);
+      expect(text).not.toContain('SEGRETO');
+      expect(text).not.toContain('MOTIVO');                                                              // il motivo del blocco è interno
+      expect(r.project.tasks.every((x: any) => !('status_note' in x))).toBe(true);
+    }
+    // segnare e togliere la visibilità si riflette subito
+    await call('admin', 'PATCH', `/tasks/${hidden.id}`, { visible_to_requester: true });
+    expect((await stato('member', t.ticket_number)).project.tasks).toHaveLength(3);
+    await call('admin', 'PATCH', `/tasks/${shown.id}`, { visible_to_requester: false });
+    expect((await stato('it', t.ticket_number)).project.tasks.map((x: any) => x.title)).not.toContain('Verifica cablaggio');
+    // un ex collaboratore non vede più nulla
+    await call('admin', 'DELETE', `/${p.id}/members/${ids.member}`);
+    expect((await stato('member', t.ticket_number)).project.shared).toBe(false);
   });
 });

@@ -24,14 +24,20 @@ interface BlockProps {
   project: ProjectDetail;
   people: Person[];
   reload: () => void;
+  /** Trascinamento tra fasi: id dell'attività trascinata e funzioni per spostarla */
+  dragId: number | null;
+  onDragStart: (taskId: number) => void;
+  onDragEnd: () => void;
+  onDropTask: (taskId: number, phaseId: number | null) => void;
 }
 
-function PhaseBlock({ title, phase, tasks, project, people, reload }: BlockProps) {
+function PhaseBlock({ title, phase, tasks, project, people, reload, dragId, onDragStart, onDragEnd, onDropTask }: BlockProps) {
   const toast = useToast();
   const [closed, setClosed] = useState(false);
   const [name, setName] = useState(title);
   const [newTask, setNewTask] = useState('');
   const [confirmDel, setConfirmDel] = useState(false);
+  const [over, setOver] = useState(false);
 
   const total = tasks.length, done = tasks.filter(t => t.status === 'fatta').length;
   const pct = total ? Math.round((100 * done) / total) : 0;
@@ -56,8 +62,15 @@ function PhaseBlock({ title, phase, tasks, project, people, reload }: BlockProps
     }
   }
 
+  // Si può lasciare l'attività su qualsiasi punto della fase, anche chiusa; non su quella in cui già sta
+  const accepts = dragId !== null && !tasks.some(t => t.id === dragId);
+
   return (
-    <section className="card !px-5 !py-4">
+    <section
+      onDragOver={e => { if (accepts) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOver(true); } }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false); }}
+      onDrop={e => { if (!accepts) return; e.preventDefault(); setOver(false); onDropTask(dragId!, phase?.id ?? null); }}
+      className={`card !px-5 !py-4 transition-shadow ${over ? 'ring-2 ring-accent' : accepts ? 'ring-1 ring-accent/40' : ''}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <button type="button" onClick={() => setClosed(c => !c)} aria-label={closed ? 'Apri la fase' : 'Chiudi la fase'} aria-expanded={!closed}
           className="flex h-6 w-6 items-center justify-center rounded-md text-muted hover:bg-stone-100">
@@ -105,8 +118,8 @@ function PhaseBlock({ title, phase, tasks, project, people, reload }: BlockProps
       {!closed && (
         <div className="mt-2.5">
           {tasks.length === 0
-            ? <p className="py-1.5 text-sm text-muted">Nessuna attività in questa fase.</p>
-            : sortTasks(tasks).map(t => <TaskRow key={t.id} task={t} phases={project.phases} people={people} onChanged={reload} />)}
+            ? <p className="py-1.5 text-sm text-muted">{accepts ? 'Rilascia qui per spostare l\'attività in questa fase.' : 'Nessuna attività in questa fase.'}</p>
+            : sortTasks(tasks).map(t => <TaskRow key={t.id} task={t} phases={project.phases} people={people} onChanged={reload} onDragStart={onDragStart} onDragEnd={onDragEnd} />)}
           <form onSubmit={add} className="mt-1.5">
             <input className="input" aria-label={`Aggiungi attività a ${title}`} placeholder={`Aggiungi attività a «${title}»… (Invio)`}
               value={newTask} maxLength={300} onChange={e => setNewTask(e.target.value)} autoComplete="off" />
@@ -123,8 +136,24 @@ export function PhaseList({ project, people, reload }: { project: ProjectDetail;
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [due, setDue] = useState('');
+  const [dragId, setDragId] = useState<number | null>(null);
 
   const loose = project.tasks.filter(t => t.phase_id === null);
+
+  async function moveTask(taskId: number, phaseId: number | null) {
+    setDragId(null);
+    const t = project.tasks.find(x => x.id === taskId);
+    if (!t || t.phase_id === phaseId) return;
+    try {
+      await api.patch(`/api/progetti/tasks/${taskId}`, { phase_id: phaseId });
+      const dest = phaseId === null ? 'Senza fase' : project.phases.find(p => p.id === phaseId)?.name ?? 'la fase';
+      toast.success(`«${t.title}» spostata in ${dest}`);
+      reload();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Errore di spostamento');
+    }
+  }
+  const dnd = { dragId, onDragStart: setDragId, onDragEnd: () => setDragId(null), onDropTask: moveTask };
   const hasPhases = project.phases.length > 0;
 
   async function addPhase(e: React.FormEvent) {
@@ -144,10 +173,10 @@ export function PhaseList({ project, people, reload }: { project: ProjectDetail;
     <div className="space-y-4">
       {project.phases.map(ph => (
         <PhaseBlock key={`${ph.id}-${ph.name}-${ph.due_date}`} title={ph.name} phase={ph}
-          tasks={project.tasks.filter(t => t.phase_id === ph.id)} project={project} people={people} reload={reload} />
+          tasks={project.tasks.filter(t => t.phase_id === ph.id)} project={project} people={people} reload={reload} {...dnd} />
       ))}
       {(!hasPhases || loose.length > 0) && (
-        <PhaseBlock title={hasPhases ? 'Senza fase' : 'Attività'} tasks={loose} project={project} people={people} reload={reload} />
+        <PhaseBlock title={hasPhases ? 'Senza fase' : 'Attività'} tasks={loose} project={project} people={people} reload={reload} {...dnd} />
       )}
       {adding ? (
         <form onSubmit={addPhase} className="card flex flex-wrap items-center gap-2 !p-4">
