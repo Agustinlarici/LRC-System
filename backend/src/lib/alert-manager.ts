@@ -124,7 +124,7 @@ export async function checkSyncHealth(): Promise<void> {
       await raiseAlert(
         'sync_incremental_missed', 'critical',
         'Sync WebThron bloccato',
-        `Nessun ciclo da ${Math.round(minSinceLast)} min (atteso ogni 10 min)`,
+        `Nessun ciclo da ${Math.round(minSinceLast)} min (atteso ogni 5 min)`,
       );
     } else if (isAlertActive('sync_incremental_missed') && minSinceLast < 15) {
       await resolveAlert('sync_incremental_missed', 'Sync ripreso');
