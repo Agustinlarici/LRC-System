@@ -99,8 +99,8 @@ export const MODULES: ModuleConfig[] = [
     sidebar: 'IconTicket', hidden: false, moduleKey: 'tickets',
   },
   {
-    href: '/photo-station', label: 'Photo Station', group: 'IT',
-    description: 'Ordini di foto per la PC Camere e foto acquisite',
+    href: '/quality-control-station', label: 'QC Station', group: 'IT',
+    description: 'Quality Control Station: ordini di foto per la PC Camere e foto acquisite',
     sidebar: 'IconScan', hidden: false, moduleKey: 'photo_station',
   },
   {
