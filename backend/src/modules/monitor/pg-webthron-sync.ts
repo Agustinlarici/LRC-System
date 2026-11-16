@@ -10,7 +10,7 @@
  * letture sono corte, sull'indice di `datain`, una alla volta e con un limite di tempo lato
  * server (vedi mysql-client.ts e webthron-guard.ts).
  *
- *   Incrementale (ogni 10 minuti):              pochi ms, solo gli eventi nuovi
+ *   Incrementale (ogni 5 minuti):             pochi ms, solo gli eventi nuovi
  *   Rilettura notturna (11:30 e 01:00):         rebanadine di 4 ore sugli ultimi 2 giorni
  *   Aggiornamento fasi/combos (02:00):          rebanadine di 7 giorni sugli ultimi 90
  */
@@ -39,7 +39,7 @@ function envInt(name: string, fallback: number): number {
 const OVERLAP_MS = envInt('WEBTHRON_SYNC_OVERLAP_SECONDS', 60) * 1000;
 
 // Frequenza del ciclo (come in index.ts): è la finestra di `lastup` al primo controllo dopo l'avvio
-const SYNC_INTERVAL_MS = Math.max(10, envInt('WEBTHRON_SYNC_INTERVAL_SECONDS', 600)) * 1000;
+const SYNC_INTERVAL_MS = Math.max(10, envInt('WEBTHRON_SYNC_INTERVAL_SECONDS', 300)) * 1000;
 // Inizio dell'ultimo controllo riuscito: da lì si guarda `lastup` (in memoria, come lastSyncAt)
 let lastOkStartAt: Date | null = null;
 
