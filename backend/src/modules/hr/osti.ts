@@ -66,7 +66,7 @@ export async function readOstiEmployees(): Promise<OstiRow[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [rows] = await (getOstiPool() as any).query({ sql: SQL, timeout: TIMEOUT_MS });
   return (rows as Array<Record<string, unknown>>).map(r =>
-    Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v == null ? '' : String(v).trim()])));   // Osti ha nomi con spazi ai bordi
+    Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v == null ? '' : k === 'dip_nome' ? String(v) : String(v).trim()])));   // dip_nome si copia com'è (anche spazi ai bordi)
 }
 
 export const hrOstiRoutes = new Hono<Env>();

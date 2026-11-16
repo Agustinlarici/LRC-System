@@ -93,10 +93,13 @@ const json = { 'Content-Type': 'application/json' };
 // Una persona può avere più righe in Osti con nomi diversi (es. riassunta con il nome completo):
 // "Nome Osti" ricorda tutti i nomi collegati, separati da " | " (max 200 caratteri).
 const NOMI_SEP = ' | ';
-const ostiNames = (s: string | null | undefined) => (s ?? '').split('|').map(x => x.trim()).filter(Boolean);
+// I nomi si copiano com'è da Osti (anche con spazi ai bordi): si divide solo sul separatore " | "
+const ostiNames = (s: string | null | undefined) => (s ?? '').split(NOMI_SEP).filter(x => x.trim());
 function mergeOstiName(current: string | null | undefined, name: string): string {
   const names = ostiNames(current);
-  if (names.some(n => norm(n) === norm(name))) return names.join(NOMI_SEP);
+  if (!name.trim()) return names.join(NOMI_SEP);
+  // stesso nome a meno di spazi/maiuscole: si sostituisce con quello di Osti, così resta identico
+  if (names.some(n => norm(n) === norm(name))) return names.map(n => norm(n) === norm(name) ? name : n).join(NOMI_SEP);
   const merged = [...names, name].join(NOMI_SEP);
   return merged.length <= 200 ? merged : name;
 }
@@ -118,7 +121,7 @@ function wantOf(r: Row, ctx: Ctx): Record<string, string | number | boolean | nu
   const livello = clean(r.dip_livello);
   const plantId = ctx.plantByName.get(norm(clean(r.filiale)));   // filiale/ditta arrivano solo dalla lettura MySQL
   return {
-    nome_osti: clean(r.dip_nome),
+    nome_osti: r.dip_nome ?? '',   // com'è in Osti, senza ripulire
     matricola: matricola && matricola !== '0' ? matricola : null,
     data_assunzione: ostiDate(r.dip_assunto),
     data_cessazione: ostiDate(r.dip_licenziato),
@@ -165,7 +168,7 @@ const repartoOf = (r: Row) => clean(r.reparto).replace(/^reparto\s+/i, '');
 // Confronta la scheda con quanto propone Osti e dice cosa scrivere
 function buildPlan(emp: HrEmployee, r: Row, ctx: Ctx): { plan: Plan | null; conflict: string | null } {
   const want = wantOf(r, ctx);
-  want.nome_osti = mergeOstiName(emp.nome_osti, clean(r.dip_nome));
+  want.nome_osti = mergeOstiName(emp.nome_osti, r.dip_nome ?? '');
   const licenziato = ostiDate(r.dip_licenziato);
   const have = (f: string): string => {
     const v = (emp as unknown as Record<string, unknown>)[f];
@@ -188,7 +191,7 @@ function buildPlan(emp: HrEmployee, r: Row, ctx: Ctx): { plan: Plan | null; conf
   for (const [f, v] of Object.entries(want)) {
     if (v == null) continue;                                    // Osti vuoto: non tocca nulla
     const cur = have(f);
-    if (cur !== '' && norm(cur) === norm(show(f, v))) continue; // già uguale (a meno di maiuscole/spazi)
+    if (f === 'nome_osti' ? cur === v : cur !== '' && norm(cur) === norm(show(f, v))) continue; // già uguale (nome Osti: identico; gli altri a meno di maiuscole/spazi)
     if (f === 'matricola') {
       // La matricola di Osti vince: si scrive sempre senza zeri. Se un'altra scheda ha già lo stesso numero
       // (la base accetta una matricola per persona) la perde: resta traccia nella sua timeline.
