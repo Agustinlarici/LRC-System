@@ -179,3 +179,5 @@ export function PortfolioGantt({ projects }: { projects: ProjectRow[] }) {
   );
 }
 
+// Riutilizzati dalle schede dei progetti: stessi colori e stesso stato delle fasi
+export { TRACK as PHASE_TRACK, FILL as PHASE_FILL, tone as phaseTone };
