@@ -79,7 +79,7 @@ const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATE
   { key: 'impostazioni',  label: 'Impostazioni',           category: 'IT' },
   { key: 'ferrari_schede',      label: 'Programma produzione (schede)',               category: 'IT' },
   { key: 'ferrari_supervisore', label: 'Programma produzione (schede) — Supervisore',   category: 'IT' },
-  { key: 'photo_station', label: 'Photo Station (ordini di foto)',   category: 'IT' },
+  { key: 'photo_station', label: 'Quality Control Station (ordini di foto)',   category: 'IT' },
 
   // ── Qualità ────────────────────────────────────────────────────────────────
   { key: 'qualita', label: 'Difetti', category: 'Qualità' },

@@ -1,15 +1,15 @@
-// Photo Station: coda ordini → claim → upload → complete, con DB vero.
-// Serve PHOTOSTATION_TEST_DATABASE_URL: un DB con TUTTE le migrazioni (senza la variabile il file è saltato).
+// Quality Control Station: coda ordini → claim → upload → complete, con DB vero.
+// Serve QCSTATION_TEST_DATABASE_URL: un DB con TUTTE le migrazioni (senza la variabile il file è saltato).
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const URL = process.env.PHOTOSTATION_TEST_DATABASE_URL;
+const URL = process.env.QCSTATION_TEST_DATABASE_URL;
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 1, 2, 3, 4, 0xff, 0xd9]);
 
-describe.skipIf(!URL)('Photo Station (integrazione)', () => {
+describe.skipIf(!URL)('Quality Control Station (integrazione)', () => {
   let app: Hono;
   let db: typeof import('../../../db/client.js').db;
   let helpers: typeof import('../helpers.js');
@@ -17,9 +17,9 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
   let tok: string, tok2: string, tok3: string;
 
   const user = (path: string, init: RequestInit = {}, cookie = admin) =>
-    app.request(`/api/photo-station${path}`, { ...init, headers: { cookie, 'content-type': 'application/json', ...(init.headers ?? {}) } });
+    app.request(`/api/quality-control-station${path}`, { ...init, headers: { cookie, 'content-type': 'application/json', ...(init.headers ?? {}) } });
   const station = (path: string, init: RequestInit = {}, token = tok) =>
-    app.request(`/api/photo-station/device${path}`, { ...init, headers: { authorization: `Bearer ${token}`, ...(init.headers ?? {}) } });
+    app.request(`/api/quality-control-station/device${path}`, { ...init, headers: { authorization: `Bearer ${token}`, ...(init.headers ?? {}) } });
   const newJob = async (commessa: string, phase = 'delibera_finale') => (await (await user('/jobs', { method: 'POST', body: JSON.stringify({ commessa, phase }) })).json() as any).job;
   const put = (jobId: number, cam: string, body: Buffer = JPEG, token = tok) =>
     station(`/jobs/${jobId}/photos/${cam}`, { method: 'PUT', body: new Uint8Array(body), headers: { 'content-type': 'image/jpeg' } }, token);
@@ -32,12 +32,14 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
     process.env.UPLOAD_DIR = mkdtempSync(join(tmpdir(), 'ps-'));
     db = (await import('../../../db/client.js')).db;
     helpers = await import('../helpers.js');
-    const { photoStationRoutes, photoStationDeviceRoutes } = await import('../routes.js');
+    const { qualityControlStationRoutes, qualityControlStationDeviceRoutes } = await import('../routes.js');
     const { errorHandler } = await import('../../../middleware/error-handler.js');
     const { signToken, COOKIE_NAME } = await import('../../../lib/auth.js');
     app = new Hono();
-    app.route('/api/photo-station/device', photoStationDeviceRoutes);
-    app.route('/api/photo-station', photoStationRoutes);
+    app.route('/api/quality-control-station/device', qualityControlStationDeviceRoutes);
+    app.route('/api/quality-control-station', qualityControlStationRoutes);
+    app.route('/api/photo-station/device', qualityControlStationDeviceRoutes);   // nombre anterior (compatibilidad)
+    app.route('/api/photo-station', qualityControlStationRoutes);
     const { iknowRoutes } = await import('../iknow.js');
     app.route('/api/delibere', iknowRoutes);
     app.onError(errorHandler);
@@ -138,7 +140,7 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
   });
 
   it('senza token valido (o revocato) la rotta stazione è chiusa', async () => {
-    expect((await app.request('/api/photo-station/device/claim', { method: 'POST' })).status).toBe(401);
+    expect((await app.request('/api/quality-control-station/device/claim', { method: 'POST' })).status).toBe(401);
     expect((await station('/claim', { method: 'POST' }, 'f'.repeat(64))).status).toBe(401);
     await db`UPDATE photo_stations SET revoked_at = now()`;
     expect((await station('/claim', { method: 'POST' })).status).toBe(401);
@@ -147,7 +149,7 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
   it('permessi: il guest non vede né crea; il token stazione non apre le rotte utente', async () => {
     expect((await user('/jobs', {}, guest)).status).toBe(403);
     expect((await user('/jobs', { method: 'POST', body: JSON.stringify({ commessa: 'X', phase: 'delibera_finale' }) }, guest)).status).toBe(403);
-    expect((await app.request('/api/photo-station/jobs', { headers: { authorization: `Bearer ${tok}` } })).status).toBe(401);
+    expect((await app.request('/api/quality-control-station/jobs', { headers: { authorization: `Bearer ${tok}` } })).status).toBe(401);
   });
 
   it('ordine preso da una stazione sparita: torna in coda, dopo 3 tentativi fallisce', async () => {
@@ -449,5 +451,17 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
     await newJob('9990007');
     const j = ((await (await user('/jobs')).json() as any).jobs as any[]).find(x => x.commessa === '9990007');
     expect(j).toMatchObject({ modello: 'F175', linea: 'PSTEST LINEA' });
+  });
+
+  // ─── Compatibilidad: las PC Camere ya instaladas usan el nombre anterior (/api/photo-station) ──────
+  it('el nombre anterior de la API sigue funcionando para las PC Camere ya instaladas', async () => {
+    const job = await newJob('ORD-OLD');
+    const oldClaim = await app.request('/api/photo-station/device/claim', { method: 'POST', headers: { authorization: `Bearer ${tok}` } });
+    expect(oldClaim.status).toBe(200);
+    expect(((await oldClaim.json()) as any).job).toMatchObject({ id: job.id, commessa: 'ORD-OLD' });
+    // mismos controles de acceso con el nombre viejo: sin token 401, y el token de estación no abre las rutas de usuario
+    expect((await app.request('/api/photo-station/device/claim', { method: 'POST' })).status).toBe(401);
+    expect((await app.request('/api/photo-station/jobs', { headers: { authorization: `Bearer ${tok}` } })).status).toBe(401);
+    expect((await app.request('/api/photo-station/jobs', { headers: { cookie: guest } })).status).toBe(403);
   });
 });

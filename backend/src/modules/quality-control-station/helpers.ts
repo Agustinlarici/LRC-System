@@ -1,4 +1,4 @@
-// Photo Station: funzioni pure (senza DB) per commessa, foto e token delle stazioni.
+// Quality Control Station: funzioni pure (senza DB) per commessa, foto e token delle stazioni.
 import { createHash, randomBytes } from 'node:crypto';
 
 export const MAX_PHOTO_BYTES = 25 * 1024 * 1024;   // un JPEG da 16 MP a qualità 100 pesa ~4 MB
@@ -6,7 +6,7 @@ export const CAMERA_RE = /^[A-Za-z0-9_-]{1,20}$/;  // "CAM01": finisce nel nome 
 export const STALE_CLAIM_MINUTES = 5;              // ordine preso da una stazione che poi sparisce
 export const MAX_ATTEMPTS = 3;
 
-/** Come CommessaService di Photo Station: niente caratteri di controllo, spazi tagliati. */
+/** Come CommessaService di Quality Control Station: niente caratteri di controllo, spazi tagliati. */
 export function normalizeCommessa(raw: string): string {
   // eslint-disable-next-line no-control-regex
   return raw.replace(/[\u0000-\u001f\u007f]/g, '').trim();

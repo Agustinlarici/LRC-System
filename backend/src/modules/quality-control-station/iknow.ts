@@ -1,5 +1,5 @@
 // Chiamata che iKnow fa alla VM quando una delibera è accettata: POST /api/delibere/accettate
-// (vedi docs/PHOTO-STATION.md). Rotta pubblica per richiesta esplicita: la protegge il token Bearer
+// (vedi docs/QUALITY-CONTROL-STATION.md). Rotta pubblica per richiesta esplicita: la protegge il token Bearer
 // concordato con l'azienda (nel DB solo l'hash). iKnow riprova finché non riceve 200, quindi:
 //   - una chiamata valida risponde 200 SEMPRE (anche se è un doppione o la fase non è ancora configurata);
 //   - 401 token errato, 503 token non ancora configurato, 400 corpo non valido.

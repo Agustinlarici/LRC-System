@@ -16,7 +16,7 @@ import { logger } from './lib/logger.js';
 import { recepcionesEmitter } from './gateway/recepciones-emitter.js';
 import { letturaNotturna } from './modules/ferrari/cartella.js';
 import { pollOneDriveFolder } from './modules/spma/onedrive-watcher.js';
-import { runPhotoFeed } from './modules/photo-station/feed.js';
+import { runPhotoFeed } from './modules/quality-control-station/feed.js';
 
 function nextEvery10Min(): Date {
   const now = new Date();
@@ -155,7 +155,7 @@ export function startScheduler() {
     setNextRun('spma_onedrive_poll', nextEvery10Min());
   }, { timezone: 'Europe/Rome' });
 
-  // Every minute — Photo Station: ordini di foto dalla copia del DB di iKnow (spento finché non lo si accende)
+  // Every minute — Quality Control Station: ordini di foto dalla copia del DB di iKnow (spento finché non lo si accende)
   cron.schedule('* * * * *', async () => {
     try { await runPhotoFeed(); } catch { /* runPhotoFeed registra già i suoi errori */ }
   }, { timezone: 'Europe/Rome' });

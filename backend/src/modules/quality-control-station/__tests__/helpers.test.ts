@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { bearerToken, CAMERA_RE, isJpeg, newStationToken, normalizeCommessa, sha256Hex } from '../helpers.js';
 
-describe('Photo Station — helpers', () => {
-  it('normalizza la commessa come Photo Station (trim e caratteri di controllo)', () => {
+describe('Quality Control Station — helpers', () => {
+  it('normalizza la commessa come Quality Control Station (trim e caratteri di controllo)', () => {
     expect(normalizeCommessa('  ORD-1\r\n')).toBe('ORD-1');
     expect(normalizeCommessa('A\tB')).toBe('AB');
     expect(normalizeCommessa('   ')).toBe('');
@@ -32,7 +32,7 @@ describe('Photo Station — helpers', () => {
 import { bearerTokenAny, normalizePhase } from '../helpers.js';
 import { parseDataOra } from '../iknow.js';
 
-describe('Photo Station — iKnow', () => {
+describe('Quality Control Station — iKnow', () => {
   it('normalizza la fase come codice del catalogo', () => {
     expect(normalizePhase('Delibera Finale')).toBe('delibera_finale');
     expect(normalizePhase(' delibera-finale-proximiti ')).toBe('delibera_finale_proximiti');
