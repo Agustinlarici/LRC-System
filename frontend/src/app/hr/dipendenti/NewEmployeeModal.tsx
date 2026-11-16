@@ -29,7 +29,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
   const [form, setForm] = useState({
     matricola: '', nome: '', cognome: '', sesso: '', data_nascita: '', codice_fiscale: '', nazionalita: '',
     email: '', telefono: '', indirizzo: '', citta: '', provincia: '', cap: '', gruppo_orario: '', nome_osti: '', taglia_pantaloni: '', taglia_maglia: '', taglia_scarpe: '', taglia_campera: '', badge: '', transponder: '', terminale: '', qualifica: '', indeterminato: '', indeterminato_data: '', part_time: '', luogo_nascita: '', titolo_studio: '', stato_civile: '', tipo_nazionalita: '', domicilio_indirizzo: '', domicilio_citta: '', domicilio_provincia: '', domicilio_cap: '', note_hr: '', mansione: '', livello: '', categoria: '', tipo_contratto: '', funzione_aziendale: '',
-    reparto_id: '', contract_company_id: '', data_assunzione: '', tag_id: '',
+    reparto_id: '', contract_company_id: '', data_assunzione: '', data_cessazione: '', tag_id: '',
   });
   const [plantIds, setPlantIds] = useState<number[]>([]);
   const [l68, setL68] = useState(false);
@@ -87,6 +87,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
         provincia: form.provincia || null,
         cap: form.cap || null,
         gruppo_orario: form.gruppo_orario || null,
+        data_cessazione: form.data_cessazione || null,
         nome_osti: form.nome_osti || null,
         taglia_pantaloni: form.taglia_pantaloni || null,
         taglia_maglia: form.taglia_maglia || null,
@@ -238,6 +239,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
             </div>
             <div><label className="label">Tipo contratto<OstiMark /></label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
             <div><label className="label">Data assunzione *<OstiMark /></label><input type="date" className="input" value={form.data_assunzione} onChange={e => set('data_assunzione', e.target.value)} /></div>
+            <div><label className="label">Data cessazione / fine contratto<OstiMark /></label><input type="date" className="input" value={form.data_cessazione} onChange={e => set('data_cessazione', e.target.value)} /></div>
             <div><label className="label">Etichetta</label>
               <select className="input" value={form.tag_id} onChange={e => set('tag_id', e.target.value)}>
                 <option value="">—</option>
