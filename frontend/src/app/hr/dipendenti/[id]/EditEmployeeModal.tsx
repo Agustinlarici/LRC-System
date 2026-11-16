@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag, HrCapoPair } from '@/types';
 import { PlantMultiSelect } from '../PlantMultiSelect';
-import { usePromptDialog } from '@/components/ui/PromptDialog';
+import { usePromptDialog, useConfirmDialog } from '@/components/ui/PromptDialog';
 import { OstiMark, OstiLegend } from '@/components/ui/OstiMark';
 
 // Il set di stati validi è stato ridotto a questi 3: "aspettativa" e "malattia" restano
@@ -38,6 +39,24 @@ interface Props {
 export function EditEmployeeModal({ employee, departments, plants, companies, tags, funzioni: initialFunzioni, allEmployees, fullManage, onClose, onSaved }: Props) {
   const [funzioni, setFunzioni] = useState(initialFunzioni);
   const { ask, dialog } = usePromptDialog();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
+  const router = useRouter();
+  const [deleting, setDeleting] = useState(false);
+
+  // Elimina la scheda (con contratti, eventi e storico): solo HR, dopo conferma
+  async function deleteEmployee() {
+    const ok = await confirm({
+      title: `Eliminare ${employee.cognome} ${employee.nome}?`,
+      message: 'Si eliminano la scheda e tutti i dati collegati (contratti, eventi, storico). Non si può annullare.',
+      confirmLabel: 'Elimina', cancelLabel: 'Annulla',
+    });
+    if (!ok) return;
+    setDeleting(true); setError('');
+    const res = await fetch(`${BACKEND}/api/hr/employees/${employee.id}`, { method: 'DELETE', credentials: 'include' });
+    if (res.ok) { router.push('/hr/dipendenti'); return; }
+    setDeleting(false);
+    setError((await res.json().catch(() => ({}))).message ?? 'Eliminazione non riuscita');
+  }
   const [form, setForm] = useState({
     matricola: employee.matricola ?? '',
     nome: employee.nome,
@@ -406,11 +425,19 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
             <button type="button" onClick={onClose} className="btn-secondary text-sm">Annulla</button>
             <button type="submit" disabled={saving} className="btn-primary text-sm">{saving ? 'Salvataggio…' : 'Salva'}</button>
           </div>
+
+          {fullManage && (
+            <div className="flex items-center justify-between gap-3 border-t border-line pt-4">
+              <p className="text-xs text-muted">Elimina la scheda e tutti i dati collegati. Non si può annullare.</p>
+              <button type="button" onClick={deleteEmployee} disabled={deleting} className="btn-danger text-sm shrink-0">{deleting ? 'Eliminazione…' : 'Elimina scheda'}</button>
+            </div>
+          )}
         </form>
         </div>
       </div>
     </div>
     {dialog}
+    {confirmDialog}
     </>
   );
 }
