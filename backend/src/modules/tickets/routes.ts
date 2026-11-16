@@ -239,7 +239,8 @@ ticketRoutes.get('/numero/:number', async (c) => {
   `;
 
   // Progetto collegato: solo avanzamento generale e novità segnate come visibili
-  const project = ticket.project_id ? await publicProjectInfo(ticket.project_id) : null;
+  const viewer = await getOptionalUser(c);   // IT e collaboratori vedono anche fasi e attività condivise
+  const project = ticket.project_id ? await publicProjectInfo(ticket.project_id, viewer) : null;
 
   return c.json({ ...withSLAStatus(ticket), history, project });
 });

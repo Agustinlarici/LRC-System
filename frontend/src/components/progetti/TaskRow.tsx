@@ -22,12 +22,15 @@ interface Props {
   people?: Person[];
   /** Colonne strette: scadenza e responsabile vanno sotto il titolo invece che a destra */
   compact?: boolean;
+  /** Se presente, la riga mostra la maniglia per trascinarla in un'altra fase */
+  onDragStart?: (taskId: number) => void;
+  onDragEnd?: () => void;
   onChanged: () => void;
 }
 
 // Riga di attività: il quadrato la segna come fatta; il titolo apre l'editor
 // (stato, responsabile, scadenza, fase e, in «in attesa»/«bloccata», di chi o perché).
-export function TaskRow({ task, showProject, phases, people, compact, onChanged }: Props) {
+export function TaskRow({ task, showProject, phases, people, compact, onDragStart, onDragEnd, onChanged }: Props) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState(task.status_note ?? '');
@@ -67,7 +70,7 @@ export function TaskRow({ task, showProject, phases, people, compact, onChanged 
   const noteLabel = task.status === 'in_attesa' ? 'da' : 'perché';
   const dueText = late ? null : (!done && task.due_date ? (task.days_to_due != null && task.days_to_due <= 1 ? dueLabel(task.days_to_due) : fmtShort(task.due_date)) : null);
   const hasRight = !!task.assigned_name || late || !!dueText;
-  const hasMeta = (!done && task.status !== 'da_fare') || showProject || (task.status_note && needsNote) || overPhase || (compact && hasRight);
+  const hasMeta = (!done && task.status !== 'da_fare') || showProject || (task.status_note && needsNote) || overPhase || task.visible_to_requester || (compact && hasRight);
   const field = 'input !w-auto !px-2.5 !py-1 text-[13px]';
 
   const right = (
@@ -84,7 +87,17 @@ export function TaskRow({ task, showProject, phases, people, compact, onChanged 
   );
 
   return (
-    <div className={`grid ${compact ? 'grid-cols-[22px_minmax(0,1fr)]' : 'grid-cols-[22px_minmax(0,1fr)_auto]'} items-start gap-x-3 gap-y-1 border-t border-stone-100 py-2.5 first:border-t-0`}>
+    <div className={`relative grid ${compact ? 'grid-cols-[22px_minmax(0,1fr)]' : 'grid-cols-[22px_minmax(0,1fr)_auto]'} items-start gap-x-3 gap-y-1 border-t border-stone-100 py-2.5 first:border-t-0 ${onDragStart ? 'pl-5' : ''}`}>
+      {onDragStart && (
+        <span draggable title="Trascina in un'altra fase" aria-label="Trascina in un'altra fase"
+          onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(task.id)); onDragStart(task.id); }}
+          onDragEnd={() => onDragEnd?.()}
+          className="absolute left-0 top-3 flex h-5 w-4 cursor-grab items-center justify-center rounded text-stone-300 hover:bg-stone-100 hover:text-stone-500 active:cursor-grabbing">
+          <svg viewBox="0 0 12 18" fill="currentColor" className="h-4 w-3" aria-hidden>
+            <circle cx="3" cy="3" r="1.4" /><circle cx="9" cy="3" r="1.4" /><circle cx="3" cy="9" r="1.4" /><circle cx="9" cy="9" r="1.4" /><circle cx="3" cy="15" r="1.4" /><circle cx="9" cy="15" r="1.4" />
+          </svg>
+        </span>
+      )}
       <button
         type="button" disabled={busy} aria-label={done ? 'Segna come da fare' : 'Segna come fatta'}
         onClick={() => patch({ status: done ? 'da_fare' : 'fatta' })}
@@ -119,6 +132,7 @@ export function TaskRow({ task, showProject, phases, people, compact, onChanged 
                 : <span className="rounded-full bg-stone-100 px-2.5 py-0.5 font-medium text-stone-600">Senza progetto</span>
             )}
             {overPhase && <span className="font-semibold text-warning">oltre la scadenza della fase ({fmtShort(phase!.due_date)})</span>}
+            {task.visible_to_requester && <StatusBadge tone="info">Condivisa</StatusBadge>}
             {compact && hasRight && <span className="ml-auto flex items-center">{right}</span>}
           </div>
         )}
@@ -169,6 +183,13 @@ export function TaskRow({ task, showProject, phases, people, compact, onChanged 
               </label>
             )}
           </div>
+          {task.project_id && (
+            <label className="flex items-start gap-2 text-xs text-stone-600">
+              <input type="checkbox" className="mt-0.5 h-4 w-4 accent-ink-800" checked={task.visible_to_requester} disabled={busy}
+                onChange={e => patch({ visible_to_requester: e.target.checked })} />
+              <span>Visibile al richiedente e ai collaboratori <span className="text-muted">(vedono titolo, stato, scadenza e responsabile; mai le note né i motivi)</span></span>
+            </label>
+          )}
           {needsNote && (
             <form className="flex gap-2" onSubmit={e => { e.preventDefault(); patch({ status_note: note }).then(ok => ok && setOpen(false)); }}>
               <input className="input" aria-label="Dettaglio" value={note} onChange={e => setNote(e.target.value)} maxLength={300}

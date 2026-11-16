@@ -14,8 +14,8 @@ import { PhaseList } from '@/components/progetti/PhaseList';
 import { Board } from '@/components/progetti/Board';
 import { ProjectGantt } from '@/components/progetti/Gantt';
 import {
-  KIND_LABEL, LOG_KINDS, PROJECT_LABEL, TICKET_ACTION_LABEL, daysFromToday, fmtDate, fmtDateTime, fmtShort, isPlausibleDate,
-  type LogKind, type Person, type ProjectDetail, type ProjectStatus, type TicketHit, type TimelineRow,
+  KIND_LABEL, LOG_KINDS, PROJECT_LABEL, TICKET_ACTION_LABEL, daysFromToday, fmtDateTime, fmtShort, initials, isPlausibleDate,
+  type LogKind, type Member, type Person, type ProjectDetail, type ProjectStatus, type TicketHit, type TimelineRow,
 } from '@/lib/progetti';
 
 const DOT: Record<string, string> = {
@@ -74,8 +74,10 @@ export default function ProgettoPage() {
   const [p, setP] = useState<ProjectDetail | null>(null);
   const [timeline, setTimeline] = useState<TimelineRow[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [everyone, setEveryone] = useState<{ id: number; display_name: string }[]>([]);
+  const [newMember, setNewMember] = useState('');
   const [notFound, setNotFound] = useState(false);
-  const [asRequester, setAsRequester] = useState(false);
   const [tab, setTab] = useState<Tab>('lista');
   const [kind, setKind] = useState<LogKind>('avanzamento');
   const [logBody, setLogBody] = useState('');
@@ -86,9 +88,11 @@ export default function ProgettoPage() {
   const load = useCallback(() => {
     api.get<ProjectDetail>(`/api/progetti/${id}`).then(setP).catch(() => setNotFound(true));
     api.get<TimelineRow[]>(`/api/progetti/${id}/timeline`).then(setTimeline).catch(() => setTimeline([]));
+    api.get<Member[]>(`/api/progetti/${id}/members`).then(setMembers).catch(() => setMembers([]));
   }, [id]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { api.get<Person[]>('/api/tickets/assignable-users').then(setPeople).catch(() => setPeople([])); }, []);
+  useEffect(() => { api.get<{ id: number; display_name: string }[]>('/api/progetti/people').then(setEveryone).catch(() => setEveryone([])); }, []);
 
   useEffect(() => {
     if (q.trim().length < 2) return;
@@ -125,52 +129,14 @@ export default function ProgettoPage() {
             onChange={e => run(() => api.patch(`/api/progetti/${p.id}`, { status: e.target.value as ProjectStatus }))}>
             {(Object.keys(PROJECT_LABEL) as ProjectStatus[]).map(s => <option key={s} value={s}>{PROJECT_LABEL[s]}</option>)}
           </select>
-          <button type="button" className="btn-secondary" onClick={() => setAsRequester(v => !v)}>
-            {asRequester ? '← Vista interna' : 'Vedi come richiedente'}
-          </button>
+          {first
+            ? <Link href={`/tickets/stato/${first.ticket_number.replace(/^#/, '')}`} className="btn-secondary"
+                title="Apre la stessa pagina che vede il richiedente">Vedi come richiedente</Link>
+            : <span className="btn-secondary cursor-not-allowed opacity-50" title="Collega un ticket per vedere la pagina del richiedente">Vedi come richiedente</span>}
         </>
       }
     />
   );
-
-  // ── Anteprima: cosa vede chi ha aperto il ticket nella pagina di stato ───────
-  if (asRequester) {
-    return (
-      <div>
-        {header}
-        <div className="mx-auto mb-5 max-w-2xl rounded-card bg-accent-soft px-5 py-3 text-sm font-medium text-accent-ink">
-          Così lo vede chi ha aperto il ticket quando controlla lo stato. Vede solo l’avanzamento generale e le novità segnate come visibili. Non vede attività, problemi, note né altri ticket.
-        </div>
-        <div className="mx-auto max-w-2xl space-y-6">
-          {first && (
-            <div>
-              <div className="flex flex-wrap items-center gap-3">
-                <h2 className="font-mono text-xl font-bold text-ink-900">{first.ticket_number}</h2>
-              </div>
-              <p className="mt-2 text-lg text-ink-900">{first.title}</p>
-              <p className="mt-1 text-xs text-stone-400">Aperto il {fmtDate(first.created_at)} da {first.caller_name}</p>
-            </div>
-          )}
-          <section className="card">
-            <h2 className="mb-3 text-base font-semibold text-ink-900">Progetto</h2>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-              <dt className="text-muted">Nome</dt><dd className="text-ink-900">{p.name}</dd>
-              <dt className="text-muted">Scadenza prevista</dt><dd className="text-ink-900">{fmtDate(p.effective_due)}</dd>
-              <dt className="text-muted">Avanzamento</dt>
-              <dd className="flex items-center gap-3">
-                <span className="h-2 flex-1 overflow-hidden rounded-full bg-stone-100"><span className="block h-full rounded-full bg-accent-ink" style={{ width: `${p.progress_pct}%` }} /></span>
-                <span className="text-xs tabular-nums text-muted">{p.progress_pct}%</span>
-              </dd>
-            </dl>
-          </section>
-          <section className="card">
-            <h2 className="mb-3 text-base font-semibold text-ink-900">Novità</h2>
-            <Timeline rows={timeline} onlyVisible />
-          </section>
-        </div>
-      </div>
-    );
-  }
 
   const ticketsCard = (
     <section className="card min-w-0">
@@ -196,6 +162,41 @@ export default function ProgettoPage() {
           {h.project_name && <span className="text-xs text-warning">ora in «{h.project_name}»</span>}
         </button>
       ))}
+    </section>
+  );
+
+  const memberIds = new Set(members.map(m => m.user_id));
+  const membersCard = (
+    <section className="card min-w-0">
+      <h2 className="mb-1 text-base font-semibold text-ink-900">Persone</h2>
+      <p className="mb-3 text-xs text-muted">Collaboratori in sola lettura: vedono l’avanzamento, le fasi, le novità e solo le attività segnate come visibili. Chi apre un ticket con il suo account entra da solo.</p>
+      {members.length === 0
+        ? <p className="py-1 text-sm text-muted">Ancora nessun collaboratore.</p>
+        : (
+          <ul className="space-y-1.5">
+            {members.map(m => (
+              <li key={m.user_id} className="flex items-center gap-2.5 text-sm">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[11px] font-semibold text-accent-ink">{initials(m.display_name)}</span>
+                <span className="min-w-0 flex-1 truncate text-ink-900">{m.display_name}</span>
+                <span className="shrink-0 text-xs text-muted">{m.source === 'auto' ? 'dal ticket' : 'aggiunto a mano'}</span>
+                <button type="button" aria-label={`Rimuovi ${m.display_name}`} title="Rimuovi dai collaboratori"
+                  className="rounded-full px-2 text-muted hover:bg-stone-100 hover:text-ink-900"
+                  onClick={() => run(() => api.delete(`/api/progetti/${p.id}/members/${m.user_id}`))}>×</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      <form className="mt-3 flex gap-2" onSubmit={e => {
+        e.preventDefault();
+        if (!newMember) return;
+        run(() => api.post(`/api/progetti/${p.id}/members`, { user_id: Number(newMember) })).then(ok => { if (ok) setNewMember(''); });
+      }}>
+        <select aria-label="Aggiungi un collaboratore" className="input" value={newMember} onChange={e => setNewMember(e.target.value)}>
+          <option value="">Aggiungi una persona…</option>
+          {everyone.filter(u => !memberIds.has(u.id)).map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+        </select>
+        <button type="submit" disabled={!newMember} className="btn-secondary">Aggiungi</button>
+      </form>
     </section>
   );
 
@@ -272,7 +273,7 @@ export default function ProgettoPage() {
       {tab === 'lista' && (
         <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[1.2fr_1fr]">
           <PhaseList project={p} people={people} reload={load} />
-          <div className="space-y-4">{ticketsCard}{logCard}</div>
+          <div className="space-y-4">{ticketsCard}{membersCard}{logCard}</div>
         </div>
       )}
       {tab === 'tabellone' && <section className="card"><Board tasks={p.tasks} phases={p.phases} reload={load} /></section>}

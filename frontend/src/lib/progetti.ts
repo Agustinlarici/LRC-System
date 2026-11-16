@@ -9,12 +9,30 @@ export interface PTask {
   id: number; project_id: number | null; ticket_id: number | null; title: string;
   status: TaskStatus; status_note: string | null; waiting_since: string | null;
   assigned_to: number | null; due_date: string | null; done_at: string | null; created_at: string;
-  phase_id: number | null;
+  phase_id: number | null; visible_to_requester: boolean;
   project_name?: string | null; phase_name?: string | null; assigned_name?: string | null;
   days_to_due?: number | null; waiting_days?: number | null;
 }
 
 export interface Person { id: number; username: string; display_name: string }
+
+/** Collaboratore di un progetto: persona con account, in sola lettura. `auto` = ha aperto un ticket collegato. */
+export interface Member { user_id: number; display_name: string; source: 'auto' | 'manual'; created_at: string }
+
+/** Progetto condiviso con l'utente (rotta /api/progetti/mine, senza permesso IT). */
+export interface SharedProject {
+  id: number; name: string; status: ProjectStatus; due_date: string | null; ticket_number: string | null;
+  tasks_total: number; tasks_done: number; progress_pct: number;
+}
+
+/** Ciò che mostra la pagina di stato del ticket: lo stesso per il richiedente e per l'IT («Vedi come richiedente»). */
+export interface PublicTask { id: number; title: string; status: TaskStatus; due_date: string | null; phase_name: string | null; assigned_name: string | null }
+export interface PublicPhase { id: number; name: string; due_date: string | null; tasks_total: number; tasks_done: number }
+export interface PublicProject {
+  name: string; status: string; due_date: string | null; progress_pct: number;
+  news: { body: string; created_at: string }[];
+  shared: boolean; phases: PublicPhase[]; tasks: PublicTask[];
+}
 
 /** Fase di un progetto: `start` è l'inizio effettivo (fissato a mano o la scadenza della precedente). */
 export interface PhaseRow {

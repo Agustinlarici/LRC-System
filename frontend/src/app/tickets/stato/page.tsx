@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
+import { SharedProjects } from '@/components/progetti/SharedProjects';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -98,6 +99,8 @@ export default function StatoTicketSearchPage() {
           </button>
         </form>
       </div>
+
+      {!authLoading && user && user.role !== 'guest' && <SharedProjects />}
 
       {!authLoading && user && user.role !== 'guest' && (
         <div>
