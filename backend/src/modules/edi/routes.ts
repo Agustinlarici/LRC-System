@@ -1,8 +1,7 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import { readdir, access } from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { readdir } from 'node:fs/promises';
 import { join, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as XLSX from 'xlsx';
@@ -10,7 +9,7 @@ import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
 import { requireModule, requireManage } from '../../lib/auth.js';
 import { getShipments, getShipmentLines, getShipmentPrices } from './dynamics-client.js';
-import { writeEdiFile, isUncPath, parseUnc, listUncFolder } from '../../lib/smb-writer.js';
+import { writeEdiFile, isUncPath, parseUnc, listUncFolder, cartellaOutputAccessibile } from '../../lib/smb-writer.js';
 import { scanFerrariFolder, CAMPI_OUTPUT } from './ferrari-ingresso-parser.js';
 import { startSyncInBackground, getSyncState } from './ferrari-delins-sync.js';
 
@@ -105,12 +104,8 @@ ediRoutes.get('/clients', requireModule(MODULE), async (c) => {
 ediRoutes.post('/clients', requireManage(MODULE), async (c) => {
   const body = await parseBody(c, EdiClientSchema);
 
-  if (!isUncPath(body.output_folder)) {
-    try {
-      await access(body.output_folder, constants.W_OK);
-    } catch {
-      throw new HTTPException(400, { message: `Cartella non accessibile: "${body.output_folder}"` });
-    }
+  if (!(await cartellaOutputAccessibile(body.output_folder))) {
+    throw new HTTPException(400, { message: `Cartella non accessibile: "${body.output_folder}"` });
   }
 
   const b = body as Required<typeof body>;
@@ -148,9 +143,7 @@ ediRoutes.put('/clients/:id', requireManage(MODULE), async (c) => {
   const body = await parseBody(c, EdiClientSchema);
   const b = body as Required<typeof body>;
 
-  try {
-    await access(b.output_folder, constants.W_OK);
-  } catch {
+  if (!(await cartellaOutputAccessibile(b.output_folder))) {
     throw new HTTPException(400, { message: `Cartella non accessibile: "${b.output_folder}"` });
   }
 

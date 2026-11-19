@@ -1,5 +1,6 @@
 import { join } from 'path';
-import { writeFile, readFile, unlink } from 'fs/promises';
+import { writeFile, readFile, unlink, access } from 'fs/promises';
+import { constants } from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { tmpdir } from 'os';
@@ -118,5 +119,17 @@ export async function writeEdiFile(
     }
   } else {
     await writeFile(join(outputFolder, filename), content);
+  }
+}
+
+// Controlla che la cartella di output sia usabile: i percorsi UNC (SMB) non si possono
+// verificare con il filesystem locale (si scrivono con smbclient), gli altri devono essere scrivibili.
+export async function cartellaOutputAccessibile(folder: string): Promise<boolean> {
+  if (isUncPath(folder)) return true;
+  try {
+    await access(folder, constants.W_OK);
+    return true;
+  } catch {
+    return false;
   }
 }
