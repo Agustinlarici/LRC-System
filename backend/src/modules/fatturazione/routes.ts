@@ -8,22 +8,20 @@ import { auditLog } from '../../lib/audit.js';
 import { requireModule, requireManage } from '../../lib/auth.js';
 import { logger } from '../../lib/logger.js';
 import { avviaSync, sincronizzaGiaAvviata } from './sync.js';
-import { calcola, codice, normalizza, MAX_REGOLE, RegolaInputSchema, type Gruppi, type GruppiArticoli, type Passo, type Regola } from './regole-base.js';
+import { calcola, chiaveRegola, normalizza, MAX_REGOLE, RegolaInputSchema, type Gruppi, type Passo, type Regola, type RegolaInput } from './regole-base.js';
+import { importaRegole } from './import-regole.js';
+import { validateSpmaFile } from '../../lib/mime-check.js';
 
 export const fatturazioneRoutes = new Hono();
 
 // La catena di passi sta in condizioni[0] (stesso formato di prima, così il codice vecchio regge lo schema).
 async function leggiRegole(): Promise<Regola[]> {
-  const righe = await db<{ id: string; nome: string; attiva: boolean; gruppo_articoli: string | null; prezzo: string; condizioni: { passi: Passo[] }[] }[]>`
-    SELECT id, nome, attiva, gruppo_articoli, prezzo::text, condizioni FROM fatt_regola ORDER BY ordine, id`;
-  return righe.map(r => ({ id: Number(r.id), nome: r.nome, attiva: r.attiva, gruppo: r.gruppo_articoli, prezzo: Number(r.prezzo), passi: r.condizioni[0]?.passi ?? [] }));
+  const righe = await db<{ id: string; nome: string; attiva: boolean; article_code: string; prezzo: string; condizioni: { passi: Passo[] }[] }[]>`
+    SELECT id, nome, attiva, article_code, prezzo::text, condizioni FROM fatt_regola ORDER BY article_code, id`;
+  return righe.map(r => ({ id: Number(r.id), nome: r.nome, attiva: r.attiva, article_code: r.article_code, prezzo: Number(r.prezzo), passi: r.condizioni[0]?.passi ?? [] }));
 }
 
-interface GruppoArticoli { nome: string; componente: string; modello: string; codici: string[] }
-async function leggiGruppiArticoli(): Promise<GruppoArticoli[]> {
-  return db<GruppoArticoli[]>`SELECT nome, componente, modello, codici FROM fatt_gruppo_articoli ORDER BY componente, modello, nome`;
-}
-const mappaArticoli = (g: GruppoArticoli[]): GruppiArticoli => new Map(g.map(x => [normalizza(x.nome), new Set(x.codici.map(codice))]));
+const condizioniDa = (r: RegolaInput) => (r.passi.length > 0 ? [{ passi: r.passi }] : []);
 
 async function leggiGruppi(): Promise<{ nome: string; parole: string[] }[]> {
   return db<{ nome: string; parole: string[] }[]>`SELECT nome, parole FROM fatt_gruppo ORDER BY nome`;
@@ -67,12 +65,12 @@ fatturazioneRoutes.get('/despachi', requireModule('fatturazione'), async (c) => 
       ${q.search ? db`AND shipment_id ILIKE ${'%' + q.search.replace(/[%_\\]/g, m => '\\' + m) + '%'}` : db``}
     ORDER BY shipment_date DESC NULLS LAST, shipment_id DESC, line_no
     LIMIT 20000`;
-  const [regole, gruppi, articoli] = await Promise.all([leggiRegole(), leggiGruppi(), leggiGruppiArticoli()]);
-  const g = mappaGruppi(gruppi), ga = mappaArticoli(articoli);
+  const [regole, gruppi] = await Promise.all([leggiRegole(), leggiGruppi()]);
+  const g = mappaGruppi(gruppi);
   const per = new Map<string, { shipment_id: string; shipment_date: string | null; customer_account: string; line_count: number; totale_str: number; senza_regola: number }>();
   for (const r of righe) {
     const d = per.get(r.shipment_id) ?? { shipment_id: r.shipment_id, shipment_date: r.shipment_date, customer_account: r.customer_account, line_count: 0, totale_str: 0, senza_regola: 0 };
-    const calc = calcola(r.descrizione, r.article_code, regole, g, ga);
+    const calc = calcola(r.descrizione, r.article_code, regole, g);
     d.line_count += 1; d.totale_str += calc.totale * Number(r.quantity); if (calc.applicate.length === 0) d.senza_regola += 1;
     per.set(r.shipment_id, d);
   }
@@ -87,10 +85,10 @@ fatturazioneRoutes.get('/despachi/:id', requireModule('fatturazione'), async (c)
     SELECT shipment_id, line_no, shipment_date::text, customer_account, article_code, quantity::text, order_no, descrizione
     FROM fatt_riga WHERE shipment_id = ${id} AND customer_account IN (SELECT conto FROM fatt_conto) ORDER BY line_no`;   // solo i conti configurati
   if (righe.length === 0) throw new HTTPException(404, { message: 'Despacho non trovato' });
-  const [regole, gruppi, articoli] = await Promise.all([leggiRegole(), leggiGruppi(), leggiGruppiArticoli()]);
-  const g = mappaGruppi(gruppi), ga = mappaArticoli(articoli);
+  const [regole, gruppi] = await Promise.all([leggiRegole(), leggiGruppi()]);
+  const g = mappaGruppi(gruppi);
   const out = righe.map(r => {
-    const calc = calcola(r.descrizione, r.article_code, regole, g, ga);
+    const calc = calcola(r.descrizione, r.article_code, regole, g);
     const quantity = Number(r.quantity);
     return { line_no: r.line_no, article_code: r.article_code, quantity, order_no: r.order_no, descrizione: r.descrizione,
              prezzo_str: calc.totale, totale_riga: arrotonda(calc.totale * quantity), regole: calc.applicate };
@@ -101,59 +99,90 @@ fatturazioneRoutes.get('/despachi/:id', requireModule('fatturazione'), async (c)
 // Prova di una descrizione, senza BC (per scrivere e controllare le regole).
 fatturazioneRoutes.post('/prova', requireModule('fatturazione'), async (c) => {
   const body = await parseBody(c, z.object({ article_code: z.string().trim().max(60), descrizione: z.string().max(500) }));
-  return c.json(calcola(body.descrizione, body.article_code, await leggiRegole(), mappaGruppi(await leggiGruppi()), mappaArticoli(await leggiGruppiArticoli())));
+  return c.json(calcola(body.descrizione, body.article_code, await leggiRegole(), mappaGruppi(await leggiGruppi())));
 });
 
 fatturazioneRoutes.get('/regole', requireModule('fatturazione'), async (c) => c.json(await leggiRegole()));
 
-// Sostituisce l'elenco delle regole (l'ordine è quello della lista).
-fatturazioneRoutes.put('/regole', requireManage('fatturazione'), async (c) => {
-  const { regole } = await parseBody(c, z.object({ regole: z.array(RegolaInputSchema).max(MAX_REGOLE) }));
-  const esistenti = new Set((await leggiGruppiArticoli()).map(g => normalizza(g.nome)));
-  const ignoto = regole.find(r => r.gruppo !== null && !esistenti.has(normalizza(r.gruppo)));
-  if (ignoto) throw new HTTPException(400, { message: `Gruppo di articoli inesistente: ${ignoto.gruppo}` });
+const IdSchema = z.coerce.number().int().positive();
+const parseId = (v: string | undefined): number => {
+  const r = IdSchema.safeParse(v);
+  if (!r.success) throw new HTTPException(400, { message: 'Id non valido' });
+  return r.data;
+};
+
+/** Una regola uguale (stesso articolo e stesse parole) si sommerebbe due volte: non si ammette. */
+async function controllaDuplicato(r: RegolaInput, tranneId?: number) {
+  const k = chiaveRegola(r);
+  if ((await leggiRegole()).some(x => x.id !== tranneId && chiaveRegola(x) === k)) {
+    throw new HTTPException(409, { message: 'Esiste già una regola con lo stesso articolo e le stesse parole' });
+  }
+}
+
+fatturazioneRoutes.post('/regole', requireManage('fatturazione'), async (c) => {
+  const r = await parseBody(c, RegolaInputSchema);
   const user = c.get('user');
-  await db.begin(async raw => {
-    const tx = raw as unknown as typeof db;
-    await tx`DELETE FROM fatt_regola`;
-    for (const [i, r] of regole.entries()) {
-      const condizioni = r.passi.length > 0 ? [{ passi: r.passi }] : [];
-      await tx`INSERT INTO fatt_regola (ordine, nome, attiva, article_code, gruppo_articoli, prezzo, logica, condizioni, eccezioni, creato_da)
-               VALUES (${i}, ${r.nome}, ${r.attiva}, '*', ${r.gruppo}, ${r.prezzo}, 'tutte', ${tx.json(condizioni as never)}, ${tx.json([] as never)}, ${user.username})`;
-    }
-  });
-  await auditLog({ userId: user.id, username: user.username, action: 'fatturazione.regole_salvate', entity: 'fatt_regola', details: { regole: regole.length } });
-  return c.json(await leggiRegole());
+  if (Number((await db<{ n: string }[]>`SELECT count(*)::text n FROM fatt_regola`)[0]!.n) >= MAX_REGOLE) throw new HTTPException(400, { message: `Massimo ${MAX_REGOLE} regole` });
+  await controllaDuplicato(r);
+  const [row] = await db<{ id: string }[]>`
+    INSERT INTO fatt_regola (ordine, nome, attiva, article_code, prezzo, logica, condizioni, eccezioni, creato_da)
+    VALUES (0, ${r.nome}, ${r.attiva}, ${r.article_code}, ${r.prezzo}, 'tutte', ${db.json(condizioniDa(r) as never)}, ${db.json([] as never)}, ${user.username})
+    RETURNING id`;
+  await auditLog({ userId: user.id, username: user.username, action: 'fatturazione.regola_creata', entity: 'fatt_regola', entityId: row!.id });
+  return c.json((await leggiRegole()).find(x => x.id === Number(row!.id)), 201);
 });
 
-fatturazioneRoutes.get('/gruppi-articoli', requireModule('fatturazione'), async (c) => c.json(await leggiGruppiArticoli()));
-
-// Sostituisce i gruppi di articoli. Non si può togliere un gruppo ancora usato da una regola.
-fatturazioneRoutes.put('/gruppi-articoli', requireManage('fatturazione'), async (c) => {
-  const { gruppi } = await parseBody(c, z.object({
-    gruppi: z.array(z.object({
-      nome:       z.string().trim().min(1).max(60),
-      componente: z.string().trim().max(60),
-      modello:    z.string().trim().max(60),
-      codici:     z.array(z.string().trim().min(1).max(60)).max(2000),
-    })).max(500),
-  }));
-  const nomi = gruppi.map(g => normalizza(g.nome));
-  if (new Set(nomi).size !== nomi.length) throw new HTTPException(400, { message: 'Due gruppi hanno lo stesso nome' });
-  const usati = (await db<{ gruppo_articoli: string }[]>`SELECT DISTINCT gruppo_articoli FROM fatt_regola WHERE gruppo_articoli IS NOT NULL`).map(r => r.gruppo_articoli);
-  const mancante = usati.find(u => !nomi.includes(normalizza(u)));
-  if (mancante) throw new HTTPException(400, { message: `Il gruppo «${mancante}» è usato da una regola: cambia prima la regola` });
+fatturazioneRoutes.put('/regole/:id', requireManage('fatturazione'), async (c) => {
+  const id = parseId(c.req.param('id'));
+  const r = await parseBody(c, RegolaInputSchema);
   const user = c.get('user');
-  await db.begin(async raw => {
-    const tx = raw as unknown as typeof db;
-    await tx`DELETE FROM fatt_gruppo_articoli`;
-    for (const g of gruppi) {
-      await tx`INSERT INTO fatt_gruppo_articoli (nome, componente, modello, codici)
-               VALUES (${g.nome}, ${g.componente}, ${g.modello}, ${[...new Set(g.codici.map(codice))]})`;
-    }
-  });
-  await auditLog({ userId: user.id, username: user.username, action: 'fatturazione.gruppi_articoli_salvati', entity: 'fatt_gruppo_articoli', details: { gruppi: gruppi.length } });
-  return c.json(await leggiGruppiArticoli());
+  await controllaDuplicato(r, id);
+  const [row] = await db<{ id: string }[]>`
+    UPDATE fatt_regola SET nome = ${r.nome}, attiva = ${r.attiva}, article_code = ${r.article_code}, prezzo = ${r.prezzo},
+      logica = 'tutte', condizioni = ${db.json(condizioniDa(r) as never)}, eccezioni = ${db.json([] as never)}, aggiornato_at = now()
+    WHERE id = ${id} RETURNING id`;
+  if (!row) throw new HTTPException(404, { message: 'Regola non trovata' });
+  await auditLog({ userId: user.id, username: user.username, action: 'fatturazione.regola_modificata', entity: 'fatt_regola', entityId: String(id) });
+  return c.json((await leggiRegole()).find(x => x.id === id));
+});
+
+fatturazioneRoutes.put('/regole/:id/attiva', requireManage('fatturazione'), async (c) => {
+  const id = parseId(c.req.param('id'));
+  const { attiva } = await parseBody(c, z.object({ attiva: z.boolean() }));
+  const [row] = await db`UPDATE fatt_regola SET attiva = ${attiva}, aggiornato_at = now() WHERE id = ${id} RETURNING id`;
+  if (!row) throw new HTTPException(404, { message: 'Regola non trovata' });
+  return c.json({ id, attiva });
+});
+
+fatturazioneRoutes.delete('/regole/:id', requireManage('fatturazione'), async (c) => {
+  const id = parseId(c.req.param('id'));
+  const user = c.get('user');
+  await db`DELETE FROM fatt_regola WHERE id = ${id}`;
+  await auditLog({ userId: user.id, username: user.username, action: 'fatturazione.regola_eliminata', entity: 'fatt_regola', entityId: String(id) });
+  return c.json({ status: 'deleted' });
+});
+
+// Eliminazione in blocco (le regole filtrate nella pagina).
+fatturazioneRoutes.post('/regole/elimina', requireManage('fatturazione'), async (c) => {
+  const { ids } = await parseBody(c, z.object({ ids: z.array(z.number().int().positive()).min(1).max(5000) }));
+  const user = c.get('user');
+  const righe = await db`DELETE FROM fatt_regola WHERE id IN ${db(ids)} RETURNING id`;
+  await auditLog({ userId: user.id, username: user.username, action: 'fatturazione.regole_eliminate', entity: 'fatt_regola', details: { regole: righe.length } });
+  return c.json({ status: 'deleted', count: righe.length });
+});
+
+// Carica regole da Excel: Articolo, Cerca 1-3, Distanza, Prezzo, Note. Stessa regola (articolo + parole) = aggiorna prezzo/note.
+fatturazioneRoutes.post('/regole/import-excel', requireManage('fatturazione'), async (c) => {
+  let formData: FormData;
+  try { formData = await c.req.formData(); } catch { throw new HTTPException(400, { message: 'Richiesta multipart non valida' }); }
+  const file = formData.get('file') as File | null;
+  if (!file) throw new HTTPException(400, { message: 'File mancante (campo "file")' });
+  const buffer = Buffer.from(await file.arrayBuffer());
+  validateSpmaFile(buffer, file.name);
+  const user = c.get('user');
+  const esito = await importaRegole(buffer, user.username);
+  await auditLog({ userId: user.id, username: user.username, action: 'fatturazione.regole_importate', entity: 'fatt_regola', details: { lette: esito.total_rows, caricate: esito.upserted, saltate: esito.skipped } });
+  return c.json(esito);
 });
 
 fatturazioneRoutes.get('/gruppi', requireModule('fatturazione'), async (c) => c.json(await leggiGruppi()));
