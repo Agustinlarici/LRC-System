@@ -35,7 +35,7 @@ const importSchema = z.object({
   dry_run: z.boolean().default(false),
 });
 
-interface Contratto { matricola: string | null; qualifica: string | null; inizio: string; fine: string | null }
+interface Contratto { matricola: string | null; qualifica: string | null; inizio: string; fine: string | null; tipo: string | null }
 
 // Registra un contratto (riga in hr_employee_contract + eventi in timeline). false = già presente
 // (stessa persona e stesse date): rieseguire non duplica nulla.
@@ -45,11 +45,20 @@ async function registraContratto(
   user: { id: number; display_name: string }, today: string, etichetta: string,
 ): Promise<boolean> {
   const [ins] = await tx<{ id: number }[]>`
-    INSERT INTO hr_employee_contract (employee_id, matricola, qualifica, data_inizio, data_fine)
-    VALUES (${employeeId}, ${r.matricola}, ${r.qualifica}, ${r.inizio}, ${r.fine})
+    INSERT INTO hr_employee_contract (employee_id, matricola, qualifica, data_inizio, data_fine, tipo)
+    VALUES (${employeeId}, ${r.matricola}, ${r.qualifica}, ${r.inizio}, ${r.fine}, ${r.tipo})
     ON CONFLICT (employee_id, data_inizio, (COALESCE(data_fine, 'infinity'::date))) DO NOTHING
     RETURNING id`;
-  if (!ins) return false;
+  if (!ins) {
+    // Già presente: se mancava il tipo (contratto registrato prima della colonna) lo si completa
+    if (r.tipo) {
+      await tx`
+        UPDATE hr_employee_contract SET tipo = ${r.tipo}
+        WHERE employee_id = ${employeeId} AND data_inizio = ${r.inizio}
+          AND COALESCE(data_fine, 'infinity'::date) = COALESCE(${r.fine}::date, 'infinity'::date) AND tipo IS NULL`;
+    }
+    return false;
+  }
   const note = `${etichetta}${r.matricola ? ` · matricola ${r.matricola}` : ''}`;
   await tx`
     INSERT INTO hr_employee_event ${tx({
@@ -228,7 +237,7 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
       }
 
       for (const r of list) {
-        if (await registraContratto(tx, employeeId, r, user, today, 'Contratto interinale')) contracts++;
+        if (await registraContratto(tx, employeeId, { ...r, tipo: 'INTERINALE' }, user, today, 'Contratto interinale')) contracts++;
         else duplicates++;
       }
     }
@@ -250,6 +259,7 @@ const contrattiOstiSchema = z.object({
   contratti: z.array(z.object({
     matricola:   z.string().max(30).optional().nullable(),
     qualifica:   z.string().max(100).optional().nullable(),
+    tipo:        z.enum(['STR', 'INTERINALE', 'ESTERNO']).optional().nullable(),
     data_inizio: z.string().regex(ISO),
     data_fine:   z.string().regex(ISO).optional().nullable(),
   }).refine(r => !r.data_fine || r.data_fine >= r.data_inizio, { message: 'data fine prima della data inizio' })).min(1).max(50),
@@ -270,7 +280,7 @@ hrContractRoutes.post('/employee/:id', requireManage('hr'), async (c) => {
     for (const r of contratti) {
       const ok = await registraContratto(tx, id, {
         matricola: r.matricola?.trim() || null, qualifica: r.qualifica?.trim() || null,
-        inizio: r.data_inizio, fine: r.data_fine || null,
+        inizio: r.data_inizio, fine: r.data_fine || null, tipo: r.tipo ?? null,
       }, user, today, 'Contratto Osti');
       if (ok) added++; else duplicates++;
     }
