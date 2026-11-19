@@ -75,6 +75,24 @@ function pickBest(rows: Row[], today: string): Row {
     Number(inCorso(b)) - Number(inCorso(a)) || (ostiDate(b.dip_assunto) ?? '').localeCompare(ostiDate(a.dip_assunto) ?? ''))[0];
 }
 
+// Un contratto per ogni riga di Osti con data di assunzione valida (stesse date = stesso contratto)
+interface ContrattoOsti { matricola: string | null; qualifica: string | null; data_inizio: string; data_fine: string | null }
+function contrattiOf(list: Row[]): ContrattoOsti[] {
+  const seen = new Set<string>();
+  const out: ContrattoOsti[] = [];
+  for (const r of list) {
+    const data_inizio = ostiDate(r.dip_assunto);
+    if (!data_inizio) continue;
+    let data_fine = ostiDate(r.dip_licenziato);
+    if (data_fine && data_fine < data_inizio) data_fine = null;
+    const k = `${data_inizio}|${data_fine ?? ''}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ matricola: clean(r.dip_matricola) || null, qualifica: clean(r.dip_qualifica) || null, data_inizio, data_fine });
+  }
+  return out.sort((a, b) => a.data_inizio.localeCompare(b.data_inizio));
+}
+
 interface Ctx {
   backend: string;
   today: string;
@@ -410,6 +428,7 @@ export async function runOstiImport(
   const missingDepts = new Map<string, { label: string; emps: HrEmployee[] }>();   // reparto di Osti che da noi non esiste
   const missingCat = new Map<string, { kind: 'plant' | 'company'; label: string; emps: HrEmployee[] }>();   // filiale/ditta di Osti che da noi non esiste
   let duplicates = 0;
+  const contractJobs: { emp: HrEmployee; contratti: ContrattoOsti[] }[] = [];
   for (const [id, list] of matched) {
     const emp = empById.get(id)!;
     const r = pickBest(list, today);
@@ -429,6 +448,10 @@ export async function runOstiImport(
     const { plan, conflict } = buildPlan(emp, r, ctx);
     if (conflict) issues.push({ type: 'Matricola già assegnata', name: empLabel(emp), note: conflict });
     if (plan) plans.push(plan);
+    // Più righe di Osti per la stessa persona = più contratti: la scheda tiene la riga più recente
+    // (data assunzione), tutte le righe si registrano nei contratti della scheda
+    const contratti = contrattiOf(list);
+    if (list.length > 1 && contratti.length) contractJobs.push({ emp, contratti });
   }
   // Un reparto nuovo si crea una volta sola e si assegna a chi non ne ha uno (gli altri tengono il loro, più preciso)
   for (const { label, emps } of missingDepts.values()) {
@@ -488,8 +511,10 @@ export async function runOstiImport(
   const nTolte = plans.reduce((n, p) => n + p.takeFrom.length, 0);
   const summary = `${plans.length} dipendenti da aggiornare (${nFill} con campi da compilare, ${nChange} con valori da cambiare`
     + `${nCessa ? `, ${nCessa} da segnare come cessati` : ''}${nTolte ? `, ${nTolte} matricole tolte ad altre schede (stesso numero)` : ''}). Senza abbinamento: ${unmatched + ambiguous}.`;
-  if (plans.length === 0) return { inserted: 0, skipped: unmatched + ambiguous, errors: 0, detail: `Niente da aggiornare. ${summary}`, issues };
-  if (!(await confirm({ title: 'Importa elenco Osti', message: summary, confirmLabel: 'Aggiorna' }))) {
+  const nContratti = contractJobs.reduce((n, j) => n + j.contratti.length, 0);
+  const summaryC = summary + (contractJobs.length ? ` Contratti da registrare: ${nContratti} (${contractJobs.length} persone con più righe in Osti).` : '');
+  if (plans.length === 0 && contractJobs.length === 0) return { inserted: 0, skipped: unmatched + ambiguous, errors: 0, detail: `Niente da aggiornare. ${summary}`, issues };
+  if (!(await confirm({ title: 'Importa elenco Osti', message: summaryC, confirmLabel: 'Aggiorna' }))) {
     return { inserted: 0, skipped: 0, errors: 0, detail: 'Import annullato, nessuna modifica.' };
   }
 
@@ -500,9 +525,18 @@ export async function runOstiImport(
     else { errors++; issues.push({ type: 'Errore di salvataggio', name: empLabel(p.emp), note: 'il backend ha rifiutato i dati (campo troppo lungo o non valido)' }); }
   }
 
+  // Contratti: stesse date già registrate = già presente (rieseguire non duplica)
+  let contrattiNuovi = 0;
+  for (const j of contractJobs) {
+    const res = await fetch(`${backend}/api/hr/contracts/employee/${j.emp.id}`, { method: 'POST', headers: json, credentials: 'include', body: JSON.stringify({ contratti: j.contratti }) });
+    if (res.ok) contrattiNuovi += (await res.json().catch(() => ({ added: 0 }))).added ?? 0;
+    else { errors++; issues.push({ type: 'Errore di salvataggio', name: empLabel(j.emp), note: 'contratti non registrati' }); }
+  }
+
   return {
     inserted: 0, updated, skipped: unmatched + ambiguous, errors,
     detail: `Aggiornati ${updated}. Senza abbinamento: ${unmatched + ambiguous}.`
+      + (contractJobs.length ? ` Contratti registrati: ${contrattiNuovi}.` : '')
       + (storici ? ` Ex dipendenti Osti senza scheda da noi (ignorati): ${storici}.` : '')
       + (duplicates ? ` Righe doppie (vale la più recente): ${duplicates}.` : ''),
     issues,
