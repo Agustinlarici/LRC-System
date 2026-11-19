@@ -58,7 +58,26 @@ qualityControlStationRoutes.get('/jobs', requireModule('photo_station'), async (
     SELECT ${JOB_COLS} FROM photo_jobs j LEFT JOIN photo_stations s ON s.id = j.station_id ${SPMA_JOIN}
     ORDER BY j.id DESC LIMIT ${limit}
   `;
-  return c.json({ jobs });
+  // Total de pedidos en cola (la lista de arriba esta limitada): lo usa el boton "Annulla tutti i pendenti"
+  const [{ n }] = await db`SELECT count(*)::int AS n FROM photo_jobs WHERE status = 'pending'`;
+  return c.json({ jobs, pending_count: n });
+});
+
+// Anula DE UNA VEZ todos los pedidos en cola (status 'pending'): por ejemplo cuando la PC de cámaras estuvo apagada y
+// se acumularon pedidos de piezas que ya no están. No toca los que la estación ya tomó ('claimed') ni los terminados;
+// los anulados se pueden rilanciare uno por uno con «Riprova». Opcional: solo una fase.
+qualityControlStationRoutes.post('/jobs/cancel-pending', requireManage('photo_station'), async (c) => {
+  const user = c.get('user');
+  const { phase } = await parseBody(c, z.object({ phase: PHASE.optional() }));
+  const rows = await db`
+    UPDATE photo_jobs
+    SET status = 'cancelled', error = 'Annullato in blocco', finished_at = now(), updated_at = now()
+    WHERE status = 'pending' ${phase ? db`AND phase = ${phase}` : db``}
+    RETURNING id::int AS id
+  `;
+  await auditLog({ userId: user.id, username: user.username, action: 'photo_job_cancel_pending', entity: 'photo_job',
+                   details: { count: rows.length, phase: phase ?? null } });
+  return c.json({ cancelled: rows.length });
 });
 
 qualityControlStationRoutes.get('/jobs/:id', requireModule('photo_station'), async (c) => {

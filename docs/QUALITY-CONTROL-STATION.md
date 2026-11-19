@@ -96,6 +96,7 @@ Usuarios (cookie de sesión, módulo `photo_station`; escrituras requieren `can_
 | `GET/POST /phases` · `PUT /phases/:key {active}` | catálogo de fases |
 | `PUT /stations/:id/phases {phases}` | fases que sirve la estación |
 | `POST /jobs/:id/cancel` · `/retry` | anula / reencola (failed, cancelled) |
+| `POST /jobs/cancel-pending {phase?}` | anula **de una vez** todos los pedidos en cola (`pending`), o solo los de una fase. No toca los ya tomados por la estación ni los terminados. `GET /jobs` devuelve también `pending_count` |
 | `GET /jobs/:id/files/:fileId` | la foto (image/jpeg) |
 | `GET/POST /stations` · `POST /stations/:id/revoke` | estaciones; el token se muestra solo al crear |
 
@@ -116,6 +117,12 @@ grupo de fotos de un mismo paragolpes) y guardará el resultado; hoy Vision AI n
 token ni devuelve resultado por pedido: eso hay que definirlo cuando haya PC para probar.
 
 ## Operación
+
+- **PC de cámaras apagada o sin conexión:** los pedidos se acumulan en cola y, al volver, la estación saca fotos de piezas
+  que ya no están. En la página, el aviso amarillo «N ordini in coda» trae el botón **Annulla tutti i pendenti**
+  (confirma antes; queda en auditoría con la cantidad). Los anulados siguen en la lista y se rilanzan con «Riprova».
+  Un pedido que la estación ya había tomado (`claimed`) no se anula con este botón: si la estación desaparece, vuelve a la
+  cola a los 5 minutos y se puede anular entonces.
 
 - Fotos en `UPLOAD_DIR/photo-station/<id>/CAMxx.jpg` (volumen `TICKETS_UPLOADS_HOST`, ya existente). **No hay
   limpieza automática**: ~2-4 MB × cámaras × pedidos; hay que decidir retención.

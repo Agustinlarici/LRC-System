@@ -43,6 +43,7 @@ export default function QualityControlStationPage() {
   const manage = canManage('photo_station');
   const toast = useToast();
   const [jobs, setJobs] = useState<Job[] | null>(null);
+  const [pendingCount, setPendingCount] = useState(0);
   const [stations, setStations] = useState<Station[]>([]);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [phase, setPhase] = useState('');
@@ -61,14 +62,14 @@ export default function QualityControlStationPage() {
   const load = useCallback(async () => {
     try {
       const [j, s, f, ik, fd] = await Promise.all([
-        api.get<{ jobs: Job[] }>('/api/quality-control-station/jobs?limit=50'),
+        api.get<{ jobs: Job[]; pending_count: number }>('/api/quality-control-station/jobs?limit=50'),
         api.get<{ stations: Station[] }>('/api/quality-control-station/stations'),
         api.get<{ phases: Phase[] }>('/api/quality-control-station/phases'),
         api.get<Iknow>('/api/quality-control-station/iknow'),
         api.get<Feed>('/api/quality-control-station/feed'),
       ]);
       setIknow(ik); setFeed(fd);
-      setJobs(j.jobs); setStations(s.stations); setPhases(f.phases);
+      setJobs(j.jobs); setPendingCount(j.pending_count ?? 0); setStations(s.stations); setPhases(f.phases);
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Errore di caricamento'); }
   }, [toast]);
 
@@ -136,6 +137,24 @@ export default function QualityControlStationPage() {
           </div>
           <Button variant="primary" type="submit" disabled={busy || !commessa.trim() || !activePhase}>Scatta foto</Button>
         </form>
+      )}
+
+      {manage && pendingCount > 0 && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-ctl bg-warning-soft px-4 py-3 text-sm">
+          <span className="text-warning">
+            {pendingCount} {pendingCount === 1 ? 'ordine in coda' : 'ordini in coda'}: la stazione li farà appena si collega.
+          </span>
+          <Button variant="danger" disabled={busy}
+                  onClick={() => {
+                    if (!confirm(`Annullare tutti i ${pendingCount} ordini in coda?\nLa stazione non li farà. Quelli già presi dalla stazione e quelli finiti non cambiano; gli annullati si possono rilanciare con «Riprova».`)) return;
+                    act(async () => {
+                      const r = await api.post<{ cancelled: number }>('/api/quality-control-station/jobs/cancel-pending', {});
+                      toast.success(`${r.cancelled} ordini annullati`);
+                    });
+                  }}>
+            Annulla tutti i pendenti ({pendingCount})
+          </Button>
+        </div>
       )}
 
       <div className="card mb-6 overflow-x-auto">
