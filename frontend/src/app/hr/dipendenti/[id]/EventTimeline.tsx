@@ -25,7 +25,7 @@ const ALL_EVENTS: HrEventType[] = [
 ];
 
 function fmtDate(d: string): string {
-  return new Date(`${d.slice(0, 10)}T12:00:00Z`).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' });
+  return new Date(`${d.slice(0, 10)}T12:00:00Z`).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 interface Props {
