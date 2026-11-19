@@ -13,7 +13,7 @@ const client = {
   cdt_company_name: 'Ditta Prova SPA', cdt_address_1: 'Via Prova 1', cdt_address_2: 'CITTA',
   cdt_address_3: '00000', cdt_address_4: 'IT',
   csg_supply_point: '11', csg_company_name: 'Cliente Prova',
-  edi_params: { supplier_duns: '123456789', aux_tare_weight: '9', pallet_content_code: '999999' },
+  edi_params: { supplier_duns: '123456789', pallet_code: '0007PAL', aux_tare_weight: '9', pallet_content_code: '999999' },
 };
 const shipment = (contract: string | null) => ({
   document_date: '2026-11-19',
@@ -55,6 +55,20 @@ describe('DESADV_AUDI', () => {
 
   it('UNT conta i segmenti da UNH a UNT', () => {
     const out = segs(generate(shipment('000006'), client, 13));
+    const unh = out.findIndex(l => l.startsWith('UNH'));
+    const unt = out.findIndex(l => l.startsWith('UNT'));
+    expect(out[unt]).toBe(`UNT+${unt - unh + 1}+EDDT-000013'`);
+  });
+
+  it('senza pallet_code non dichiara il pallet: solo scatole, MEA+AAE = numero scatole', () => {
+    const c = { ...client, edi_params: { ...client.edi_params, pallet_code: '', box_code: '0009SCH' } };
+    const out = segs(generate(shipment('000006'), c, 13));
+    expect(out.some(l => l.startsWith('CPS+1++3'))).toBe(false);
+    expect(out.some(l => l.startsWith('PAC+1+:35:AAA'))).toBe(false);
+    expect(out.some(l => l.startsWith('QTY+171') || l.startsWith('QTY+189'))).toBe(false);
+    expect(out.some(l => l.startsWith('GIN+AW'))).toBe(false);
+    expect(out).toContain("MEA+AAE++PCE:2'");
+    expect(out.filter(l => l.startsWith('CPS+'))).toEqual(["CPS+1++1'", "CPS+2++1'"]);
     const unh = out.findIndex(l => l.startsWith('UNH'));
     const unt = out.findIndex(l => l.startsWith('UNT'));
     expect(out[unt]).toBe(`UNT+${unt - unh + 1}+EDDT-000013'`);

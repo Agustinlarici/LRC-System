@@ -150,7 +150,7 @@ const AUDI_PARAMS: { title: string; fields: ParamDef[] }[] = [
   ] },
   { title: 'Trasporto e imballi', fields: [
     { key: 'transport_id', label: 'Targa / identificativo mezzo', hint: 'TDT', required: true, mono: true, maxLen: 17 },
-    { key: 'pallet_code',  label: 'Codice pallet', hint: 'es. 0007PAL', required: true, mono: true, maxLen: 17 },
+    { key: 'pallet_code',  label: 'Codice pallet', hint: 'es. 0007PAL — vuoto = nessun pallet dichiarato', mono: true, maxLen: 17 },
     { key: 'pallet_stack', label: 'Impilabilità pallet', hint: 'QTY+171, es. 9', mono: true, maxLen: 3 },
     { key: 'box_code',     label: 'Codice scatola', hint: 'es. 0009SCH', required: true, mono: true, maxLen: 17 },
   ] },
