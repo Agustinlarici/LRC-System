@@ -952,14 +952,14 @@ hrRoutes.get('/employees/:id/events', requireModuleAny('hr', 'hr_team'), async (
   return c.json(rows);
 });
 
-// Contratti (interinali) del dipendente: elenco per la scheda
+// Contratti (STR, interinali, esterni) del dipendente: elenco per la scheda
 hrRoutes.get('/employees/:id/contracts', requireModuleAny('hr', 'hr_team'), async (c) => {
   const id = parseInt(c.req.param('id') ?? '', 10);
   if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
 
   await assertCanSee(c.get('user'), id);
   const rows = await db`
-    SELECT id, employee_id, matricola, qualifica, data_inizio::text AS data_inizio, data_fine::text AS data_fine
+    SELECT id, employee_id, matricola, qualifica, tipo, data_inizio::text AS data_inizio, data_fine::text AS data_fine
     FROM hr_employee_contract
     WHERE employee_id = ${id}
     ORDER BY data_inizio DESC

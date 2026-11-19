@@ -76,7 +76,7 @@ function pickBest(rows: Row[], today: string): Row {
 }
 
 // Un contratto per ogni riga di Osti con data di assunzione valida (stesse date = stesso contratto)
-interface ContrattoOsti { matricola: string | null; qualifica: string | null; data_inizio: string; data_fine: string | null }
+interface ContrattoOsti { matricola: string | null; qualifica: string | null; tipo: 'STR' | 'INTERINALE' | 'ESTERNO' | null; data_inizio: string; data_fine: string | null }
 function contrattiOf(list: Row[]): ContrattoOsti[] {
   const seen = new Set<string>();
   const out: ContrattoOsti[] = [];
@@ -88,7 +88,10 @@ function contrattiOf(list: Row[]): ContrattoOsti[] {
     const k = `${data_inizio}|${data_fine ?? ''}`;
     if (seen.has(k)) continue;
     seen.add(k);
-    out.push({ matricola: clean(r.dip_matricola) || null, qualifica: clean(r.dip_qualifica) || null, data_inizio, data_fine });
+    // Tipo dalla ditta della riga: STR, GMG = esterno, qualsiasi altra = interinale (senza ditta, es. CSV: non si indica)
+    const ditta = norm(clean(r.ditta));
+    const tipo = !ditta ? null : ditta.startsWith('str') ? 'STR' : ditta.startsWith('gmg') ? 'ESTERNO' : 'INTERINALE';
+    out.push({ matricola: clean(r.dip_matricola) || null, qualifica: clean(r.dip_qualifica) || null, tipo, data_inizio, data_fine });
   }
   return out.sort((a, b) => a.data_inizio.localeCompare(b.data_inizio));
 }

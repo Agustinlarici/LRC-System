@@ -799,6 +799,7 @@ export interface HrEmployeeContract {
   employee_id: number;
   matricola:   string | null;
   qualifica:   string | null;
+  tipo:        'STR' | 'INTERINALE' | 'ESTERNO' | null;   // null = contratti precedenti, tutti interinali
   data_inizio: string;
   data_fine:   string | null;
 }
