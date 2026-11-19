@@ -1,25 +1,29 @@
 // Fatturazione: motore delle regole di prezzo. Puro (senza DB), così si prova senza BC.
-// Una regola = prezzo + catena di passi. Ogni passo cerca una parola della descrizione:
-//  - 1° passo: ovunque, oppure entro i primi N caratteri;
-//  - passi successivi: ovunque dopo il passo precedente, oppure entro N caratteri dalla fine del precedente.
-// Regola senza passi = vale sempre (prezzo base del componente). Il totale è la somma dei prezzi delle regole che combaciano.
+// Regola = prezzo + condizioni (catene di passi) combinate con 'tutte'/'qualsiasi' + eccezioni (se una combacia, la regola non si applica).
+// Passo: cerca una parola della descrizione — 1° passo: ovunque o entro i primi N caratteri;
+// passi successivi: dopo la fine del precedente, ovunque o entro N caratteri. Nessuna condizione = vale sempre (prezzo base).
 import { z } from 'zod';
 
 export const MAX_REGOLE = 500;
 export const MAX_PASSI = 8;
+export const MAX_CONDIZIONI = 10;
 
 export const PassoSchema = z.object({
   cerca:    z.array(z.string().trim().min(1).max(60)).min(1).max(40),   // alternative; «@NOME» = gruppo di parole
   finestra: z.number().int().min(1).max(1000).nullable(),               // null = senza limite
 });
+export const CondizioneSchema = z.object({ passi: z.array(PassoSchema).min(1).max(MAX_PASSI) });
 export type Passo = z.infer<typeof PassoSchema>;
+export type Condizione = z.infer<typeof CondizioneSchema>;
 
 export const RegolaInputSchema = z.object({
   nome:         z.string().trim().min(1).max(120),
   attiva:       z.boolean(),
   article_code: z.string().trim().min(1).max(60),
   prezzo:       z.number().min(-1_000_000).max(1_000_000),
-  passi:        z.array(PassoSchema).max(MAX_PASSI),
+  logica:       z.enum(['tutte', 'qualsiasi']),
+  condizioni:   z.array(CondizioneSchema).max(MAX_CONDIZIONI),
+  eccezioni:    z.array(CondizioneSchema).max(MAX_CONDIZIONI),
 });
 export type RegolaInput = z.infer<typeof RegolaInputSchema>;
 export type Regola = RegolaInput & { id: number };
@@ -49,6 +53,8 @@ function cerca(testo: string, passi: Passo[], i: number, da: number, gruppi: Gru
   return false;
 }
 
+const combacia = (testo: string, c: Condizione, gruppi: Gruppi) => cerca(testo, c.passi, 0, 0, gruppi);
+
 export interface RegolaApplicata { id: number; nome: string; prezzo: number }
 export interface Calcolo { totale: number; applicate: RegolaApplicata[] }
 
@@ -58,7 +64,10 @@ export function calcola(descrizione: string, articolo: string, regole: Regola[],
   const applicate: RegolaApplicata[] = [];
   for (const r of regole) {
     if (!r.attiva || (r.article_code !== '*' && r.article_code !== art)) continue;
-    if (cerca(testo, r.passi, 0, 0, gruppi)) applicate.push({ id: r.id, nome: r.nome, prezzo: r.prezzo });
+    const ok = r.condizioni.length === 0
+      || (r.logica === 'tutte' ? r.condizioni.every(c => combacia(testo, c, gruppi)) : r.condizioni.some(c => combacia(testo, c, gruppi)));
+    if (!ok || r.eccezioni.some(c => combacia(testo, c, gruppi))) continue;
+    applicate.push({ id: r.id, nome: r.nome, prezzo: r.prezzo });
   }
   const totale = Math.round(applicate.reduce((s, a) => s + a.prezzo, 0) * 100) / 100;
   return { totale, applicate };
