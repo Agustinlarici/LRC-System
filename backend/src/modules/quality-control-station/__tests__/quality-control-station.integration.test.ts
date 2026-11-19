@@ -464,4 +464,61 @@ describe.skipIf(!URL)('Quality Control Station (integrazione)', () => {
     expect((await app.request('/api/photo-station/jobs', { headers: { authorization: `Bearer ${tok}` } })).status).toBe(401);
     expect((await app.request('/api/photo-station/jobs', { headers: { cookie: guest } })).status).toBe(403);
   });
+
+  // ─── Anular de una vez todos los pedidos en cola ─────────────────────────────────────────
+  const cancelPending = (body: unknown = {}, cookie = admin) =>
+    user('/jobs/cancel-pending', { method: 'POST', body: JSON.stringify(body) }, cookie);
+
+  it('anular en bloque: cancela solo los pedidos en cola; no toca los tomados ni los terminados', async () => {
+    const a = await newJob('PEND-1');
+    await newJob('PEND-2', 'delibera_finale_proximiti');
+    await newJob('PEND-3');
+    const taken = await newJob('TOMADO');                                  // en cola → lo toma la estación (claimed)
+    await db`UPDATE photo_jobs SET status = 'claimed', station_id = (SELECT id FROM photo_stations LIMIT 1), claimed_at = now() WHERE id = ${taken.id}`;
+    const done = await newJob('TERMINADO');
+    await db`UPDATE photo_jobs SET status = 'captured', finished_at = now() WHERE id = ${done.id}`;
+
+    const list = await (await user('/jobs')).json() as any;
+    expect(list.pending_count).toBe(3);
+
+    const r = await cancelPending();
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as any).cancelled).toBe(3);
+    const states = await db`SELECT commessa, status, error FROM photo_jobs ORDER BY id`;
+    expect(states.map(x => [x.commessa, x.status])).toEqual([
+      ['PEND-1', 'cancelled'], ['PEND-2', 'cancelled'], ['PEND-3', 'cancelled'], ['TOMADO', 'claimed'], ['TERMINADO', 'captured'],
+    ]);
+    expect(states[0].error).toBe('Annullato in blocco');
+    expect(((await (await user('/jobs')).json()) as any).pending_count).toBe(0);
+    // la estación, al volver, ya no encuentra nada en cola
+    expect((await (await station('/claim', { method: 'POST' }, tok3)).json() as any).job).toBeNull();
+    expect(a.id).toBeGreaterThan(0);
+  });
+
+  it('anular en bloque: se puede limitar a una fase, y repetirlo no hace nada', async () => {
+    await newJob('F-A', 'delibera_finale');
+    await newJob('F-B', 'delibera_finale_proximiti');
+    expect(((await (await cancelPending({ phase: 'delibera_finale_proximiti' })).json()) as any).cancelled).toBe(1);
+    expect((await db`SELECT status FROM photo_jobs WHERE commessa = 'F-A'`)[0].status).toBe('pending');   // la otra fase sigue en cola
+    expect(((await (await cancelPending({ phase: 'delibera_finale_proximiti' })).json()) as any).cancelled).toBe(0);
+    expect(((await (await cancelPending()).json()) as any).cancelled).toBe(1);
+  });
+
+  it('anular en bloque: solo quien gestiona; la estación no puede; los anulados se pueden relanzar', async () => {
+    const job = await newJob('PERM-1');
+    expect((await cancelPending({}, guest)).status).toBe(403);
+    expect((await app.request('/api/quality-control-station/jobs/cancel-pending', { method: 'POST', body: '{}', headers: { authorization: `Bearer ${tok}`, 'content-type': 'application/json' } })).status).toBe(401);
+    expect((await db`SELECT status FROM photo_jobs WHERE id = ${job.id}`)[0].status).toBe('pending');     // nada se anulo
+    expect((await cancelPending({ phase: 'Fase Mala' })).status).toBe(400);
+    await cancelPending();
+    expect((await user(`/jobs/${job.id}/retry`, { method: 'POST' })).status).toBe(200);                    // «Riprova» sigue funcionando
+    expect((await db`SELECT status FROM photo_jobs WHERE id = ${job.id}`)[0].status).toBe('pending');
+  });
+
+  it('anular en bloque queda en el registro de auditoria con la cantidad', async () => {
+    await newJob('AUD-1'); await newJob('AUD-2');
+    await cancelPending();
+    const [row] = await db`SELECT details FROM audit_log WHERE action = 'photo_job_cancel_pending' ORDER BY id DESC LIMIT 1`;
+    expect(row.details).toMatchObject({ count: 2, phase: null });
+  });
 });
