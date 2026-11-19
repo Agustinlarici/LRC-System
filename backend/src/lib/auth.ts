@@ -21,7 +21,7 @@ const COOKIE_MAX_AGE      = 60 * 60 * 8; // 8 hours
 export type ModuleKey =
   | 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer'
   | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
-  | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci'
+  | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci' | 'fatturazione'
   | 'programma_produzione' | 'hr' | 'hr_salary' | 'hr_team' | 'ferrari_schede' | 'ferrari_supervisore' | 'photo_station';
 
 export type ModulePermission = {

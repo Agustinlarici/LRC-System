@@ -45,10 +45,10 @@ function PersonSelect({ people, value, onChange, currentUserId, className }: {
     </div>
   );
 }
-type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci' | 'programma_produzione' | 'hr' | 'hr_salary' | 'hr_team' | 'ferrari_schede' | 'ferrari_supervisore' | 'photo_station';
+type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci' | 'programma_produzione' | 'hr' | 'hr_salary' | 'hr_team' | 'ferrari_schede' | 'ferrari_supervisore' | 'photo_station' | 'fatturazione';
 type Permission = { module_key: ModuleKey; can_view: boolean; can_manage: boolean };
 
-const MODULE_CATEGORIES = ['Logistica', 'Produzione', 'Dashboard', 'IT', 'Qualità', 'HR'] as const;
+const MODULE_CATEGORIES = ['Logistica', 'Amministrazione', 'Produzione', 'Dashboard', 'IT', 'Qualità', 'HR'] as const;
 
 const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATEGORIES[number] }[] = [
   // ── Logistica ──────────────────────────────────────────────────────────────
@@ -60,6 +60,7 @@ const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATE
   { key: 'edi',                  label: 'EDI',                  category: 'Logistica' },
   { key: 'webddt',               label: 'WebDDT',                category: 'Logistica' },
   { key: 'spedizione_bucci',     label: 'Spedizione Bucci',      category: 'Logistica' },
+  { key: 'fatturazione',         label: 'Fatturazione',          category: 'Amministrazione' },
 
   // ── Produzione ─────────────────────────────────────────────────────────────
   { key: 'monitor',         label: 'Andon',           category: 'Produzione' },

@@ -139,6 +139,13 @@ export const MODULES: ModuleConfig[] = [
     description: 'Generazione automatica file Electronic Data Interchange per le spedizioni',
     sidebar: 'IconEdi', hidden: false, moduleKey: 'edi',
   },
+  // ── Amministrazione ────────────────────────────────────────────────────────
+  {
+    href: '/fatturazione', label: 'Fatturazione', group: 'Amministrazione',
+    description: 'Spedizioni da fatturare con prezzo di vendita stimato STR calcolato da regole sulla descrizione dell\'ordine',
+    sidebar: 'IconInvoice', hidden: false, moduleKey: 'fatturazione',
+  },
+
   {
     href: '/webddt', label: 'WebDDT', group: 'Logistica',
     description: 'Scarica documenti di trasporto Ferrari in formato Excel per le spedizioni',
@@ -216,7 +223,7 @@ export const MODULES: ModuleConfig[] = [
 
 export const visibleModules = MODULES.filter(m => !m.hidden);
 
-export const MODULE_GROUPS = ['Logistica', 'Produzione', 'Qualità', 'Dashboard', 'HR', 'IT'] as const;
+export const MODULE_GROUPS = ['Logistica', 'Produzione', 'Qualità', 'Amministrazione', 'Dashboard', 'HR', 'IT'] as const;
 export type ModuleGroup = typeof MODULE_GROUPS[number];
 
 export const modulesByGroup = (group: string) =>
