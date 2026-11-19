@@ -40,6 +40,14 @@ describe.skipIf(!URL)('Fatturazione — sincronizzazione', () => {
     expect(st!.in_corso_da).toBeNull();
   });
 
+  it('legge tutti i despachi anche oltre una pagina (nessun taglio silenzioso)', async () => {
+    const { getShipments } = await import('../../edi/dynamics-client.js');
+    const mk = (a: number, b: number) => Array.from({ length: b - a }, (_, i) => (
+      { shipment_id: `P${a + i}`, shipment_date: '2026-01-10', customer_account: 'C1', line_count: 1 }));
+    vi.mocked(getShipments).mockResolvedValueOnce(mk(0, 500) as never).mockResolvedValueOnce(mk(500, 503) as never);
+    expect(await sync.sincronizza()).toBe(503);                                   // 1 riga per despacho (solo D1 ne ha 2)
+  });
+
   it('una sola sincronizzazione alla volta', async () => {
     await db`UPDATE fatt_sync_stato SET in_corso_da = now()`;
     expect(await sync.sincronizza()).toBe(-1);

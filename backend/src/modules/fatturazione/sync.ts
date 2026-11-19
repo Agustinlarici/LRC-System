@@ -6,6 +6,7 @@ import { getShipments } from '../edi/dynamics-client.js';
 import { getRigheDespachi } from './bc.js';
 
 const GIORNI = 90;
+const PAGINA = 500;           // despachi per pagina letta da BC
 const BLOCCO = 300;           // despachi per query verso BC
 const STALE_MIN = 30;         // una sincronizzazione «in corso» da più di 30 min si considera morta
 
@@ -28,7 +29,13 @@ export async function sincronizzaGiaAvviata(): Promise<number> {
   try {
     const conti = (await db<{ conto: string }[]>`SELECT conto FROM fatt_conto`).map(r => r.conto);
     const da = new Date(Date.now() - GIORNI * 86_400_000).toISOString().slice(0, 10);
-    const spedizioni = await getShipments(conti, da, undefined, { limit: 500 });
+    // A pagine: un limite unico taglierebbe in silenzio i despachi più vecchi.
+    const spedizioni: Awaited<ReturnType<typeof getShipments>> = [];
+    for (let offset = 0; ; offset += PAGINA) {
+      const pagina = await getShipments(conti, da, undefined, { limit: PAGINA, offset });
+      spedizioni.push(...pagina);
+      if (pagina.length < PAGINA) break;
+    }
     let n = 0;
     for (let i = 0; i < spedizioni.length; i += BLOCCO) {
       const parte = spedizioni.slice(i, i + BLOCCO);
