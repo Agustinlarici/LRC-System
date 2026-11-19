@@ -5,8 +5,13 @@
  *
  * La struttura segue il messaggio d'esempio validato con GEFEG.FX: un pallet (CPS livello 3)
  * che contiene una scatola (CPS livello 1) per ogni riga articolo. I dati che il sistema non
- * conosce (etichette GIN/PCI, COD+NO, tara per imballo) NON sono inventati: se mancano, il
- * segmento viene omesso e sarà GEFEG a segnalarlo.
+ * conosce (COD+NO/MEA+AAZ) NON sono inventati: se mancano, il segmento viene omesso e sarà
+ * GEFEG a segnalarlo.
+ *
+ * Etichette (PCI+17 / GIN+ML / GIN+AW): una per il pallet e una per ogni scatola. ID etichetta =
+ * tipo (6J pallet, 1J scatola) + "UN" + DUNS fornitore + seriale di 9 cifre. Il seriale è
+ * derivato dalla sequenza (pallet: 0+seq6+00, scatola: 1+seq6+riga a 2 cifre). Senza DUNS le
+ * etichette non si possono costruire e vengono omesse.
  *
  * Campi cliente (edi_clients):
  *   supplier_code          → codice fornitore (NAD+SE/SF, qualificatore 92), senza zeri aggiunti
@@ -30,6 +35,8 @@
  *   transport_id                    targa/identificativo mezzo (TDT)
  *   pallet_code, pallet_stack       imballo principale (es. 0007PAL) e impilabilità (QTY+171)
  *   box_code                        imballo interno di ogni riga (es. 0009SCH)
+ *   pallet_content_code             (opzionale) PAC+1+:37:AAC dopo le etichette del pallet
+ *   box_tare_weight                 (opzionale) tara in kg di ogni scatola → MEA+AAY+T
  *   origin_country                  paese d'origine (ALI), default paese del mittente o IT
  *
  * Dati della spedizione:
@@ -74,6 +81,13 @@ function uom(raw) {
 function kg(v) {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? String(Math.round(n * 1000) / 1000) : null;
+}
+
+// RFF+ON (1154): max 12 caratteri, senza spazi. Se il numero contratto contiene più parti
+// separate da spazi (es. "000006  J01E2") si usa la prima.
+function orderNo(raw) {
+  const first = String(raw ?? '').trim().split(/\s+/)[0] || '';
+  return txt(first, 12);
 }
 
 export function generate(shipment, client, sequence) {
@@ -159,27 +173,51 @@ export function generate(shipment, client, sequence) {
   segs.push(prm('transport_id') ? `TDT+12++30+++++${txt(prm('transport_id'), 17)}'` : `TDT+12++30'`);
 
   // ── Gerarchia imballi: pallet (livello 3) ────────────────────────────────────
+  const lines = shipment.lines || [];
+
+  // Etichette: ID = tipo + "UN" + DUNS + seriale (9 cifre); senza DUNS non si costruiscono
+  const dunsDigits = duns.replace(/\D/g, '');
+  const labelsOk   = dunsDigits.length > 0;
+  const palletSerial = `0${seq6}00`;
+  const boxSerial    = n => `1${seq6}${String(n).padStart(2, '0')}`;
+  const labelId      = (type, serial) => `${type}UN${dunsDigits}${serial}`;
+
   segs.push(`CPS+1++3'`);
   segs.push(prm('pallet_code') ? `PAC+1+:35:AAA+${txt(prm('pallet_code'), 17)}::92'` : `PAC+1+:35:AAA'`);
   if (prm('pallet_stack')) segs.push(`QTY+171:${txt(prm('pallet_stack'), 3)}:C62'`);
   segs.push(`QTY+189:1:PCE'`);
+  if (labelsOk) {
+    segs.push(`PCI+17+++6J::5'`);
+    segs.push(`GIN+ML+${palletSerial}:${labelId('6J', palletSerial)}'`);
+    // GIN+AW: seriali delle scatole contenute (fino a 5 per segmento)
+    for (let i = 0; i < lines.length; i += 5) {
+      const ids = lines.slice(i, i + 5).map((_, k) => boxSerial(i + k + 1));
+      segs.push(`GIN+AW+${ids.join('+')}'`);
+    }
+  }
+  if (prm('pallet_content_code')) segs.push(`PAC+1+:37:AAC+${txt(prm('pallet_content_code'), 17)}::92'`);
 
   // ── Una scatola (livello 1) per ogni riga articolo ───────────────────────────
   let cps = 1;
-  const lines = shipment.lines || [];
+  const boxTare = kg(prm('box_tare_weight'));
   for (let i = 0; i < lines.length; i++) {
     const line   = lines[i];
     const lineNo = i + 1;
     const unit   = uom(line.unit_of_measure);
     const qty    = Number(line.quantity || 0);
     const desc   = txt(line.description, 35);
-    const poNo   = txt(line.contract_number, 35);
+    const poNo   = orderNo(line.contract_number);
 
     cps += 1;
     segs.push(`CPS+${cps}++1'`);
     segs.push(prm('box_code') ? `PAC+1+:35:AAC+${txt(prm('box_code'), 17)}::92'` : `PAC+1+:35:AAC'`);
+    if (boxTare) segs.push(`MEA+AAY+T+KGM:${boxTare}'`);
     // QTY+52 (pezzi per scatola) × 1 scatola = QTY+12
     segs.push(`QTY+52:${qty}:${unit}'`);
+    if (labelsOk) {
+      segs.push(`PCI+17+++1J::5'`);
+      segs.push(`GIN+ML+${boxSerial(lineNo)}:${labelId('1J', boxSerial(lineNo))}'`);
+    }
 
     // LIN senza numero di riga; il codice cliente inizia con uno spazio (VW), mai fare trim
     segs.push(`LIN+++ ${txt(line.article_code, 22)}:IN'`);
