@@ -74,3 +74,13 @@ describe('DESADV_AUDI', () => {
     expect(out[unt]).toBe(`UNT+${unt - unh + 1}+EDDT-000013'`);
   });
 });
+
+describe('DESADV_AUDI — caratteri (UNOC = ISO 8859-1, file in UTF-8)', () => {
+  it('i testi escono in ASCII senza accenti', () => {
+    const c = { ...client, edi_params: { ...client.edi_params, pallet_code: '0007PAL', shipto_street: 'Ĵ. Šonáša ÊÀ 1', shipto_city: 'Città' } };
+    const out = generate(shipment('000006'), c, 13);
+    expect(out).toMatch(/NAD\+ST\+11::92\+\+Cliente Prova\+J\. Sona(s)?a EA 1\+Citta\+/);
+    // nessun byte fuori dall'ASCII nel file
+    expect([...out].every(ch => ch.charCodeAt(0) < 128)).toBe(true);
+  });
+});

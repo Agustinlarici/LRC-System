@@ -56,9 +56,20 @@ function esc(s) {
   return String(s ?? '').replace(/[?'+:]/g, c => '?' + c);
 }
 
-// Valore di testo: tagliato alla lunghezza massima e con escape
+// Il file è scritto in UTF-8 ma UNOC è ISO 8859-1: un carattere accentato diventerebbe 2 byte
+// illeggibili per VW (es. "Ê" → "ÃŠ", errore NAD.3042). I testi si passano quindi a ASCII
+// senza accenti (è → e, Š → S); i caratteri non riconducibili a lettere diventano spazio.
+const ASCII_SPECIALI = { 'ß': 'ss', 'Ø': 'O', 'ø': 'o', 'Ð': 'D', 'ð': 'd', 'Đ': 'D', 'đ': 'd', 'Ł': 'L', 'ł': 'l' };
+function ascii(s) {
+  return String(s ?? '')
+    .replace(/[ßØøÐðĐđŁł]/g, c => ASCII_SPECIALI[c])
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x20-\x7e]/g, ' ');
+}
+
+// Valore di testo: ASCII, tagliato alla lunghezza massima e con escape
 function txt(s, max) {
-  return esc(String(s ?? '').trim().slice(0, max));
+  return esc(ascii(s).trim().slice(0, max));
 }
 
 function fmtDate8(d) {
