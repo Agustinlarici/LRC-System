@@ -1,4 +1,5 @@
-// Fatturazione: carica le regole da Excel/CSV. Colonne: Articolo, Cerca 1, Cerca 2, Cerca 3, Distanza, Prezzo, Note (+ Attiva, facoltativa).
+// Fatturazione: carica le regole da Excel/CSV. Colonne: Articolo, Cerca 1, Distanza 1, Cerca 2, Distanza 2, Cerca 3, Distanza 3, Prezzo, Note (+ Attiva, facoltativa).
+// Compatibilità: una sola colonna «Distanza» vale per la 2ª e la 3ª parola.
 // Una riga = una regola. Stessa regola (articolo + parole) già presente = se ne aggiornano prezzo, note e stato.
 import * as XLSX from 'xlsx';
 import { db } from '../../db/client.js';
@@ -28,7 +29,8 @@ export function leggiRegoleExcel(buffer: Buffer): { regole: RegolaInput[]; total
   const colArt = pickCol(intestazioni, 'Articolo', 'Codice articolo', 'Codice');
   const colPrezzo = pickCol(intestazioni, 'Prezzo');
   const colCerca = [pickCol(intestazioni, 'Cerca 1', 'Parola 1'), pickCol(intestazioni, 'Cerca 2', 'Parola 2'), pickCol(intestazioni, 'Cerca 3', 'Parola 3')];
-  const colDist = pickCol(intestazioni, 'Distanza', 'Distanza massima');
+  const colDistN = [pickCol(intestazioni, 'Distanza 1'), pickCol(intestazioni, 'Distanza 2'), pickCol(intestazioni, 'Distanza 3')];
+  const colDistUnica = colDistN.some(Boolean) ? null : pickCol(intestazioni, 'Distanza', 'Distanza massima');
   const colNote = pickCol(intestazioni, 'Note', 'Nota');
   const colAttiva = pickCol(intestazioni, 'Attiva', 'Attivo');
   if (!colArt || !colPrezzo) {
@@ -44,12 +46,13 @@ export function leggiRegoleExcel(buffer: Buffer): { regole: RegolaInput[]; total
     const prezzo = leggiPrezzo(riga[colPrezzo]);
     if (!art) { skipped++; warnings.push(`Riga ${n}: articolo mancante`); return; }
     if (!Number.isFinite(prezzo)) { skipped++; warnings.push(`Riga ${n}: prezzo mancante o non valido`); return; }
-    const distanza = colDist ? parseInt(str(riga[colDist]), 10) : NaN;
-    const finestra = Number.isInteger(distanza) && distanza > 0 ? distanza : null;
+    const distanza = (c: string | null): number | null => { const d = c ? parseInt(str(riga[c]), 10) : NaN; return Number.isInteger(d) && d > 0 ? d : null; };
     const passi: Passo[] = colCerca
-      .map(c => (c ? str(riga[c]).split(',').map(s => s.trim()).filter(Boolean) : []))
-      .filter(cerca => cerca.length > 0)
-      .map((cerca, k) => ({ cerca, finestra: k === 0 ? null : finestra }));
+      .map((c, k) => ({
+        cerca: c ? str(riga[c]).split(',').map(s => s.trim()).filter(Boolean) : [],
+        finestra: colDistUnica ? (k === 0 ? null : distanza(colDistUnica)) : distanza(colDistN[k] ?? null),
+      }))
+      .filter(p => p.cerca.length > 0);
     const candidata = {
       nome: colNote ? str(riga[colNote]) : '',
       attiva: colAttiva ? leggiSiNo(riga[colAttiva]) : true,

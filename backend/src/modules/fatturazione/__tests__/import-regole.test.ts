@@ -10,7 +10,16 @@ const excel = (righe: unknown[][]): Buffer => {
 const INT = ['Articolo', 'Cerca 1', 'Cerca 2', 'Cerca 3', 'Distanza', 'Prezzo', 'Note'];
 
 describe('import regole da Excel', () => {
-  it('legge catena di parole, distanza, prezzo e note', () => {
+  it('una distanza per ogni parola (Distanza 1, 2, 3); vuota = ovunque', () => {
+    const e = leggiRegoleExcel(excel([
+      ['Articolo', 'Cerca 1', 'Distanza 1', 'Cerca 2', 'Distanza 2', 'Cerca 3', 'Distanza 3', 'Prezzo'],
+      ['A1', 'PPE1', 30, 'ROSSO', 20, 'OPACO', '', 9],
+      ['A2', 'X', '', '', 5, 'Z', 7, 9],   // 2ª parola vuota: la 3ª passa al suo posto con la sua distanza
+    ]));
+    expect(e.regole[0]!.passi).toEqual([{ cerca: ['PPE1'], finestra: 30 }, { cerca: ['ROSSO'], finestra: 20 }, { cerca: ['OPACO'], finestra: null }]);
+    expect(e.regole[1]!.passi).toEqual([{ cerca: ['X'], finestra: null }, { cerca: ['Z'], finestra: 7 }]);
+  });
+  it('legge catena di parole, distanza unica (formato vecchio), prezzo e note', () => {
     const e = leggiRegoleExcel(excel([INT, ['art1', 'PPE1', 'ROSSO, NERO', 'OPACO', 20, '12,50', 'vernice']]));
     expect(e.skipped).toBe(0);
     expect(e.regole[0]).toEqual({
