@@ -35,8 +35,8 @@
  *   transport_id                    targa/identificativo mezzo (TDT)
  *   pallet_code, pallet_stack       imballo principale (es. 0007PAL) e impilabilità (QTY+171)
  *   box_code                        imballo interno di ogni riga (es. 0009SCH)
- *   pallet_content_code             (opzionale) PAC+1+:37:AAC dopo le etichette del pallet
- *   box_tare_weight                 (opzionale) tara in kg di ogni scatola → MEA+AAY+T
+ *   pallet_content_code             imballo aggiuntivo del pallet: PAC+1+:37:AAC dopo le etichette
+ *   aux_tare_weight                 tara in kg dell'imballo aggiuntivo → MEA+AAY+T+KGM (nel gruppo PAC :37)
  *   origin_country                  paese d'origine (ALI), default paese del mittente o IT
  *
  * Dati della spedizione:

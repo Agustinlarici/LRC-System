@@ -40,8 +40,11 @@ describe('DESADV_AUDI', () => {
     expect(out).toContain("GIN+ML+100001301:1JUN123456789100001301'");
     expect(out).toContain("GIN+ML+100001302:1JUN123456789100001302'");
     expect(out.filter(l => l === "PCI+17+++1J::5'")).toHaveLength(2);
-    expect(out).toContain("MEA+AAY+T+KGM:0.5'");
-    expect(out).toContain("PAC+1+:37:AAC+999999::92'");
+    // la tara sta subito dopo PAC :37, non nella scatola
+    const i = out.indexOf("PAC+1+:37:AAC+999999::92'");
+    expect(i).toBeGreaterThan(-1);
+    expect(out[i + 1]).toBe("MEA+AAY+T+KGM:9'");
+    expect(out.filter(l => l.startsWith('MEA+AAY'))).toHaveLength(1);
   });
 
   it('senza DUNS niente etichette (non si inventano)', () => {
