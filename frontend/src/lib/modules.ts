@@ -142,7 +142,7 @@ export const MODULES: ModuleConfig[] = [
   // ── Amministrazione ────────────────────────────────────────────────────────
   {
     href: '/fatturazione', label: 'Fatturazione', group: 'Amministrazione',
-    description: 'Spedizioni da fatturare con prezzo di vendita stimato STR calcolato da regole sulla descrizione dell\'ordine',
+    description: 'Prezzo di vendita stimato dei despachi',
     sidebar: 'IconInvoice', hidden: false, moduleKey: 'fatturazione',
   },
 

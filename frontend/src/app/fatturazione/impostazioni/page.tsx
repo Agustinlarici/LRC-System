@@ -64,7 +64,6 @@ export default function FatturazioneImpostazioniPage() {
       <PageHeader
         back={{ label: 'Fatturazione', href: '/fatturazione' }}
         title="Impostazioni fatturazione"
-        description="Il prezzo STR di una riga è la somma dei prezzi delle regole che combaciano con il suo codice e la descrizione dell'ordine."
         badge={!manage ? <StatusBadge tone="neutral">Sola lettura</StatusBadge> : undefined}
       />
       {error && <div className="mb-4 rounded-ctl bg-danger-soft p-3 text-sm text-danger">{error}</div>}
@@ -77,11 +76,8 @@ export default function FatturazioneImpostazioniPage() {
         <>
           {tab === 'regole' && (
             <div className="space-y-4">
-              <p className="text-sm text-muted">
-                Senza condizioni la regola è il prezzo base del codice. In ogni condizione, il 1° passo cerca la parola ovunque o entro i primi N caratteri;
-                i passi successivi la cercano dopo la fine del passo precedente. Più parole separate da virgola sono alternative; <b>@NOME</b> indica un gruppo di parole.
-              </p>
-              {regole.length === 0 && <div className="card"><EmptyState title="Nessuna regola" hint="Aggiungi una regola per calcolare i prezzi dei despachi." /></div>}
+              <p className="text-sm text-muted">Parole separate da virgola = alternative. @NOME = gruppo di parole.</p>
+              {regole.length === 0 && <div className="card"><EmptyState title="Nessuna regola" /></div>}
               {regole.map((r, i) => (
                 <RegolaEditor key={r.id ?? `n${i}`} regola={r} manage={manage}
                   onChange={p => upd(i, p)}
@@ -105,9 +101,8 @@ export default function FatturazioneImpostazioniPage() {
             <div className="card max-w-3xl space-y-3">
               <div>
                 <h2 className="text-sm font-semibold text-ink-700">Gruppi di parole</h2>
-                <p className="text-xs text-muted">Si usano nelle regole come @NOME (es. @COLORI).</p>
               </div>
-              {gruppi.length === 0 && <EmptyState title="Nessun gruppo" hint="Un gruppo raccoglie parole equivalenti da riusare nelle regole." />}
+              {gruppi.length === 0 && <EmptyState title="Nessun gruppo" />}
               {gruppi.map((g, i) => (
                 <div key={i} className="flex gap-2">
                   <input className="input !w-40" placeholder="NOME" aria-label="Nome gruppo" value={g.nome} disabled={!manage}
@@ -148,7 +143,6 @@ export default function FatturazioneImpostazioniPage() {
               <div className="card space-y-3">
                 <div>
                   <h2 className="text-sm font-semibold text-ink-700">Prova</h2>
-                  <p className="text-xs text-muted">Calcola con le regole salvate, senza passare da Business Central.</p>
                 </div>
                 <div className="flex flex-wrap items-end gap-2">
                   <div className="w-40"><label className="label">Codice</label><input className="input" value={pArt} onChange={e => setPArt(e.target.value)} /></div>

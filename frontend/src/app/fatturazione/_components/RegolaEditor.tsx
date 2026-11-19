@@ -28,7 +28,7 @@ function EditorCondizioni({ condizioni, onChange, manage, vuoto }: {
     onChange(condizioni.map((c, k) => (k === i ? { passi: c.passi.map((x, m) => (m === j ? { ...x, ...p } : x)) } : c)));
   return (
     <div className="space-y-2">
-      {condizioni.length === 0 && <p className="text-sm text-muted">{vuoto}</p>}
+      {condizioni.length === 0 && vuoto && <p className="text-sm text-muted">{vuoto}</p>}
       {condizioni.map((c, i) => (
         <div key={i} className="rounded-ctl border border-line bg-stone-50 p-3">
           <div className="space-y-2">
@@ -111,12 +111,12 @@ export function RegolaEditor({ regola, onChange, onSu, onGiu, onElimina, manage 
           {regola.condizioni.length === 0 && <StatusBadge tone="info">Prezzo base del codice</StatusBadge>}
         </div>
         <EditorCondizioni condizioni={regola.condizioni} manage={manage} onChange={condizioni => onChange({ condizioni })}
-          vuoto="Nessuna condizione: la regola vale sempre per questo codice." />
+          vuoto="" />
       </div>
 
       <div className="mt-4 space-y-2 border-t border-line pt-4">
-        <div className="text-sm font-medium text-ink-900">ECCETTO SE <span className="font-normal text-muted">(basta che una combaci e la regola non si applica)</span></div>
-        <EditorCondizioni condizioni={regola.eccezioni} manage={manage} onChange={eccezioni => onChange({ eccezioni })} vuoto="Nessuna eccezione." />
+        <div className="text-sm font-medium text-ink-900">ECCETTO SE</div>
+        <EditorCondizioni condizioni={regola.eccezioni} manage={manage} onChange={eccezioni => onChange({ eccezioni })} vuoto="" />
       </div>
     </div>
   );

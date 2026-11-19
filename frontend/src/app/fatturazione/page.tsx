@@ -92,8 +92,7 @@ export default function FatturazionePage() {
         badge={badge}
         description={
           <>
-            <span>Despachi con prezzo di vendita stimato STR, calcolato dalle regole sulla descrizione dell&apos;ordine.</span>{' '}
-            <span>{stato?.ultima_sync ? `Ultima sincronizzazione: ${dataOra(stato.ultima_sync)}` : 'Mai sincronizzato.'}</span>
+            <span>{stato?.ultima_sync ? `Ultima sincronizzazione: ${dataOra(stato.ultima_sync)}` : 'Mai sincronizzato'}</span>
             {stato?.errore && <span className="ml-1 text-danger">{stato.errore}</span>}
           </>
         }
@@ -117,7 +116,7 @@ export default function FatturazionePage() {
         {loading ? (
           <div className="p-4"><SkeletonTable rows={6} cols={5} /></div>
         ) : rows.length === 0 ? (
-          <EmptyState title="Nessun despacho" hint="Cambia i filtri oppure sincronizza i dati da Business Central." />
+          <EmptyState title="Nessun despacho" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
