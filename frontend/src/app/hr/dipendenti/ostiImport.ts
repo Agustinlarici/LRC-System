@@ -63,6 +63,7 @@ interface Plan {
   change: Record<string, unknown>;                            // campi con valore diverso: cambio registrato
   changes: { field: string; from: string; to: string }[];     // per la nota dell'evento
   cessa: boolean;                                             // la persona passa a "cessato"
+  riassunta: string | null;                                   // data di riassunzione: chi era cessato torna attivo (evento "assunzione")
   takeFrom: number[];                                         // schede a cui si toglie la matricola (la stessa, scritta con o senza zeri)
 }
 
@@ -186,7 +187,7 @@ function buildPlan(emp: HrEmployee, r: Row, ctx: Ctx): { plan: Plan | null; conf
     : f === 'plant_ids' ? (v as number[]).map(id => ctx.plantName.get(id) ?? '').join(', ')
     : String(v);
 
-  const plan: Plan = { emp, fill: {}, change: {}, changes: [], cessa: false, takeFrom: [] };
+  const plan: Plan = { emp, fill: {}, change: {}, changes: [], cessa: false, riassunta: null, takeFrom: [] };
   let conflict: string | null = null;
   for (const [f, v] of Object.entries(want)) {
     if (v == null) continue;                                    // Osti vuoto: non tocca nulla
@@ -214,11 +215,13 @@ function buildPlan(emp: HrEmployee, r: Row, ctx: Ctx): { plan: Plan | null; conf
     plan.change.data_cessazione = licenziato;
     delete plan.fill.data_cessazione;
   }
-  // Data di cessazione futura = contratto ancora in corso: chi risultava cessato torna attivo
-  if (licenziato && licenziato > ctx.today && emp.stato === 'cessato') {
+  // Riga in corso in Osti (senza data di cessazione, o con data futura = fine contratto): chi da noi risultava
+  // cessato è stato riassunto, quindi torna attivo e si registra una nuova assunzione nella timeline.
+  if ((!licenziato || licenziato > ctx.today) && emp.stato === 'cessato') {
     plan.change.stato = 'attivo';
-    plan.change.data_cessazione = licenziato;
+    if (licenziato) plan.change.data_cessazione = licenziato;   // senza data, il backend azzera quella vecchia
     plan.changes.push({ field: 'stato', from: 'cessato', to: 'attivo' });
+    plan.riassunta = ostiDate(r.dip_assunto) ?? ctx.today;
     delete plan.fill.data_cessazione;
   }
   const empty = !Object.keys(plan.fill).length && !Object.keys(plan.change).length;
@@ -259,6 +262,12 @@ async function applyPlan(p: Plan, ctx: Ctx): Promise<boolean> {
         }),
       });
     }
+  }
+  if (ok && p.riassunta) {
+    await fetch(`${ctx.backend}/api/hr/employees/${p.emp.id}/events`, {
+      method: 'POST', headers: json, credentials: 'include',
+      body: JSON.stringify({ event_type: 'assunzione', event_date: p.riassunta, note: 'Riassunzione — import Osti' }),
+    });
   }
   if (!ok) {
     for (const t of taken) await setMatricola(t.id, t.old);   // salvataggio fallito: le altre schede riprendono la loro matricola
