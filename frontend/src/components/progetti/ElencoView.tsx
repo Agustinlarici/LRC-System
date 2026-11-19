@@ -27,6 +27,11 @@ function ProjectCard({ p }: { p: ProjectRow }) {
   const ago = daysAgo(p.last_activity);
   const stale = p.status === 'attivo' && ago != null && ago >= 7;
   const dueDays = p.effective_due ? daysFromToday(p.effective_due) : null;
+  // Attività non assegnate a nessuna fase: sono nel totale del progetto, quindi anche le barre devono mostrarle
+  const looseTotal = total - p.phases.reduce((n, f) => n + f.tasks_total, 0);
+  const looseDone = p.tasks_done - p.phases.reduce((n, f) => n + f.tasks_done, 0);
+  const loosePct = looseTotal > 0 ? Math.round((100 * looseDone) / looseTotal) : 0;
+  const looseOk = looseTotal > 0 && looseDone === looseTotal;
   return (
     <Link href={`/progetti/${p.id}`}
       className="grid gap-x-8 gap-y-5 rounded-card bg-white p-6 shadow-card transition-shadow hover:shadow-float lg:grid-cols-[minmax(200px,1fr)_minmax(0,3fr)_minmax(210px,1fr)] lg:items-center">
@@ -58,6 +63,18 @@ function ProjectCard({ p }: { p: ProjectRow }) {
               </div>
             );
           })}
+          {looseTotal > 0 && (
+            <div className="min-w-0 flex-1" title={`Senza fase · ${looseDone}/${looseTotal}`}>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="truncate text-sm font-medium text-ink-900">Senza fase</span>
+                <span className="shrink-0 text-xs tabular-nums text-muted">{looseDone}/{looseTotal}</span>
+              </div>
+              <div className={`mt-1.5 h-3 overflow-hidden rounded-full ${looseOk ? PHASE_TRACK.ok : PHASE_TRACK.cur}`}>
+                <div className={`h-full rounded-full ${looseOk ? PHASE_FILL.ok : PHASE_FILL.cur}`} style={{ width: `${loosePct}%` }} />
+              </div>
+              <div className="mt-1 truncate text-xs text-muted">{looseOk ? 'Completate' : 'Attività sciolte'}</div>
+            </div>
+          )}
         </div>
       ) : (
         <div>

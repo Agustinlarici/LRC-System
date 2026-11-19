@@ -103,7 +103,7 @@ export default function ProgettoPage() {
     catch (e) { toast.error(e instanceof Error ? e.message : 'Operazione non riuscita'); return false; }
   };
 
-  if (notFound) return <div className="card"><EmptyState title="Progetto non trovato" action={<Link href="/progetti" className="btn-secondary">← Progetti</Link>} /></div>;
+  if (notFound) return <div className="card"><EmptyState title="Progetto non trovato" action={<Link href="/progetti/elenco" className="btn-secondary">← Progetti</Link>} /></div>;
   if (!p) return <SkeletonTable rows={5} cols={3} />;
 
   const ticketIds = new Set(p.tickets.map(t => t.id));
@@ -116,7 +116,7 @@ export default function ProgettoPage() {
   const header = (
     <PageHeader
       title={p.name}
-      back={{ label: 'Progetti', href: '/progetti' }}
+      back={{ label: 'Progetti', href: '/progetti/elenco' }}
       badge={<StatusBadge tone={p.health.tone}>{p.health.label}</StatusBadge>}
       description={`${p.tickets.map(t => t.ticket_number).join(' · ') || 'Nessun ticket collegato'}${p.owner_name ? ` · responsabile ${p.owner_name}` : ''}`}
       actions={

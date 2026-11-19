@@ -67,13 +67,17 @@ function Legend() {
 /** Linea del tempo di un progetto: una riga per fase, più una riga con la scadenza del progetto. */
 export function ProjectGantt({ phases, tasks, deadline }: { phases: PhaseRow[]; tasks: PTask[]; deadline: string | null }) {
   const dated = phases.filter(p => p.due_date);
-  if (dated.length === 0) {
-    return <p className="py-2 text-sm text-muted">Aggiungi almeno una fase con una scadenza per vedere la linea del tempo.</p>;
+  // Attività senza fase: riga a parte, con un rombo per ogni scadenza
+  const loose = tasks.filter(t => t.phase_id === null);
+  const looseDated = loose.filter(t => t.due_date);
+  if (dated.length === 0 && looseDated.length === 0) {
+    return <p className="py-2 text-sm text-muted">Aggiungi almeno una fase o un&apos;attività con una scadenza per vedere la linea del tempo.</p>;
   }
   const d = dated.map(phaseDays);
   const dl = deadline ? daysFromToday(deadline) : null;
-  const min = Math.min(...d.map(x => x.start), -3) - 2;
-  const max = Math.max(...d.map(x => x.due ?? 0), dl ?? 0, 3) + 6;
+  const ld = looseDated.map(t => daysFromToday(t.due_date!));
+  const min = Math.min(...d.map(x => x.start), ...ld, -3) - 2;
+  const max = Math.max(...d.map(x => x.due ?? 0), ...ld, dl ?? 0, 3) + 6;
 
   return (
     <div>
@@ -109,6 +113,23 @@ export function ProjectGantt({ phases, tasks, deadline }: { phases: PhaseRow[]; 
                   </div>
                 );
               })}
+              {loose.length > 0 && (
+                <div className="grid grid-cols-[190px_1fr] items-center border-t border-stone-100">
+                  <div className="min-w-0 py-1.5 pr-3">
+                    <b className="block truncate font-medium text-ink-900">{phases.length > 0 ? 'Senza fase' : 'Attività'}</b>
+                    <span className="text-xs text-muted">{loose.filter(x => x.status === 'fatta').length}/{loose.length}</span>
+                  </div>
+                  <div className="relative h-[54px]">
+                    <Axis min={min} max={max} />
+                    {looseDated.map(x => {
+                      const dd = daysFromToday(x.due_date!);
+                      return <i key={x.id} title={`${x.title} · ${fmtShort(x.due_date)}`}
+                        className={`absolute top-[22px] z-[2] h-[9px] w-[9px] -translate-x-1/2 rotate-45 rounded-[2px] ${x.status === 'fatta' ? 'bg-green-600' : dd < 0 ? 'bg-red-600' : 'bg-ink-700'}`}
+                        style={{ left: `${pos(dd)}%` }} />;
+                    })}
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-[190px_1fr] items-center border-t border-stone-100">
                 <div className="py-1.5 pr-3"><b className="block font-medium text-ink-900">Scadenza progetto</b><span className="text-xs text-muted">{deadline ? 'dalle fasi o fissata a mano' : 'non definita'}</span></div>
                 <div className="relative h-[54px]">
