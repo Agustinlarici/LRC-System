@@ -210,8 +210,8 @@ export function Sidebar() {
     }`}>
 
       {/* Logo */}
-      <div className="flex items-center justify-center border-b border-white/10 h-14 px-4">
-        <img src="/logo-white.png" alt="STR" className="h-9 select-none object-contain" />
+      <div className="flex items-center justify-center border-b border-white/10 h-16 px-5 py-4">
+        <img src="/logo-white.png" alt="STR" className="h-full max-w-full select-none object-contain" />
       </div>
 
       {/* Nav */}
