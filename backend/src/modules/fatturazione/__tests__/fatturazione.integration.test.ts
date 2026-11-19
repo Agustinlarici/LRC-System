@@ -16,7 +16,7 @@ describe.skipIf(!URL)('Fatturazione — rotte', () => {
       headers: { ...(o.token ? { Cookie: `lrc_session=${o.token}` } : {}), ...(o.corpo ? { 'Content-Type': 'application/json' } : {}) },
       body: o.corpo ? JSON.stringify(o.corpo) : undefined,
     });
-  const regola = (r: Record<string, unknown>) => ({ nome: 'r', attiva: true, article_code: 'ART1', prezzo: 10, logica: 'tutte', condizioni: [], eccezioni: [], ...r });
+  const regola = (r: Record<string, unknown>) => ({ nome: 'r', attiva: true, gruppo: 'GRP1', prezzo: 10, passi: [], ...r });
   const passo = (cerca: string[], finestra: number | null = null) => ({ cerca, finestra });
 
   beforeAll(async () => {
@@ -31,7 +31,8 @@ describe.skipIf(!URL)('Fatturazione — rotte', () => {
   });
   afterAll(async () => { await db?.end(); });
   beforeEach(async () => {
-    await db`TRUNCATE fatt_regola, fatt_gruppo, fatt_riga RESTART IDENTITY`;
+    await db`TRUNCATE fatt_regola, fatt_gruppo, fatt_gruppo_articoli, fatt_riga RESTART IDENTITY`;
+    await db`INSERT INTO fatt_gruppo_articoli (nome, componente, modello, codici) VALUES ('GRP1', 'Cofano', 'SF90', ARRAY['ART1'])`;
     await db`DELETE FROM fatt_conto`; await db`INSERT INTO fatt_conto (conto) VALUES ('C1')`;
     await db`INSERT INTO fatt_riga (shipment_id, line_no, shipment_date, customer_account, article_code, quantity, order_no, descrizione) VALUES
       ('D1', 1, '2026-01-10', 'C1', 'ART1', 2, 'O1', 'KIT PPE1 VERNICE ROSSO OPACO'),
@@ -47,11 +48,12 @@ describe.skipIf(!URL)('Fatturazione — rotte', () => {
     expect((await chiama('PUT', '/conti', { token: senzaPermessi, corpo: { conti: ['X'] } })).status).toBe(403);
   });
 
-  it('salva regole (ordine, condizioni, eccezioni) e rifiuta quelle invalide senza cancellare', async () => {
-    const ok = await chiama('PUT', '/regole', { token: admin, corpo: { regole: [regola({ nome: 'base' }), regola({ nome: 'ppe', condizioni: [{ passi: [passo(['PPE1'])] }], eccezioni: [{ passi: [passo(['USATO'])] }] })] } });
+  it('salva regole (ordine, catena di passi) e rifiuta quelle invalide senza cancellare', async () => {
+    const ok = await chiama('PUT', '/regole', { token: admin, corpo: { regole: [regola({ nome: 'base' }), regola({ nome: 'ppe', passi: [passo(['PPE1']), passo(['ROSSO'], 20)] })] } });
     expect(ok.status).toBe(200);
     expect(((await ok.json()) as { nome: string }[]).map(r => r.nome)).toEqual(['base', 'ppe']);
-    expect((await chiama('PUT', '/regole', { token: admin, corpo: { regole: [regola({ condizioni: [{ passi: [] }] })] } })).status).toBe(400);
+    expect((await chiama('PUT', '/regole', { token: admin, corpo: { regole: [regola({ passi: [{ cerca: [], finestra: null }] })] } })).status).toBe(400);
+    expect((await chiama('PUT', '/regole', { token: admin, corpo: { regole: [regola({ gruppo: 'NON ESISTE' })] } })).status).toBe(400);
     expect(((await (await chiama('GET', '/regole', { token: admin })).json()) as unknown[])).toHaveLength(2);
   });
 
@@ -59,7 +61,7 @@ describe.skipIf(!URL)('Fatturazione — rotte', () => {
     await chiama('PUT', '/gruppi', { token: admin, corpo: { gruppi: [{ nome: 'colori', parole: ['ROSSO', 'NERO'] }] } });
     await chiama('PUT', '/regole', { token: admin, corpo: { regole: [
       regola({ nome: 'base', prezzo: 100 }),
-      regola({ nome: 'catena', prezzo: 25, condizioni: [{ passi: [passo(['PPE1']), passo(['@COLORI'], 20), passo(['OPACO'], 15)] }] }),
+      regola({ nome: 'catena', prezzo: 25, passi: [passo(['PPE1']), passo(['@COLORI'], 20), passo(['OPACO'], 15)] }),
     ] } });
     const lista = (await (await chiama('GET', '/despachi', { token: admin })).json()) as { shipment_id: string; totale_str: number; senza_regola: number; line_count: number }[];
     expect(lista.map(d => d.shipment_id)).toEqual(['D1']);                        // D2 è di un conto non configurato
@@ -69,6 +71,19 @@ describe.skipIf(!URL)('Fatturazione — rotte', () => {
     expect(det.righe[0]).toMatchObject({ prezzo_str: 125 });
     expect(det.righe[0]!.regole).toHaveLength(2);
     expect((await chiama('GET', '/despachi/D2', { token: admin })).status).toBe(404);
+  });
+
+  it('gruppi di articoli: si salvano con codici in maiuscolo e non si toglie uno ancora usato', async () => {
+    const ok = await chiama('PUT', '/gruppi-articoli', { token: admin, corpo: { gruppi: [
+      { nome: 'GRP1', componente: 'Cofano', modello: 'SF90', codici: ['art1', ' ART1 ', 'ART9'] },
+      { nome: 'GRP2', componente: 'Porta', modello: 'SF90', codici: [] }] } });
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as { nome: string; codici: string[] }[]).find(g => g.nome === 'GRP1')!.codici).toEqual(['ART1', 'ART9']);
+    expect((await chiama('PUT', '/gruppi-articoli', { token: admin, corpo: { gruppi: [
+      { nome: 'X', componente: '', modello: '', codici: [] }, { nome: 'x', componente: '', modello: '', codici: [] }] } })).status).toBe(400);   // stesso nome
+    await chiama('PUT', '/regole', { token: admin, corpo: { regole: [regola({})] } });                                                          // usa GRP1
+    expect((await chiama('PUT', '/gruppi-articoli', { token: admin, corpo: { gruppi: [{ nome: 'GRP2', componente: '', modello: '', codici: [] }] } })).status).toBe(400);
+    expect((await chiama('PUT', '/gruppi-articoli', { token: senzaPermessi, corpo: { gruppi: [] } })).status).toBe(403);
   });
 
   it('prova senza BC e stato della sincronizzazione', async () => {
