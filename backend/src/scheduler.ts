@@ -16,6 +16,7 @@ import { logger } from './lib/logger.js';
 import { recepcionesEmitter } from './gateway/recepciones-emitter.js';
 import { letturaNotturna } from './modules/ferrari/cartella.js';
 import { pollOneDriveFolder } from './modules/spma/onedrive-watcher.js';
+import { sincronizza as sincronizzaFatturazione } from './modules/fatturazione/sync.js';
 import { runPhotoFeed } from './modules/quality-control-station/feed.js';
 
 function nextEvery10Min(): Date {
@@ -191,6 +192,18 @@ export function startScheduler() {
       await letturaNotturna(ora);
     } catch (e) {
       logger.error(`[scheduler] Lettura cartella schede fallita: ${e instanceof Error ? e.message : e}`);
+    }
+  }, { timezone: 'Europe/Rome' });
+
+  // Ogni ora (minuto 40) — Fatturazione: copia da BC delle righe di spedizione dei conti configurati
+  cron.schedule('40 * * * *', async () => {
+    startRun('fatturazione_sync');
+    try {
+      const n = await sincronizzaFatturazione();
+      if (n >= 0) endRun('fatturazione_sync', n); else endRun('fatturazione_sync', 0);
+    } catch (e) {
+      failRun('fatturazione_sync', e);
+      logger.error(`[scheduler] Fatturazione sync fallita: ${e instanceof Error ? e.message : e}`);
     }
   }, { timezone: 'Europe/Rome' });
 
