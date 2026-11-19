@@ -390,13 +390,32 @@ export async function runOstiImport(
   const suggestedIds = new Map<ImportIssue, number[]>();   // candidati per i casi 'Non trovato'; si filtrano a fine giro
   let storici = 0;   // ex dipendenti (licenziati in Osti da almeno 6 mesi) che da noi non esistono: normale, non si segnalano
   const sixMonthsAgo = new Date(Date.now() - 183 * 864e5).toISOString().slice(0, 10);
+  // Abbinamento di una riga: nome, poi "Nome Osti", poi matricola (solo se è di una persona sola)
+  const resolve = (r: Row): HrEmployee[] => {
+    const k = norm(clean(r.dip_nome));
+    let c = byName.get(k) ?? [];
+    if (c.length !== 1) { const o = byOsti.get(k) ?? []; if (c.length === 0 || o.length === 1) c = o; }
+    if (c.length !== 1) { const m = byMatricola.get(matKey(r.dip_matricola)) ?? []; if (m.length === 1) c = m; }
+    return c;
+  };
+  // Righe con lo stesso nome in Osti = la stessa persona (più contratti): se una riga è abbinata a una scheda
+  // (es. dalla matricola), anche le altre con lo stesso nome vanno a quella scheda, anche se non hanno matricola.
+  const ownerOfName = new Map<string, number | null>();   // null = nome con schede diverse: non si usa
+  for (const r of rows) {
+    const nome = clean(r.dip_nome);
+    if (!nome) continue;
+    const c = resolve(r);
+    if (c.length !== 1) continue;
+    const k = norm(nome);
+    ownerOfName.set(k, ownerOfName.has(k) && ownerOfName.get(k) !== c[0].id ? null : c[0].id);
+  }
+  const employeeById = new Map(employees.map(e => [e.id, e]));
   for (const r of rows) {
     const nome = clean(r.dip_nome);
     if (!nome) continue;
     const k = norm(nome);
-    let c = byName.get(k) ?? [];
-    if (c.length !== 1) { const o = byOsti.get(k) ?? []; if (c.length === 0 || o.length === 1) c = o; }
-    if (c.length !== 1) { const m = byMatricola.get(matKey(r.dip_matricola)) ?? []; if (m.length === 1) c = m; }   // solo se la matricola è di una persona sola
+    let c = resolve(r);
+    if (c.length !== 1) { const owner = ownerOfName.get(k); if (owner != null) c = [employeeById.get(owner)!]; }
     // Senza scheda (o con nome ambiguo) e licenziato da almeno 6 mesi: non è un caso da guardare
     if (c.length !== 1 && (ostiDate(r.dip_licenziato) ?? '9') <= sixMonthsAgo) { storici++; continue; }
     if (c.length === 1) matched.set(c[0].id, [...(matched.get(c[0].id) ?? []), r]);
