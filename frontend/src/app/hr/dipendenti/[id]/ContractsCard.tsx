@@ -63,7 +63,7 @@ export function ContractsCard({ employeeId }: { employeeId: number }) {
             return (
               <tr key={c.id} className="border-t border-stone-100">
                 <td className="py-1.5">{fmtDate(c.data_inizio)}</td>
-                <td className="py-1.5">{c.data_fine ? fmtDate(c.data_fine) : '—'}</td>
+                <td className="py-1.5">{c.data_fine ? fmtDate(c.data_fine) : 'Indeterminato'}</td>
                 <td className="py-1.5 pr-6 text-right tabular-nums">{c.data_fine ? days(c.data_inizio, c.data_fine) : `${days(c.data_inizio, today)}+`}</td>
                 <td className="py-1.5 px-6 border-l border-stone-100">{c.matricola ?? ''}</td>
                 <td className="py-1.5 text-right">{ongoing && <StatusBadge tone="success">In corso</StatusBadge>}</td>

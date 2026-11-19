@@ -164,8 +164,8 @@ function wantOf(r: Row, ctx: Ctx): Record<string, string | number | boolean | nu
 }
 
 // "REPARTO VERNICIATURA" in Osti = "VERNICIATURA" da noi
-// Plant: dalla filiale di Osti si usano solo le prime 4 lettere (STR1…STR5); qualsiasi altro valore = nessun plant
-const plantOf = (r: Row) => { const k = clean(r.filiale).slice(0, 4).toUpperCase(); return /^STR[1-5]$/.test(k) ? k : ''; };
+// Plant: dalla filiale di Osti si usa solo la sigla iniziale (STR1…STR5, anche scritta "STR 1"); qualsiasi altro valore = nessun plant
+const plantOf = (r: Row) => { const m = clean(r.filiale).toUpperCase().match(/^STR\s*([1-5])(?!\d)/); return m ? `STR${m[1]}` : ''; };   // anche "STR 1"
 
 const repartoOf = (r: Row) => clean(r.reparto).replace(/^reparto\s+/i, '');
 
@@ -232,6 +232,9 @@ function buildPlan(emp: HrEmployee, r: Row, ctx: Ctx): { plan: Plan | null; conf
   return { plan: empty ? null : plan, conflict };
 }
 
+// Date ISO (aaaa-mm-gg) → gg/mm/aaaa nelle note della timeline; altri valori restano com'è
+const dataIt = (v: string) => v.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3/$2/$1');
+
 // reparto, mansione e livello hanno già il loro evento automatico nel backend
 const AUTO_EVENT = new Set(['livello', 'mansione', 'reparto_id']);
 
@@ -261,7 +264,7 @@ async function applyPlan(p: Plan, ctx: Ctx): Promise<boolean> {
         method: 'POST', headers: json, credentials: 'include',
         body: JSON.stringify({
           event_type: 'altro', event_date: ctx.today,
-          note: 'Import Osti — ' + manual.map(c => `${FIELD_LABEL[c.field] ?? c.field}: «${c.from}» → «${c.to}»`).join('; '),
+          note: 'Import Osti — ' + manual.map(c => `${FIELD_LABEL[c.field] ?? c.field}: «${dataIt(c.from)}» → «${dataIt(c.to)}»`).join('; '),
         }),
       });
     }
