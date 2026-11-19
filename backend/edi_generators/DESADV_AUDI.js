@@ -33,7 +33,8 @@
  *   unloading_address               testo LOC+11 (3224): Nome;Via1;Via2;Distretto;CAP;Città;Paese
  *   fw_code/name/street/city/zip/country/duns      NAD+FW (spedizioniere)
  *   transport_id                    targa/identificativo mezzo (TDT)
- *   pallet_code, pallet_stack       imballo principale (es. 0007PAL) e impilabilità (QTY+171)
+ *   pallet_code, pallet_stack       imballo principale (es. 0007PAL) e impilabilità (QTY+171);
+ *                                   pallet_code vuoto → nessun pallet dichiarato, solo le scatole
  *   box_code                        imballo interno di ogni riga (es. 0009SCH)
  *   pallet_content_code             imballo aggiuntivo del pallet: PAC+1+:37:AAC dopo le etichette
  *   aux_tare_weight                 tara in kg dell'imballo aggiuntivo → MEA+AAY+T+KGM (nel gruppo PAC :37)
@@ -142,7 +143,10 @@ export function generate(shipment, client, sequence) {
   if (gross) segs.push(`MEA+AAX+AAD+KGM:${gross}'`);
   if (net)   segs.push(`MEA+AAX+AAL+KGM:${net}'`);
   if (tare)  segs.push(`MEA+AAX+T+KGM:${tare}'`);
-  segs.push(`MEA+AAE++PCE:1'`);
+  // Il pallet (imballo esterno) è facoltativo: senza pallet_code non si dichiara e le unità di carico sono le scatole
+  const hasPallet = prm('pallet_code') !== '';
+  const nLines = (shipment.lines || []).length;
+  segs.push(`MEA+AAE++PCE:${hasPallet ? 1 : nLines}'`);
 
   segs.push(`RFF+CRN:${asnRef}'`);
 
@@ -182,28 +186,30 @@ export function generate(shipment, client, sequence) {
   const boxSerial    = n => `1${seq6}${String(n).padStart(2, '0')}`;
   const labelId      = (type, serial) => `${type}UN${dunsDigits}${serial}`;
 
-  segs.push(`CPS+1++3'`);
-  segs.push(prm('pallet_code') ? `PAC+1+:35:AAA+${txt(prm('pallet_code'), 17)}::92'` : `PAC+1+:35:AAA'`);
-  if (prm('pallet_stack')) segs.push(`QTY+171:${txt(prm('pallet_stack'), 3)}:C62'`);
-  segs.push(`QTY+189:1:PCE'`);
-  if (labelsOk) {
-    segs.push(`PCI+17+++6J::5'`);
-    segs.push(`GIN+ML+${palletSerial}:${labelId('6J', palletSerial)}'`);
-    // GIN+AW: seriali delle scatole contenute (fino a 5 per segmento)
-    for (let i = 0; i < lines.length; i += 5) {
-      const ids = lines.slice(i, i + 5).map((_, k) => boxSerial(i + k + 1));
-      segs.push(`GIN+AW+${ids.join('+')}'`);
+  if (hasPallet) {
+    segs.push(`CPS+1++3'`);
+    segs.push(`PAC+1+:35:AAA+${txt(prm('pallet_code'), 17)}::92'`);
+    if (prm('pallet_stack')) segs.push(`QTY+171:${txt(prm('pallet_stack'), 3)}:C62'`);
+    segs.push(`QTY+189:1:PCE'`);
+    if (labelsOk) {
+      segs.push(`PCI+17+++6J::5'`);
+      segs.push(`GIN+ML+${palletSerial}:${labelId('6J', palletSerial)}'`);
+      // GIN+AW: seriali delle scatole contenute (fino a 5 per segmento)
+      for (let i = 0; i < lines.length; i += 5) {
+        const ids = lines.slice(i, i + 5).map((_, k) => boxSerial(i + k + 1));
+        segs.push(`GIN+AW+${ids.join('+')}'`);
+      }
     }
-  }
-  if (prm('pallet_content_code')) {
-    segs.push(`PAC+1+:37:AAC+${txt(prm('pallet_content_code'), 17)}::92'`);
-    // Tara obbligatoria nel gruppo dell'imballo aggiuntivo (errore GEFEG SG12 MEA+AAY+T)
-    const auxTare = kg(prm('aux_tare_weight'));
-    if (auxTare) segs.push(`MEA+AAY+T+KGM:${auxTare}'`);
+    if (prm('pallet_content_code')) {
+      segs.push(`PAC+1+:37:AAC+${txt(prm('pallet_content_code'), 17)}::92'`);
+      // Tara obbligatoria nel gruppo dell'imballo aggiuntivo (errore GEFEG SG12 MEA+AAY+T)
+      const auxTare = kg(prm('aux_tare_weight'));
+      if (auxTare) segs.push(`MEA+AAY+T+KGM:${auxTare}'`);
+    }
   }
 
   // ── Una scatola (livello 1) per ogni riga articolo ───────────────────────────
-  let cps = 1;
+  let cps = hasPallet ? 1 : 0;
   for (let i = 0; i < lines.length; i++) {
     const line   = lines[i];
     const lineNo = i + 1;
