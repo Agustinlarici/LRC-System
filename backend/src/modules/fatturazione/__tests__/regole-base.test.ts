@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { calcola, type Passo, type Regola } from '../regole-base.js';
+import { calcola, chiaveRegola, type Passo, type Regola } from '../regole-base.js';
 
 let n = 0;
 const r = (x: Partial<Regola> & Pick<Regola, 'prezzo'>): Regola =>
-  ({ id: ++n, nome: `r${n}`, attiva: true, gruppo: null, passi: [], ...x });
+  ({ id: ++n, nome: `r${n}`, attiva: true, article_code: '*', passi: [], ...x });
 const p = (cerca: string[], finestra: number | null = null): Passo => ({ cerca, finestra });
 const gruppi = new Map([['COLORI', ['ROSSO', 'NERO']]]);
-const articoli = new Map([['COFANO SF90', new Set(['A1', 'A2'])], ['PORTA', new Set(['B2'])]]);
-const calc = (descr: string, art: string, regole: Regola[]) => calcola(descr, art, regole, gruppi, articoli);
+const calc = (descr: string, art: string, regole: Regola[]) => calcola(descr, art, regole, gruppi);
 
 describe('regole di prezzo Fatturazione', () => {
   it('regola senza passi = prezzo base sempre', () => {
@@ -29,24 +28,28 @@ describe('regole di prezzo Fatturazione', () => {
     const reg = r({ prezzo: 10, passi: [p(['PPE1']), p(['ROSSO'], 10)] });
     expect(calc('PPE1 BLU ................ PPE1 ROSSO', 'A1', [reg]).totale).toBe(10);
   });
-  it('gruppo di articoli: vale solo per i suoi codici (maiuscole e spazi ininfluenti)', () => {
-    const reg = r({ prezzo: 40, gruppo: 'cofano sf90' });
+  it('articolo singolo: vale solo per il suo codice (maiuscole e spazi ininfluenti); * = tutti', () => {
+    const reg = r({ prezzo: 40, article_code: 'a1' });
     expect(calc('x', 'A1', [reg]).totale).toBe(40);
-    expect(calc('x', ' a2 ', [reg]).totale).toBe(40);
-    expect(calc('x', 'B2', [reg]).totale).toBe(0);
-  });
-  it('gruppo inesistente: la regola non si applica', () => {
-    expect(calc('x', 'A1', [r({ prezzo: 40, gruppo: 'CANCELLATO' })]).totale).toBe(0);
+    expect(calc('x', ' A1 ', [reg]).totale).toBe(40);
+    expect(calc('x', 'A2', [reg]).totale).toBe(0);
+    expect(calc('x', 'ZZ', [r({ prezzo: 1, article_code: '*' })]).totale).toBe(1);
   });
   it('somma regole, ignora le disattive', () => {
     const regole = [
-      r({ prezzo: 100, gruppo: 'COFANO SF90' }),
-      r({ prezzo: 7, gruppo: 'PORTA' }),
+      r({ prezzo: 100, article_code: 'A1' }),
+      r({ prezzo: 7, article_code: 'B2' }),
       r({ prezzo: 5, attiva: false }),
       r({ prezzo: 2.5, passi: [p(['OPACO'])] }),
     ];
     const c = calc('x opaco', 'A1', regole);
     expect(c.totale).toBe(102.5);
     expect(c.applicate).toHaveLength(2);
+  });
+  it('chiave: stessa regola = stessa chiave, a prescindere da maiuscole, ordine delle alternative e spazi', () => {
+    const a = chiaveRegola({ article_code: 'a1', passi: [p(['rosso', 'Nero']), p(['opaco'], 20)] });
+    expect(chiaveRegola({ article_code: ' A1', passi: [p(['NERO', 'ROSSO ']), p(['OPACO'], 20)] })).toBe(a);
+    expect(chiaveRegola({ article_code: 'A1', passi: [p(['NERO', 'ROSSO']), p(['OPACO'], 30)] })).not.toBe(a);
+    expect(chiaveRegola({ article_code: 'A2', passi: [p(['NERO', 'ROSSO']), p(['OPACO'], 20)] })).not.toBe(a);
   });
 });

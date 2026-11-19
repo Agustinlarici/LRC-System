@@ -9,30 +9,25 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useToast } from '@/components/ui/Toast';
-import { RegolaEditor, nuovaRegola, pulisciRegola, type Regola } from '../_components/RegolaEditor';
+import { TabRegole } from '../_components/TabRegole';
 
 interface Gruppo { nome: string; parole: string[] }
-interface GruppoArt { nome: string; componente: string; modello: string; codici: string[] }
 interface Prova { totale: number; applicate: { id: number; nome: string; prezzo: number }[] }
 
-type Scheda = 'articoli' | 'regole' | 'gruppi' | 'prova';
-const SCHEDE: readonly Scheda[] = ['articoli', 'regole', 'gruppi', 'prova'];
-const ETICHETTE: Record<Scheda, string> = { articoli: 'Gruppi di articoli', regole: 'Regole', gruppi: 'Gruppi di parole', prova: 'Clienti e prova' };
+type Scheda = 'regole' | 'gruppi' | 'prova';
+const SCHEDE: readonly Scheda[] = ['regole', 'gruppi', 'prova'];
+const ETICHETTE: Record<Scheda, string> = { regole: 'Regole', gruppi: 'Gruppi di parole', prova: 'Clienti e prova' };
 
 const eur = (n: number) => n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
 const lista = (t: string) => t.split(',').map(x => x.trim()).filter(Boolean);
-const codiciDa = (t: string) => t.split(/[\s,;]+/).map(x => x.trim()).filter(Boolean);
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export default function FatturazioneImpostazioniPage() {
   const { canManage } = useAuth();
   const toast = useToast();
   const manage = canManage('fatturazione');
-  const [tab, setTab] = useState<Scheda>('articoli');
-  const [regole, setRegole] = useState<Regola[]>([]);
+  const [tab, setTab] = useState<Scheda>('regole');
   const [gruppi, setGruppi] = useState<Gruppo[]>([]);
-  const [articoli, setArticoli] = useState<GruppoArt[]>([]);
-  const [codiciTesto, setCodiciTesto] = useState<string[]>([]);
   const [conti, setConti] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,12 +38,10 @@ export default function FatturazioneImpostazioniPage() {
 
   useEffect(() => {
     Promise.all([
-      api.get<Regola[]>('/api/fatturazione/regole'),
       api.get<Gruppo[]>('/api/fatturazione/gruppi'),
       api.get<string[]>('/api/fatturazione/conti'),
-      api.get<GruppoArt[]>('/api/fatturazione/gruppi-articoli'),
     ])
-      .then(([r, g, c, a]) => { setRegole(r); setGruppi(g); setConti(c.join(', ')); setArticoli(a); setCodiciTesto(a.map(x => x.codici.join(', '))); })
+      .then(([g, c]) => { setGruppi(g); setConti(c.join(', ')); })
       .catch(e => setError(errMsg(e)))
       .finally(() => setLoading(false));
   }, []);
@@ -57,12 +50,6 @@ export default function FatturazioneImpostazioniPage() {
     setSaving(true);
     try { await fn(); toast.success(ok); } catch (e) { toast.error(errMsg(e)); } finally { setSaving(false); }
   }
-
-  const upd = (i: number, p: Partial<Regola>) => setRegole(rs => rs.map((r, k) => (k === i ? { ...r, ...p } : r)));
-  const sposta = (i: number, d: -1 | 1) => setRegole(rs => {
-    const j = i + d; if (j < 0 || j >= rs.length) return rs;
-    const c = [...rs]; [c[i], c[j]] = [c[j]!, c[i]!]; return c;
-  });
 
   return (
     <div>
@@ -79,75 +66,7 @@ export default function FatturazioneImpostazioniPage() {
         <div className="card space-y-3"><Skeleton className="h-5 w-1/3" /><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></div>
       ) : (
         <>
-          {tab === 'articoli' && (
-            <div className="card space-y-3">
-              <p className="text-sm text-muted">Un gruppo = i codici di vendita di un componente di un modello. Le regole si assegnano al gruppo. Codici separati da virgola, spazio o a capo.</p>
-              {articoli.length === 0 && <EmptyState title="Nessun gruppo di articoli" />}
-              {articoli.map((g, i) => (
-                <div key={i} className="grid gap-2 rounded-ctl border border-line p-3 md:grid-cols-[12rem_10rem_10rem_1fr_auto]">
-                  <div>
-                    <label className="label">Nome</label>
-                    <input className="input" value={g.nome} disabled={!manage} onChange={e => setArticoli(gs => gs.map((x, k) => (k === i ? { ...x, nome: e.target.value } : x)))} />
-                  </div>
-                  <div>
-                    <label className="label">Componente</label>
-                    <input className="input" value={g.componente} disabled={!manage} onChange={e => setArticoli(gs => gs.map((x, k) => (k === i ? { ...x, componente: e.target.value } : x)))} />
-                  </div>
-                  <div>
-                    <label className="label">Modello</label>
-                    <input className="input" value={g.modello} disabled={!manage} onChange={e => setArticoli(gs => gs.map((x, k) => (k === i ? { ...x, modello: e.target.value } : x)))} />
-                  </div>
-                  <div>
-                    <label className="label">Codici articolo ({codiciDa(codiciTesto[i] ?? '').length})</label>
-                    <textarea className="input min-h-[2.5rem] font-mono" rows={2} value={codiciTesto[i] ?? ''} disabled={!manage}
-                      onChange={e => setCodiciTesto(t => t.map((x, k) => (k === i ? e.target.value : x)))} />
-                  </div>
-                  {manage && (
-                    <div className="flex items-end">
-                      <button className="btn-danger" onClick={() => { setArticoli(gs => gs.filter((_, k) => k !== i)); setCodiciTesto(t => t.filter((_, k) => k !== i)); }}>Elimina</button>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {manage && (
-                <div className="flex gap-2">
-                  <button className="btn-secondary" onClick={() => { setArticoli(gs => [...gs, { nome: '', componente: '', modello: '', codici: [] }]); setCodiciTesto(t => [...t, '']); }}>+ Gruppo di articoli</button>
-                  <button className="btn-primary" disabled={saving}
-                    onClick={() => salva(async () => {
-                      const r = await api.put<GruppoArt[]>('/api/fatturazione/gruppi-articoli', {
-                        gruppi: articoli.map((g, i) => ({ nome: g.nome.trim(), componente: g.componente.trim(), modello: g.modello.trim(), codici: codiciDa(codiciTesto[i] ?? '') })),
-                      });
-                      setArticoli(r); setCodiciTesto(r.map(x => x.codici.join(', ')));
-                    }, 'Gruppi di articoli salvati')}>
-                    Salva gruppi di articoli
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {tab === 'regole' && (
-            <div className="space-y-4">
-              <p className="text-sm text-muted">Ogni regola cerca una o più parole, una dopo l&apos;altra: se un passo non la trova, la regola non fa nulla; se trova tutto, aggiunge il prezzo. Parole separate da virgola = alternative. @NOME = gruppo di parole.</p>
-              {regole.length === 0 && <div className="card"><EmptyState title="Nessuna regola" /></div>}
-              {regole.map((r, i) => (
-                <RegolaEditor key={r.id ?? `n${i}`} regola={r} manage={manage} gruppi={articoli.map(a => a.nome.trim()).filter(Boolean)}
-                  onChange={p => upd(i, p)}
-                  onSu={i > 0 ? () => sposta(i, -1) : undefined}
-                  onGiu={i < regole.length - 1 ? () => sposta(i, 1) : undefined}
-                  onElimina={() => setRegole(rs => rs.filter((_, k) => k !== i))} />
-              ))}
-              {manage && (
-                <div className="flex gap-2">
-                  <button className="btn-secondary" onClick={() => setRegole(rs => [...rs, nuovaRegola()])}>+ Regola</button>
-                  <button className="btn-primary" disabled={saving}
-                    onClick={() => salva(async () => setRegole(await api.put<Regola[]>('/api/fatturazione/regole', { regole: regole.map(pulisciRegola) })), 'Regole salvate')}>
-                    Salva regole
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+          {tab === 'regole' && <TabRegole manage={manage} />}
 
           {tab === 'gruppi' && (
             <div className="card max-w-3xl space-y-3">
