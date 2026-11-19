@@ -195,11 +195,15 @@ export function generate(shipment, client, sequence) {
       segs.push(`GIN+AW+${ids.join('+')}'`);
     }
   }
-  if (prm('pallet_content_code')) segs.push(`PAC+1+:37:AAC+${txt(prm('pallet_content_code'), 17)}::92'`);
+  if (prm('pallet_content_code')) {
+    segs.push(`PAC+1+:37:AAC+${txt(prm('pallet_content_code'), 17)}::92'`);
+    // Tara obbligatoria nel gruppo dell'imballo aggiuntivo (errore GEFEG SG12 MEA+AAY+T)
+    const auxTare = kg(prm('aux_tare_weight'));
+    if (auxTare) segs.push(`MEA+AAY+T+KGM:${auxTare}'`);
+  }
 
   // ── Una scatola (livello 1) per ogni riga articolo ───────────────────────────
   let cps = 1;
-  const boxTare = kg(prm('box_tare_weight'));
   for (let i = 0; i < lines.length; i++) {
     const line   = lines[i];
     const lineNo = i + 1;
@@ -211,7 +215,6 @@ export function generate(shipment, client, sequence) {
     cps += 1;
     segs.push(`CPS+${cps}++1'`);
     segs.push(prm('box_code') ? `PAC+1+:35:AAC+${txt(prm('box_code'), 17)}::92'` : `PAC+1+:35:AAC'`);
-    if (boxTare) segs.push(`MEA+AAY+T+KGM:${boxTare}'`);
     // QTY+52 (pezzi per scatola) × 1 scatola = QTY+12
     segs.push(`QTY+52:${qty}:${unit}'`);
     if (labelsOk) {

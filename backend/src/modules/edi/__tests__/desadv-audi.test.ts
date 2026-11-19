@@ -13,7 +13,7 @@ const client = {
   cdt_company_name: 'Ditta Prova SPA', cdt_address_1: 'Via Prova 1', cdt_address_2: 'CITTA',
   cdt_address_3: '00000', cdt_address_4: 'IT',
   csg_supply_point: '11', csg_company_name: 'Cliente Prova',
-  edi_params: { supplier_duns: '123456789', box_tare_weight: '0.5', pallet_content_code: '999999' },
+  edi_params: { supplier_duns: '123456789', aux_tare_weight: '9', pallet_content_code: '999999' },
 };
 const shipment = (contract: string | null) => ({
   document_date: '2026-11-19',
