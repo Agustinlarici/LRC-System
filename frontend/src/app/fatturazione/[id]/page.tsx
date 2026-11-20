@@ -17,7 +17,6 @@ export default function DespachoPage() {
   const [fCodice, setFCodice] = useState('');
   const [fTesto, setFTesto] = useState('');
   const [soloSenza, setSoloSenza] = useState(false);
-  const [soloVuote, setSoloVuote] = useState(false);
 
   const carica = useCallback(async () => {
     setErrore(null);
@@ -32,9 +31,8 @@ export default function DespachoPage() {
     return det.righe.filter(l =>
       (!c || l.article_code.toLowerCase().includes(c)) &&
       (!t || l.descrizione.toLowerCase().includes(t)) &&
-      (!soloSenza || l.regole.length === 0) &&
-      (!soloVuote || l.descrizione.trim() === ''));
-  }, [det, fCodice, fTesto, soloSenza, soloVuote]);
+      (!soloSenza || l.regole.length === 0));
+  }, [det, fCodice, fTesto, soloSenza]);
 
   const senza = det ? det.righe.filter(l => l.regole.length === 0).length : 0;
 
@@ -52,7 +50,6 @@ export default function DespachoPage() {
           <div><label className="label">Codice</label><input className="input" placeholder="Filtra codice" value={fCodice} onChange={e => setFCodice(e.target.value)} /></div>
           <div><label className="label">Descrizione</label><input className="input" placeholder="Filtra descrizione" value={fTesto} onChange={e => setFTesto(e.target.value)} /></div>
           <label className="flex items-center gap-2 pb-2 text-sm"><input type="checkbox" checked={soloSenza} onChange={e => setSoloSenza(e.target.checked)} />Solo righe senza regola</label>
-          <label className="flex items-center gap-2 pb-2 text-sm"><input type="checkbox" checked={soloVuote} onChange={e => setSoloVuote(e.target.checked)} />Solo descrizione vuota</label>
           {det && <div className="ml-auto pb-2 text-sm text-muted">Totale STR stimato: <span className="font-semibold text-ink-900">{eur(det.totale_str)}</span></div>}
         </div>
         <div className="overflow-x-auto px-4 py-3">

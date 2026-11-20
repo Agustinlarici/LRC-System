@@ -31,7 +31,6 @@ export default function FatturazionePage() {
   const [search, setSearch] = useState('');
   const [articolo, setArticolo] = useState('');
   const [testo, setTesto] = useState('');
-  const [vuote, setVuote] = useState(false);
   const [cliente, setCliente] = useState('');
   const [stato_, setStato_] = useState<'' | 'senza' | 'ok'>('');
   const [loading, setLoading] = useState(true);
@@ -45,11 +44,10 @@ export default function FatturazionePage() {
     if (search.trim()) q.set('search', search.trim());
     if (articolo.trim()) q.set('articolo', articolo.trim());
     if (testo.trim()) q.set('testo', testo.trim());
-    if (vuote) q.set('vuote', '1');
     try { setRows(await api.get<Despacho[]>(`/api/fatturazione/despachi?${q}`, 60000)); }
     catch (e) { setError(errMsg(e)); }
     finally { setLoading(false); }
-  }, [from, to, search, articolo, testo, vuote]);
+  }, [from, to, search, articolo, testo]);
   useEffect(() => { load(); }, [load]);
 
   const leggiStato = useCallback(async () => {
@@ -114,7 +112,6 @@ export default function FatturazionePage() {
           <div><label className="label">A</label><input type="date" className="input" value={to} onChange={e => setTo(e.target.value)} /></div>
           <div><label className="label">Codice articolo</label><input className="input" placeholder="Cerca…" value={articolo} onChange={e => setArticolo(e.target.value)} /></div>
           <div><label className="label">Descrizione</label><input className="input" placeholder="Cerca…" value={testo} onChange={e => setTesto(e.target.value)} /></div>
-          <label className="flex items-center gap-2 pb-2 text-sm"><input type="checkbox" checked={vuote} onChange={e => setVuote(e.target.checked)} />Con descrizione vuota</label>
           <div><label className="label">Cliente</label>
             <select className="input" value={cliente} onChange={e => setCliente(e.target.value)}>
               <option value="">Tutti</option>{clienti.map(c => <option key={c} value={c}>{c}</option>)}
