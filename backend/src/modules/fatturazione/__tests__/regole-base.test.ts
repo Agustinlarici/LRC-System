@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calcola, chiaveRegola, type Passo, type Regola } from '../regole-base.js';
+import { calcola, chiaveRegola, indicizza, type Passo, type Regola } from '../regole-base.js';
 
 let n = 0;
 const r = (x: Partial<Regola> & Pick<Regola, 'prezzo'>): Regola =>
@@ -51,5 +51,16 @@ describe('regole di prezzo Fatturazione', () => {
     expect(chiaveRegola({ article_code: ' A1', passi: [p(['NERO', 'ROSSO ']), p(['OPACO'], 20)] })).toBe(a);
     expect(chiaveRegola({ article_code: 'A1', passi: [p(['NERO', 'ROSSO']), p(['OPACO'], 30)] })).not.toBe(a);
     expect(chiaveRegola({ article_code: 'A2', passi: [p(['NERO', 'ROSSO']), p(['OPACO'], 20)] })).not.toBe(a);
+  });
+  it('con migliaia di regole: il risultato con l\u2019indice è identico a scorrerle tutte', () => {
+    const regole: Regola[] = [r({ prezzo: 1 }), r({ prezzo: 2, passi: [p(['OPACO'])] })];
+    for (let i = 0; i < 5000; i++) regole.push(r({ prezzo: i + 1, article_code: `ART-${i}`, passi: i % 2 ? [p(['ROSSO'])] : [] }));
+    const per = indicizza(regole);
+    for (const art of ['ART-0', 'art-1 ', 'ART-4999', 'ART-5000', 'ZZ']) {
+      const tutte = calc('x rosso opaco', art, regole);
+      const indice = calcola('x rosso opaco', art, per(art), gruppi);
+      expect(indice.totale).toBe(tutte.totale);
+      expect(indice.applicate.map(a => a.id).sort()).toEqual(tutte.applicate.map(a => a.id).sort());
+    }
   });
 });

@@ -8,7 +8,7 @@ import { auditLog } from '../../lib/audit.js';
 import { requireModule, requireManage } from '../../lib/auth.js';
 import { logger } from '../../lib/logger.js';
 import { avviaSync, sincronizzaGiaAvviata } from './sync.js';
-import { calcola, chiaveRegola, normalizza, MAX_REGOLE, RegolaInputSchema, type Gruppi, type Passo, type Regola, type RegolaInput } from './regole-base.js';
+import { calcola, chiaveRegola, indicizza, normalizza, MAX_REGOLE, RegolaInputSchema, type Gruppi, type Passo, type Regola, type RegolaInput } from './regole-base.js';
 import { importaRegole } from './import-regole.js';
 import { validateSpmaFile } from '../../lib/mime-check.js';
 
@@ -67,10 +67,11 @@ fatturazioneRoutes.get('/despachi', requireModule('fatturazione'), async (c) => 
     LIMIT 20000`;
   const [regole, gruppi] = await Promise.all([leggiRegole(), leggiGruppi()]);
   const g = mappaGruppi(gruppi);
+  const perArticolo = indicizza(regole);
   const per = new Map<string, { shipment_id: string; shipment_date: string | null; customer_account: string; line_count: number; totale_str: number; senza_regola: number }>();
   for (const r of righe) {
     const d = per.get(r.shipment_id) ?? { shipment_id: r.shipment_id, shipment_date: r.shipment_date, customer_account: r.customer_account, line_count: 0, totale_str: 0, senza_regola: 0 };
-    const calc = calcola(r.descrizione, r.article_code, regole, g);
+    const calc = calcola(r.descrizione, r.article_code, perArticolo(r.article_code), g);
     d.line_count += 1; d.totale_str += calc.totale * Number(r.quantity); if (calc.applicate.length === 0) d.senza_regola += 1;
     per.set(r.shipment_id, d);
   }
@@ -87,8 +88,9 @@ fatturazioneRoutes.get('/despachi/:id', requireModule('fatturazione'), async (c)
   if (righe.length === 0) throw new HTTPException(404, { message: 'Despacho non trovato' });
   const [regole, gruppi] = await Promise.all([leggiRegole(), leggiGruppi()]);
   const g = mappaGruppi(gruppi);
+  const perArticolo = indicizza(regole);
   const out = righe.map(r => {
-    const calc = calcola(r.descrizione, r.article_code, regole, g);
+    const calc = calcola(r.descrizione, r.article_code, perArticolo(r.article_code), g);
     const quantity = Number(r.quantity);
     return { line_no: r.line_no, article_code: r.article_code, quantity, order_no: r.order_no, descrizione: r.descrizione,
              prezzo_str: calc.totale, totale_riga: arrotonda(calc.totale * quantity), regole: calc.applicate };
@@ -164,7 +166,7 @@ fatturazioneRoutes.delete('/regole/:id', requireManage('fatturazione'), async (c
 
 // Eliminazione in blocco (le regole filtrate nella pagina).
 fatturazioneRoutes.post('/regole/elimina', requireManage('fatturazione'), async (c) => {
-  const { ids } = await parseBody(c, z.object({ ids: z.array(z.number().int().positive()).min(1).max(5000) }));
+  const { ids } = await parseBody(c, z.object({ ids: z.array(z.number().int().positive()).min(1).max(MAX_REGOLE) }));
   const user = c.get('user');
   const righe = await db`DELETE FROM fatt_regola WHERE id IN ${db(ids)} RETURNING id`;
   await auditLog({ userId: user.id, username: user.username, action: 'fatturazione.regole_eliminate', entity: 'fatt_regola', details: { regole: righe.length } });

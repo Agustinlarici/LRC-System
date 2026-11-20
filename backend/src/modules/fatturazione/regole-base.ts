@@ -5,7 +5,7 @@
 // Nessun passo = vale sempre (prezzo base).
 import { z } from 'zod';
 
-export const MAX_REGOLE = 500;
+export const MAX_REGOLE = 20000;   // una regola per articolo: servono migliaia
 export const MAX_PASSI = 3;   // la tabella ha 3 colonne di ricerca
 
 export const PassoSchema = z.object({
@@ -71,4 +71,22 @@ export function calcola(descrizione: string, articolo: string, regole: Regola[],
 export function chiaveRegola(r: Pick<RegolaInput, 'article_code' | 'passi'>): string {
   const passi = r.passi.map(p => `${[...new Set(p.cerca.map(normalizza))].sort().join(',')}@${p.finestra ?? ''}`);
   return `${codice(r.article_code)}|${passi.join('>')}`;
+}
+
+/** Regole candidate per un articolo (le sue + quelle per tutti), calcolate una volta sola: con migliaia di regole evita di scorrerle tutte per ogni riga. */
+export function indicizza(regole: Regola[]): (articolo: string) => Regola[] {
+  const tutte: Regola[] = [];
+  const perArticolo = new Map<string, Regola[]>();
+  for (const r of regole) {
+    if (r.article_code === '*') { tutte.push(r); continue; }
+    const k = codice(r.article_code);
+    perArticolo.set(k, [...(perArticolo.get(k) ?? []), r]);
+  }
+  const cache = new Map<string, Regola[]>();
+  return (articolo: string) => {
+    const k = codice(articolo);
+    let out = cache.get(k);
+    if (!out) { out = [...(perArticolo.get(k) ?? []), ...tutte]; cache.set(k, out); }
+    return out;
+  };
 }
