@@ -77,6 +77,9 @@ const MATRICOLA_BANDS = [
   { label: 'STR5', from: 2000, to: 2999 },
 ];
 
+// YYYY-MM-DD (o timestamp ISO) → gg/mm/aaaa; vuoto se manca
+const fmtData = (d: string | null | undefined) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : '');
+
 // gg/mm/aa o gg/mm/aaaa → YYYY-MM-DD (formato date usato nell'Excel STR)
 function parseItalianDate(s: string | undefined): string | null {
   if (!s) return null;
@@ -326,13 +329,13 @@ export default function DipendentiPage() {
     const rows = visible.map(e => ({
       Cognome: e.cognome, Nome: e.nome, Matricola: e.matricola ?? '', Sesso: e.sesso ?? '',
       Categoria: e.categoria ?? '', Società: e.contract_company_name ?? '', Nazionalità: (e.nazionalita ?? '').toUpperCase(), 'Extra UE / Italia': tipoNazLabel(e.tipo_nazionalita),
-      'Data nascita': e.data_nascita?.slice(0, 10) ?? '', Email: e.email ?? '', Indirizzo: e.indirizzo ?? '',
+      'Data nascita': fmtData(e.data_nascita), Email: e.email ?? '', Indirizzo: e.indirizzo ?? '',
       Città: e.citta ?? '', Provincia: e.provincia ?? '', CAP: e.cap ?? '',
       Funzione: e.funzione_aziendale ?? '', Reparto: e.reparto_name ?? '', Plant: e.plant_name ?? '',
       Mansione: e.mansione ?? '', Livello: e.livello ?? '', Responsabile: e.capo_nome ?? '',
       'Tipo contratto': e.tipo_contratto ?? '', 'Gruppo orario': e.gruppo_orario ?? '', 'Nome Osti': e.nome_osti ?? '',
-      'Taglia pantaloni': e.taglia_pantaloni ?? '', 'Taglia maglia': e.taglia_maglia ?? '', 'Taglia scarpe': e.taglia_scarpe ?? '', 'Taglia giubbotto': e.taglia_campera ?? '', Assunzione: e.data_assunzione?.slice(0, 10) ?? '',
-      Cessazione: e.data_cessazione?.slice(0, 10) ?? '', 'In prova': e.in_prova ? 'Sì' : '',
+      'Taglia pantaloni': e.taglia_pantaloni ?? '', 'Taglia maglia': e.taglia_maglia ?? '', 'Taglia scarpe': e.taglia_scarpe ?? '', 'Taglia giubbotto': e.taglia_campera ?? '', Assunzione: fmtData(e.data_assunzione),
+      Cessazione: fmtData(e.data_cessazione), 'In prova': e.in_prova ? 'Sì' : '',
       Stato: STATO_LABEL[e.stato] ?? e.stato,
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -1086,7 +1089,7 @@ export default function DipendentiPage() {
               <div className="text-sm text-muted truncate">{e.contract_company_name ?? '—'}</div>
               <div className="text-sm text-muted truncate">{e.nazionalita?.toUpperCase() ?? '—'}</div>
               <div className="text-sm text-muted truncate">{tipoNazLabel(e.tipo_nazionalita) || '—'}</div>
-              <div className="text-sm text-muted truncate">{e.data_nascita?.slice(0, 10) ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{fmtData(e.data_nascita) || '—'}</div>
               <div className="text-sm text-muted truncate" title={e.email ?? undefined}>{e.email ?? '—'}</div>
               <div className="text-sm text-muted truncate" title={e.indirizzo ?? undefined}>{e.indirizzo ?? '—'}</div>
               <div className="text-sm text-muted truncate">{e.citta ?? '—'}</div>
@@ -1101,8 +1104,8 @@ export default function DipendentiPage() {
               <div className="text-sm text-muted truncate">{e.tipo_contratto ?? '—'}</div>
               <div className="text-sm text-muted truncate">{e.gruppo_orario ?? '—'}</div>
               <div className="text-sm text-muted truncate" title={e.nome_osti ?? undefined}>{e.nome_osti ?? '—'}</div>
-              <div className="text-sm text-muted truncate">{e.data_assunzione?.slice(0, 10) ?? '—'}</div>
-              <div className="text-sm text-muted truncate">{e.data_cessazione?.slice(0, 10) ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{fmtData(e.data_assunzione) || '—'}</div>
+              <div className="text-sm text-muted truncate">{fmtData(e.data_cessazione) || '—'}</div>
               <div className="text-center text-sm text-muted">{e.in_prova ? 'Sì' : '—'}</div>
               <div className="text-center">
                 <StatusBadge tone={STATO_TONE[e.stato] ?? 'neutral'}>{STATO_LABEL[e.stato]}</StatusBadge>
