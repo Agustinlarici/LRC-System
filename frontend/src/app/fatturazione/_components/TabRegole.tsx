@@ -120,13 +120,14 @@ export function TabRegole({ manage }: { manage: boolean }) {
             ))}
           </div>
           <div className="grid gap-2 md:grid-cols-4">
+            <input className="input md:col-span-3" value={nuova.note} onChange={e => set({ note: e.target.value })}
+              placeholder="Nome della regola (es. Verniciatura): compare come colonna nel dettaglio della spedizione" />
             <input className="input" value={nuova.prezzo} onChange={e => set({ prezzo: e.target.value })} placeholder="Prezzo (EUR)" inputMode="decimal" />
-            <input className="input md:col-span-3" value={nuova.note} onChange={e => set({ note: e.target.value })} placeholder="Note (facoltative)" />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button className="btn-primary" onClick={aggiungi} disabled={busy}>Aggiungi regola</button>
             <ExcelImportButton endpoint="/api/fatturazione/regole/import-excel" onDone={load}
-              label="Carica da Excel (Articolo, Cerca 1, Distanza 1, Cerca 2, Distanza 2, Cerca 3, Distanza 3, Prezzo, Note)" />
+              label="Carica da Excel (Articolo, Nome, Cerca 1, Distanza 1, Cerca 2, Distanza 2, Cerca 3, Distanza 3, Prezzo)" />
           </div>
         </div>
       )}
@@ -151,6 +152,7 @@ export function TabRegole({ manage }: { manage: boolean }) {
           <thead>
             <tr className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
               <th className="px-4 py-2.5 text-left font-medium">Articolo</th>
+              <th className="px-4 py-2.5 text-left font-medium">Nome</th>
               <th className="px-4 py-2.5 text-left font-medium">Cerca</th>
               <th className="px-2 py-2.5 text-left font-medium">Dist.</th>
               <th className="px-4 py-2.5 text-left font-medium">Poi cerca</th>
@@ -158,26 +160,26 @@ export function TabRegole({ manage }: { manage: boolean }) {
               <th className="px-4 py-2.5 text-left font-medium">Poi cerca</th>
               <th className="px-2 py-2.5 text-left font-medium">Dist.</th>
               <th className="px-4 py-2.5 text-right font-medium">Prezzo</th>
-              <th className="px-4 py-2.5 text-left font-medium">Note</th>
               <th className="px-4 py-2.5 text-center font-medium">Attiva</th>
               <th className="px-4 py-2.5" />
             </tr>
             <tr className="border-b border-line">
               <th className="px-4 pb-2"><input className={filtro} value={fArt} onChange={e => setFArt(e.target.value)} placeholder="Filtra articolo" aria-label="Filtra per articolo" /></th>
+              <th className="px-4 pb-2"><input className={filtro} value={fNote} onChange={e => setFNote(e.target.value)} placeholder="Filtra nome" aria-label="Filtra per nome" /></th>
               <th className="px-4 pb-2" colSpan={6}><input className={filtro} value={fParola} onChange={e => setFParola(e.target.value)} placeholder="Filtra per parola" aria-label="Filtra per parola cercata" /></th>
               <th className="px-4 pb-2" />
-              <th className="px-4 pb-2"><input className={filtro} value={fNote} onChange={e => setFNote(e.target.value)} placeholder="Filtra note" aria-label="Filtra per note" /></th>
               <th className="px-4 pb-2" />
               <th className="px-4 pb-2" />
             </tr>
           </thead>
           <tbody>
-            {filtrate.length === 0 && <tr><td colSpan={12} className="py-6 text-center text-muted">Nessuna regola</td></tr>}
+            {filtrate.length === 0 && <tr><td colSpan={11} className="py-6 text-center text-muted">Nessuna regola</td></tr>}
             {filtrate.slice(0, RIGHE_MAX).map(r => {
               if (edit && edit.id === r.id) {
                 return (
                   <tr key={r.id} className="border-b border-stone-100 bg-accent-soft">
                     <td className="px-2 py-2"><input className={cell} value={edit.b.articolo} onChange={e => setE({ articolo: e.target.value })} /></td>
+                    <td className="px-2 py-2"><input className={cell} value={edit.b.note} onChange={e => setE({ note: e.target.value })} /></td>
                     {([['c1', 'd1'], ['c2', 'd2'], ['c3', 'd3']] as const).map(([c, d]) => (
                       <React.Fragment key={c}>
                         <td className="px-2 py-2"><input className={cell} value={edit.b[c]} onChange={e => setE({ [c]: e.target.value })} /></td>
@@ -185,7 +187,6 @@ export function TabRegole({ manage }: { manage: boolean }) {
                       </React.Fragment>
                     ))}
                     <td className="px-2 py-2"><input className={`${cell} text-right`} inputMode="decimal" value={edit.b.prezzo} onChange={e => setE({ prezzo: e.target.value })} /></td>
-                    <td className="px-2 py-2"><input className={cell} value={edit.b.note} onChange={e => setE({ note: e.target.value })} /></td>
                     <td className="px-4 py-2 text-center"><input type="checkbox" checked={r.attiva} disabled /></td>
                     <td className="whitespace-nowrap px-4 py-2 text-right">
                       <button onClick={() => salvaRiga(r)} disabled={busy} className="btn-primary mr-2 !px-3 !py-1 !text-xs">Salva</button>
@@ -198,6 +199,7 @@ export function TabRegole({ manage }: { manage: boolean }) {
               return (
                 <tr key={r.id} className={`border-b border-stone-100 hover:bg-accent-soft/50 ${r.attiva ? '' : 'opacity-60'}`}>
                   <td className="px-4 py-2 font-mono">{tutti(r.article_code) ? <span className="italic text-muted">tutti</span> : r.article_code}</td>
+                  <td className="max-w-[200px] truncate px-4 py-2 font-medium" title={r.nome}>{r.nome || <span className="italic text-muted">senza nome</span>}</td>
                   {celle.map((p, i) => (
                     <React.Fragment key={i}>
                       <td className="px-4 py-2 text-muted">{p ? p.cerca.join(', ') : nd}</td>
@@ -205,7 +207,6 @@ export function TabRegole({ manage }: { manage: boolean }) {
                     </React.Fragment>
                   ))}
                   <td className="whitespace-nowrap px-4 py-2 text-right font-medium">{eur(r.prezzo)}</td>
-                  <td className="max-w-[200px] truncate px-4 py-2 text-muted" title={r.nome}>{r.nome || nd}</td>
                   <td className="px-4 py-2 text-center">
                     <input type="checkbox" checked={r.attiva} disabled={!manage || busy} aria-label="Regola attiva"
                       onChange={() => void esegui(() => api.put(`/api/fatturazione/regole/${r.id}/attiva`, { attiva: !r.attiva }))} />

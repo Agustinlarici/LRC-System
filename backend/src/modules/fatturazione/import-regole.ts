@@ -1,4 +1,5 @@
-// Fatturazione: carica le regole da Excel/CSV. Colonne: Articolo, Cerca 1, Distanza 1, Cerca 2, Distanza 2, Cerca 3, Distanza 3, Prezzo, Note (+ Attiva, facoltativa).
+// Fatturazione: carica le regole da Excel/CSV. Colonne: Articolo, Nome, Cerca 1, Distanza 1, Cerca 2, Distanza 2, Cerca 3, Distanza 3, Prezzo (+ Attiva, facoltativa).
+// «Nome» è il nome della regola: compare come colonna nel dettaglio della spedizione (si accetta anche «Note», come prima).
 // Compatibilità: una sola colonna «Distanza» vale per la 2ª e la 3ª parola.
 // Una riga = una regola. Stessa regola (articolo + parole) già presente = se ne aggiornano prezzo, note e stato.
 import * as XLSX from 'xlsx';
@@ -31,7 +32,7 @@ export function leggiRegoleExcel(buffer: Buffer): { regole: RegolaInput[]; total
   const colCerca = [pickCol(intestazioni, 'Cerca 1', 'Parola 1'), pickCol(intestazioni, 'Cerca 2', 'Parola 2'), pickCol(intestazioni, 'Cerca 3', 'Parola 3')];
   const colDistN = [pickCol(intestazioni, 'Distanza 1'), pickCol(intestazioni, 'Distanza 2'), pickCol(intestazioni, 'Distanza 3')];
   const colDistUnica = colDistN.some(Boolean) ? null : pickCol(intestazioni, 'Distanza', 'Distanza massima');
-  const colNote = pickCol(intestazioni, 'Note', 'Nota');
+  const colNote = pickCol(intestazioni, 'Nome', 'Nome regola', 'Note', 'Nota');
   const colAttiva = pickCol(intestazioni, 'Attiva', 'Attivo');
   if (!colArt || !colPrezzo) {
     return { regole: [], total_rows: righe.length, skipped: righe.length, warnings: ['Colonne minime mancanti: Articolo, Prezzo'] };
