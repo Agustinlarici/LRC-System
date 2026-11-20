@@ -60,7 +60,7 @@ fatturazioneRoutes.post('/sincronizza', requireManage('fatturazione'), async (c)
 // Lista despachi (dalla copia locale) dei conti configurati, con totale STR stimato.
 fatturazioneRoutes.get('/despachi', requireModule('fatturazione'), async (c) => {
   const q = z.object({ from: DataSchema.optional(), to: DataSchema.optional(), search: z.string().max(60).optional(),
-    articolo: z.string().max(60).optional(), testo: z.string().max(60).optional() }).parse(c.req.query());
+    articolo: z.string().max(60).optional(), testo: z.string().max(60).optional(), vuote: z.enum(['1']).optional() }).parse(c.req.query());
   const like = (v: string) => '%' + v.replace(/[%_\\]/g, m => '\\' + m) + '%';
   const righe = await db<RigaDb[]>`
     SELECT shipment_id, line_no, shipment_date::text, customer_account, article_code, quantity::text, order_no, descrizione
@@ -69,9 +69,10 @@ fatturazioneRoutes.get('/despachi', requireModule('fatturazione'), async (c) => 
       ${q.from ? db`AND shipment_date >= ${q.from}` : db``}
       ${q.to ? db`AND shipment_date <= ${q.to}` : db``}
       ${q.search ? db`AND shipment_id ILIKE ${like(q.search)}` : db``}
-      ${q.articolo || q.testo ? db`AND shipment_id IN (SELECT shipment_id FROM fatt_riga WHERE true
+      ${q.articolo || q.testo || q.vuote ? db`AND shipment_id IN (SELECT shipment_id FROM fatt_riga WHERE true
         ${q.articolo ? db`AND article_code ILIKE ${like(q.articolo)}` : db``}
-        ${q.testo ? db`AND descrizione ILIKE ${like(q.testo)}` : db``})` : db``}
+        ${q.testo ? db`AND descrizione ILIKE ${like(q.testo)}` : db``}
+        ${q.vuote ? db`AND btrim(descrizione) = ''` : db``})` : db``}
     ORDER BY shipment_date DESC NULLS LAST, shipment_id DESC, line_no
     LIMIT 20000`;
   const [regole, gruppi] = await Promise.all([leggiRegole(), leggiGruppi()]);

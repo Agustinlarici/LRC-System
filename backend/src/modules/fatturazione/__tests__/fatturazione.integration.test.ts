@@ -100,6 +100,7 @@ describe.skipIf(!URL)('Fatturazione — rotte', () => {
     expect(await cerca('articolo=zzz')).toEqual([]);
     expect(await cerca('testo=ppe1')).toMatchObject([{ shipment_id: 'D1' }]);
     expect(await cerca('testo=nonesiste')).toEqual([]);
+    expect(await cerca('vuote=1')).toMatchObject([{ shipment_id: 'D1' }]);          // ART2 ha la descrizione vuota
   });
 
   it('prova senza BC e stato della sincronizzazione', async () => {
