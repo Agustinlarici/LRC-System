@@ -14,6 +14,7 @@ interface Passo { cerca: string[]; finestra: number | null }
 interface Regola { id: number; nome: string; attiva: boolean; article_code: string; prezzo: number; passi: Passo[] }
 interface Bozza { articolo: string; c1: string; d1: string; c2: string; d2: string; c3: string; d3: string; prezzo: string; note: string }
 
+const RIGHE_MAX = 500;   // con migliaia di regole la tabella mostra le prime; il resto si trova con i filtri
 const VUOTA: Bozza = { articolo: '', c1: '', d1: '', c2: '', d2: '', c3: '', d3: '', prezzo: '', note: '' };
 const eur = (n: number) => n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -141,6 +142,10 @@ export function TabRegole({ manage }: { manage: boolean }) {
         )}
       </div>
 
+      {filtrate.length > RIGHE_MAX && (
+        <p className="text-sm text-muted">Mostrate le prime {RIGHE_MAX} di {filtrate.length}: usa i filtri per trovare le altre.</p>
+      )}
+
       <div className="overflow-x-auto rounded-card bg-white shadow-card">
         <table className="w-full text-sm">
           <thead>
@@ -168,7 +173,7 @@ export function TabRegole({ manage }: { manage: boolean }) {
           </thead>
           <tbody>
             {filtrate.length === 0 && <tr><td colSpan={12} className="py-6 text-center text-muted">Nessuna regola</td></tr>}
-            {filtrate.map(r => {
+            {filtrate.slice(0, RIGHE_MAX).map(r => {
               if (edit && edit.id === r.id) {
                 return (
                   <tr key={r.id} className="border-b border-stone-100 bg-accent-soft">
