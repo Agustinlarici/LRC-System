@@ -19,6 +19,20 @@ interface Riga {
 }
 interface Dettaglio { shipment_id: string; righe: Riga[]; totale_str: number }
 
+const SENZA_NOME = '(senza nome)';
+const nomeRegola = (n: string) => n.trim() || SENZA_NOME;
+/** Colonne del dettaglio: i nomi delle regole applicate nelle righe del despacho, nell'ordine in cui compaiono. */
+const colonneDi = (righe: Riga[]): string[] => {
+  const out: string[] = [];
+  for (const l of righe) for (const g of l.regole) { const n = nomeRegola(g.nome); if (!out.includes(n)) out.push(n); }
+  return out;
+};
+/** Valore unitario di una colonna per una riga (più regole con lo stesso nome si sommano); null = non applicata. */
+const valoreDi = (l: Riga, col: string): number | null => {
+  const v = l.regole.filter(g => nomeRegola(g.nome) === col);
+  return v.length === 0 ? null : Math.round(v.reduce((a, g) => a + g.prezzo, 0) * 100) / 100;
+};
+
 const eur = (n: number) => n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
 const dataOra = (iso: string) => new Date(iso).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' });
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -139,34 +153,46 @@ export default function FatturazionePage() {
                     </tr>
                     {open === r.shipment_id && (
                       <tr>
-                        <td colSpan={6} className="border-b border-stone-100 bg-stone-50 px-4 py-3">
-                          {!det ? <div className="skeleton h-16 w-full" /> : (
-                            <table className="w-full text-xs">
-                              <thead>
-                                <tr className="text-left text-muted">
-                                  <th className="py-1 pr-3 font-medium">Codice</th><th className="pr-3 font-medium">Descrizione ordine</th>
-                                  <th className="pr-3 text-right font-medium">Q.tà</th><th className="pr-3 font-medium">Regole applicate</th>
-                                  <th className="pr-3 text-right font-medium">Unitario</th><th className="text-right font-medium">Totale</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {det.righe.map(l => (
-                                  <tr key={l.line_no} className="border-t border-line align-top">
-                                    <td className="py-1.5 pr-3 font-mono">{l.article_code}</td>
-                                    <td className="pr-3">{l.descrizione || <span className="text-muted">vuota</span>}</td>
-                                    <td className="pr-3 text-right">{l.quantity}</td>
-                                    <td className="pr-3">
-                                      {l.regole.length === 0
-                                        ? <StatusBadge tone="warning">Nessuna regola</StatusBadge>
-                                        : <span className="flex flex-wrap gap-1">{l.regole.map(g => <StatusBadge key={g.id} tone="neutral">{g.nome} ({eur(g.prezzo)})</StatusBadge>)}</span>}
-                                    </td>
-                                    <td className="pr-3 text-right">{eur(l.prezzo_str)}</td>
-                                    <td className="text-right font-semibold">{eur(l.totale_riga)}</td>
+                        <td colSpan={6} className="overflow-x-auto border-b border-stone-100 bg-stone-50 px-4 py-3">
+                          {!det ? <div className="skeleton h-16 w-full" /> : (() => {
+                            const cols = colonneDi(det.righe);
+                            const somma = (c: string) => Math.round(det.righe.reduce((a, l) => a + (valoreDi(l, c) ?? 0) * l.quantity, 0) * 100) / 100;
+                            return (
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="text-left text-muted">
+                                    <th className="py-1 pr-3 font-medium">Spedizione</th><th className="pr-3 font-medium">Codice</th>
+                                    <th className="pr-3 font-medium">Descrizione ordine</th><th className="pr-3 text-right font-medium">Q.tà</th>
+                                    {cols.map(c => <th key={c} className="pr-3 text-right font-medium text-ink-900">{c}</th>)}
+                                    <th className="pr-3 text-right font-medium">Unitario</th><th className="text-right font-medium">Totale</th>
                                   </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          )}
+                                </thead>
+                                <tbody>
+                                  {det.righe.map(l => (
+                                    <tr key={l.line_no} className="border-t border-line align-top">
+                                      <td className="py-1.5 pr-3 font-mono text-muted">{det.shipment_id}</td>
+                                      <td className="pr-3 font-mono">{l.article_code}</td>
+                                      <td className="pr-3">{l.descrizione || <span className="text-muted">vuota</span>}</td>
+                                      <td className="pr-3 text-right">{l.quantity}</td>
+                                      {l.regole.length === 0
+                                        ? <td colSpan={Math.max(cols.length, 1)} className="pr-3 text-right"><StatusBadge tone="warning">Nessuna regola</StatusBadge></td>
+                                        : cols.map(c => { const v = valoreDi(l, c); return <td key={c} className="pr-3 text-right">{v == null ? <span className="text-stone-300">–</span> : eur(v)}</td>; })}
+                                      <td className="pr-3 text-right">{eur(l.prezzo_str)}</td>
+                                      <td className="text-right font-semibold">{eur(l.totale_riga)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                                <tfoot>
+                                  <tr className="border-t-2 border-line font-semibold text-ink-900">
+                                    <td className="py-1.5 pr-3" colSpan={4}>Totale (valore × quantità)</td>
+                                    {cols.map(c => <td key={c} className="pr-3 text-right">{eur(somma(c))}</td>)}
+                                    <td className="pr-3" />
+                                    <td className="text-right">{eur(det.totale_str)}</td>
+                                  </tr>
+                                </tfoot>
+                              </table>
+                            );
+                          })()}
                         </td>
                       </tr>
                     )}

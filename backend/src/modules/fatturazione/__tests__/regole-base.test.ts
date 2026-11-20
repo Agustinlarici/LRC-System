@@ -12,6 +12,12 @@ describe('regole di prezzo Fatturazione', () => {
   it('regola senza passi = prezzo base sempre', () => {
     expect(calc('qualsiasi', 'A1', [r({ prezzo: 100 })]).totale).toBe(100);
   });
+  it('regola senza nulla da cercare: il prezzo si applica sempre, anche con la descrizione vuota; con parole da cercare no', () => {
+    const base = r({ prezzo: 40, article_code: 'A1' });
+    expect(calc('', 'A1', [base]).totale).toBe(40);
+    expect(calc('   ', 'A1', [base]).totale).toBe(40);
+    expect(calc('', 'A1', [r({ prezzo: 40, article_code: 'A1', passi: [p(['PPE1'])] })]).totale).toBe(0);
+  });
   it('colore nei primi 30 caratteri', () => {
     const reg = r({ prezzo: 50, passi: [p(['@COLORI'], 30)] });
     expect(calc('Cofano rosso lucido', 'A1', [reg]).totale).toBe(50);

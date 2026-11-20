@@ -10,6 +10,14 @@ const excel = (righe: unknown[][]): Buffer => {
 const INT = ['Articolo', 'Cerca 1', 'Cerca 2', 'Cerca 3', 'Distanza', 'Prezzo', 'Note'];
 
 describe('import regole da Excel', () => {
+  it('«Nome» è il nome della regola (anche «Nome regola» o la vecchia «Note»)', () => {
+    const a = leggiRegoleExcel(excel([['Articolo', 'Nome', 'Prezzo'], ['A1', 'Verniciatura', 5]]));
+    expect(a.regole[0]!.nome).toBe('Verniciatura');
+    const b = leggiRegoleExcel(excel([['Articolo', 'Nome regola', 'Prezzo'], ['A1', 'Pelle', 5]]));
+    expect(b.regole[0]!.nome).toBe('Pelle');
+    const c = leggiRegoleExcel(excel([['Articolo', 'Prezzo', 'Note'], ['A1', 5, 'vecchio']]));
+    expect(c.regole[0]!.nome).toBe('vecchio');
+  });
   it('una distanza per ogni parola (Distanza 1, 2, 3); vuota = ovunque', () => {
     const e = leggiRegoleExcel(excel([
       ['Articolo', 'Cerca 1', 'Distanza 1', 'Cerca 2', 'Distanza 2', 'Cerca 3', 'Distanza 3', 'Prezzo'],
