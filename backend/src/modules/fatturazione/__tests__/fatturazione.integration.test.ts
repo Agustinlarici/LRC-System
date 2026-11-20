@@ -100,6 +100,9 @@ describe.skipIf(!URL)('Fatturazione — rotte', () => {
     expect(await cerca('articolo=zzz')).toEqual([]);
     expect(await cerca('testo=ppe1')).toMatchObject([{ shipment_id: 'D1' }]);
     expect(await cerca('testo=nonesiste')).toEqual([]);
+    expect(await cerca('vuote=1')).toEqual([]);                                     // nessuna descrizione vuota
+    await db`UPDATE fatt_riga SET descrizione = '  ' WHERE shipment_id = 'D1' AND line_no = 2`;
+    expect(await cerca('vuote=1')).toMatchObject([{ shipment_id: 'D1' }]);          // ART2 ora vuota (anche solo spazi)
   });
 
   it('prova senza BC e stato della sincronizzazione', async () => {
