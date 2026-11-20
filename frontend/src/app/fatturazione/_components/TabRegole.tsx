@@ -51,6 +51,7 @@ export function TabRegole({ manage }: { manage: boolean }) {
   const [fArt, setFArt] = useState('');
   const [fParola, setFParola] = useState('');
   const [fNote, setFNote] = useState('');
+  const [fCerca, setFCerca] = useState<'' | 'vuoto' | 'pieno'>('');   // regole senza parole da cercare (si applicano sempre) / con parole
 
   const load = useCallback(() => {
     api.get<Regola[]>('/api/fatturazione/regole').then(setRegole).catch(e => toast.error(errMsg(e))).finally(() => setLoading(false));
@@ -75,16 +76,19 @@ export function TabRegole({ manage }: { manage: boolean }) {
     void esegui(async () => { await api.put(`/api/fatturazione/regole/${r.id}`, c.body); setEdit(null); }, 'Regola salvata');
   }
 
-  const hasFilter = !!(fArt.trim() || fParola.trim() || fNote.trim());
+  const hasFilter = !!(fArt.trim() || fParola.trim() || fNote.trim() || fCerca);
   const filtrate = useMemo(() => {
     const a = fArt.trim().toUpperCase(), p = fParola.trim().toUpperCase(), n = fNote.trim().toUpperCase();
     return regole.filter(r => {
       if (a && !r.article_code.toUpperCase().includes(a)) return false;
       if (p && !r.passi.some(x => x.cerca.some(w => w.toUpperCase().includes(p)))) return false;
       if (n && !r.nome.toUpperCase().includes(n)) return false;
+      const senzaParole = !r.passi.some(x => x.cerca.length > 0);
+      if (fCerca === 'vuoto' && !senzaParole) return false;
+      if (fCerca === 'pieno' && senzaParole) return false;
       return true;
     });
-  }, [regole, fArt, fParola, fNote]);
+  }, [regole, fArt, fParola, fNote, fCerca]);
 
   function eliminaFiltrate() {
     if (!hasFilter || filtrate.length === 0) return;
@@ -166,7 +170,14 @@ export function TabRegole({ manage }: { manage: boolean }) {
             <tr className="border-b border-line">
               <th className="px-4 pb-2"><input className={filtro} value={fArt} onChange={e => setFArt(e.target.value)} placeholder="Filtra articolo" aria-label="Filtra per articolo" /></th>
               <th className="px-4 pb-2"><input className={filtro} value={fNote} onChange={e => setFNote(e.target.value)} placeholder="Filtra nome" aria-label="Filtra per nome" /></th>
-              <th className="px-4 pb-2" colSpan={6}><input className={filtro} value={fParola} onChange={e => setFParola(e.target.value)} placeholder="Filtra per parola" aria-label="Filtra per parola cercata" /></th>
+              <th className="px-4 pb-2" colSpan={6}>
+                <div className="flex gap-2">
+                  <input className={filtro} value={fParola} onChange={e => setFParola(e.target.value)} placeholder="Filtra per parola" aria-label="Filtra per parola cercata" />
+                  <select className={filtro} value={fCerca} onChange={e => setFCerca(e.target.value as '' | 'vuoto' | 'pieno')} aria-label="Filtra per cerca vuoto o pieno">
+                    <option value="">Cerca: tutte</option><option value="vuoto">Cerca vuoto (sempre applicata)</option><option value="pieno">Cerca con parole</option>
+                  </select>
+                </div>
+              </th>
               <th className="px-4 pb-2" />
               <th className="px-4 pb-2" />
               <th className="px-4 pb-2" />
