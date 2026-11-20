@@ -157,12 +157,12 @@ export function TabRegole({ manage }: { manage: boolean }) {
             <tr className="border-b border-line text-[11px] uppercase tracking-wider text-muted">
               <th className="px-4 py-2.5 text-left font-medium">Articolo</th>
               <th className="px-4 py-2.5 text-left font-medium">Nome</th>
-              <th className="px-4 py-2.5 text-left font-medium">Cerca</th>
-              <th className="px-2 py-2.5 text-left font-medium">Dist.</th>
-              <th className="px-4 py-2.5 text-left font-medium">Poi cerca</th>
-              <th className="px-2 py-2.5 text-left font-medium">Dist.</th>
-              <th className="px-4 py-2.5 text-left font-medium">Poi cerca</th>
-              <th className="px-2 py-2.5 text-left font-medium">Dist.</th>
+              <th className="px-2 py-2.5 text-left font-medium">Distanza 1</th>
+              <th className="px-4 py-2.5 text-left font-medium">Cerca 1</th>
+              <th className="px-2 py-2.5 text-left font-medium">Distanza 2</th>
+              <th className="px-4 py-2.5 text-left font-medium">Cerca 2</th>
+              <th className="px-2 py-2.5 text-left font-medium">Distanza 3</th>
+              <th className="px-4 py-2.5 text-left font-medium">Cerca 3</th>
               <th className="px-4 py-2.5 text-right font-medium">Prezzo</th>
               <th className="px-4 py-2.5 text-center font-medium">Attiva</th>
               <th className="px-4 py-2.5" />
@@ -193,8 +193,8 @@ export function TabRegole({ manage }: { manage: boolean }) {
                     <td className="px-2 py-2"><input className={cell} value={edit.b.note} onChange={e => setE({ note: e.target.value })} /></td>
                     {([['c1', 'd1'], ['c2', 'd2'], ['c3', 'd3']] as const).map(([c, d]) => (
                       <React.Fragment key={c}>
-                        <td className="px-2 py-2"><input className={cell} value={edit.b[c]} onChange={e => setE({ [c]: e.target.value })} /></td>
                         <td className="px-2 py-2"><input className={`${cell} !w-16`} type="number" min={1} value={edit.b[d]} onChange={e => setE({ [d]: e.target.value })} /></td>
+                        <td className="px-2 py-2"><input className={cell} value={edit.b[c]} onChange={e => setE({ [c]: e.target.value })} /></td>
                       </React.Fragment>
                     ))}
                     <td className="px-2 py-2"><input className={`${cell} text-right`} inputMode="decimal" value={edit.b.prezzo} onChange={e => setE({ prezzo: e.target.value })} /></td>
@@ -213,8 +213,8 @@ export function TabRegole({ manage }: { manage: boolean }) {
                   <td className="max-w-[200px] truncate px-4 py-2 font-medium" title={r.nome}>{r.nome || <span className="italic text-muted">senza nome</span>}</td>
                   {celle.map((p, i) => (
                     <React.Fragment key={i}>
-                      <td className="px-4 py-2 text-muted">{p ? p.cerca.join(', ') : nd}</td>
                       <td className="px-2 py-2 text-muted">{p?.finestra ?? nd}</td>
+                      <td className="px-4 py-2 text-muted">{p ? p.cerca.join(', ') : nd}</td>
                     </React.Fragment>
                   ))}
                   <td className="whitespace-nowrap px-4 py-2 text-right font-medium">{eur(r.prezzo)}</td>
