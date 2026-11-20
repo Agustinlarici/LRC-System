@@ -24,15 +24,16 @@ export async function sincronizza(): Promise<number> {
   return sincronizzaGiaAvviata();
 }
 
-/** Da chiamare dopo avviaSync() riuscito. */
-export async function sincronizzaGiaAvviata(): Promise<number> {
+/** Da chiamare dopo avviaSync() riuscito. Senza periodo: ultimi 90 giorni; con periodo (da/a, YYYY-MM-DD) rilegge solo quei despachi da BC. */
+export async function sincronizzaGiaAvviata(periodo?: { da?: string; a?: string }): Promise<number> {
   try {
     const conti = (await db<{ conto: string }[]>`SELECT conto FROM fatt_conto`).map(r => r.conto);
-    const da = new Date(Date.now() - GIORNI * 86_400_000).toISOString().slice(0, 10);
+    const da = periodo?.da ?? new Date(Date.now() - GIORNI * 86_400_000).toISOString().slice(0, 10);
+    const a = periodo?.a;
     // A pagine: un limite unico taglierebbe in silenzio i despachi più vecchi.
     const spedizioni: Awaited<ReturnType<typeof getShipments>> = [];
     for (let offset = 0; ; offset += PAGINA) {
-      const pagina = await getShipments(conti, da, undefined, { limit: PAGINA, offset });
+      const pagina = await getShipments(conti, da, a, { limit: PAGINA, offset });
       spedizioni.push(...pagina);
       if (pagina.length < PAGINA) break;
     }

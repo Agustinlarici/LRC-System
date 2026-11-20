@@ -48,6 +48,20 @@ describe.skipIf(!URL)('Fatturazione — sincronizzazione', () => {
     expect(await sync.sincronizza()).toBe(503);                                   // 1 riga per despacho (solo D1 ne ha 2)
   });
 
+  it('con un periodo rilegge da BC solo quelle date (da/a)', async () => {
+    const { getShipments } = await import('../../edi/dynamics-client.js');
+    vi.mocked(getShipments).mockClear();
+    await sync.sincronizza();
+    expect(vi.mocked(getShipments).mock.calls[0]![2]).toBeUndefined();            // normale: nessuna data finale
+    await db`UPDATE fatt_sync_stato SET in_corso_da = NULL`;
+    vi.mocked(getShipments).mockClear();
+    expect(await sync.avviaSync()).toBe(true);
+    await sync.sincronizzaGiaAvviata({ da: '2026-01-01', a: '2026-01-31' });
+    const call = vi.mocked(getShipments).mock.calls[0]!;
+    expect(call[1]).toBe('2026-01-01');
+    expect(call[2]).toBe('2026-01-31');
+  });
+
   it('una sola sincronizzazione alla volta', async () => {
     await db`UPDATE fatt_sync_stato SET in_corso_da = now()`;
     expect(await sync.sincronizza()).toBe(-1);
