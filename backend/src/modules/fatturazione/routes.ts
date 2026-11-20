@@ -47,8 +47,12 @@ fatturazioneRoutes.get('/stato', requireModule('fatturazione'), async (c) => {
 // Sincronizzazione a mano (parte in background; lo stato si legge da /stato).
 fatturazioneRoutes.post('/sincronizza', requireManage('fatturazione'), async (c) => {
   const user = c.get('user');
+  // Periodo facoltativo: rilegge da BC solo i despachi di quelle date (senza corpo = ultimi 90 giorni).
+  const periodo = z.object({ da: DataSchema.optional(), a: DataSchema.optional() })
+    .refine(p => !p.da || !p.a || p.da <= p.a, { message: 'La data iniziale deve precedere quella finale' })
+    .parse(await c.req.json().catch(() => ({})));
   if (!(await avviaSync())) return c.json({ avviata: false });
-  sincronizzaGiaAvviata().catch(err => logger.error({ err }, 'fatturazione: sincronizzazione manuale fallita'));
+  sincronizzaGiaAvviata(periodo).catch(err => logger.error({ err }, 'fatturazione: sincronizzazione manuale fallita'));
   await auditLog({ userId: user.id, username: user.username, action: 'fatturazione.sincronizza', entity: 'fatt_riga' });
   return c.json({ avviata: true });
 });

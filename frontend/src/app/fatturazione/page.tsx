@@ -79,9 +79,9 @@ export default function FatturazionePage() {
     return () => clearInterval(t);
   }, [stato?.in_corso, leggiStato, load]);
 
-  async function sincronizza() {
+  async function sincronizza(periodo?: { da?: string; a?: string }) {
     try {
-      const r = await api.post<{ avviata: boolean }>('/api/fatturazione/sincronizza');
+      const r = await api.post<{ avviata: boolean }>('/api/fatturazione/sincronizza', periodo ?? {});
       if (r.avviata) toast.info('Sincronizzazione avviata'); else toast.info('Sincronizzazione già in corso');
       await leggiStato();
     } catch (e) { toast.error(errMsg(e)); }
@@ -113,7 +113,7 @@ export default function FatturazionePage() {
         actions={manage && (
           <>
             <Button href="/fatturazione/impostazioni" className="group-gear"><IconSettings className="gear h-4 w-4" />Impostazioni</Button>
-            <Button variant="primary" disabled={stato?.in_corso} onClick={sincronizza}>{stato?.in_corso ? 'Sincronizzazione…' : 'Sincronizza ora'}</Button>
+            <Button variant="primary" disabled={stato?.in_corso} onClick={() => sincronizza()}>{stato?.in_corso ? 'Sincronizzazione…' : 'Sincronizza ora'}</Button>
           </>
         )}
       />
@@ -125,6 +125,12 @@ export default function FatturazionePage() {
           <div><label className="label">Da</label><input type="date" className="input" value={from} onChange={e => setFrom(e.target.value)} /></div>
           <div><label className="label">A</label><input type="date" className="input" value={to} onChange={e => setTo(e.target.value)} /></div>
           <div><label className="label">N. despacho</label><input className="input" placeholder="Cerca…" value={search} onChange={e => setSearch(e.target.value)} /></div>
+          {manage && (
+            <Button disabled={stato?.in_corso || (!from && !to)} onClick={() => sincronizza({ da: from || undefined, a: to || undefined })}
+              title="Rilegge da Business Central i despachi del periodo Da/A. I prezzi seguono sempre le regole attuali.">
+              Rileggi da BC questo periodo
+            </Button>
+          )}
         </div>
 
         {loading ? (
