@@ -92,6 +92,14 @@ describe.skipIf(!URL)('Fatturazione — rotte', () => {
     expect(det.righe[0]).toMatchObject({ prezzo_str: 125 });
     expect(det.righe[0]!.regole).toHaveLength(2);
     expect((await chiama('GET', '/despachi/D2', { token: admin })).status).toBe(404);
+    expect(det).toMatchObject({ shipment_id: 'D1' });
+    expect((det as unknown as { customer_account: string }).customer_account).toBeTruthy();
+    // filtri per codice articolo e testo: il despacho resta intero (2 righe), si trovano solo quelli che hanno una riga corrispondente
+    const cerca = async (qs: string) => (await (await chiama('GET', `/despachi?${qs}`, { token: admin })).json()) as { shipment_id: string; line_count: number }[];
+    expect(await cerca('articolo=ART2')).toMatchObject([{ shipment_id: 'D1', line_count: 2 }]);
+    expect(await cerca('articolo=zzz')).toEqual([]);
+    expect(await cerca('testo=ppe1')).toMatchObject([{ shipment_id: 'D1' }]);
+    expect(await cerca('testo=nonesiste')).toEqual([]);
   });
 
   it('prova senza BC e stato della sincronizzazione', async () => {

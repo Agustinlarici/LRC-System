@@ -59,14 +59,19 @@ fatturazioneRoutes.post('/sincronizza', requireManage('fatturazione'), async (c)
 
 // Lista despachi (dalla copia locale) dei conti configurati, con totale STR stimato.
 fatturazioneRoutes.get('/despachi', requireModule('fatturazione'), async (c) => {
-  const q = z.object({ from: DataSchema.optional(), to: DataSchema.optional(), search: z.string().max(60).optional() }).parse(c.req.query());
+  const q = z.object({ from: DataSchema.optional(), to: DataSchema.optional(), search: z.string().max(60).optional(),
+    articolo: z.string().max(60).optional(), testo: z.string().max(60).optional() }).parse(c.req.query());
+  const like = (v: string) => '%' + v.replace(/[%_\\]/g, m => '\\' + m) + '%';
   const righe = await db<RigaDb[]>`
     SELECT shipment_id, line_no, shipment_date::text, customer_account, article_code, quantity::text, order_no, descrizione
     FROM fatt_riga
     WHERE customer_account IN (SELECT conto FROM fatt_conto)
       ${q.from ? db`AND shipment_date >= ${q.from}` : db``}
       ${q.to ? db`AND shipment_date <= ${q.to}` : db``}
-      ${q.search ? db`AND shipment_id ILIKE ${'%' + q.search.replace(/[%_\\]/g, m => '\\' + m) + '%'}` : db``}
+      ${q.search ? db`AND shipment_id ILIKE ${like(q.search)}` : db``}
+      ${q.articolo || q.testo ? db`AND shipment_id IN (SELECT shipment_id FROM fatt_riga WHERE true
+        ${q.articolo ? db`AND article_code ILIKE ${like(q.articolo)}` : db``}
+        ${q.testo ? db`AND descrizione ILIKE ${like(q.testo)}` : db``})` : db``}
     ORDER BY shipment_date DESC NULLS LAST, shipment_id DESC, line_no
     LIMIT 20000`;
   const [regole, gruppi] = await Promise.all([leggiRegole(), leggiGruppi()]);
@@ -99,7 +104,7 @@ fatturazioneRoutes.get('/despachi/:id', requireModule('fatturazione'), async (c)
     return { line_no: r.line_no, article_code: r.article_code, quantity, order_no: r.order_no, descrizione: r.descrizione,
              prezzo_str: calc.totale, totale_riga: arrotonda(calc.totale * quantity), regole: calc.applicate };
   });
-  return c.json({ shipment_id: id, righe: out, totale_str: arrotonda(out.reduce((s, r) => s + r.totale_riga, 0)) });
+  return c.json({ shipment_id: id, shipment_date: righe[0]!.shipment_date, customer_account: righe[0]!.customer_account, righe: out, totale_str: arrotonda(out.reduce((s, r) => s + r.totale_riga, 0)) });
 });
 
 // Prova di una descrizione, senza BC (per scrivere e controllare le regole).
