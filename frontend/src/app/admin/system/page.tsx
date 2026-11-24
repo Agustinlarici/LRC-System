@@ -148,7 +148,7 @@ interface FirstSyncStatus {
 
 const SYNC_MODES: { key: SyncMode; label: string; description: string }[] = [
   { key: 'incremental', label: 'Incrementale', description: 'Legge solo i nuovi eventi a ogni ciclo (normale)' },
-  { key: 'full',        label: 'Ultimi 3 mesi', description: 'Rilegge di continuo gli ultimi 90 giorni, senza incrementale. Pesante per WebThron' },
+  { key: 'full',        label: 'Ultimi 3 mesi', description: 'Rilegge gli ultimi 90 giorni ogni 10 minuti (salta se la precedente è ancora in corso), senza incrementale. Pesante per WebThron' },
   { key: 'mixed',       label: 'Mista',         description: 'Incrementale a ogni ciclo + ogni 30 minuti rilegge gli ultimi 90 giorni' },
 ];
 

@@ -229,7 +229,7 @@ serve({ fetch: app.fetch, port }, async (info) => {
       cycle++;
       // Modalità scelta in Sistema → Avanzata: incrementale, 90 giorni, o mista
       const mode = await getSyncMode();
-      const plan = planTick(mode, cycle, cyclesPer30Min, getFirstSyncStatus().running);
+      const plan = planTick(mode, cycle, syncSeconds, getFirstSyncStatus().running);
       if (plan.full && await isIKnowEnabled('iknow_backfill_enabled')) {
         logger.info(`[Startup] Modalità ${mode}: parte la carica degli ultimi ${FULL_SYNC_DAYS} giorni`);
         startFirstSync({ days: FULL_SYNC_DAYS, pauseSec: FULL_SYNC_PAUSE_SEC });
