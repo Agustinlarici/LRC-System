@@ -216,7 +216,8 @@ export type LineaCombo = { fase: string; modello: string; componente: string };
 // ─── Date filter modes ────────────────────────────────────────────────────────
 
 type DateFilter =
-  | { mode: 'since'; since: Date; modifiedSince?: Date }  // datain > ?  (+ OR lastup > ? e senza cancellate, se modifiedSince)
+  | { mode: 'since'; since: Date }     // datain > ?
+  | { mode: 'modified'; since: Date }  // lastup > ?, senza cancellate (schede modificate)
   | { mode: 'range'; from: string; to: string; sliceHours?: number };  // giorni [from, to] letti a rebanadine di datain (indice), backfill
 
 /** Ore per rebanadina nelle letture di giorni interi: ~1000 documenti al massimo, query da pochi ms. */
@@ -349,14 +350,13 @@ export async function queryWebthronEvents(
   };
 
   if (dateFilter.mode === 'since') {
-    // Con modifiedSince: schede nuove (datain) OR modificate (lastup) nella finestra, senza quelle cancellate
-    if (dateFilter.modifiedSince) {
-      return fetchRows(
-        buildSql('AND (ubi.datain > ? OR ubi.lastup > ?)', 5000, true),
-        [dateFilter.since, dateFilter.modifiedSince],
-      );
-    }
     return fetchRows(buildSql('AND ubi.datain > ?', 5000), [dateFilter.since]);
+  }
+
+  // Schede modificate (lastup > since), senza quelle cancellate. Nessun filtro su `datain`
+  // (coprirebbe quasi tutta la tabella): le schede nuove già lette sono un aggiornamento senza effetto.
+  if (dateFilter.mode === 'modified') {
+    return fetchRows(buildSql('AND ubi.lastup > ?', 5000, true), [dateFilter.since]);
   }
 
   // Giorni interi: query su `datain` (indice), con la pausa della guardia tra una e l'altra.
