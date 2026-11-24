@@ -4,7 +4,7 @@ import { startScheduler } from './scheduler.js';
 import { startWatcher } from './watcher/watcher.service.js';
 import { avviaCodaIa } from './modules/ferrari/ia/worker.js';
 import { startBufferCache, bufferFullRefresh } from './modules/buffer/cache.js';
-import { startExecutiveCache, executiveRefresh } from './modules/monitor/executive-cache.js';
+import { startExecutiveCache, executiveRefresh, executiveReloadFromPg } from './modules/monitor/executive-cache.js';
 import { detectStopsAllLines } from './modules/monitor/stop-detector.js';
 import { refreshLookupTables } from './modules/monitor/pg-webthron-sync.js';
 import { setNextRun } from './lib/sync-stats.js';
@@ -13,7 +13,9 @@ import { startTelegramBot } from './lib/telegram-bot.js';
 import { applyDefaultsForDate } from './modules/monitor/auto-turni.js';
 import { logger } from './lib/logger.js';
 import { db } from './db/client.js';
-import { setIKnowFlags } from './lib/system-flags.js';
+import { setIKnowFlags, isIKnowEnabled } from './lib/system-flags.js';
+import { getSyncMode, planTick, FULL_SYNC_DAYS, FULL_SYNC_PAUSE_SEC } from './modules/monitor/sync-mode.js';
+import { startFirstSync, getFirstSyncStatus } from './modules/monitor/first-sync.js';
 
 const port = parseInt(process.env.PORT || '3001', 10);
 
@@ -225,7 +227,22 @@ serve({ fetch: app.fetch, port }, async (info) => {
     let cycle = 0;
     setInterval(async () => {
       cycle++;
-      await executiveRefresh();
+      // Modalità scelta in Sistema → Avanzata: incrementale, 90 giorni, o mista
+      const mode = await getSyncMode();
+      const plan = planTick(mode, cycle, syncSeconds, getFirstSyncStatus().running);
+      let runIncremental = plan.incremental;
+      if (plan.full) {
+        if (await isIKnowEnabled('iknow_backfill_enabled')) {
+          logger.info(`[Startup] Modalità ${mode}: parte la carica degli ultimi ${FULL_SYNC_DAYS} giorni`);
+          try { startFirstSync({ days: FULL_SYNC_DAYS, pauseSec: FULL_SYNC_PAUSE_SEC }); }
+          catch (e) { logger.warn(`[Startup] Carica non avviata: ${e instanceof Error ? e.message : e}`); runIncremental = mode === 'mixed'; }
+        } else {
+          // Senza «Backfill manuali» la carica non può partire: in mista si continua con l'incrementale
+          runIncremental = mode === 'mixed';
+        }
+      }
+      if (runIncremental) await executiveRefresh();
+      else await executiveReloadFromPg();
       detectStopsAllLines().catch(() => {});
       setNextRun('sync_incremental', new Date(Date.now() + syncSeconds * 1000));
 

@@ -50,6 +50,45 @@ export function pastDays(today: string, count: number): string[] {
 }
 
 /**
+ * Raggruppa giorni (dal più recente al più vecchio) in settimane di 7 giorni consecutivi, dalla più
+ * recente alla più vecchia. L'ultima può avere meno di 7 giorni. Ogni voce è l'intervallo
+ * [from, to] (YYYY-MM-DD, estremi inclusi).
+ */
+export function weeksOf(daysDesc: string[]): Array<{ from: string; to: string }> {
+  const out: Array<{ from: string; to: string }> = [];
+  for (let i = 0; i < daysDesc.length; i += 7) {
+    const chunk = daysDesc.slice(i, i + 7);
+    out.push({ from: chunk[chunk.length - 1], to: chunk[0] });
+  }
+  return out;
+}
+
+/**
+ * Divide una rebanadina [from, to) di `datain` ("YYYY-MM-DD HH:MM:SS", ora naive) in due metà
+ * contigue, a ore intere. Ritorna null se è già più corta o uguale a `minHours`.
+ */
+export function splitSlice(slice: { from: string; to: string }, minHours: number): [{ from: string; to: string }, { from: string; to: string }] | null {
+  const parse = (v: string) => Date.parse(v.replace(' ', 'T') + 'Z');
+  const a = parse(slice.from);
+  const b = parse(slice.to);
+  const hours = (b - a) / 3_600_000;
+  if (!(hours > minHours)) return null;
+  const mid = a + Math.max(1, Math.floor(hours / 2)) * 3_600_000;
+  return [{ from: slice.from, to: fmt(mid) }, { from: fmt(mid), to: slice.to }];
+}
+
+/**
+ * Giorno di produzione (YYYY-MM-DD) di una riga letta da WebThron: lo stesso che dà
+ * `dayBoundsNaive` (da 23:00 del giorno prima a 23:00). Il pool legge `datain` con fuso `local`,
+ * quindi si usano i componenti locali del Date: restituiscono l'ora "naive" originale in
+ * qualunque fuso giri il server.
+ */
+export function productionDayOf(d: Date): string {
+  const naiveMs = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds());
+  return new Date(naiveMs + 3_600_000).toISOString().slice(0, 10);
+}
+
+/**
  * Giorni da rileggere nella rilettura notturna, dal più recente. Con `includeToday` (la lettura
  * delle 11:30) parte da oggi, altrimenti da ieri (quella delle 01:00). `count` conta tutti i giorni.
  */

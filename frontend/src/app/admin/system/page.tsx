@@ -131,13 +131,132 @@ interface IKnowFlags {
 
 const IKNOW_QUERIES: { key: keyof Omit<IKnowFlags, 'iknow_enabled'>; label: string; description: string }[] = [
   { key: 'iknow_andon_enabled',    label: 'Andon / Monitor — sincronizzazione continua', description: 'Legge i nuovi eventi di produzione da iKnow — ogni 5 minuti' },
-  { key: 'iknow_nightly_enabled',  label: 'Rilettura notturna',                           description: 'Rilegge gli ultimi 2 giorni per sistemare i dati — ogni giorno alle 11:30 e ogni notte alle 01:00' },
+  { key: 'iknow_nightly_enabled',  label: 'Rilettura notturna',                           description: 'Modo incrementale: rilegge gli ultimi 3 mesi per sistemare i dati — ogni giorno alle 11:30 e ogni notte alle 01:00' },
   { key: 'iknow_lookup_enabled',   label: 'Fasi e combinazioni',                          description: 'Aggiorna fasi, modelli e componenti — ogni notte alle 02:00, a mano da Fasi iKnow e all’avvio se le liste sono vuote' },
   { key: 'iknow_buffer_enabled',   label: 'Buffer',                                       description: 'Ricalcola i seriali in pre-area dallo storico locale — ogni 30 minuti' },
   { key: 'iknow_bom_enabled',      label: 'BOM notturno',                                 description: 'Copia i BOM di iKnow (vista v_iknow_bom per Power BI) — una volta a notte alle 04:15; parte spento' },
   { key: 'iknow_andon_lastup_enabled', label: 'Sync continua — anche schede modificate', description: 'Oltre alle schede nuove (datain) legge quelle modificate (lastup) negli ultimi minuti ed esclude le cancellate (deletedubidocum). Parte spento: provare prima con EXPLAIN' },
   { key: 'iknow_backfill_enabled', label: 'Backfill manuali',                            description: 'Carica iniziale dello storico (pulsante in Aggiornamenti sistema → Azioni manuali), Heatmap, Lead time e correzione commesse (solo su richiesta)' },
 ];
+
+type SyncMode = 'incremental' | 'full' | 'mixed';
+
+interface FirstSyncStatus {
+  running: boolean; cancelled: boolean; total: number; done: number;
+  current: string; rows: number; errors: string[];
+}
+
+const SYNC_MODES: { key: SyncMode; label: string; description: string }[] = [
+  { key: 'incremental', label: 'Incrementale', description: 'Nuovi eventi ogni 5 minuti. Alle 11:30 e alle 01:00 rilegge gli ultimi 3 mesi (una query per settimana)' },
+  { key: 'full',        label: 'Solo ultimi 3 mesi', description: 'Rilegge gli ultimi 3 mesi ogni 10 minuti (una query per settimana), senza incrementale. Pesante per WebThron' },
+  { key: 'mixed',       label: 'Mista',         description: 'Incrementale ogni 5 minuti + ogni ora rilegge gli ultimi 3 mesi. L’incrementale resta fermo finché la lettura non è finita' },
+];
+
+function SyncModeCard({ flags }: { flags: IKnowFlags }) {
+  const [mode,   setMode]   = useState<SyncMode | null>(null);
+  const [status, setStatus] = useState<FirstSyncStatus | null>(null);
+  const [busy,   setBusy]   = useState(false);
+  const [msg,    setMsg]    = useState('');
+
+  useEffect(() => {
+    apiFetch('/api/system/sync-mode').then(r => r.json() as Promise<{ mode: SyncMode }>)
+      .then(d => setMode(d.mode)).catch(() => setMsg('Errore caricamento modalità'));
+  }, []);
+
+  // Stato della carica: si aggiorna ogni 3 s finché è in corso
+  const running = status?.running ?? false;
+  useEffect(() => {
+    let stop = false;
+    const load = () => apiFetch('/api/system/first-sync').then(r => r.json() as Promise<FirstSyncStatus>)
+      .then(d => { if (!stop) setStatus(d); }).catch(() => {});
+    void load();
+    if (!running) return () => { stop = true; };
+    const t = setInterval(load, 3000);
+    return () => { stop = true; clearInterval(t); };
+  }, [running]);
+
+  async function choose(next: SyncMode) {
+    if (next === mode) return;
+    setBusy(true); setMsg('');
+    try {
+      const res = await apiFetch('/api/system/sync-mode', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: next }),
+      });
+      if (!res.ok) throw new Error();
+      setMode(((await res.json()) as { mode: SyncMode }).mode);
+    } catch { setMsg('Errore salvataggio modalità'); }
+    finally { setBusy(false); }
+  }
+
+  async function launch() {
+    setBusy(true); setMsg('');
+    try {
+      const res = await apiFetch('/api/system/first-sync?days=90', { method: 'POST' });
+      const d = await res.json() as { message?: string; status?: FirstSyncStatus };
+      setMsg(d.message ?? '');
+      if (d.status) setStatus(d.status);
+    } catch { setMsg('Errore avvio'); }
+    finally { setBusy(false); }
+  }
+
+  async function cancel() {
+    await apiFetch('/api/system/first-sync/cancel', { method: 'POST' }).catch(() => {});
+    setMsg('Si fermerà dopo il giorno in corso');
+  }
+
+  if (!mode) return null;
+  const masterOff = !flags.iknow_enabled;
+  const needsBackfill = mode !== 'incremental' && !flags.iknow_backfill_enabled;
+
+  return (
+    <div className="card">
+      <h2 className="font-semibold text-gray-800 mb-1">Modalità sincronizzazione WebThron</h2>
+      <p className="text-xs text-gray-500 mb-4">
+        Come si aggiorna lo storico. Le letture dei 3 mesi di «Solo 3 mesi» e «Mista» richiedono il toggle «Backfill manuali»; quelle delle 11:30 e 01:00 il toggle «Rilettura notturna».
+      </p>
+      <div className="divide-y divide-gray-100">
+        {SYNC_MODES.map(m => (
+          <label key={m.key} className="flex items-start gap-3 py-3 cursor-pointer">
+            <input type="radio" name="sync-mode" className="mt-1" checked={mode === m.key}
+              disabled={busy} onChange={() => void choose(m.key)} />
+            <span>
+              <span className="block text-sm font-medium text-gray-800">{m.label}</span>
+              <span className="block text-xs text-gray-500">{m.description}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      {needsBackfill && (
+        <p className="mt-3 text-xs text-orange-600 bg-orange-50 border border-orange-200 rounded px-3 py-2">
+          ⚠ «Backfill manuali» è disattivato: la carica dei 3 mesi non partirà.
+        </p>
+      )}
+      <div className="mt-4 pt-4 border-t border-gray-100">
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => void launch()}
+            disabled={busy || running || masterOff || !flags.iknow_backfill_enabled}
+            className="px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-sm text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+            {running ? '⟳ Carica in corso...' : 'Lancia ora gli ultimi 3 mesi'}
+          </button>
+          {running && (
+            <button type="button" onClick={() => void cancel()}
+              className="px-3 py-2 rounded-lg border border-red-200 text-sm text-red-600 hover:bg-red-50">Ferma</button>
+          )}
+        </div>
+        {status && (running || status.done > 0) && (
+          <p className="mt-2 text-xs text-gray-500">
+            {status.done}/{status.total} settimane{status.current ? ` — ora: ${status.current}` : ''} — {status.rows} eventi
+            {status.errors.length > 0 ? ` — ${status.errors.length} errori` : ''}
+          </p>
+        )}
+        {msg && <p className="mt-2 text-xs text-gray-600">{msg}</p>}
+        {(masterOff || !flags.iknow_backfill_enabled) && (
+          <p className="mt-2 text-xs text-gray-400">Serve attivare «iKnow — Generale» e «Backfill manuali».</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function AvanzataTab() {
   const [flags,  setFlags]  = useState<IKnowFlags | null>(null);
@@ -200,6 +319,8 @@ function AvanzataTab() {
           <Toggle checked={flags.iknow_bucci_enabled} onChange={v => toggle('iknow_bucci_enabled', v)} disabled={masterOff || saving === 'iknow_bucci_enabled'} />
         </div>
       </div>
+
+      <SyncModeCard flags={flags} />
 
       <div className="card">
         <h2 className="font-semibold text-gray-800 mb-1">Query iKnow per modulo</h2>

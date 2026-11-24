@@ -57,6 +57,19 @@ export async function executiveRefresh(): Promise<void> {
 }
 
 /**
+ * Rilegge la cache solo da PostgreSQL, senza interrogare WebThron.
+ * Serve in modalità «full» (nessun incrementale): i dati arrivano dalla carica dei 90 giorni.
+ */
+export async function executiveReloadFromPg(): Promise<void> {
+  try {
+    const rows = await getProdRowsFromPG();
+    cache = { rows, updatedAt: new Date() };
+  } catch (err) {
+    logger.error(`[ExecutiveCache] Errore rilettura da PG: ${err}`);
+  }
+}
+
+/**
  * Initial cache population at startup.
  * Reads from PostgreSQL only — no WebThron query at startup.
  * The first WebThron sync happens at the first 5-min tick.
