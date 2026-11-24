@@ -4,7 +4,7 @@ import { snapshotDayFromHistory } from './modules/dashboards/heatmap.js';
 import { refreshLookupTables } from './modules/monitor/pg-webthron-sync.js';
 import { syncBom } from './modules/monitor/bom-sync.js';
 import { daysToReread } from './modules/monitor/webthron-time.js';
-import { getSyncMode, FULL_SYNC_DAYS, FULL_SYNC_PAUSE_SEC } from './modules/monitor/sync-mode.js';
+import { getSyncMode, BACKFILL_DAYS, FULL_SYNC_PAUSE_SEC } from './modules/monitor/sync-mode.js';
 import { startFirstSync, getFirstSyncStatus, waitForFirstSync } from './modules/monitor/first-sync.js';
 import { isIKnowEnabled } from './lib/system-flags.js';
 import { checkSpmaDelays } from './modules/spma/delay-checker.js';
@@ -64,7 +64,7 @@ export function startScheduler() {
       logger.info('[scheduler] Rilettura WebThron degli ultimi 180 giorni...');
       startRun('sync_full_day');
       try {
-        startFirstSync({ days: FULL_SYNC_DAYS, pauseSec: FULL_SYNC_PAUSE_SEC, flag: 'iknow_nightly_enabled' });
+        startFirstSync({ days: BACKFILL_DAYS, pauseSec: FULL_SYNC_PAUSE_SEC, flag: 'iknow_nightly_enabled' });
         await waitForFirstSync();
         const st = getFirstSyncStatus();
         if (st.errors.length > 0 && st.errors.length >= st.done) failRun('sync_full_day', new Error(st.errors[st.errors.length - 1]));

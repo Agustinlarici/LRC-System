@@ -227,7 +227,7 @@ serve({ fetch: app.fetch, port }, async (info) => {
     let cycle = 0;
     setInterval(async () => {
       cycle++;
-      // Modalità scelta in Sistema → Avanzata: incrementale, 180 giorni, o mista
+      // Modalità scelta in Sistema → Avanzata: incrementale, 90 giorni, o mista
       const mode = await getSyncMode();
       const plan = planTick(mode, cycle, syncSeconds, getFirstSyncStatus().running);
       let runIncremental = plan.incremental;
