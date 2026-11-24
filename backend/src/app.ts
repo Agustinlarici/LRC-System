@@ -27,6 +27,7 @@ import { activityRoutes } from './modules/activity/routes.js';
 import { progettiRoutes } from './modules/progetti/routes.js';
 import { qualityControlStationRoutes, qualityControlStationDeviceRoutes } from './modules/quality-control-station/routes.js';
 import { iknowRoutes } from './modules/quality-control-station/iknow.js';
+import { iaLiveRoutes } from './modules/ia-live/routes.js';
 import { logger } from './lib/logger.js';
 import { db } from './db/client.js';
 import { getWebthronPool, IKnowDisabledError } from './modules/monitor/mysql-client.js';
@@ -132,6 +133,7 @@ app.route('/api/quality-control-station', qualityControlStationRoutes);
 // stessi controlli di accesso. Da togliere quando tutte le PC Camere avranno la versione nuova.
 app.route('/api/photo-station/device', qualityControlStationDeviceRoutes);
 app.route('/api/photo-station', qualityControlStationRoutes);
+app.route('/ia', iaLiveRoutes);   // PC IA (STR-IASystem): richieste firmate HMAC, sola lettura; chiusa se manca IA_VM_SECRET
 app.route('/api/delibere', iknowRoutes);   // chiamata di iKnow: pubblica, protetta dal token concordato
 
 // Stub para módulos aún no migrados
