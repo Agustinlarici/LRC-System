@@ -127,6 +127,23 @@ async function sostituisciModificate(rows: WebthronEvent[]): Promise<number> {
   return n;
 }
 
+/**
+ * Passata su `lastup` per la carica dei 90 giorni: sostituisce nello storico le righe delle schede
+ * modificate da `fromDay` (YYYY-MM-DD, ora di Roma) in poi. Solo se il flag `iknow_andon_lastup_enabled`
+ * è acceso. Ritorna le righe sostituite; lancia l'errore se WebThron non risponde.
+ */
+export async function sostituisciModificateDal(fromDay: string): Promise<number> {
+  if (!(await isIKnowEnabled('iknow_andon_lastup_enabled'))) return 0;
+  const combos       = await getActiveLineeWithCombos();
+  const deliberaFasi = getDeliberaFasi();
+  if (combos.length === 0) return 0;
+
+  const modificate = await queryWebthronEvents(combos, deliberaFasi, { mode: 'modified', since: midnightRome(fromDay) });
+  const aggiornate = await sostituisciModificate(modificate);
+  logger.info(`[LastupSync] dal ${fromDay} — ${modificate.length} schede modificate, ${aggiornate} righe sostituite`);
+  return aggiornate;
+}
+
 // ─── Main sync ────────────────────────────────────────────────────────────────
 
 export async function syncWebthronToPostgres(): Promise<void> {

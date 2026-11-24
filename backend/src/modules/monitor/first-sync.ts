@@ -14,7 +14,7 @@
 import { logger } from '../../lib/logger.js';
 import { isIKnowEnabled, type IKnowQueryFlag } from '../../lib/system-flags.js';
 import { startRun, endRun, failRun } from '../../lib/sync-stats.js';
-import { loadRangeIntoHistory } from './pg-webthron-sync.js';
+import { loadRangeIntoHistory, sostituisciModificateDal } from './pg-webthron-sync.js';
 import { getWebthronGuardState } from './mysql-client.js';
 import { retryWaitMs } from './webthron-guard.js';
 import { daysToReread, weeksOf } from './webthron-time.js';
@@ -117,6 +117,20 @@ async function run(list: Array<{ from: string; to: string }>, pauseSec: number, 
       logger.info(`[FirstSync] ${label} (${status.done}/${status.total} settimane) — ${status.rows} eventi finora`);
 
       if (status.done < status.total) await sleep(pauseSec * 1000);
+    }
+
+    // Ultima passata: le schede già lette ma modificate dopo (lastup) sostituiscono la loro riga
+    const dal = list[list.length - 1]?.from;
+    if (dal && !cancelRequested && !status.cancelled && (await isIKnowEnabled(flag))) {
+      status.current = 'schede modificate (lastup)';
+      try {
+        await sleep(pauseSec * 1000);
+        await sostituisciModificateDal(dal);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error(`[FirstSync] Passata lastup: ${msg}`);
+        status.errors.push(`lastup: ${msg}`);
+      }
     }
   } finally {
     status.running = false;

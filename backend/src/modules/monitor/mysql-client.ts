@@ -356,7 +356,11 @@ export async function queryWebthronEvents(
   // Schede modificate (lastup > since), senza quelle cancellate. Nessun filtro su `datain`
   // (coprirebbe quasi tutta la tabella): le schede nuove già lette sono un aggiornamento senza effetto.
   if (dateFilter.mode === 'modified') {
-    return fetchRows(buildSql('AND ubi.lastup > ?', 5000, true), [dateFilter.since]);
+    const rows = await fetchRows(buildSql('AND ubi.lastup > ?', SLICE_ROW_LIMIT, true), [dateFilter.since]);
+    if (rows.length >= SLICE_ROW_LIMIT) {
+      logger.warn(`[WebThron] Schede modificate (lastup) al limite di ${SLICE_ROW_LIMIT} righe: ne mancano`);
+    }
+    return rows;
   }
 
   // Giorni interi: query su `datain` (indice), con la pausa della guardia tra una e l'altra.
