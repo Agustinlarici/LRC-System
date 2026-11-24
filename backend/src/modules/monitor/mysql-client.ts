@@ -45,11 +45,13 @@ const bucciGuard = createGuard({
   onClose: () => logger.info('[WebThron/Bucci] Interruttore di sicurezza chiuso: riprendo le query'),
 });
 
-// Letture grosse (carica dei 90 giorni a settimane): una query dura più dei 3 s che la guardia
-// considera «lenti». Dentro questo contesto la soglia sale, ma sempre sotto max_statement_time:
-// un timeout conta comunque come strike e fa scattare l'interruttore.
-const bulkContext = new AsyncLocalStorage<{ slowMs: number }>();
-const BULK_SLOW_MS = Math.min(envInt('WEBTHRON_BULK_SLOW_MS', 10_000), MAX_STATEMENT_SECONDS * 1000 - 2000);
+// Letture grosse (carica dei 90 giorni a settimane): una query dura più dei 15 s e dei 3 s che la
+// guardia considera «lenti». Dentro questo contesto il limite del server sale a 30 s e la soglia
+// «lenta» a 25 s, sempre sotto il limite: un timeout conta comunque come strike e fa scattare
+// l'interruttore. Le query corte (incrementale, rebanadine da 4 ore) restano a 15 s.
+const BULK_MAX_STATEMENT_SECONDS = Math.max(MAX_STATEMENT_SECONDS, envInt('WEBTHRON_BULK_MAX_STATEMENT_SECONDS', 30));
+const BULK_SLOW_MS = Math.min(envInt('WEBTHRON_BULK_SLOW_MS', 25_000), BULK_MAX_STATEMENT_SECONDS * 1000 - 2000);
+const bulkContext = new AsyncLocalStorage<{ slowMs: number; maxStatementSeconds: number }>();
 
 /** Stato delle guardie (per diagnostica). */
 export const getWebthronGuardState = guard.getState;
@@ -58,7 +60,8 @@ export const getBucciGuardState    = bucciGuard.getState;
 // Strumenti di emergenza (processi attivi, KILL): non fanno coda e funzionano anche a interruttore aperto.
 function isEmergencyStatement(arg: unknown): boolean {
   const sql = typeof arg === 'string' ? arg : (arg as { sql?: string } | null)?.sql;
-  return typeof sql === 'string' && /^\s*(KILL|SHOW)\b/i.test(sql);
+  // Anche il ripristino di max_statement_time dopo una lettura grossa: deve riuscire a interruttore aperto
+  return typeof sql === 'string' && (/^\s*(KILL|SHOW)\b/i.test(sql) || /^\s*SET\s+SESSION\s+max_statement_time\s*=\s*\d+\s*$/i.test(sql));
 }
 
 export function resetWebthronPool(): void {
@@ -165,7 +168,7 @@ function buildGuardedPool(poolGuard: ReturnType<typeof createGuard>, maxStatemen
             ? value.apply(target, args)
             : runWithReaper(
                 () => value.apply(target, args),
-                (maxStatementSeconds + KILL_GRACE_SECONDS) * 1000,
+                ((bulkContext.getStore()?.maxStatementSeconds ?? maxStatementSeconds) + KILL_GRACE_SECONDS) * 1000,
                 () => killRunningQuery(threadId, label),
               ),
           { bypass: emergency, slowMs: bulkContext.getStore()?.slowMs },
@@ -252,7 +255,8 @@ export async function queryWebthronEvents(
 ): Promise<WebthronEvent[]> {
   if (prodCombos.length === 0) return [];
 
-  const TIMEOUT_MS = 30 * 1000;   // il limite vero è max_statement_time; questa è la rete di sicurezza lato client
+  const TIMEOUT_MS      = 30 * 1000;   // il limite vero è max_statement_time; questa è la rete di sicurezza lato client
+  const BULK_TIMEOUT_MS = (BULK_MAX_STATEMENT_SECONDS + 15) * 1000;
 
   const prodConditions = prodCombos
     .map(() => `(ikExtra62Tab.stringa = ? AND ikExtra43Tab.stringa = ? AND ikExtra45Tab.stringa = ?)`)
@@ -326,9 +330,9 @@ export async function queryWebthronEvents(
 
   const tailParams = [...prodParams, ...deliberaFasi, ...allModelli, ...allComponenti];
 
-  const fetchRows = async (sql: string, dateParams: unknown[]): Promise<WebthronEvent[]> => {
+  const fetchRows = async (sql: string, dateParams: unknown[], timeoutMs = TIMEOUT_MS): Promise<WebthronEvent[]> => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [rows] = await (getWebthronPool() as any).execute({ sql, timeout: TIMEOUT_MS }, [...dateParams, ...tailParams]);
+    const [rows] = await (getWebthronPool() as any).execute({ sql, timeout: timeoutMs }, [...dateParams, ...tailParams]);
     return (rows as Array<Record<string, unknown>>).map(r => ({
       fase:             r.fase             as string,
       modello:          r.modello          as string,
@@ -368,11 +372,25 @@ export async function queryWebthronEvents(
     const big      = bulk && canSplit;
     const sql      = big ? sqlBulk : sqlShort;
     const limit    = big ? BULK_ROW_LIMIT : SLICE_ROW_LIMIT;
-    const fetch    = () => fetchRows(sql, [slice.from, slice.to]);
+    const fetch    = () => fetchRows(sql, [slice.from, slice.to], big ? BULK_TIMEOUT_MS : TIMEOUT_MS);
+
+    // Lettura grossa: il limite del server sale per questa sola query (30 s) e si ripristina subito dopo
+    const fetchBulk = async (): Promise<WebthronEvent[]> => {
+      const pool = getWebthronPool();
+      await pool.query(`SET SESSION max_statement_time = ${BULK_MAX_STATEMENT_SECONDS}`);
+      try {
+        return await fetch();
+      } finally {
+        await pool.query(`SET SESSION max_statement_time = ${MAX_STATEMENT_SECONDS}`)
+          .catch((e: unknown) => logger.warn(`[WebThron] Ripristino di max_statement_time non riuscito: ${e instanceof Error ? e.message : e}`));
+      }
+    };
 
     let rows: WebthronEvent[];
     try {
-      rows = big ? await bulkContext.run({ slowMs: BULK_SLOW_MS }, fetch) : await fetch();
+      rows = big
+        ? await bulkContext.run({ slowMs: BULK_SLOW_MS, maxStatementSeconds: BULK_MAX_STATEMENT_SECONDS }, fetchBulk)
+        : await fetch();
     } catch (err) {
       const halves = big && isTimeoutError(err) ? splitSlice(slice, RANGE_SLICE_HOURS) : null;
       if (!halves) throw err;

@@ -10,6 +10,7 @@ vi.mock('../../../lib/system-flags.js', async (importOriginal) => ({
 
 type Params = unknown[];
 const calls: Array<{ from: string; to: string }> = [];
+const setLog: string[] = [];
 let behave: (from: string, to: string) => Array<Record<string, unknown>> = () => [];
 
 vi.mock('mysql2/promise', () => ({
@@ -17,6 +18,7 @@ vi.mock('mysql2/promise', () => ({
     createPool: () => ({
       on: () => undefined,
       end: async () => undefined,
+      query: async (sql: string) => { setLog.push(sql); return [[]]; },
       execute: async (_q: unknown, params: Params) => {
         const [from, to] = params as [string, string];
         calls.push({ from, to });
@@ -37,7 +39,7 @@ const row = (id: number) => ({
 });
 const week = { mode: 'range' as const, from: '2026-03-04', to: '2026-03-10', sliceHours: 168 };
 
-beforeEach(() => { calls.length = 0; behave = () => []; });
+beforeEach(() => { calls.length = 0; setLog.length = 0; behave = () => []; });
 
 describe('lettura a settimane da WebThron', () => {
   it('di default la carica usa una settimana intera (168 ore)', () => {
@@ -50,6 +52,25 @@ describe('lettura a settimane da WebThron', () => {
     expect(calls).toHaveLength(1);
     expect(hours(calls[0].from, calls[0].to)).toBe(168);
     expect(rows).toHaveLength(2);
+  });
+
+  it('la settimana gira con limite di 30 s e poi si torna a 15 s', async () => {
+    await queryWebthronEvents(combos, [], week);
+    expect(setLog).toEqual([
+      'SET SESSION max_statement_time = 30',
+      'SET SESSION max_statement_time = 15',
+    ]);
+  });
+
+  it('il limite si ripristina anche se la query fallisce', async () => {
+    behave = () => { throw Object.assign(new Error('connessione persa'), { code: 'ECONNRESET' }); };
+    await queryWebthronEvents(combos, [], week).catch(() => undefined);
+    expect(setLog.at(-1)).toBe('SET SESSION max_statement_time = 15');
+  });
+
+  it('le rebanadine corte non toccano il limite', async () => {
+    await queryWebthronEvents(combos, [], { mode: 'range', from: '2026-03-10', to: '2026-03-10' });
+    expect(setLog).toEqual([]);
   });
 
   it('senza sliceHours resta a rebanadine di 4 ore (rilettura di un giorno)', async () => {
