@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { parseBody } from '../../lib/validate.js';
 import { getIKnowFlags, setIKnowFlags, assertIKnowEnabled, isIKnowEnabled, IKNOW_QUERY_FLAGS } from '../../lib/system-flags.js';
+import { getSyncMode, setSyncMode, isSyncMode, SYNC_MODES } from '../monitor/sync-mode.js';
 import { getAllStats, startRun, endRun, failRun } from '../../lib/sync-stats.js';
 import { refreshLookupTables } from '../monitor/pg-webthron-sync.js';
 import { startFirstSync, getFirstSyncStatus, cancelFirstSync } from '../monitor/first-sync.js';
@@ -33,6 +34,19 @@ systemRoutes.patch('/iknow-flags', async (c) => {
   }));
   const flags = await setIKnowFlags(body);
   return c.json(flags);
+});
+
+// Modalità della sync WebThron: incremental | full (90 giorni) | mixed (incrementale + 90 giorni ogni ~30 min)
+systemRoutes.get('/sync-mode', requireAuth, async (c) => c.json({ mode: await getSyncMode() }));
+
+systemRoutes.patch('/sync-mode', requireAuth, async (c) => {
+  const user = c.get('user');
+  if (user.role !== 'admin' && user.role !== 'it') {
+    throw new HTTPException(403, { message: 'Solo admin/it possono cambiare la modalità di sync' });
+  }
+  const body = await parseBody(c, z.object({ mode: z.enum(SYNC_MODES) }));
+  if (!isSyncMode(body.mode)) throw new HTTPException(400, { message: 'Modalità non valida' });
+  return c.json({ mode: await setSyncMode(body.mode) });
 });
 
 // GET /api/system/sync-status — performance metrics for all WebThron sync jobs
