@@ -1,9 +1,12 @@
 import cron from 'node-cron';
 import { syncPackArticles } from './modules/packing/bc-client.js';
 import { snapshotDayFromHistory } from './modules/dashboards/heatmap.js';
-import { syncFullDayToHistory, refreshLookupTables } from './modules/monitor/pg-webthron-sync.js';
+import { refreshLookupTables } from './modules/monitor/pg-webthron-sync.js';
 import { syncBom } from './modules/monitor/bom-sync.js';
 import { daysToReread } from './modules/monitor/webthron-time.js';
+import { getSyncMode, FULL_SYNC_DAYS, FULL_SYNC_PAUSE_SEC } from './modules/monitor/sync-mode.js';
+import { startFirstSync, getFirstSyncStatus, waitForFirstSync } from './modules/monitor/first-sync.js';
+import { isIKnowEnabled } from './lib/system-flags.js';
 import { checkSpmaDelays } from './modules/spma/delay-checker.js';
 import { sendDelayReportEmail, emailConfigured, type SmtpConfig } from './modules/spma/spma-email-notifier.js';
 import { autoGenerateEdi } from './modules/edi/auto-generate.js';
@@ -34,6 +37,8 @@ function nextOccurrence(hour: number, minute = 0): Date {
 }
 
 export function startScheduler() {
+  const todayRome = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
+
   // 00:05 — applica turni standard per oggi alle linee senza dati salvati
   cron.schedule('5 0 * * *', async () => {
     const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
@@ -46,33 +51,42 @@ export function startScheduler() {
     }
   }, { timezone: 'Europe/Rome' });
 
-  // Rilettura completa WebThron degli ultimi 2 giorni (un giorno alla volta, a rebanadine di 4 ore).
-  const REREAD_DAYS = 2;
-  const todayRome = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
-
-  async function rileggiGiorni(days: string[]) {
-    for (const dateStr of days) {
-      logger.info(`[scheduler] Rilettura completa WebThron per ${dateStr}...`);
+  // 11:30 e 01:00 — in modo «incrementale» si rileggono gli ultimi 90 giorni (una query per settimana,
+  // stessa carica del pulsante). Nei modi «full» e «mista» la rilettura la fanno già loro ogni 10 min / ogni ora:
+  // qui si aspetta solo che quella in corso finisca. Richiede il toggle «Rilettura notturna».
+  async function rileggiTreMesi(): Promise<void> {
+    const mode = await getSyncMode();
+    if (mode === 'incremental' && !getFirstSyncStatus().running) {
+      if (!(await isIKnowEnabled('iknow_nightly_enabled'))) {
+        logger.debug('[scheduler] Rilettura 90 giorni disabilitata — skip');
+        return;
+      }
+      logger.info('[scheduler] Rilettura WebThron degli ultimi 90 giorni...');
       startRun('sync_full_day');
       try {
-        await syncFullDayToHistory(dateStr);
+        startFirstSync({ days: FULL_SYNC_DAYS, pauseSec: FULL_SYNC_PAUSE_SEC, flag: 'iknow_nightly_enabled' });
+        await waitForFirstSync();
+        const st = getFirstSyncStatus();
+        if (st.errors.length > 0 && st.errors.length >= st.done) failRun('sync_full_day', new Error(st.errors[st.errors.length - 1]));
+        else endRun('sync_full_day', st.rows);
       } catch (e) {
         failRun('sync_full_day', e);
-        logger.error(`[scheduler] syncFullDayToHistory fallito per ${dateStr}: ${e instanceof Error ? e.message : e}`);
+        logger.error(`[scheduler] Rilettura 90 giorni fallita: ${e instanceof Error ? e.message : e}`);
       }
+      return;
     }
+    await waitForFirstSync();
   }
 
-  // 11:30 — rilettura di oggi (fin qui) e di ieri
+  // 11:30 — rilettura dei 90 giorni (oggi compreso, fin qui)
   cron.schedule('30 11 * * *', async () => {
-    await rileggiGiorni(daysToReread(todayRome(), REREAD_DAYS, true));
+    await rileggiTreMesi();
   }, { timezone: 'Europe/Rome' });
 
-  // 01:00 — rilettura completa WebThron di ieri e dell'altro ieri + snapshot OEE di ieri
+  // 01:00 — rilettura dei 90 giorni + snapshot OEE di ieri (aspetta che la lettura sia finita)
   cron.schedule('0 1 * * *', async () => {
-    const days = daysToReread(todayRome(), REREAD_DAYS, false);
-    const dateStr = days[0];   // ieri
-    await rileggiGiorni(days);
+    const dateStr = daysToReread(todayRome(), 1, false)[0];   // ieri
+    await rileggiTreMesi();
 
     logger.info(`[scheduler] Snapshot OEE per ${dateStr}...`);
     startRun('heatmap_snapshot');
@@ -269,5 +283,5 @@ export function startScheduler() {
   setNextRun('spma_onedrive_poll', nextEvery10Min());
   setNextRun('edi_auto_generate',  nextOccurrence(23, 45));
 
-  logger.info('Scheduler avviato — Ferrari DELINS 06:00, EDI auto 23:45, rilettura WebThron 11:30 e 01:00 (2 giorni), snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
+  logger.info('Scheduler avviato — Ferrari DELINS 06:00, EDI auto 23:45, rilettura WebThron 11:30 e 01:00 (90 giorni), snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
 }

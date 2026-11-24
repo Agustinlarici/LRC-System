@@ -16,7 +16,7 @@
  */
 
 import { db } from '../../db/client.js';
-import { queryWebthronEvents, getWebthronPool, WebthronEvent, LineaCombo } from './mysql-client.js';
+import { queryWebthronEvents, getWebthronPool, BULK_SLICE_HOURS, WebthronEvent, LineaCombo } from './mysql-client.js';
 import { logger } from '../../lib/logger.js';
 import { isIKnowEnabled } from '../../lib/system-flags.js';
 import { startRun, endRun, failRun } from '../../lib/sync-stats.js';
@@ -291,7 +291,7 @@ export async function loadRangeIntoHistory(from: string, to: string): Promise<nu
   const deliberaFasi = getDeliberaFasi();
   if (combos.length === 0) return 0;
 
-  const rows = await queryWebthronEvents(combos, deliberaFasi, { mode: 'range', from, to });
+  const rows = await queryWebthronEvents(combos, deliberaFasi, { mode: 'range', from, to, sliceHours: BULK_SLICE_HOURS });
   if (rows.length === 0) return 0;
 
   const records = dedupeByKey(rows.map(r => ({

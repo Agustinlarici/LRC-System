@@ -36,7 +36,7 @@ systemRoutes.patch('/iknow-flags', async (c) => {
   return c.json(flags);
 });
 
-// Modalità della sync WebThron: incremental | full (90 giorni) | mixed (incrementale + 90 giorni ogni ~30 min)
+// Modalità della sync WebThron: incremental | full (90 giorni) | mixed (incrementale + 90 giorni ogni ora)
 systemRoutes.get('/sync-mode', requireAuth, async (c) => c.json({ mode: await getSyncMode() }));
 
 systemRoutes.patch('/sync-mode', requireAuth, async (c) => {
@@ -89,7 +89,7 @@ systemRoutes.post('/first-sync', requireAuth, async (c) => {
     return c.json({ message: 'Carica iniziale già in corso', status: getFirstSyncStatus() }, 409);
   }
   const days     = clampInt(c.req.query('days'), 90, 1, 120);
-  const pauseSec = clampInt(c.req.query('pause_sec'), 3, 1, 600);
+  const pauseSec = clampInt(c.req.query('pause_sec'), 2, 1, 600);
   const status   = startFirstSync({ days, pauseSec });
   return c.json({ message: `Carica iniziale avviata: ultimi ${days} giorni, una settimana alla volta`, status }, 202);
 });

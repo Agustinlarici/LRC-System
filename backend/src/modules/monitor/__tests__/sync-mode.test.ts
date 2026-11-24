@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { planTick, isSyncMode } from '../sync-mode.js';
 
 describe('planTick', () => {
-  // ciclo da 300 s: full ogni 2 cicli (10 min), mixed ogni 6 (30 min)
+  // ciclo da 300 s: full ogni 2 cicli (10 min), mixed ogni 12 (1 ora)
   it('incrementale: sempre e solo l\'incrementale', () => {
     for (const cycle of [1, 3, 6, 12]) {
       expect(planTick('incremental', cycle, 300, false)).toEqual({ incremental: true, full: false });
@@ -19,16 +19,16 @@ describe('planTick', () => {
     expect(planTick('full', 2, 300, true)).toEqual({ incremental: false, full: false });
   });
 
-  it('mista: incrementale tra una carica e l\'altra, 90 giorni ogni 30 min', () => {
-    expect(planTick('mixed', 5, 300, false)).toEqual({ incremental: true, full: false });
+  it('mista: incrementale tra una carica e l\'altra, 90 giorni ogni ora', () => {
+    expect(planTick('mixed', 6, 300, false)).toEqual({ incremental: true, full: false });
   });
 
   it('mista: nel ciclo in cui parte la carica l\'incrementale aspetta', () => {
-    expect(planTick('mixed', 6, 300, false)).toEqual({ incremental: false, full: true });
+    expect(planTick('mixed', 12, 300, false)).toEqual({ incremental: false, full: true });
   });
 
   it('mista: finché la carica gira l\'incrementale non parte mai', () => {
-    for (const cycle of [1, 2, 6, 7, 12]) {
+    for (const cycle of [1, 2, 6, 12, 24]) {
       expect(planTick('mixed', cycle, 300, true)).toEqual({ incremental: false, full: false });
     }
   });

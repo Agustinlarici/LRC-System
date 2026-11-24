@@ -1,8 +1,9 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import mysql from 'mysql2/promise';
 import { getIKnowFlags, IKnowDisabledError } from '../../lib/system-flags.js';
 import { logger } from '../../lib/logger.js';
-import { createGuard, runWithReaper, WebthronBusyError } from './webthron-guard.js';
-import { buildRangeSlices } from './webthron-time.js';
+import { createGuard, runWithReaper, isTimeoutError, WebthronBusyError } from './webthron-guard.js';
+import { buildRangeSlices, splitSlice } from './webthron-time.js';
 
 export { IKnowDisabledError, WebthronBusyError };
 
@@ -43,6 +44,12 @@ const bucciGuard = createGuard({
   onOpen:  (cooldownMs, reason) => logger.warn(`[WebThron/Bucci] Interruttore di sicurezza APERTO per ${Math.round(cooldownMs / 1000)} s (${reason})`),
   onClose: () => logger.info('[WebThron/Bucci] Interruttore di sicurezza chiuso: riprendo le query'),
 });
+
+// Letture grosse (carica dei 90 giorni a settimane): una query dura più dei 3 s che la guardia
+// considera «lenti». Dentro questo contesto la soglia sale, ma sempre sotto max_statement_time:
+// un timeout conta comunque come strike e fa scattare l'interruttore.
+const bulkContext = new AsyncLocalStorage<{ slowMs: number }>();
+const BULK_SLOW_MS = Math.min(envInt('WEBTHRON_BULK_SLOW_MS', 10_000), MAX_STATEMENT_SECONDS * 1000 - 2000);
 
 /** Stato delle guardie (per diagnostica). */
 export const getWebthronGuardState = guard.getState;
@@ -161,7 +168,7 @@ function buildGuardedPool(poolGuard: ReturnType<typeof createGuard>, maxStatemen
                 (maxStatementSeconds + KILL_GRACE_SECONDS) * 1000,
                 () => killRunningQuery(threadId, label),
               ),
-          { bypass: emergency },
+          { bypass: emergency, slowMs: bulkContext.getStore()?.slowMs },
         );
       };
     },
@@ -207,11 +214,20 @@ export type LineaCombo = { fase: string; modello: string; componente: string };
 
 type DateFilter =
   | { mode: 'since'; since: Date; modifiedSince?: Date }  // datain > ?  (+ OR lastup > ? e senza cancellate, se modifiedSince)
-  | { mode: 'range'; from: string; to: string };  // giorni [from, to] letti a rebanadine di datain (indice), backfill
+  | { mode: 'range'; from: string; to: string; sliceHours?: number };  // giorni [from, to] letti a rebanadine di datain (indice), backfill
 
 /** Ore per rebanadina nelle letture di giorni interi: ~1000 documenti al massimo, query da pochi ms. */
 const RANGE_SLICE_HOURS = 4;
 const SLICE_ROW_LIMIT   = 20_000;
+
+/**
+ * Ore per rebanadina nella carica dei 90 giorni: di default una settimana intera (168 h) = una
+ * query per settimana. Se una query grossa scade o arriva al limite di righe si divide a metà,
+ * fino a 4 ore (vedi sotto), quindi non si perdono mai dati. Con WEBTHRON_LOAD_SLICE_HOURS=4
+ * si torna alle rebanadine corte.
+ */
+export const BULK_SLICE_HOURS = Math.max(RANGE_SLICE_HOURS, envInt('WEBTHRON_LOAD_SLICE_HOURS', 168));
+const BULK_ROW_LIMIT = 150_000;
 
 // ─── Unified WebThron query ───────────────────────────────────────────────────
 //
@@ -339,16 +355,44 @@ export async function queryWebthronEvents(
     return fetchRows(buildSql('AND ubi.datain > ?', 5000), [dateFilter.since]);
   }
 
-  // Giorni interi: tante query piccole su `datain` (con la pausa della guardia tra una e l'altra)
-  // invece di una query unica che blocca le tabelle per secondi.
-  const sql = buildSql('AND ubi.datain >= ? AND ubi.datain < ?', SLICE_ROW_LIMIT);
-  const result: WebthronEvent[] = [];
-  for (const slice of buildRangeSlices(dateFilter.from, dateFilter.to, RANGE_SLICE_HOURS)) {
-    const rows = await fetchRows(sql, [slice.from, slice.to]);
-    if (rows.length >= SLICE_ROW_LIMIT) {
-      logger.warn(`[WebThron] Rebanadina ${slice.from} → ${slice.to} al limite di ${SLICE_ROW_LIMIT} righe: dati troncati`);
+  // Giorni interi: query su `datain` (indice), con la pausa della guardia tra una e l'altra.
+  // Di norma rebanadine corte (4 ore); nella carica a settimane `sliceHours` è più grande e una
+  // rebanadina che scade o arriva al limite di righe si divide a metà fino a 4 ore.
+  const sliceHours = Math.max(RANGE_SLICE_HOURS, dateFilter.sliceHours ?? RANGE_SLICE_HOURS);
+  const bulk       = sliceHours > RANGE_SLICE_HOURS;
+  const sqlShort   = buildSql('AND ubi.datain >= ? AND ubi.datain < ?', SLICE_ROW_LIMIT);
+  const sqlBulk    = bulk ? buildSql('AND ubi.datain >= ? AND ubi.datain < ?', BULK_ROW_LIMIT) : sqlShort;
+
+  const readSlice = async (slice: { from: string; to: string }): Promise<WebthronEvent[]> => {
+    const canSplit = splitSlice(slice, RANGE_SLICE_HOURS) !== null;
+    const big      = bulk && canSplit;
+    const sql      = big ? sqlBulk : sqlShort;
+    const limit    = big ? BULK_ROW_LIMIT : SLICE_ROW_LIMIT;
+    const fetch    = () => fetchRows(sql, [slice.from, slice.to]);
+
+    let rows: WebthronEvent[];
+    try {
+      rows = big ? await bulkContext.run({ slowMs: BULK_SLOW_MS }, fetch) : await fetch();
+    } catch (err) {
+      const halves = big && isTimeoutError(err) ? splitSlice(slice, RANGE_SLICE_HOURS) : null;
+      if (!halves) throw err;
+      logger.warn(`[WebThron] Rebanadina ${slice.from} → ${slice.to} scaduta: la divido a metà`);
+      return [...await readSlice(halves[0]), ...await readSlice(halves[1])];
     }
-    result.push(...rows);
+    if (rows.length >= limit) {
+      const halves = big ? splitSlice(slice, RANGE_SLICE_HOURS) : null;
+      if (halves) {
+        logger.warn(`[WebThron] Rebanadina ${slice.from} → ${slice.to} al limite di ${limit} righe: la divido a metà`);
+        return [...await readSlice(halves[0]), ...await readSlice(halves[1])];
+      }
+      logger.warn(`[WebThron] Rebanadina ${slice.from} → ${slice.to} al limite di ${limit} righe: dati troncati`);
+    }
+    return rows;
+  };
+
+  const result: WebthronEvent[] = [];
+  for (const slice of buildRangeSlices(dateFilter.from, dateFilter.to, sliceHours)) {
+    result.push(...await readSlice(slice));
   }
   return result;
 }

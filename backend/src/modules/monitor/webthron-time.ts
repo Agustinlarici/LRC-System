@@ -50,18 +50,31 @@ export function pastDays(today: string, count: number): string[] {
 }
 
 /**
- * I `days` giorni prima di `today` raggruppati in settimane di 7 giorni consecutivi, dalla più
- * recente (finisce ieri) alla più vecchia. L'ultima può avere meno di 7 giorni se `days` non è
- * multiplo di 7. Ogni voce è l'intervallo di giorni [from, to] (YYYY-MM-DD, estremi inclusi).
+ * Raggruppa giorni (dal più recente al più vecchio) in settimane di 7 giorni consecutivi, dalla più
+ * recente alla più vecchia. L'ultima può avere meno di 7 giorni. Ogni voce è l'intervallo
+ * [from, to] (YYYY-MM-DD, estremi inclusi).
  */
-export function pastWeeks(today: string, days: number): Array<{ from: string; to: string }> {
-  const list = pastDays(today, days);   // dal più recente al più vecchio
+export function weeksOf(daysDesc: string[]): Array<{ from: string; to: string }> {
   const out: Array<{ from: string; to: string }> = [];
-  for (let i = 0; i < list.length; i += 7) {
-    const chunk = list.slice(i, i + 7);
+  for (let i = 0; i < daysDesc.length; i += 7) {
+    const chunk = daysDesc.slice(i, i + 7);
     out.push({ from: chunk[chunk.length - 1], to: chunk[0] });
   }
   return out;
+}
+
+/**
+ * Divide una rebanadina [from, to) di `datain` ("YYYY-MM-DD HH:MM:SS", ora naive) in due metà
+ * contigue, a ore intere. Ritorna null se è già più corta o uguale a `minHours`.
+ */
+export function splitSlice(slice: { from: string; to: string }, minHours: number): [{ from: string; to: string }, { from: string; to: string }] | null {
+  const parse = (v: string) => Date.parse(v.replace(' ', 'T') + 'Z');
+  const a = parse(slice.from);
+  const b = parse(slice.to);
+  const hours = (b - a) / 3_600_000;
+  if (!(hours > minHours)) return null;
+  const mid = a + Math.max(1, Math.floor(hours / 2)) * 3_600_000;
+  return [{ from: slice.from, to: fmt(mid) }, { from: fmt(mid), to: slice.to }];
 }
 
 /**

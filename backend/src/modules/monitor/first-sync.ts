@@ -12,12 +12,12 @@
  */
 
 import { logger } from '../../lib/logger.js';
-import { isIKnowEnabled } from '../../lib/system-flags.js';
+import { isIKnowEnabled, type IKnowQueryFlag } from '../../lib/system-flags.js';
 import { startRun, endRun, failRun } from '../../lib/sync-stats.js';
 import { loadRangeIntoHistory } from './pg-webthron-sync.js';
 import { getWebthronGuardState } from './mysql-client.js';
 import { retryWaitMs } from './webthron-guard.js';
-import { pastWeeks } from './webthron-time.js';
+import { daysToReread, weeksOf } from './webthron-time.js';
 
 export interface FirstSyncStatus {
   running:   boolean;
@@ -37,6 +37,7 @@ const IDLE: FirstSyncStatus = {
 
 let status: FirstSyncStatus = { ...IDLE };
 let cancelRequested = false;
+let currentRun: Promise<void> | null = null;
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
@@ -58,28 +59,40 @@ export function cancelFirstSync(): boolean {
   return true;
 }
 
-/** Avvia la carica in background. Lancia un errore se ce n'è già una in corso. */
-export function startFirstSync({ days, pauseSec }: { days: number; pauseSec: number }): FirstSyncStatus {
+/** Si risolve quando la carica in corso finisce (subito se non ce n'è). Non lancia mai errori. */
+export async function waitForFirstSync(): Promise<void> {
+  await currentRun;
+}
+
+/**
+ * Avvia la carica in background. Lancia un errore se ce n'è già una in corso.
+ * Legge `days` giorni che finiscono oggi (oggi parziale compreso), a settimane.
+ * `flag` è il toggle che deve restare acceso mentre gira: «Backfill manuali» per pulsante e modi
+ * full/mista, «Rilettura notturna» per le letture programmate delle 11:30 e delle 01:00.
+ */
+export function startFirstSync(
+  { days, pauseSec, flag = 'iknow_backfill_enabled' }: { days: number; pauseSec: number; flag?: IKnowQueryFlag },
+): FirstSyncStatus {
   if (status.running) throw new Error('Carica iniziale già in corso');
 
-  const list = pastWeeks(todayRome(), days);
+  const list = weeksOf(daysToReread(todayRome(), days, true));
   cancelRequested = false;
   status = {
     ...IDLE, running: true, total: list.length,
     from: list[list.length - 1]?.from ?? null, to: list[0]?.to ?? null,
   };
   startRun('first_sync');
-  void run(list, pauseSec);
+  currentRun = run(list, pauseSec, flag);
   return status;
 }
 
-async function run(list: Array<{ from: string; to: string }>, pauseSec: number): Promise<void> {
+async function run(list: Array<{ from: string; to: string }>, pauseSec: number, flag: IKnowQueryFlag): Promise<void> {
   try {
     for (const week of list) {
       if (cancelRequested) { status.cancelled = true; break; }
       // Se si spegne il toggle mentre gira, si ferma subito
-      if (!(await isIKnowEnabled('iknow_backfill_enabled'))) {
-        status.errors.push('Interrotta: il toggle «Backfill manuali» è stato disattivato');
+      if (!(await isIKnowEnabled(flag))) {
+        status.errors.push('Interrotta: il toggle di iKnow necessario è stato disattivato');
         break;
       }
 
