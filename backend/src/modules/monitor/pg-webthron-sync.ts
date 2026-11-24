@@ -38,10 +38,6 @@ function envInt(name: string, fallback: number): number {
 // timestamp, arrivato dopo, andrebbe perso. L'upsert è idempotente, quindi riletture e riavvii non duplicano.
 const OVERLAP_MS = envInt('WEBTHRON_SYNC_OVERLAP_SECONDS', 60) * 1000;
 
-// Frequenza del ciclo (come in index.ts): è la finestra di `lastup` al primo controllo dopo l'avvio
-const SYNC_INTERVAL_MS = Math.max(10, envInt('WEBTHRON_SYNC_INTERVAL_SECONDS', 300)) * 1000;
-// Inizio dell'ultimo controllo riuscito: da lì si guarda `lastup` (in memoria, come lastSyncAt)
-let lastOkStartAt: Date | null = null;
 
 // Di notte (default 23:00–05:00, ora di Roma) non c'è produzione: un controllo ogni pochi minuti basta.
 const QUIET_FROM_HOUR   = envInt('WEBTHRON_QUIET_FROM_HOUR', 23);
@@ -105,6 +101,32 @@ export async function getActiveLineeWithCombos(): Promise<LineaCombo[]> {
   return rows as unknown as LineaCombo[];
 }
 
+/**
+ * Sostituisce nello storico le righe delle schede modificate in iKnow (lastup).
+ * La riga si trova con `cod_seriale` + `data_inserimento` (datain); se non c'è (scheda fuori dal periodo
+ * che abbiamo) non si inserisce nulla. Ritorna quante righe sono state sostituite.
+ */
+async function sostituisciModificate(rows: WebthronEvent[]): Promise<number> {
+  let n = 0;
+  for (const r of dedupeByKey(rows.map(x => ({ ...x, data_cache: '' })))) {
+    const res = await db`
+      UPDATE webthron_events_history SET
+        commessa         = ${r.commessa ?? null},
+        esito_delibera   = ${r.esito_delibera ?? null},
+        versione         = ${r.versione ?? null},
+        operatore        = ${r.operatore ?? null},
+        colore           = ${r.colore ?? null},
+        protocollo_cesta = ${r.protocollo_cesta ?? null}
+      WHERE cod_seriale = ${r.cod_seriale} AND data_inserimento = ${r.data_inserimento}
+        AND (commessa, esito_delibera, versione, operatore, colore, protocollo_cesta)
+            IS DISTINCT FROM (${r.commessa ?? null}, ${r.esito_delibera ?? null}, ${r.versione ?? null},
+                              ${r.operatore ?? null}, ${r.colore ?? null}, ${r.protocollo_cesta ?? null})
+    `;
+    n += res.count;
+  }
+  return n;
+}
+
 // ─── Main sync ────────────────────────────────────────────────────────────────
 
 export async function syncWebthronToPostgres(): Promise<void> {
@@ -145,19 +167,18 @@ export async function syncWebthronToPostgres(): Promise<void> {
     const ultimo = (last?.ultimo as Date | null) ?? null;
     since = ultimo && ultimo > midnight ? new Date(ultimo.getTime() - OVERLAP_MS) : midnight;
   }
-  // Opzione (spenta finché non provata): oltre a `datain` anche `lastup` negli ultimi minuti
-  // (= frequenza del ciclo, dall'ultimo controllo riuscito) ed escluse le schede di `deletedubidocum`.
-  const startedAt = new Date();
-  const useLastup = await isIKnowEnabled('iknow_andon_lastup_enabled');
-  const modifiedSince = useLastup
-    ? new Date((lastOkStartAt ?? new Date(startedAt.getTime() - SYNC_INTERVAL_MS)).getTime() - OVERLAP_MS)
-    : undefined;
-  const dateFilter = { mode: 'since' as const, since, modifiedSince };
+  const dateFilter = { mode: 'since' as const, since };
   const jobName = since > midnight ? 'sync_incremental' : 'sync_full';
   startRun(jobName);
   try {
     const rows = await queryWebthronEvents(combos, deliberaFasi, dateFilter);
-    lastOkStartAt = startedAt;
+
+    // Opzione (spenta finché non provata): schede già lette ma modificate dopo (lastup), stessa data `since`
+    if (await isIKnowEnabled('iknow_andon_lastup_enabled')) {
+      const modificate = await queryWebthronEvents(combos, deliberaFasi, { mode: 'modified', since });
+      const aggiornate = await sostituisciModificate(modificate);
+      if (aggiornate > 0) logger.info(`[WebthronSync] ${aggiornate} eventi sostituiti (modificati in iKnow, lastup)`);
+    }
 
     if (rows.length === 0) {
       endRun(jobName, 0);
@@ -198,7 +219,8 @@ export async function syncWebthronToPostgres(): Promise<void> {
          OR (webthron_events_history.protocollo_cesta IS NULL AND EXCLUDED.protocollo_cesta IS NOT NULL)
     `;
 
-    const ultimoVisto = rows[rows.length - 1].data_inserimento;
+    // Le righe di `lastup` (schede vecchie) non sono in ordine con le nuove: si prende il massimo di `datain`
+    const ultimoVisto = rows.reduce((max, r) => (r.data_inserimento > max ? r.data_inserimento : max), rows[0].data_inserimento);
     if (!lastSyncAt || ultimoVisto > lastSyncAt) lastSyncAt = ultimoVisto;
     endRun(jobName, result.count);
     if (result.count > 0) {
