@@ -1,7 +1,7 @@
 /**
  * Modalità della sincronizzazione WebThron (scelta in Sistema → Avanzata).
  *
- *  - incremental: solo i nuovi eventi, a ogni ciclo; i 90 giorni li rilegge la sera (11:30 e 01:00, scheduler.ts).
+ *  - incremental: solo i nuovi eventi, a ogni ciclo; i 180 giorni (6 mesi) li rilegge la sera (11:30 e 01:00, scheduler.ts).
  *  - full:        carica gli ultimi 90 giorni ogni ~10 minuti (se la precedente gira ancora, salta); niente incrementale.
  *  - mixed:       incrementale a ogni ciclo + ogni ora la carica dei 90 giorni;
  *                 l'incrementale resta fermo finché la carica non è finita.
@@ -19,6 +19,8 @@ export type SyncMode = (typeof SYNC_MODES)[number];
 
 export const SYNC_MODE_KEY = 'webthron_sync_mode';
 export const FULL_SYNC_DAYS = 90;
+/** Giorni della rilettura notturna (11:30 e 01:00, solo modo incrementale) e del pulsante «Carica storico»: 6 mesi. */
+export const BACKFILL_DAYS = 180;
 export const FULL_SYNC_PAUSE_SEC = 2;
 
 export function isSyncMode(v: unknown): v is SyncMode {

@@ -1,5 +1,5 @@
 /**
- * Carica dello storico: legge da WebThron gli ultimi N giorni (default 90) e li scrive in
+ * Carica dello storico: legge da WebThron gli ultimi N giorni (default 180) e li scrive in
  * webthron_events_history, con tutti i campi (anche versione, operatore, colore, protocollo cesta).
  *
  * Una settimana alla volta, dalla più recente alla più vecchia (i dati recenti servono prima), con

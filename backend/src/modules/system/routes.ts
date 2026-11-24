@@ -3,7 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { parseBody } from '../../lib/validate.js';
 import { getIKnowFlags, setIKnowFlags, assertIKnowEnabled, isIKnowEnabled, IKNOW_QUERY_FLAGS } from '../../lib/system-flags.js';
-import { getSyncMode, setSyncMode, isSyncMode, SYNC_MODES } from '../monitor/sync-mode.js';
+import { getSyncMode, setSyncMode, isSyncMode, SYNC_MODES, BACKFILL_DAYS } from '../monitor/sync-mode.js';
 import { getAllStats, startRun, endRun, failRun } from '../../lib/sync-stats.js';
 import { refreshLookupTables } from '../monitor/pg-webthron-sync.js';
 import { startFirstSync, getFirstSyncStatus, cancelFirstSync } from '../monitor/first-sync.js';
@@ -88,7 +88,7 @@ systemRoutes.post('/first-sync', requireAuth, async (c) => {
   if (getFirstSyncStatus().running) {
     return c.json({ message: 'Carica iniziale già in corso', status: getFirstSyncStatus() }, 409);
   }
-  const days     = clampInt(c.req.query('days'), 90, 1, 120);
+  const days     = clampInt(c.req.query('days'), BACKFILL_DAYS, 1, 200);
   const pauseSec = clampInt(c.req.query('pause_sec'), 2, 1, 600);
   const status   = startFirstSync({ days, pauseSec });
   return c.json({ message: `Carica iniziale avviata: ultimi ${days} giorni, una settimana alla volta`, status }, 202);
