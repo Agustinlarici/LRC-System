@@ -8,7 +8,7 @@ import { logger } from './logger.js';
 import { getAllStats } from './sync-stats.js';
 import { checkSyncHealth, closeOrphanAlerts } from './alert-manager.js';
 import { sendInfo } from './notifier.js';
-import { getSyncMode } from '../modules/monitor/sync-mode.js';
+import { incrementalIsPaused } from '../modules/monitor/sync-mode.js';
 
 let _executiveRefresh: (() => Promise<void>) | null = null;
 let autoRecoveryCount = 0;
@@ -25,7 +25,7 @@ export async function runWatchdog(): Promise<void> {
 
     // Auto-recovery: se sync è bloccato da >25 min, lo rilancia
     const inc = getAllStats()['sync_incremental'];
-    if (inc && _executiveRefresh && (await getSyncMode()) !== 'full') {
+    if (inc && _executiveRefresh && !(await incrementalIsPaused())) {
       const lastMs       = inc.lastFinishedAt ? new Date(inc.lastFinishedAt).getTime() : 0;
       const minSinceLast = (Date.now() - lastMs) / 60_000;
 

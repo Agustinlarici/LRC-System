@@ -149,7 +149,7 @@ interface FirstSyncStatus {
 const SYNC_MODES: { key: SyncMode; label: string; description: string }[] = [
   { key: 'incremental', label: 'Incrementale', description: 'Legge solo i nuovi eventi a ogni ciclo (normale)' },
   { key: 'full',        label: 'Ultimi 3 mesi', description: 'Rilegge gli ultimi 90 giorni ogni 10 minuti (salta se la precedente è ancora in corso), senza incrementale. Pesante per WebThron' },
-  { key: 'mixed',       label: 'Mista',         description: 'Incrementale a ogni ciclo + ogni 30 minuti rilegge gli ultimi 90 giorni' },
+  { key: 'mixed',       label: 'Mista',         description: 'Incrementale a ogni ciclo + ogni 30 minuti rilegge gli ultimi 90 giorni (una settimana alla volta). L’incrementale resta fermo finché la lettura non è finita' },
 ];
 
 function SyncModeCard({ flags }: { flags: IKnowFlags }) {
@@ -245,7 +245,7 @@ function SyncModeCard({ flags }: { flags: IKnowFlags }) {
         </div>
         {status && (running || status.done > 0) && (
           <p className="mt-2 text-xs text-gray-500">
-            {status.done}/{status.total} giorni{status.current ? ` — ora: ${status.current}` : ''} — {status.rows} eventi
+            {status.done}/{status.total} settimane{status.current ? ` — ora: ${status.current}` : ''} — {status.rows} eventi
             {status.errors.length > 0 ? ` — ${status.errors.length} errori` : ''}
           </p>
         )}

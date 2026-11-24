@@ -230,11 +230,18 @@ serve({ fetch: app.fetch, port }, async (info) => {
       // Modalità scelta in Sistema → Avanzata: incrementale, 90 giorni, o mista
       const mode = await getSyncMode();
       const plan = planTick(mode, cycle, syncSeconds, getFirstSyncStatus().running);
-      if (plan.full && await isIKnowEnabled('iknow_backfill_enabled')) {
-        logger.info(`[Startup] Modalità ${mode}: parte la carica degli ultimi ${FULL_SYNC_DAYS} giorni`);
-        startFirstSync({ days: FULL_SYNC_DAYS, pauseSec: FULL_SYNC_PAUSE_SEC });
+      let runIncremental = plan.incremental;
+      if (plan.full) {
+        if (await isIKnowEnabled('iknow_backfill_enabled')) {
+          logger.info(`[Startup] Modalità ${mode}: parte la carica degli ultimi ${FULL_SYNC_DAYS} giorni`);
+          try { startFirstSync({ days: FULL_SYNC_DAYS, pauseSec: FULL_SYNC_PAUSE_SEC }); }
+          catch (e) { logger.warn(`[Startup] Carica non avviata: ${e instanceof Error ? e.message : e}`); runIncremental = mode === 'mixed'; }
+        } else {
+          // Senza «Backfill manuali» la carica non può partire: in mista si continua con l'incrementale
+          runIncremental = mode === 'mixed';
+        }
       }
-      if (plan.incremental) await executiveRefresh();
+      if (runIncremental) await executiveRefresh();
       else await executiveReloadFromPg();
       detectStopsAllLines().catch(() => {});
       setNextRun('sync_incremental', new Date(Date.now() + syncSeconds * 1000));

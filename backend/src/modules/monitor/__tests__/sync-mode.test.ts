@@ -19,10 +19,18 @@ describe('planTick', () => {
     expect(planTick('full', 2, 300, true)).toEqual({ incremental: false, full: false });
   });
 
-  it('mista: incrementale sempre, 90 giorni ogni 30 min', () => {
+  it('mista: incrementale tra una carica e l\'altra, 90 giorni ogni 30 min', () => {
     expect(planTick('mixed', 5, 300, false)).toEqual({ incremental: true, full: false });
-    expect(planTick('mixed', 6, 300, false)).toEqual({ incremental: true, full: true });
-    expect(planTick('mixed', 6, 300, true)).toEqual({ incremental: true, full: false });
+  });
+
+  it('mista: nel ciclo in cui parte la carica l\'incrementale aspetta', () => {
+    expect(planTick('mixed', 6, 300, false)).toEqual({ incremental: false, full: true });
+  });
+
+  it('mista: finché la carica gira l\'incrementale non parte mai', () => {
+    for (const cycle of [1, 2, 6, 7, 12]) {
+      expect(planTick('mixed', cycle, 300, true)).toEqual({ incremental: false, full: false });
+    }
   });
 
   it('ciclo più lungo dell\'intervallo: lancia a ogni ciclo, senza dividere per zero', () => {

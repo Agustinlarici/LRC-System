@@ -63,7 +63,7 @@ systemRoutes.get('/sync-status', (c) => {
 });
 
 // ─── Carica iniziale dello storico (ultimi N giorni, default 90) ─────────────────
-// Richiede i toggle «iKnow generale» e «Backfill manuali». Un giorno alla volta, in background.
+// Richiede i toggle «iKnow generale» e «Backfill manuali». Una settimana alla volta, in background.
 
 const clampInt = (raw: string | undefined, fallback: number, min: number, max: number) => {
   const n = parseInt(raw ?? '', 10);
@@ -91,7 +91,7 @@ systemRoutes.post('/first-sync', requireAuth, async (c) => {
   const days     = clampInt(c.req.query('days'), 90, 1, 120);
   const pauseSec = clampInt(c.req.query('pause_sec'), 3, 1, 600);
   const status   = startFirstSync({ days, pauseSec });
-  return c.json({ message: `Carica iniziale avviata: ultimi ${days} giorni, un giorno alla volta`, status }, 202);
+  return c.json({ message: `Carica iniziale avviata: ultimi ${days} giorni, una settimana alla volta`, status }, 202);
 });
 
 systemRoutes.get('/first-sync', (c) => c.json(getFirstSyncStatus()));

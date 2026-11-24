@@ -50,6 +50,32 @@ export function pastDays(today: string, count: number): string[] {
 }
 
 /**
+ * I `days` giorni prima di `today` raggruppati in settimane di 7 giorni consecutivi, dalla più
+ * recente (finisce ieri) alla più vecchia. L'ultima può avere meno di 7 giorni se `days` non è
+ * multiplo di 7. Ogni voce è l'intervallo di giorni [from, to] (YYYY-MM-DD, estremi inclusi).
+ */
+export function pastWeeks(today: string, days: number): Array<{ from: string; to: string }> {
+  const list = pastDays(today, days);   // dal più recente al più vecchio
+  const out: Array<{ from: string; to: string }> = [];
+  for (let i = 0; i < list.length; i += 7) {
+    const chunk = list.slice(i, i + 7);
+    out.push({ from: chunk[chunk.length - 1], to: chunk[0] });
+  }
+  return out;
+}
+
+/**
+ * Giorno di produzione (YYYY-MM-DD) di una riga letta da WebThron: lo stesso che dà
+ * `dayBoundsNaive` (da 23:00 del giorno prima a 23:00). Il pool legge `datain` con fuso `local`,
+ * quindi si usano i componenti locali del Date: restituiscono l'ora "naive" originale in
+ * qualunque fuso giri il server.
+ */
+export function productionDayOf(d: Date): string {
+  const naiveMs = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds());
+  return new Date(naiveMs + 3_600_000).toISOString().slice(0, 10);
+}
+
+/**
  * Giorni da rileggere nella rilettura notturna, dal più recente. Con `includeToday` (la lettura
  * delle 11:30) parte da oggi, altrimenti da ieri (quella delle 01:00). `count` conta tutti i giorni.
  */

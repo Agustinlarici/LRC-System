@@ -20,7 +20,7 @@ import { queryWebthronEvents, getWebthronPool, WebthronEvent, LineaCombo } from 
 import { logger } from '../../lib/logger.js';
 import { isIKnowEnabled } from '../../lib/system-flags.js';
 import { startRun, endRun, failRun } from '../../lib/sync-stats.js';
-import { isQuietHour } from './webthron-time.js';
+import { isQuietHour, productionDayOf } from './webthron-time.js';
 import { dedupeByKey } from './webthron-dedupe.js';
 
 export type ProdRow = WebthronEvent;
@@ -250,6 +250,19 @@ export async function loadDayIntoHistory(dateStr: string): Promise<number> {
     protocollo_cesta: r.protocollo_cesta ?? null,
   })));
 
+  const changed = await upsertHistory(records);
+  logger.info(`[FullDaySync] ${dateStr} — ${rows.length} eventi da WebThron, ${changed} modificati in history`);
+  return rows.length;
+}
+
+type HistoryRecord = {
+  fase: string; modello: string; componente: string; cod_seriale: string;
+  commessa: string | null; esito_delibera: string | null; data_inserimento: Date; data_cache: string;
+  versione: string | null; operatore: string | null; colore: string | null; protocollo_cesta: string | null;
+};
+
+/** Scrive le righe nello storico (upsert idempotente, a blocchi). Ritorna le righe modificate. */
+async function upsertHistory(records: HistoryRecord[]): Promise<number> {
   let changed = 0;
   for (let i = 0; i < records.length; i += INSERT_CHUNK) {
     const result = await db`
@@ -264,7 +277,40 @@ export async function loadDayIntoHistory(dateStr: string): Promise<number> {
     `;
     changed += result.count;
   }
-  logger.info(`[FullDaySync] ${dateStr} — ${rows.length} eventi da WebThron, ${changed} modificati in history`);
+  return changed;
+}
+
+/**
+ * Legge un intervallo di giorni [from, to] (YYYY-MM-DD, estremi inclusi) da WebThron e lo scrive
+ * nello storico. Le query restano a rebanadine di 4 ore (vedi mysql-client.ts); ogni riga prende
+ * il proprio giorno di produzione. Non controlla gli interruttori: li controlla il chiamante.
+ * Ritorna le righe lette; lancia l'errore se WebThron non risponde.
+ */
+export async function loadRangeIntoHistory(from: string, to: string): Promise<number> {
+  const combos       = await getActiveLineeWithCombos();
+  const deliberaFasi = getDeliberaFasi();
+  if (combos.length === 0) return 0;
+
+  const rows = await queryWebthronEvents(combos, deliberaFasi, { mode: 'range', from, to });
+  if (rows.length === 0) return 0;
+
+  const records = dedupeByKey(rows.map(r => ({
+    fase:             r.fase,
+    modello:          r.modello,
+    componente:       r.componente,
+    cod_seriale:      r.cod_seriale,
+    commessa:         r.commessa ?? null,
+    esito_delibera:   r.esito_delibera ?? null,
+    data_inserimento: r.data_inserimento,
+    data_cache:       productionDayOf(r.data_inserimento),
+    versione:         r.versione ?? null,
+    operatore:        r.operatore ?? null,
+    colore:           r.colore ?? null,
+    protocollo_cesta: r.protocollo_cesta ?? null,
+  })));
+
+  const changed = await upsertHistory(records);
+  logger.info(`[RangeSync] ${from} → ${to} — ${rows.length} eventi da WebThron, ${changed} modificati in history`);
   return rows.length;
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dayBoundsNaive, buildRangeSlices, isQuietHour, pastDays, daysToReread } from '../webthron-time.js';
+import { dayBoundsNaive, buildRangeSlices, isQuietHour, pastDays, pastWeeks, productionDayOf, daysToReread } from '../webthron-time.js';
 
 describe('daysToReread', () => {
   it('alle 01:00 rilegge ieri e l\'altro ieri', () => {
@@ -91,5 +91,46 @@ describe('isQuietHour (ora di Roma)', () => {
     expect(isQuietHour(at('12:00'), 13, 15)).toBe(true);   // 13:00 Roma
     expect(isQuietHour(at('09:00'), 13, 15)).toBe(false);
     expect(isQuietHour(at('12:00'), 0, 0)).toBe(false);
+  });
+});
+
+describe('pastWeeks', () => {
+  it('raggruppa i giorni in settimane, dalla più recente, senza buchi né doppioni', () => {
+    const weeks = pastWeeks('2026-11-24', 90);
+    expect(weeks).toHaveLength(13);                       // 12 settimane piene + 6 giorni
+    expect(weeks[0]).toEqual({ from: '2026-11-17', to: '2026-11-23' });   // finisce ieri
+    expect(weeks[1].to).toBe('2026-11-16');               // la successiva parte il giorno dopo
+    expect(weeks[12].from).toBe(pastDays('2026-11-24', 90).at(-1));       // l'ultima arriva al giorno più vecchio
+  });
+
+  it('ultima settimana più corta se i giorni non sono multipli di 7', () => {
+    expect(pastWeeks('2026-11-24', 10)).toEqual([
+      { from: '2026-11-17', to: '2026-11-23' },
+      { from: '2026-11-14', to: '2026-11-16' },
+    ]);
+  });
+});
+
+describe('productionDayOf', () => {
+  // Il pool legge datain in fuso locale: i componenti locali ridanno l'ora "naive" in qualunque fuso.
+  const naive = (y: number, m: number, d: number, h: number, mi = 0, s = 0) => new Date(y, m - 1, d, h, mi, s);
+
+  it('è coerente con i limiti di dayBoundsNaive: 22:59:59 è ancora il giorno prima', () => {
+    expect(productionDayOf(naive(2026, 3, 10, 22, 59, 59))).toBe('2026-03-10');
+    expect(productionDayOf(naive(2026, 3, 10, 23, 0, 0))).toBe('2026-03-11');
+  });
+
+  it('ogni rebanadina di un giorno cade nello stesso giorno di produzione', () => {
+    const { from, to } = dayBoundsNaive('2026-03-10');   // [2026-03-09 23:00, 2026-03-10 23:00)
+    expect(from).toBe('2026-03-09 23:00:00');
+    expect(to).toBe('2026-03-10 23:00:00');
+    for (const h of [23, 3, 7, 11, 15, 19, 22]) {
+      const day = h === 23 ? naive(2026, 3, 9, h) : naive(2026, 3, 10, h);
+      expect(productionDayOf(day)).toBe('2026-03-10');
+    }
+  });
+
+  it('cambio di mese e di anno', () => {
+    expect(productionDayOf(naive(2026, 12, 31, 23, 30))).toBe('2027-01-01');
   });
 });
