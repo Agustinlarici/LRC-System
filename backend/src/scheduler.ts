@@ -51,17 +51,17 @@ export function startScheduler() {
     }
   }, { timezone: 'Europe/Rome' });
 
-  // 11:30 e 01:00 — in modo «incrementale» si rileggono gli ultimi 90 giorni (una query per settimana,
+  // 11:30 e 01:00 — in modo «incrementale» si rileggono gli ultimi 180 giorni (una query per settimana,
   // stessa carica del pulsante). Nei modi «full» e «mista» la rilettura la fanno già loro ogni 10 min / ogni ora:
   // qui si aspetta solo che quella in corso finisca. Richiede il toggle «Rilettura notturna».
   async function rileggiTreMesi(): Promise<void> {
     const mode = await getSyncMode();
     if (mode === 'incremental' && !getFirstSyncStatus().running) {
       if (!(await isIKnowEnabled('iknow_nightly_enabled'))) {
-        logger.debug('[scheduler] Rilettura 90 giorni disabilitata — skip');
+        logger.debug('[scheduler] Rilettura 180 giorni disabilitata — skip');
         return;
       }
-      logger.info('[scheduler] Rilettura WebThron degli ultimi 90 giorni...');
+      logger.info('[scheduler] Rilettura WebThron degli ultimi 180 giorni...');
       startRun('sync_full_day');
       try {
         startFirstSync({ days: FULL_SYNC_DAYS, pauseSec: FULL_SYNC_PAUSE_SEC, flag: 'iknow_nightly_enabled' });
@@ -71,19 +71,19 @@ export function startScheduler() {
         else endRun('sync_full_day', st.rows);
       } catch (e) {
         failRun('sync_full_day', e);
-        logger.error(`[scheduler] Rilettura 90 giorni fallita: ${e instanceof Error ? e.message : e}`);
+        logger.error(`[scheduler] Rilettura 180 giorni fallita: ${e instanceof Error ? e.message : e}`);
       }
       return;
     }
     await waitForFirstSync();
   }
 
-  // 11:30 — rilettura dei 90 giorni (oggi compreso, fin qui)
+  // 11:30 — rilettura dei 180 giorni (oggi compreso, fin qui)
   cron.schedule('30 11 * * *', async () => {
     await rileggiTreMesi();
   }, { timezone: 'Europe/Rome' });
 
-  // 01:00 — rilettura dei 90 giorni + snapshot OEE di ieri (aspetta che la lettura sia finita)
+  // 01:00 — rilettura dei 180 giorni + snapshot OEE di ieri (aspetta che la lettura sia finita)
   cron.schedule('0 1 * * *', async () => {
     const dateStr = daysToReread(todayRome(), 1, false)[0];   // ieri
     await rileggiTreMesi();
@@ -283,5 +283,5 @@ export function startScheduler() {
   setNextRun('spma_onedrive_poll', nextEvery10Min());
   setNextRun('edi_auto_generate',  nextOccurrence(23, 45));
 
-  logger.info('Scheduler avviato — Ferrari DELINS 06:00, EDI auto 23:45, rilettura WebThron 11:30 e 01:00 (90 giorni), snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
+  logger.info('Scheduler avviato — Ferrari DELINS 06:00, EDI auto 23:45, rilettura WebThron 11:30 e 01:00 (180 giorni), snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
 }

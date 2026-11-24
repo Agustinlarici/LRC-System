@@ -45,7 +45,7 @@ const bucciGuard = createGuard({
   onClose: () => logger.info('[WebThron/Bucci] Interruttore di sicurezza chiuso: riprendo le query'),
 });
 
-// Letture grosse (carica dei 90 giorni a settimane): una query dura più dei 15 s e dei 3 s che la
+// Letture grosse (carica dei 180 giorni a settimane): una query dura più dei 15 s e dei 3 s che la
 // guardia considera «lenti». Dentro questo contesto il limite del server sale a 30 s e la soglia
 // «lenta» a 25 s, sempre sotto il limite: un timeout conta comunque come strike e fa scattare
 // l'interruttore. Le query corte (incrementale, rebanadine da 4 ore) restano a 15 s.
@@ -225,7 +225,7 @@ const RANGE_SLICE_HOURS = 4;
 const SLICE_ROW_LIMIT   = 20_000;
 
 /**
- * Ore per rebanadina nella carica dei 90 giorni: di default una settimana intera (168 h) = una
+ * Ore per rebanadina nella carica dei 180 giorni: di default una settimana intera (168 h) = una
  * query per settimana. Se una query grossa scade o arriva al limite di righe si divide a metà,
  * fino a 4 ore (vedi sotto), quindi non si perdono mai dati. Con WEBTHRON_LOAD_SLICE_HOURS=4
  * si torna alle rebanadine corte.

@@ -1,12 +1,12 @@
 /**
  * Modalità della sincronizzazione WebThron (scelta in Sistema → Avanzata).
  *
- *  - incremental: solo i nuovi eventi, a ogni ciclo; i 90 giorni li rilegge la sera (11:30 e 01:00, scheduler.ts).
- *  - full:        carica gli ultimi 90 giorni ogni ~10 minuti (se la precedente gira ancora, salta); niente incrementale.
- *  - mixed:       incrementale a ogni ciclo + ogni ora la carica dei 90 giorni;
+ *  - incremental: solo i nuovi eventi, a ogni ciclo; i 180 giorni li rilegge la sera (11:30 e 01:00, scheduler.ts).
+ *  - full:        carica gli ultimi 180 giorni ogni ~10 minuti (se la precedente gira ancora, salta); niente incrementale.
+ *  - mixed:       incrementale a ogni ciclo + ogni ora la carica dei 180 giorni;
  *                 l'incrementale resta fermo finché la carica non è finita.
  *
- * La carica dei 90 giorni è la stessa del pulsante «Carica storico» (first-sync.ts), quindi
+ * La carica dei 180 giorni è la stessa del pulsante «Carica storico» (first-sync.ts), quindi
  * richiede il toggle «Backfill manuali» e non parte mai due volte insieme.
  * Il modo è salvato in system_config (nessuna migrazione: la tabella esiste già).
  */
@@ -18,7 +18,7 @@ export const SYNC_MODES = ['incremental', 'full', 'mixed'] as const;
 export type SyncMode = (typeof SYNC_MODES)[number];
 
 export const SYNC_MODE_KEY = 'webthron_sync_mode';
-export const FULL_SYNC_DAYS = 90;
+export const FULL_SYNC_DAYS = 180;   // 6 mesi
 export const FULL_SYNC_PAUSE_SEC = 2;
 
 export function isSyncMode(v: unknown): v is SyncMode {
@@ -30,7 +30,7 @@ export interface TickPlan {
   full:        boolean;
 }
 
-/** Ogni quanti secondi si rilancia la carica dei 90 giorni, per modo. */
+/** Ogni quanti secondi si rilancia la carica dei 180 giorni, per modo. */
 export const FULL_EVERY_SEC  = 10 * 60;
 export const MIXED_EVERY_SEC = 60 * 60;
 
@@ -41,7 +41,7 @@ export function cyclesFor(everySec: number, syncSeconds: number): number {
 
 /**
  * Cosa fare a un ciclo del timer. `cycle` conta i cicli dall'avvio (parte da 1);
- * `syncSeconds` = durata di un ciclo. La carica dei 90 giorni parte ogni 10 min (full)
+ * `syncSeconds` = durata di un ciclo. La carica dei 180 giorni parte ogni 10 min (full)
  * o ogni ora (mixed), e mai se la precedente è ancora in corso.
  */
 export function planTick(mode: SyncMode, cycle: number, syncSeconds: number, fullRunning: boolean): TickPlan {

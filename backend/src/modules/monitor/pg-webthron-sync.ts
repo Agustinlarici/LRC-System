@@ -128,7 +128,7 @@ async function sostituisciModificate(rows: WebthronEvent[]): Promise<number> {
 }
 
 /**
- * Passata su `lastup` per la carica dei 90 giorni: sostituisce nello storico le righe delle schede
+ * Passata su `lastup` per la carica dei 180 giorni: sostituisce nello storico le righe delle schede
  * modificate da `fromDay` (YYYY-MM-DD, ora di Roma) in poi. Solo se il flag `iknow_andon_lastup_enabled`
  * è acceso. Ritorna le righe sostituite; lancia l'errore se WebThron non risponde.
  */

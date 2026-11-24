@@ -191,7 +191,7 @@ function SyncModeCard({ flags }: { flags: IKnowFlags }) {
   async function launch() {
     setBusy(true); setMsg('');
     try {
-      const res = await apiFetch('/api/system/first-sync?days=90', { method: 'POST' });
+      const res = await apiFetch('/api/system/first-sync?days=180', { method: 'POST' });
       const d = await res.json() as { message?: string; status?: FirstSyncStatus };
       setMsg(d.message ?? '');
       if (d.status) setStatus(d.status);
@@ -1225,7 +1225,7 @@ function AggiornamentiTab() {
               <div className="space-y-2">
                 {([
                   ['force-sync',              'Sync WebThron ora'],
-                  ['first-sync',              'Carica storico iKnow (ultimi 90 giorni)'],
+                  ['first-sync',              'Carica storico iKnow (ultimi 180 giorni)'],
                   ['force-bc-sync',           'Sync Business Central ora'],
                   ['force-lookup',            'Refresh lookup tables'],
                   ['force-snapshot',          'Snapshot OEE ieri'],

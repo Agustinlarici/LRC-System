@@ -58,7 +58,7 @@ export async function executiveRefresh(): Promise<void> {
 
 /**
  * Rilegge la cache solo da PostgreSQL, senza interrogare WebThron.
- * Serve in modalità «full» (nessun incrementale): i dati arrivano dalla carica dei 90 giorni.
+ * Serve in modalità «full» (nessun incrementale): i dati arrivano dalla carica dei 180 giorni.
  */
 export async function executiveReloadFromPg(): Promise<void> {
   try {
