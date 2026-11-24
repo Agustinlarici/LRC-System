@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { StatusBadge, type Tone } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonTable } from '@/components/ui/Skeleton';
+import { IknowCalls } from './IknowCalls';
 
 type Job = {
   id: number; commessa: string; phase: string; source: string; status: string; attempts: number;
@@ -283,6 +284,8 @@ export default function QualityControlStationPage() {
           )}
         </div>
       </div>
+
+      <IknowCalls />
 
       <h2 className="mb-3 text-lg font-semibold text-ink-900">Stazioni</h2>
       <div className="card p-5">
