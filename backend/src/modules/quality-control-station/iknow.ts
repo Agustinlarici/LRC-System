@@ -9,9 +9,9 @@ import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { db } from '../../db/client.js';
 import { logger } from '../../lib/logger.js';
-import { parseBody } from '../../lib/validate.js';
 import { bearerTokenAny, normalizeCommessa, normalizePhase, sha256Hex } from './helpers.js';
 import { activePhaseRules, matchPhase, registerEvent } from './events.js';
+import { cleanIp, peekFields, recordCall, type CallLog, type Esito } from './iknow-log.js';
 
 export const iknowRoutes = new Hono();
 
@@ -34,40 +34,62 @@ export function parseDataOra(raw: string): Date | null {
 }
 
 iknowRoutes.post('/accettate', async (c) => {
-  const [cfg] = await db`SELECT token_hash FROM photo_iknow_config WHERE id = 1`;
-  if (!cfg) throw new HTTPException(503, { message: 'Integrazione iKnow non configurata' });
-  const token = bearerTokenAny(c.req.header('Authorization'));
-  const given = Buffer.from(sha256Hex(token ?? ''), 'hex');
-  const wanted = Buffer.from(cfg.token_hash as string, 'hex');
-  if (!token || given.length !== wanted.length || !timingSafeEqual(given, wanted)) {
-    logger.warn({ ip: c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip') }, 'iknow: token non valido');
-    throw new HTTPException(401, { message: 'Token non valido' });
+  // Ogni chiamata lascia una riga nel registro (pagina Quality Control Station), qualunque sia l'esito.
+  const call: CallLog = { ip: cleanIp(c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip')), httpStatus: 500, esito: 'errore_interno' };
+  function fail(status: 400 | 401 | 503, esito: Esito, message: string): never {   // function: serve a TS per restringere i tipi dopo la chiamata
+    call.httpStatus = status; call.esito = esito; call.dettaglio = message;
+    throw new HTTPException(status, { message });
   }
+  try {
+    const [cfg] = await db`SELECT token_hash FROM photo_iknow_config WHERE id = 1`;
+    if (!cfg) fail(503, 'token_non_configurato', 'Integrazione iKnow non configurata');
+    const token = bearerTokenAny(c.req.header('Authorization'));
+    const given = Buffer.from(sha256Hex(token ?? ''), 'hex');
+    const wanted = Buffer.from(cfg.token_hash as string, 'hex');
+    if (!token || given.length !== wanted.length || !timingSafeEqual(given, wanted)) {
+      logger.warn({ ip: call.ip }, 'iknow: token non valido');
+      fail(401, 'token_errato', token ? 'Token non valido' : 'Header Authorization mancante o senza Bearer');
+    }
 
-  // Solo con l'origine «API» gli ordini nascono da qui. Altrimenti si risponde 200 (iKnow non deve
-  // riprovare per sempre) ma non si crea nulla, e la chiamata si conta.
-  const [mode] = await db`SELECT mode FROM photo_feed_config WHERE id = 1`;
-  if (mode?.mode !== 'api') {
-    ignoredApiCalls.count++; ignoredApiCalls.last_at = new Date();
-    logger.warn({ mode: mode?.mode ?? 'off' }, 'iknow: chiamata ricevuta ma l\'origine non è «API»: ignorata');
-    return c.json({ ok: true, result: 'ignored' });
+    // Da qui il token è valido: il corpo si può leggere (e mostrare nel registro, troncato).
+    const raw: unknown = await c.req.json().catch(() => null);
+    call.campi = peekFields(raw);
+
+    // Solo con l'origine «API» gli ordini nascono da qui. Altrimenti si risponde 200 (iKnow non deve
+    // riprovare per sempre) ma non si crea nulla, e la chiamata si conta.
+    const [mode] = await db`SELECT mode FROM photo_feed_config WHERE id = 1`;
+    if (mode?.mode !== 'api') {
+      ignoredApiCalls.count++; ignoredApiCalls.last_at = new Date();
+      logger.warn({ mode: mode?.mode ?? 'off' }, 'iknow: chiamata ricevuta ma l\'origine non è «API»: ignorata');
+      call.httpStatus = 200; call.esito = 'ignorata_origine'; call.dettaglio = `Origine attuale: ${mode?.mode ?? 'off'}`;
+      return c.json({ ok: true, result: 'ignored' });
+    }
+
+    const parsed = Body.safeParse(raw);
+    if (!parsed.success) {
+      fail(400, 'corpo_non_valido', raw === null ? 'Invalid JSON body' : parsed.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', '));
+    }
+    const b = parsed.data!;
+    const commessa = normalizeCommessa(b.commessa);       // resta stringa: "000000" non perde gli zeri
+    const eventAt = parseDataOra(b.data_ora);
+    if (!commessa) fail(400, 'corpo_non_valido', 'commessa non valida');
+    if (!eventAt) fail(400, 'corpo_non_valido', 'data_ora non valida');
+
+    // Fase: nome esatto di iKnow o codice normalizzato. Se non è nel catalogo l'ordine si salva comunque
+    // (annullato, con il motivo) e si risponde 200: iKnow non deve riprovare all'infinito.
+    const rules = await activePhaseRules();
+    const matched = matchPhase(rules, b.fase);
+    const phase = matched ?? normalizePhase(b.fase);
+    if (!phase) fail(400, 'corpo_non_valido', 'fase non valida');
+
+    const ev = { seriale: b.seriale, commessa, fase: b.fase, componente: b.componente, versione: b.versione, eventAt };
+    const r = await registerEvent(ev, phase, matched !== null, 'iknow', 'iKnow');
+    if (r.result === 'phase_unknown') logger.warn({ phase, jobId: r.jobId }, 'iknow: fase sconosciuta, ordine messo da parte');
+    call.httpStatus = 200; call.jobId = r.jobId ?? null;
+    call.esito = r.result === 'created' ? 'ok' : r.result === 'duplicate' ? 'duplicata' : 'fase_sconosciuta';
+    if (r.result === 'phase_unknown') call.dettaglio = `Fase «${phase}» non configurata`;
+    return c.json({ ok: true, result: r.result, ...(r.jobId ? { job_id: r.jobId } : {}) });
+  } finally {
+    await recordCall(call);
   }
-
-  const b = await parseBody(c, Body);
-  const commessa = normalizeCommessa(b.commessa);       // resta stringa: "000000" non perde gli zeri
-  const eventAt = parseDataOra(b.data_ora);
-  if (!commessa) throw new HTTPException(400, { message: 'commessa non valida' });
-  if (!eventAt) throw new HTTPException(400, { message: 'data_ora non valida' });
-
-  // Fase: nome esatto di iKnow o codice normalizzato. Se non è nel catalogo l'ordine si salva comunque
-  // (annullato, con il motivo) e si risponde 200: iKnow non deve riprovare all'infinito.
-  const rules = await activePhaseRules();
-  const matched = matchPhase(rules, b.fase);
-  const phase = matched ?? normalizePhase(b.fase);
-  if (!phase) throw new HTTPException(400, { message: 'fase non valida' });
-
-  const ev = { seriale: b.seriale, commessa, fase: b.fase, componente: b.componente, versione: b.versione, eventAt };
-  const r = await registerEvent(ev, phase, matched !== null, 'iknow', 'iKnow');
-  if (r.result === 'phase_unknown') logger.warn({ phase, jobId: r.jobId }, 'iknow: fase sconosciuta, ordine messo da parte');
-  return c.json({ ok: true, result: r.result, ...(r.jobId ? { job_id: r.jobId } : {}) });
 });
