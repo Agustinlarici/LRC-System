@@ -39,7 +39,7 @@ export default function DespachoPage() {
   return (
     <div>
       <PageHeader
-        title={`Despacho ${id}`}
+        title={`Spedizione ${id}`}
         back={{ label: 'Fatturazione', href: '/fatturazione' }}
         description={det ? `${det.shipment_date ?? 'senza data'} · cliente ${det.customer_account} · ${det.righe.length} righe` : undefined}
         badge={senza > 0 ? <StatusBadge tone="warning">{senza} senza regola</StatusBadge> : undefined}
