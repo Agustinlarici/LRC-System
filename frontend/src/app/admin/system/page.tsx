@@ -131,7 +131,7 @@ interface IKnowFlags {
 
 const IKNOW_QUERIES: { key: keyof Omit<IKnowFlags, 'iknow_enabled'>; label: string; description: string }[] = [
   { key: 'iknow_andon_enabled',    label: 'Andon / Monitor — sincronizzazione continua', description: 'Legge i nuovi eventi di produzione da iKnow — ogni 5 minuti' },
-  { key: 'iknow_nightly_enabled',  label: 'Rilettura notturna',                           description: 'Modo incrementale: rilegge gli ultimi 3 mesi per sistemare i dati — ogni giorno alle 11:30 e ogni notte alle 01:00' },
+  { key: 'iknow_nightly_enabled',  label: 'Rilettura notturna',                           description: 'Modo incrementale: rilegge gli ultimi 6 mesi per sistemare i dati — ogni notte alle 01:00' },
   { key: 'iknow_lookup_enabled',   label: 'Fasi e combinazioni',                          description: 'Aggiorna fasi, modelli e componenti — ogni notte alle 02:00, a mano da Fasi iKnow e all’avvio se le liste sono vuote' },
   { key: 'iknow_buffer_enabled',   label: 'Buffer',                                       description: 'Ricalcola i seriali in pre-area dallo storico locale — ogni 30 minuti' },
   { key: 'iknow_bom_enabled',      label: 'BOM notturno',                                 description: 'Copia i BOM di iKnow (vista v_iknow_bom per Power BI) — una volta a notte alle 04:15; parte spento' },
@@ -147,7 +147,7 @@ interface FirstSyncStatus {
 }
 
 const SYNC_MODES: { key: SyncMode; label: string; description: string }[] = [
-  { key: 'incremental', label: 'Incrementale', description: 'Nuovi eventi ogni 5 minuti. Alle 11:30 e alle 01:00 rilegge gli ultimi 3 mesi (una query per settimana)' },
+  { key: 'incremental', label: 'Incrementale', description: 'Nuovi eventi ogni 5 minuti. Alle 01:00 rilegge gli ultimi 6 mesi (una query per settimana)' },
   { key: 'full',        label: 'Solo ultimi 3 mesi', description: 'Rilegge gli ultimi 3 mesi ogni 10 minuti (una query per settimana), senza incrementale. Pesante per WebThron' },
   { key: 'mixed',       label: 'Mista',         description: 'Incrementale ogni 5 minuti + ogni ora rilegge gli ultimi 3 mesi. L’incrementale resta fermo finché la lettura non è finita' },
 ];
@@ -212,7 +212,7 @@ function SyncModeCard({ flags }: { flags: IKnowFlags }) {
     <div className="card">
       <h2 className="font-semibold text-gray-800 mb-1">Modalità sincronizzazione WebThron</h2>
       <p className="text-xs text-gray-500 mb-4">
-        Come si aggiorna lo storico. Le letture dei 3 mesi di «Solo 3 mesi» e «Mista» richiedono il toggle «Backfill manuali»; quelle delle 11:30 e 01:00 il toggle «Rilettura notturna».
+        Come si aggiorna lo storico. Le letture dei 3 mesi di «Solo 3 mesi» e «Mista» richiedono il toggle «Backfill manuali»; quella delle 01:00 il toggle «Rilettura notturna».
       </p>
       <div className="divide-y divide-gray-100">
         {SYNC_MODES.map(m => (
@@ -1046,7 +1046,7 @@ const JOB_LABELS: Record<string, string> = {
   bom_sync:          'BOM iKnow (04:15)',
   first_sync:        'Carica iniziale storico iKnow',
   sync_full:         'Sync WebThron — prima esecuzione',
-  sync_full_day:     'Sync Full Day (11:30 e 01:00)',
+  sync_full_day:     'Sync Full Day (01:00)',
   heatmap_snapshot:  'Snapshot OEE (01:00)',
   lookup_refresh:    'Lookup Tables (02:00)',
   bc_sync:           'Sync Business Central (03:00)',

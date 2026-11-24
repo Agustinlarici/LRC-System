@@ -51,10 +51,10 @@ export function startScheduler() {
     }
   }, { timezone: 'Europe/Rome' });
 
-  // 11:30 e 01:00 — in modo «incrementale» si rileggono gli ultimi 180 giorni (una query per settimana,
+  // 01:00 — in modo «incrementale» si rileggono gli ultimi 180 giorni (una query per settimana,
   // stessa carica del pulsante). Nei modi «full» e «mista» la rilettura la fanno già loro ogni 10 min / ogni ora:
   // qui si aspetta solo che quella in corso finisca. Richiede il toggle «Rilettura notturna».
-  async function rileggiTreMesi(): Promise<void> {
+  async function rileggiStorico(): Promise<void> {
     const mode = await getSyncMode();
     if (mode === 'incremental' && !getFirstSyncStatus().running) {
       if (!(await isIKnowEnabled('iknow_nightly_enabled'))) {
@@ -78,15 +78,10 @@ export function startScheduler() {
     await waitForFirstSync();
   }
 
-  // 11:30 — rilettura dei 180 giorni (oggi compreso, fin qui)
-  cron.schedule('30 11 * * *', async () => {
-    await rileggiTreMesi();
-  }, { timezone: 'Europe/Rome' });
-
   // 01:00 — rilettura dei 180 giorni + snapshot OEE di ieri (aspetta che la lettura sia finita)
   cron.schedule('0 1 * * *', async () => {
     const dateStr = daysToReread(todayRome(), 1, false)[0];   // ieri
-    await rileggiTreMesi();
+    await rileggiStorico();
 
     logger.info(`[scheduler] Snapshot OEE per ${dateStr}...`);
     startRun('heatmap_snapshot');
@@ -283,5 +278,5 @@ export function startScheduler() {
   setNextRun('spma_onedrive_poll', nextEvery10Min());
   setNextRun('edi_auto_generate',  nextOccurrence(23, 45));
 
-  logger.info('Scheduler avviato — Ferrari DELINS 06:00, EDI auto 23:45, rilettura WebThron 11:30 e 01:00 (180 giorni), snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
+  logger.info('Scheduler avviato — Ferrari DELINS 06:00, EDI auto 23:45, rilettura WebThron 01:00 (180 giorni), snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
 }
