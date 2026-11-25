@@ -22,6 +22,7 @@ import { isIKnowEnabled } from '../../lib/system-flags.js';
 import { startRun, endRun, failRun } from '../../lib/sync-stats.js';
 import { isQuietHour, productionDayOf } from './webthron-time.js';
 import { dedupeByKey } from './webthron-dedupe.js';
+import { trackedPass } from './tracked-pass.js';
 
 export type ProdRow = WebthronEvent;
 
@@ -104,27 +105,59 @@ export async function getActiveLineeWithCombos(): Promise<LineaCombo[]> {
 /**
  * Sostituisce nello storico le righe delle schede modificate in iKnow (lastup).
  * La riga si trova con `cod_seriale` + `data_inserimento` (datain); se non c'è (scheda fuori dal periodo
- * che abbiamo) non si inserisce nulla. Ritorna quante righe sono state sostituite.
+ * che abbiamo) non si inserisce nulla, ma si conta: `nonTrovate` si vede nel log.
+ * `sostituite` = righe davvero cambiate; una scheda trovata ma identica non conta né come cambiata né come non trovata.
  */
-async function sostituisciModificate(rows: WebthronEvent[]): Promise<number> {
-  let n = 0;
+async function sostituisciModificate(rows: WebthronEvent[]): Promise<{ sostituite: number; nonTrovate: number }> {
+  let sostituite = 0;
+  let nonTrovate = 0;
   for (const r of dedupeByKey(rows.map(x => ({ ...x, data_cache: '' })))) {
-    const res = await db`
-      UPDATE webthron_events_history SET
-        commessa         = ${r.commessa ?? null},
-        esito_delibera   = ${r.esito_delibera ?? null},
-        versione         = ${r.versione ?? null},
-        operatore        = ${r.operatore ?? null},
-        colore           = ${r.colore ?? null},
-        protocollo_cesta = ${r.protocollo_cesta ?? null}
-      WHERE cod_seriale = ${r.cod_seriale} AND data_inserimento = ${r.data_inserimento}
-        AND (commessa, esito_delibera, versione, operatore, colore, protocollo_cesta)
-            IS DISTINCT FROM (${r.commessa ?? null}, ${r.esito_delibera ?? null}, ${r.versione ?? null},
-                              ${r.operatore ?? null}, ${r.colore ?? null}, ${r.protocollo_cesta ?? null})
+    const [esito] = await db`
+      WITH esiste AS (
+        SELECT 1 FROM webthron_events_history
+        WHERE cod_seriale = ${r.cod_seriale} AND data_inserimento = ${r.data_inserimento}
+        LIMIT 1
+      ), cambiate AS (
+        UPDATE webthron_events_history SET
+          commessa         = ${r.commessa ?? null},
+          esito_delibera   = ${r.esito_delibera ?? null},
+          versione         = ${r.versione ?? null},
+          operatore        = ${r.operatore ?? null},
+          colore           = ${r.colore ?? null},
+          protocollo_cesta = ${r.protocollo_cesta ?? null}
+        WHERE cod_seriale = ${r.cod_seriale} AND data_inserimento = ${r.data_inserimento}
+          AND (commessa, esito_delibera, versione, operatore, colore, protocollo_cesta)
+              IS DISTINCT FROM (${r.commessa ?? null}, ${r.esito_delibera ?? null}, ${r.versione ?? null},
+                                ${r.operatore ?? null}, ${r.colore ?? null}, ${r.protocollo_cesta ?? null})
+        RETURNING 1
+      )
+      SELECT (SELECT count(*) FROM esiste)::int AS trovate, (SELECT count(*) FROM cambiate)::int AS cambiate
     `;
-    n += res.count;
+    sostituite += Number(esito?.cambiate ?? 0);
+    if (Number(esito?.trovate ?? 0) === 0) nonTrovate++;
   }
-  return n;
+  return { sostituite, nonTrovate };
+}
+
+/**
+ * Legge da WebThron le schede modificate da `since` e ne sostituisce le righe nello storico.
+ * Registrata come job «sync_lastup» (visibile in Sistema → Aggiornamenti). Ritorna le righe sostituite.
+ * Con `swallow` l'errore non si propaga (incrementale: gli eventi nuovi non devono dipenderne).
+ */
+async function passataLastup(
+  since: Date, combos: LineaCombo[], deliberaFasi: string[], origine: string, swallow: boolean,
+): Promise<number> {
+  const n = await trackedPass('sync_lastup', async () => {
+    const modificate = await queryWebthronEvents(combos, deliberaFasi, { mode: 'modified', since });
+    const { sostituite, nonTrovate } = await sostituisciModificate(modificate);
+    const msg = `[LastupSync] ${origine}: ${modificate.length} schede modificate, ${sostituite} righe sostituite, ${nonTrovate} non trovate nello storico`;
+    if (nonTrovate > 0 || sostituite > 0) logger.info(msg); else logger.debug(msg);
+    return sostituite;
+  }, {
+    swallow,
+    onError: err => logger.error(`[LastupSync] ${origine}: passata fallita, gli eventi nuovi proseguono: ${err instanceof Error ? err.message : String(err)}`),
+  });
+  return n ?? 0;
 }
 
 /**
@@ -137,11 +170,7 @@ export async function sostituisciModificateDal(fromDay: string): Promise<number>
   const combos       = await getActiveLineeWithCombos();
   const deliberaFasi = getDeliberaFasi();
   if (combos.length === 0) return 0;
-
-  const modificate = await queryWebthronEvents(combos, deliberaFasi, { mode: 'modified', since: midnightRome(fromDay) });
-  const aggiornate = await sostituisciModificate(modificate);
-  logger.info(`[LastupSync] dal ${fromDay} — ${modificate.length} schede modificate, ${aggiornate} righe sostituite`);
-  return aggiornate;
+  return passataLastup(midnightRome(fromDay), combos, deliberaFasi, `dal ${fromDay}`, false);
 }
 
 // ─── Main sync ────────────────────────────────────────────────────────────────
@@ -191,10 +220,9 @@ export async function syncWebthronToPostgres(): Promise<void> {
     const rows = await queryWebthronEvents(combos, deliberaFasi, dateFilter);
 
     // Opzione (spenta finché non provata): schede già lette ma modificate dopo (lastup), stessa data `since`
+    // Un errore qui non ferma l'incrementale: è registrato nel job «sync_lastup» e gli eventi nuovi entrano comunque.
     if (await isIKnowEnabled('iknow_andon_lastup_enabled')) {
-      const modificate = await queryWebthronEvents(combos, deliberaFasi, { mode: 'modified', since });
-      const aggiornate = await sostituisciModificate(modificate);
-      if (aggiornate > 0) logger.info(`[WebthronSync] ${aggiornate} eventi sostituiti (modificati in iKnow, lastup)`);
+      await passataLastup(since, combos, deliberaFasi, 'incrementale', true);
     }
 
     if (rows.length === 0) {

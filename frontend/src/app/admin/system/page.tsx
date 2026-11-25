@@ -1057,6 +1057,7 @@ const JOB_LABELS: Record<string, string> = {
   first_sync:        'Carica iniziale storico iKnow',
   sync_full:         'Sync WebThron — primo ciclo del giorno',
   sync_full_day:     'Sync Full Day (01:00)',
+  sync_lastup:       'Schede modificate (lastup)',
   heatmap_snapshot:  'Snapshot OEE (01:00)',
   lookup_refresh:    'Lookup Tables (02:00)',
   bc_sync:           'Sync Business Central (03:00)',
