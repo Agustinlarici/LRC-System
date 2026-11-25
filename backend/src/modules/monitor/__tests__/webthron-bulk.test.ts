@@ -11,6 +11,7 @@ vi.mock('../../../lib/system-flags.js', async (importOriginal) => ({
 type Params = unknown[];
 const calls: Array<{ from: string; to: string }> = [];
 const setLog: string[] = [];
+const sqls: string[] = [];
 let behave: (from: string, to: string) => Array<Record<string, unknown>> = () => [];
 
 vi.mock('mysql2/promise', () => ({
@@ -19,7 +20,8 @@ vi.mock('mysql2/promise', () => ({
       on: () => undefined,
       end: async () => undefined,
       query: async (sql: string) => { setLog.push(sql); return [[]]; },
-      execute: async (_q: unknown, params: Params) => {
+      execute: async (q: unknown, params: Params) => {
+        sqls.push(typeof q === 'string' ? q : (q as { sql: string }).sql);
         const [from, to] = params as [string, string];
         calls.push({ from, to });
         return [behave(from, to)];
@@ -39,7 +41,7 @@ const row = (id: number) => ({
 });
 const week = { mode: 'range' as const, from: '2026-03-04', to: '2026-03-10', sliceHours: 168 };
 
-beforeEach(() => { calls.length = 0; setLog.length = 0; behave = () => []; });
+beforeEach(() => { calls.length = 0; setLog.length = 0; sqls.length = 0; behave = () => []; });
 
 describe('lettura a settimane da WebThron', () => {
   it('di default la carica usa una settimana intera (168 ore)', () => {
@@ -107,5 +109,35 @@ describe('lettura a settimane da WebThron', () => {
     behave = () => { throw Object.assign(new Error('connessione persa'), { code: 'ECONNRESET' }); };
     await expect(queryWebthronEvents(combos, [], week)).rejects.toThrow('connessione persa');
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe('schede modificate (lastup)', () => {
+  const since      = new Date('2026-11-25T10:00:00Z');
+  const datainFrom = new Date('2026-05-30T22:00:00Z');
+
+  it('la query è limitata anche su datain (indice), non solo su lastup', async () => {
+    await queryWebthronEvents(combos, [], { mode: 'modified', since, datainFrom });
+    expect(sqls).toHaveLength(1);
+    expect(sqls[0]).toContain('ubi.lastup > ?');
+    expect(sqls[0]).toContain('ubi.datain >= ?');
+    expect(sqls[0]).toContain('LIMIT 40000');
+    // i primi due parametri sono `since` e `datainFrom`, nell'ordine dei segnaposto
+    expect(calls[0]).toEqual({ from: since, to: datainFrom });
+  });
+
+  it('incrementale (senza bulk): resta al limite di 15 s, nessun SET SESSION', async () => {
+    await queryWebthronEvents(combos, [], { mode: 'modified', since, datainFrom });
+    expect(setLog).toEqual([]);
+  });
+
+  it('carica notturna/pulsante (bulk): limite lungo e poi si torna a 15 s, anche se la query fallisce', async () => {
+    await queryWebthronEvents(combos, [], { mode: 'modified', since, datainFrom, bulk: true });
+    expect(setLog).toEqual(['SET SESSION max_statement_time = 30', 'SET SESSION max_statement_time = 15']);
+
+    setLog.length = 0;
+    behave = () => { throw Object.assign(new Error('timeout'), { errno: 1969 }); };
+    await expect(queryWebthronEvents(combos, [], { mode: 'modified', since, datainFrom, bulk: true })).rejects.toThrow('timeout');
+    expect(setLog.at(-1)).toBe('SET SESSION max_statement_time = 15');
   });
 });

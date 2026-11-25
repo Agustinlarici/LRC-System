@@ -23,6 +23,7 @@ import { startRun, endRun, failRun } from '../../lib/sync-stats.js';
 import { isQuietHour, productionDayOf } from './webthron-time.js';
 import { dedupeByKey } from './webthron-dedupe.js';
 import { trackedPass } from './tracked-pass.js';
+import { BACKFILL_DAYS } from './sync-mode.js';
 
 export type ProdRow = WebthronEvent;
 
@@ -145,10 +146,10 @@ async function sostituisciModificate(rows: WebthronEvent[]): Promise<{ sostituit
  * Con `swallow` l'errore non si propaga (incrementale: gli eventi nuovi non devono dipenderne).
  */
 async function passataLastup(
-  since: Date, combos: LineaCombo[], deliberaFasi: string[], origine: string, swallow: boolean,
+  since: Date, datainFrom: Date, combos: LineaCombo[], deliberaFasi: string[], origine: string, swallow: boolean, bulk: boolean,
 ): Promise<number> {
   const n = await trackedPass('sync_lastup', async () => {
-    const modificate = await queryWebthronEvents(combos, deliberaFasi, { mode: 'modified', since });
+    const modificate = await queryWebthronEvents(combos, deliberaFasi, { mode: 'modified', since, datainFrom, bulk });
     const { sostituite, nonTrovate } = await sostituisciModificate(modificate);
     const msg = `[LastupSync] ${origine}: ${modificate.length} schede modificate, ${sostituite} righe sostituite, ${nonTrovate} non trovate nello storico`;
     if (nonTrovate > 0 || sostituite > 0) logger.info(msg); else logger.debug(msg);
@@ -170,7 +171,8 @@ export async function sostituisciModificateDal(fromDay: string): Promise<number>
   const combos       = await getActiveLineeWithCombos();
   const deliberaFasi = getDeliberaFasi();
   if (combos.length === 0) return 0;
-  return passataLastup(midnightRome(fromDay), combos, deliberaFasi, `dal ${fromDay}`, false);
+  const dal = midnightRome(fromDay);   // schede modificate da qui in poi, create da qui in poi (lo storico che abbiamo)
+  return passataLastup(dal, dal, combos, deliberaFasi, `dal ${fromDay}`, false, true);
 }
 
 // ─── Main sync ────────────────────────────────────────────────────────────────
@@ -222,7 +224,9 @@ export async function syncWebthronToPostgres(): Promise<void> {
     // Opzione (spenta finché non provata): schede già lette ma modificate dopo (lastup), stessa data `since`
     // Un errore qui non ferma l'incrementale: è registrato nel job «sync_lastup» e gli eventi nuovi entrano comunque.
     if (await isIKnowEnabled('iknow_andon_lastup_enabled')) {
-      await passataLastup(since, combos, deliberaFasi, 'incrementale', true);
+      // Solo schede create nello storico che teniamo (BACKFILL_DAYS): le più vecchie non hanno una riga da sostituire
+      const datainFrom = new Date(midnight.getTime() - BACKFILL_DAYS * 86_400_000);
+      await passataLastup(since, datainFrom, combos, deliberaFasi, 'incrementale', true, false);
     }
 
     if (rows.length === 0) {

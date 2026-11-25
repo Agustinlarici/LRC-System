@@ -217,7 +217,7 @@ export type LineaCombo = { fase: string; modello: string; componente: string };
 
 type DateFilter =
   | { mode: 'since'; since: Date }     // datain > ?
-  | { mode: 'modified'; since: Date }  // lastup > ?, senza cancellate (schede modificate)
+  | { mode: 'modified'; since: Date; datainFrom: Date; bulk?: boolean }  // lastup > ? AND datain >= ?, senza cancellate; bulk = limite lungo (carica notturna/pulsante)
   | { mode: 'range'; from: string; to: string; sliceHours?: number };  // giorni [from, to] letti a rebanadine di datain (indice), backfill
 
 /** Ore per rebanadina nelle letture di giorni interi: ~1000 documenti al massimo, query da pochi ms. */
@@ -250,6 +250,23 @@ const BULK_ROW_LIMIT = 150_000;
 //
 // 'versione' (44) e 'colore' (28) sono liste (id → testo in ikExtraTab);
 // 'operatore' (21) e 'protocollo_cesta' (554) sono testo libero.
+
+/**
+ * Esegue una lettura grossa: il limite del server sale per questa sola query (BULK_MAX_STATEMENT_SECONDS)
+ * e si ripristina subito dopo, anche se la query fallisce. La guardia usa la soglia «lenta» più alta.
+ */
+function withBulkLimit<T>(fn: () => Promise<T>): Promise<T> {
+  return bulkContext.run({ slowMs: BULK_SLOW_MS, maxStatementSeconds: BULK_MAX_STATEMENT_SECONDS }, async () => {
+    const pool = getWebthronPool();
+    await pool.query(`SET SESSION max_statement_time = ${BULK_MAX_STATEMENT_SECONDS}`);
+    try {
+      return await fn();
+    } finally {
+      await pool.query(`SET SESSION max_statement_time = ${MAX_STATEMENT_SECONDS}`)
+        .catch((e: unknown) => logger.warn(`[WebThron] Ripristino di max_statement_time non riuscito: ${e instanceof Error ? e.message : e}`));
+    }
+  });
+}
 
 export async function queryWebthronEvents(
   prodCombos:   LineaCombo[],
@@ -355,10 +372,16 @@ export async function queryWebthronEvents(
     return fetchRows(buildSql('AND ubi.datain > ?', 5000), [dateFilter.since]);
   }
 
-  // Schede modificate (lastup > since), senza quelle cancellate. Nessun filtro su `datain`
-  // (coprirebbe quasi tutta la tabella): le schede nuove già lette sono un aggiornamento senza effetto.
+  // Schede modificate (lastup > since), senza quelle cancellate. `lastup` non ha indice: senza un limite su
+  // `datain` la query scandisce tutta la tabella (e su MyISAM blocca le scritture di iKnow). Si limita quindi a
+  // `datain >= datainFrom` (inizio dello storico che teniamo): le schede più vecchie non hanno una riga da sostituire.
+  // `bulk` (carica notturna/pulsante) usa il limite lungo del server; l'incrementale resta a 15 s.
   if (dateFilter.mode === 'modified') {
-    const rows = await fetchRows(buildSql('AND ubi.lastup > ?', LASTUP_ROW_LIMIT, true), [dateFilter.since]);
+    const sql    = buildSql('AND ubi.lastup > ? AND ubi.datain >= ?', LASTUP_ROW_LIMIT, true);
+    const params = [dateFilter.since, dateFilter.datainFrom];
+    const rows   = dateFilter.bulk
+      ? await withBulkLimit(() => fetchRows(sql, params, BULK_TIMEOUT_MS))
+      : await fetchRows(sql, params);
     if (rows.length >= LASTUP_ROW_LIMIT) {
       logger.warn(`[WebThron] Schede modificate (lastup) al limite di ${LASTUP_ROW_LIMIT} righe: ne mancano`);
     }
@@ -380,23 +403,10 @@ export async function queryWebthronEvents(
     const limit    = big ? BULK_ROW_LIMIT : SLICE_ROW_LIMIT;
     const fetch    = () => fetchRows(sql, [slice.from, slice.to], big ? BULK_TIMEOUT_MS : TIMEOUT_MS);
 
-    // Lettura grossa: il limite del server sale per questa sola query (30 s) e si ripristina subito dopo
-    const fetchBulk = async (): Promise<WebthronEvent[]> => {
-      const pool = getWebthronPool();
-      await pool.query(`SET SESSION max_statement_time = ${BULK_MAX_STATEMENT_SECONDS}`);
-      try {
-        return await fetch();
-      } finally {
-        await pool.query(`SET SESSION max_statement_time = ${MAX_STATEMENT_SECONDS}`)
-          .catch((e: unknown) => logger.warn(`[WebThron] Ripristino di max_statement_time non riuscito: ${e instanceof Error ? e.message : e}`));
-      }
-    };
-
     let rows: WebthronEvent[];
     try {
-      rows = big
-        ? await bulkContext.run({ slowMs: BULK_SLOW_MS, maxStatementSeconds: BULK_MAX_STATEMENT_SECONDS }, fetchBulk)
-        : await fetch();
+      // Lettura grossa: il limite del server sale per questa sola query (30 s) e si ripristina subito dopo
+      rows = big ? await withBulkLimit(fetch) : await fetch();
     } catch (err) {
       const halves = big && isTimeoutError(err) ? splitSlice(slice, RANGE_SLICE_HOURS) : null;
       if (!halves) throw err;
