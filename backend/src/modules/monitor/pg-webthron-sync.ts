@@ -217,21 +217,29 @@ export async function syncWebthronToPostgres(): Promise<void> {
   }
   const dateFilter = { mode: 'since' as const, since };
   const jobName = since > midnight ? 'sync_incremental' : 'sync_full';
+
+  // Opzione (spenta finché non provata): schede già lette ma modificate dopo (lastup), stessa data `since`.
+  // Gira DOPO l'inserimento degli eventi nuovi e non lancia mai: un errore o un timeout (registrato nel job
+  // «sync_lastup») non toglie nulla al lavoro principale, e una query lenta non ritarda gli eventi nuovi.
+  const passataLastupDopo = async (): Promise<void> => {
+    try {
+      if (!(await isIKnowEnabled('iknow_andon_lastup_enabled'))) return;
+      // Solo schede create nello storico che teniamo (BACKFILL_DAYS): le più vecchie non hanno una riga da sostituire
+      const datainFrom = new Date(midnight.getTime() - BACKFILL_DAYS * 86_400_000);
+      await passataLastup(since, datainFrom, combos, deliberaFasi, 'incrementale', true, false);
+    } catch (err) {
+      logger.error(`[LastupSync] incrementale: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
   startRun(jobName);
   try {
     const rows = await queryWebthronEvents(combos, deliberaFasi, dateFilter);
 
-    // Opzione (spenta finché non provata): schede già lette ma modificate dopo (lastup), stessa data `since`
-    // Un errore qui non ferma l'incrementale: è registrato nel job «sync_lastup» e gli eventi nuovi entrano comunque.
-    if (await isIKnowEnabled('iknow_andon_lastup_enabled')) {
-      // Solo schede create nello storico che teniamo (BACKFILL_DAYS): le più vecchie non hanno una riga da sostituire
-      const datainFrom = new Date(midnight.getTime() - BACKFILL_DAYS * 86_400_000);
-      await passataLastup(since, datainFrom, combos, deliberaFasi, 'incrementale', true, false);
-    }
-
     if (rows.length === 0) {
       endRun(jobName, 0);
       logger.debug('[WebthronSync] Nessun nuovo evento');
+      await passataLastupDopo();
       return;
     }
 
@@ -277,6 +285,7 @@ export async function syncWebthronToPostgres(): Promise<void> {
     } else {
       logger.debug(`[WebthronSync] Nessun evento nuovo (${rows.length} riletti)`);
     }
+    await passataLastupDopo();
   } catch (err) {
     failRun(jobName, err);
     throw err;
