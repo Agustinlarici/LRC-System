@@ -13,7 +13,7 @@ import { db } from '../db/client.js';
 /** Interruttori per singola query verso iKnow. */
 export const IKNOW_QUERY_FLAGS = [
   'iknow_andon_enabled',     // sync incrementale Andon/Monitor, ogni 5 minuti
-  'iknow_nightly_enabled',   // rilettura degli ultimi 3 mesi in modo incrementale, 11:30 e 01:00
+  'iknow_nightly_enabled',   // rilettura degli ultimi 6 mesi in modo incrementale, 01:00
   'iknow_lookup_enabled',    // aggiornamento fasi e combos, 02:00 (+ manuale e all'avvio)
   'iknow_buffer_enabled',    // ricalcolo Buffer, ogni 30 min (legge dallo storico locale)
   'iknow_bucci_enabled',     // lookup seriali/commesse nella Spedizione Bucci

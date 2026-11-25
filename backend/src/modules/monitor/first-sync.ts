@@ -68,7 +68,7 @@ export async function waitForFirstSync(): Promise<void> {
  * Avvia la carica in background. Lancia un errore se ce n'è già una in corso.
  * Legge `days` giorni che finiscono oggi (oggi parziale compreso), a settimane.
  * `flag` è il toggle che deve restare acceso mentre gira: «Backfill manuali» per pulsante e modi
- * full/mista, «Rilettura notturna» per le letture programmate delle 11:30 e delle 01:00.
+ * full/mista, «Rilettura notturna» per le letture programmate delle 01:00.
  */
 export function startFirstSync(
   { days, pauseSec, flag = 'iknow_backfill_enabled' }: { days: number; pauseSec: number; flag?: IKnowQueryFlag },

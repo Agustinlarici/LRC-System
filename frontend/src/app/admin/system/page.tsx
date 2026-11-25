@@ -131,7 +131,7 @@ interface IKnowFlags {
 
 const IKNOW_QUERIES: { key: keyof Omit<IKnowFlags, 'iknow_enabled'>; label: string; description: string }[] = [
   { key: 'iknow_andon_enabled',    label: 'Andon / Monitor — sincronizzazione continua', description: 'Legge i nuovi eventi di produzione da iKnow — ogni 5 minuti' },
-  { key: 'iknow_nightly_enabled',  label: 'Rilettura notturna',                           description: 'Modo incrementale: rilegge gli ultimi 3 mesi per sistemare i dati — ogni giorno alle 11:30 e ogni notte alle 01:00' },
+  { key: 'iknow_nightly_enabled',  label: 'Rilettura notturna',                           description: 'Modo incrementale: rilegge gli ultimi 6 mesi per sistemare i dati — ogni notte alle 01:00' },
   { key: 'iknow_lookup_enabled',   label: 'Fasi e combinazioni',                          description: 'Aggiorna fasi, modelli e componenti — ogni notte alle 02:00, a mano da Fasi iKnow e all’avvio se le liste sono vuote' },
   { key: 'iknow_buffer_enabled',   label: 'Buffer',                                       description: 'Ricalcola i seriali in pre-area dallo storico locale — ogni 30 minuti' },
   { key: 'iknow_bom_enabled',      label: 'BOM notturno',                                 description: 'Copia i BOM di iKnow (vista v_iknow_bom per Power BI) — una volta a notte alle 04:15; parte spento' },
@@ -147,7 +147,7 @@ interface FirstSyncStatus {
 }
 
 const SYNC_MODES: { key: SyncMode; label: string; description: string }[] = [
-  { key: 'incremental', label: 'Incrementale', description: 'Nuovi eventi ogni 5 minuti. Alle 11:30 e alle 01:00 rilegge gli ultimi 3 mesi (una query per settimana)' },
+  { key: 'incremental', label: 'Incrementale', description: 'Nuovi eventi ogni 5 minuti. Alle 01:00 rilegge gli ultimi 6 mesi (una query per settimana)' },
   { key: 'full',        label: 'Solo ultimi 3 mesi', description: 'Rilegge gli ultimi 3 mesi ogni 10 minuti (una query per settimana), senza incrementale. Pesante per WebThron' },
   { key: 'mixed',       label: 'Mista',         description: 'Incrementale ogni 5 minuti + ogni ora rilegge gli ultimi 3 mesi. L’incrementale resta fermo finché la lettura non è finita' },
 ];
@@ -212,7 +212,7 @@ function SyncModeCard({ flags }: { flags: IKnowFlags }) {
     <div className="card">
       <h2 className="font-semibold text-gray-800 mb-1">Modalità sincronizzazione WebThron</h2>
       <p className="text-xs text-gray-500 mb-4">
-        Come si aggiorna lo storico. Le letture dei 3 mesi di «Solo 3 mesi» e «Mista» richiedono il toggle «Backfill manuali»; quelle delle 11:30 e 01:00 il toggle «Rilettura notturna».
+        Come si aggiorna lo storico. Le letture dei 3 mesi di «Solo 3 mesi» e «Mista» richiedono il toggle «Backfill manuali»; quella delle 01:00 il toggle «Rilettura notturna».
       </p>
       <div className="divide-y divide-gray-100">
         {SYNC_MODES.map(m => (
@@ -236,7 +236,7 @@ function SyncModeCard({ flags }: { flags: IKnowFlags }) {
           <button type="button" onClick={() => void launch()}
             disabled={busy || running || masterOff || !flags.iknow_backfill_enabled}
             className="px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-sm text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
-            {running ? '⟳ Carica in corso...' : 'Lancia ora gli ultimi 3 mesi'}
+            {running ? '⟳ Carica in corso...' : 'Lancia ora gli ultimi 6 mesi'}
           </button>
           {running && (
             <button type="button" onClick={() => void cancel()}
@@ -1025,6 +1025,16 @@ function ago(iso: string | null): string {
   return `${h} h fa`;
 }
 
+/** Per un orario futuro («Prossimo»): «tra 4 min»; se è già passato, «in ritardo di N min». */
+function fromNow(iso: string | null): string {
+  if (!iso) return '—';
+  const min = Math.round((new Date(iso).getTime() - Date.now()) / 60_000);
+  if (min === 0) return 'adesso';
+  const abs = Math.abs(min);
+  const txt = abs < 60 ? `${abs} min` : `${Math.round(abs / 60)} h`;
+  return min > 0 ? `tra ${txt}` : `in ritardo di ${txt}`;
+}
+
 function statusBadge(s: string) {
   const base = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold';
   if (s === 'ok')      return `${base} bg-green-100 text-green-700`;
@@ -1042,11 +1052,12 @@ function severityBadge(s: string) {
 }
 
 const JOB_LABELS: Record<string, string> = {
-  sync_incremental:  'Sync WebThron (10 min)',
+  sync_incremental:  'Sync WebThron (5 min)',
   bom_sync:          'BOM iKnow (04:15)',
   first_sync:        'Carica iniziale storico iKnow',
-  sync_full:         'Sync WebThron — prima esecuzione',
-  sync_full_day:     'Sync Full Day (11:30 e 01:00)',
+  sync_full:         'Sync WebThron — primo ciclo del giorno',
+  sync_full_day:     'Sync Full Day (01:00)',
+  sync_lastup:       'Schede modificate (lastup)',
   heatmap_snapshot:  'Snapshot OEE (01:00)',
   lookup_refresh:    'Lookup Tables (02:00)',
   bc_sync:           'Sync Business Central (03:00)',
@@ -1306,7 +1317,7 @@ function AggiornamentiTab() {
                         {s.lastDurationSec != null ? `${s.lastDurationSec}s` : '—'}
                       </td>
                       <td className="py-2.5 pr-4 text-gray-500">{s.lastRowCount ?? '—'}</td>
-                      <td className="py-2.5 pr-4 text-gray-500">{ago(s.nextScheduledAt)}</td>
+                      <td className="py-2.5 pr-4 text-gray-500">{fromNow(s.nextScheduledAt)}</td>
                       <td className="py-2.5 max-w-xs">
                         {s.lastError ? (
                           <span className="text-red-500 text-xs truncate block" title={s.lastError}>
