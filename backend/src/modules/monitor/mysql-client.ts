@@ -223,6 +223,8 @@ type DateFilter =
 /** Ore per rebanadina nelle letture di giorni interi: ~1000 documenti al massimo, query da pochi ms. */
 const RANGE_SLICE_HOURS = 4;
 const SLICE_ROW_LIMIT   = 20_000;
+/** Limite righe della passata lastup (schede modificate): con 180 giorni sono molte di più di una rebanadina. */
+const LASTUP_ROW_LIMIT  = 40_000;
 
 /**
  * Ore per rebanadina nella carica dei 180 giorni: di default una settimana intera (168 h) = una
@@ -356,9 +358,9 @@ export async function queryWebthronEvents(
   // Schede modificate (lastup > since), senza quelle cancellate. Nessun filtro su `datain`
   // (coprirebbe quasi tutta la tabella): le schede nuove già lette sono un aggiornamento senza effetto.
   if (dateFilter.mode === 'modified') {
-    const rows = await fetchRows(buildSql('AND ubi.lastup > ?', SLICE_ROW_LIMIT, true), [dateFilter.since]);
-    if (rows.length >= SLICE_ROW_LIMIT) {
-      logger.warn(`[WebThron] Schede modificate (lastup) al limite di ${SLICE_ROW_LIMIT} righe: ne mancano`);
+    const rows = await fetchRows(buildSql('AND ubi.lastup > ?', LASTUP_ROW_LIMIT, true), [dateFilter.since]);
+    if (rows.length >= LASTUP_ROW_LIMIT) {
+      logger.warn(`[WebThron] Schede modificate (lastup) al limite di ${LASTUP_ROW_LIMIT} righe: ne mancano`);
     }
     return rows;
   }
