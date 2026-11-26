@@ -103,7 +103,7 @@ export async function getActiveLineeWithCombos(): Promise<LineaCombo[]> {
 }
 
 /**
- * Sostituisce nello storico le righe delle schede modificate in iKnow (lastup).
+ * Sostituisce nello storico la commessa delle schede modificate in iKnow (lastup): è l'unico dato che si sovrascrive.
  * La riga si trova con `cod_seriale` + `data_inserimento` (datain); se non c'è (scheda fuori dal periodo
  * che abbiamo) non si inserisce nulla, ma si conta: `nonTrovate` si vede nel log.
  * `sostituite` = righe davvero cambiate; una scheda trovata ma identica non conta né come cambiata né come non trovata.
@@ -118,17 +118,9 @@ async function sostituisciModificate(rows: WebthronEvent[]): Promise<{ sostituit
         WHERE cod_seriale = ${r.cod_seriale} AND data_inserimento = ${r.data_inserimento}
         LIMIT 1
       ), cambiate AS (
-        UPDATE webthron_events_history SET
-          commessa         = ${r.commessa ?? null},
-          esito_delibera   = ${r.esito_delibera ?? null},
-          versione         = ${r.versione ?? null},
-          operatore        = ${r.operatore ?? null},
-          colore           = ${r.colore ?? null},
-          protocollo_cesta = ${r.protocollo_cesta ?? null}
+        UPDATE webthron_events_history SET commessa = ${r.commessa ?? null}
         WHERE cod_seriale = ${r.cod_seriale} AND data_inserimento = ${r.data_inserimento}
-          AND (commessa, esito_delibera, versione, operatore, colore, protocollo_cesta)
-              IS DISTINCT FROM (${r.commessa ?? null}, ${r.esito_delibera ?? null}, ${r.versione ?? null},
-                                ${r.operatore ?? null}, ${r.colore ?? null}, ${r.protocollo_cesta ?? null})
+          AND commessa IS DISTINCT FROM ${r.commessa ?? null}
         RETURNING 1
       )
       SELECT (SELECT count(*) FROM esiste)::int AS trovate, (SELECT count(*) FROM cambiate)::int AS cambiate

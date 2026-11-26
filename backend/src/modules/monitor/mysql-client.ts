@@ -217,7 +217,7 @@ export type LineaCombo = { fase: string; modello: string; componente: string };
 
 type DateFilter =
   | { mode: 'since'; since: Date }     // datain > ?
-  | { mode: 'modified'; since: Date }  // lastup > ?, senza cancellate (schede modificate)
+  | { mode: 'modified'; since: Date }  // lastup > ? (schede modificate), stessa query delle altre letture
   | { mode: 'range'; from: string; to: string; sliceHours?: number };  // giorni [from, to] letti a rebanadine di datain (indice), backfill
 
 /** Ore per rebanadina nelle letture di giorni interi: ~1000 documenti al massimo, query da pochi ms. */
@@ -273,7 +273,7 @@ export async function queryWebthronEvents(
   const delibModelliPH    = allModelli.map(() => '?').join(', ');
   const delibComponentiPH = allComponenti.map(() => '?').join(', ');
 
-  const buildSql = (dateClause: string, rowLimit: number, excludeDeleted = false) => `
+  const buildSql = (dateClause: string, rowLimit: number) => `
     SELECT
       ikExtra62Tab.stringa  AS fase,
       ikExtra43Tab.stringa  AS modello,
@@ -310,9 +310,7 @@ export async function queryWebthronEvents(
     LEFT JOIN ikExtraTab ikExtra41Tab  ON ikExtra41Tab.id  = Extra41.stringa
     LEFT JOIN ikExtraTab ikExtra44Tab  ON ikExtra44Tab.id  = Extra44.stringa
     LEFT JOIN ikExtraTab ikExtra28Tab  ON ikExtra28Tab.id  = Extra28.stringa
-    ${excludeDeleted ? 'LEFT JOIN deletedubidocum del ON del.iddocu = ubi.iddocu' : ''}
     WHERE
-      ${excludeDeleted ? 'del.iddocu IS NULL AND' : ''}
       ubi.tipdoc IN ('0080','1520','5004','5005','5006','5007','5010','5016','PX01','0160','0090','5019','1040','5009','5018','0480','5020')
       ${dateClause}
       AND Extra186.stringa     IS NOT NULL
@@ -355,10 +353,10 @@ export async function queryWebthronEvents(
     return fetchRows(buildSql('AND ubi.datain > ?', 5000), [dateFilter.since]);
   }
 
-  // Schede modificate (lastup > since), senza quelle cancellate. Nessun filtro su `datain`
+  // Schede modificate (lastup > since): stessa query delle altre letture, cambia solo la condizione sulla data. Nessun filtro su `datain`
   // (coprirebbe quasi tutta la tabella): le schede nuove già lette sono un aggiornamento senza effetto.
   if (dateFilter.mode === 'modified') {
-    const rows = await fetchRows(buildSql('AND ubi.lastup > ?', LASTUP_ROW_LIMIT, true), [dateFilter.since]);
+    const rows = await fetchRows(buildSql('AND ubi.lastup > ?', LASTUP_ROW_LIMIT), [dateFilter.since]);
     if (rows.length >= LASTUP_ROW_LIMIT) {
       logger.warn(`[WebThron] Schede modificate (lastup) al limite di ${LASTUP_ROW_LIMIT} righe: ne mancano`);
     }
