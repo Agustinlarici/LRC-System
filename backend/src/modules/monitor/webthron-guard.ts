@@ -97,8 +97,8 @@ export function createGuard(opts: GuardOptions) {
     return `iKnow in pausa di sicurezza (query lente): riprova tra ${secs} s`;
   }
 
-  function record(durationMs: number, timedOut: boolean): void {
-    if (timedOut || durationMs > opts.slowMs) {
+  function record(durationMs: number, timedOut: boolean, slowMs: number): void {
+    if (timedOut || durationMs > slowMs) {
       strikes++;
       if (strikes >= opts.strikesToOpen) {
         openUntil = now() + opts.cooldownMs;
@@ -115,8 +115,10 @@ export function createGuard(opts: GuardOptions) {
    * Esegue `fn` rispettando coda, pausa e interruttore.
    * `bypass` serve agli strumenti di emergenza (SHOW PROCESSLIST, KILL): non fanno coda e
    * funzionano anche con l'interruttore aperto.
+   * `slowMs` alza la soglia «lenta» solo per questa chiamata (le letture a settimane intere): i
+   * timeout contano comunque come strike.
    */
-  async function run<T>(fn: () => Promise<T>, { bypass = false }: { bypass?: boolean } = {}): Promise<T> {
+  async function run<T>(fn: () => Promise<T>, { bypass = false, slowMs }: { bypass?: boolean; slowMs?: number } = {}): Promise<T> {
     if (bypass) return fn();
     if (isOpen()) throw new WebthronBusyError(busyMessage());
     if (pending >= opts.maxQueue) throw new WebthronBusyError('Troppe richieste in coda verso iKnow: riprova tra poco');
@@ -134,10 +136,10 @@ export function createGuard(opts: GuardOptions) {
       const t0 = now();
       try {
         const result = await fn();
-        record(now() - t0, false);
+        record(now() - t0, false, slowMs ?? opts.slowMs);
         return result;
       } catch (err) {
-        record(now() - t0, isTimeoutError(err));
+        record(now() - t0, isTimeoutError(err), slowMs ?? opts.slowMs);
         throw err;
       }
     } finally {

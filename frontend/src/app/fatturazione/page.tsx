@@ -120,10 +120,10 @@ export default function FatturazionePage() {
             <select className="input" value={stato_} onChange={e => setStato_(e.target.value as '' | 'senza' | 'ok')}>
               <option value="">Tutti</option><option value="senza">Con righe senza regola</option><option value="ok">Tutte le righe con regola</option>
             </select></div>
-          <div><label className="label">N. despacho</label><input className="input" placeholder="Cerca…" value={search} onChange={e => setSearch(e.target.value)} /></div>
+          <div><label className="label">N. spedizione</label><input className="input" placeholder="Cerca…" value={search} onChange={e => setSearch(e.target.value)} /></div>
           {manage && (
             <Button disabled={stato?.in_corso || (!from && !to)} onClick={() => sincronizza({ da: from || undefined, a: to || undefined })}
-              title="Rilegge da Business Central i despachi del periodo Da/A. I prezzi seguono sempre le regole attuali.">
+              title="Rilegge da Business Central le spedizioni del periodo Da/A. I prezzi seguono sempre le regole attuali.">
               Rileggi da BC questo periodo
             </Button>
           )}
@@ -132,13 +132,13 @@ export default function FatturazionePage() {
         {loading ? (
           <div className="p-4"><SkeletonTable rows={6} cols={5} /></div>
         ) : visibili.length === 0 ? (
-          <EmptyState title="Nessun despacho" />
+          <EmptyState title="Nessuna spedizione" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr>
-                  <th className="sheet-th">Despacho</th><th className="sheet-th">Data</th><th className="sheet-th">Cliente</th>
+                  <th className="sheet-th">Spedizione</th><th className="sheet-th">Data</th><th className="sheet-th">Cliente</th>
                   <th className="sheet-th text-right">Righe</th><th className="sheet-th">Stato</th><th className="sheet-th text-right">Totale STR stimato</th>
                 </tr>
               </thead>
@@ -158,7 +158,7 @@ export default function FatturazionePage() {
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-line font-semibold text-ink-900">
-                  <td className="sheet-td" colSpan={3}>{visibili.length} despachi</td>
+                  <td className="sheet-td" colSpan={3}>{visibili.length} spedizioni</td>
                   <td className="sheet-td text-right" colSpan={3}>Totale STR stimato: {eur(totaleVisibili)}</td>
                 </tr>
               </tfoot>

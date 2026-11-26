@@ -15,6 +15,7 @@ import { activePhaseRules, matchPhase } from './events.js';
 import { lastRun } from './feed.js';
 import { spmaInfo } from './spma-lookup.js';
 import { ignoredApiCalls } from './iknow.js';
+import { listCalls } from './iknow-log.js';
 import {
   CAMERA_RE, MAX_ATTEMPTS, MAX_PHOTO_BYTES, STALE_CLAIM_MINUTES,
   isJpeg, newStationToken, normalizeCommessa, sha256Hex,
@@ -98,6 +99,12 @@ qualityControlStationRoutes.get('/iknow', requireModule('photo_station'), async 
   const [cfg] = await db`SELECT updated_at, updated_by FROM photo_iknow_config WHERE id = 1`;
   const [last] = await db`SELECT max(created_at) AS last_call_at FROM photo_jobs WHERE source = 'iknow'`;
   return c.json({ configured: !!cfg, updated_at: cfg?.updated_at ?? null, updated_by: cfg?.updated_by ?? null, last_call_at: last?.last_call_at ?? null });
+});
+
+// Ultime chiamate ricevute da iKnow (anche quelle rifiutate), per capire se arrivano e perché falliscono
+qualityControlStationRoutes.get('/iknow/calls', requireModule('photo_station'), async (c) => {
+  const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 50) || 50, 1), 200);
+  return c.json(await listCalls(limit));
 });
 
 qualityControlStationRoutes.put('/iknow-token', requireManage('photo_station'), async (c) => {

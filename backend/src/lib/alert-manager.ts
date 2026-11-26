@@ -9,6 +9,7 @@
 import { db } from '../db/client.js';
 import { sendAlert, sendResolved } from './notifier.js';
 import { getAllStats } from './sync-stats.js';
+import { incrementalIsPaused } from '../modules/monitor/sync-mode.js';
 import { logger } from './logger.js';
 
 export type Severity = 'critical' | 'warning' | 'info';
@@ -104,7 +105,8 @@ export async function checkSyncHealth(): Promise<void> {
 
   // ── sync_incremental ──────────────────────────────────────────────────────
   const inc = stats['sync_incremental'];
-  if (inc) {
+  // In modalità «full», o «mista» durante la carica, l'incrementale è fermo di proposito: nessun allarme «bloccato»
+  if (inc && !(await incrementalIsPaused())) {
     const lastMs       = inc.lastFinishedAt ? new Date(inc.lastFinishedAt).getTime() : 0;
     const minSinceLast = (now - lastMs) / 60_000;
 

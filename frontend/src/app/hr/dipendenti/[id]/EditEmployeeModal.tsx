@@ -68,10 +68,6 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
     data_nascita: employee.data_nascita?.slice(0, 10) ?? '',
     gruppo_orario: employee.gruppo_orario ?? '',
     nome_osti: employee.nome_osti ?? '',
-    taglia_pantaloni: employee.taglia_pantaloni ?? '',
-    taglia_maglia: employee.taglia_maglia ?? '',
-    taglia_scarpe: employee.taglia_scarpe ?? '',
-    taglia_campera: employee.taglia_campera ?? '',
     badge: employee.badge ?? '',
     transponder: employee.transponder ?? '',
     terminale: employee.terminale ?? '',
@@ -342,18 +338,6 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
                     {allEmployees.map(e => <option key={e.id} value={e.id}>{e.cognome} {e.nome}</option>)}
                   </select>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {fullManage && (
-            <div>
-              <p className="text-sm font-semibold text-ink-800 mb-2">Vestiario</p>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div><label className="label">Taglia pantaloni</label><input className="input" maxLength={20} value={form.taglia_pantaloni} onChange={e => set('taglia_pantaloni', e.target.value)} placeholder="es. 48" /></div>
-                <div><label className="label">Taglia maglia</label><input className="input" maxLength={20} value={form.taglia_maglia} onChange={e => set('taglia_maglia', e.target.value)} placeholder="es. L" /></div>
-                <div><label className="label">Taglia scarpe</label><input className="input" maxLength={20} value={form.taglia_scarpe} onChange={e => set('taglia_scarpe', e.target.value)} placeholder="es. 42" /></div>
-                <div><label className="label">Taglia giubbotto</label><input className="input" maxLength={20} value={form.taglia_campera} onChange={e => set('taglia_campera', e.target.value)} placeholder="es. L" /></div>
               </div>
             </div>
           )}

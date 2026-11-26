@@ -52,7 +52,7 @@ describe.skipIf(!URL)('Quality Control Station (integrazione)', () => {
     guest = `${COOKIE_NAME}=${signToken({ id: g, username: 'ps_guest', display_name: 'ps_guest', role: 'guest' })}`;
   });
   beforeEach(async () => {
-    await db`TRUNCATE photo_job_files, photo_jobs, photo_stations, photo_phases, photo_iknow_config, photo_feed_config RESTART IDENTITY CASCADE`;
+    await db`TRUNCATE photo_job_files, photo_jobs, photo_stations, photo_phases, photo_iknow_config, photo_feed_config, photo_iknow_calls RESTART IDENTITY CASCADE`;
     await db`DELETE FROM webthron_events_history WHERE cod_seriale LIKE 'TST%'`;
     await db`DELETE FROM spma_commessa WHERE commessa_code LIKE '99900%'`;
     await db`DELETE FROM spma_line WHERE name = 'PSTEST LINEA'`;
@@ -67,7 +67,7 @@ describe.skipIf(!URL)('Quality Control Station (integrazione)', () => {
     tok3 = await mkStation('Proximiti', ['delibera_finale_proximiti']);
   });
   afterAll(async () => {
-    await db`TRUNCATE photo_job_files, photo_jobs, photo_stations, photo_phases, photo_iknow_config, photo_feed_config RESTART IDENTITY CASCADE`;
+    await db`TRUNCATE photo_job_files, photo_jobs, photo_stations, photo_phases, photo_iknow_config, photo_feed_config, photo_iknow_calls RESTART IDENTITY CASCADE`;
     await db`DELETE FROM webthron_events_history WHERE cod_seriale LIKE 'TST%'`;
     await db`DELETE FROM users WHERE username LIKE 'ps_%'`;
   });
@@ -305,6 +305,30 @@ describe.skipIf(!URL)('Quality Control Station (integrazione)', () => {
     const st = JSON.stringify(await (await user('/iknow')).json());
     expect(st).toContain('"configured":true');
     expect(st).not.toContain(IK_TOKEN);
+  });
+
+  it('iKnow: ogni chiamata lascia una riga nel registro, con esito corretto e mai il token', async () => {
+    await iknow(body());                                              // token non configurato
+    await setToken();
+    await iknow(body(), 'token-sbagliato-0000000');                   // token errato: i campi non si leggono
+    await iknow(body({ data_ora: 'ieri' }));                          // corpo non valido
+    await iknow(body()); await iknow(body());                         // ok + duplicata
+    await user('/feed', { method: 'PUT', body: JSON.stringify({ mode: 'off', esiti_ok: [] }) });
+    await iknow(body({ seriale: 'ZZ' }));                             // origine non API
+    const r = await (await user('/iknow/calls')).json() as any;
+    expect(r.calls.map((x: any) => x.esito).reverse()).toEqual(
+      ['token_non_configurato', 'token_errato', 'corpo_non_valido', 'ok', 'duplicata', 'ignorata_origine']);
+    const errato = r.calls.find((x: any) => x.esito === 'token_errato');
+    expect(errato).toMatchObject({ http_status: 401, seriale: null });
+    expect(r.calls.find((x: any) => x.esito === 'ok')).toMatchObject({ http_status: 200, seriale: '123456789', commessa: '000000', job_id: expect.any(Number) });
+    expect(r.calls.find((x: any) => x.esito === 'ignorata_origine').seriale).toBe('ZZ');
+    expect(r.summary_24h).toMatchObject({ ok: 1, duplicata: 1, token_errato: 1 });
+    expect(JSON.stringify(r)).not.toContain(IK_TOKEN);
+  });
+
+  it('iKnow: il registro lo vede chi ha accesso al modulo, non chi è guest', async () => {
+    expect((await user('/iknow/calls')).status).toBe(200);
+    expect((await user('/iknow/calls', {}, guest)).status).toBe(403);
   });
 
   // ─── Alimentatore dalla copia del DB di iKnow ───────────────────────────────────

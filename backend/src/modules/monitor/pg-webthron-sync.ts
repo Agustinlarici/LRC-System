@@ -11,17 +11,18 @@
  * server (vedi mysql-client.ts e webthron-guard.ts).
  *
  *   Incrementale (ogni 5 minuti):             pochi ms, solo gli eventi nuovi
- *   Rilettura notturna (11:30 e 01:00):         rebanadine di 4 ore sugli ultimi 2 giorni
+ *   Rilettura notturna (01:00):               rebanadine di 4 ore sugli ultimi 2 giorni
  *   Aggiornamento fasi/combos (02:00):          rebanadine di 7 giorni sugli ultimi 90
  */
 
 import { db } from '../../db/client.js';
-import { queryWebthronEvents, getWebthronPool, WebthronEvent, LineaCombo } from './mysql-client.js';
+import { queryWebthronEvents, getWebthronPool, BULK_SLICE_HOURS, WebthronEvent, LineaCombo } from './mysql-client.js';
 import { logger } from '../../lib/logger.js';
 import { isIKnowEnabled } from '../../lib/system-flags.js';
 import { startRun, endRun, failRun } from '../../lib/sync-stats.js';
-import { isQuietHour } from './webthron-time.js';
+import { isQuietHour, productionDayOf } from './webthron-time.js';
 import { dedupeByKey } from './webthron-dedupe.js';
+import { trackedPass } from './tracked-pass.js';
 
 export type ProdRow = WebthronEvent;
 
@@ -38,10 +39,6 @@ function envInt(name: string, fallback: number): number {
 // timestamp, arrivato dopo, andrebbe perso. L'upsert è idempotente, quindi riletture e riavvii non duplicano.
 const OVERLAP_MS = envInt('WEBTHRON_SYNC_OVERLAP_SECONDS', 60) * 1000;
 
-// Frequenza del ciclo (come in index.ts): è la finestra di `lastup` al primo controllo dopo l'avvio
-const SYNC_INTERVAL_MS = Math.max(10, envInt('WEBTHRON_SYNC_INTERVAL_SECONDS', 300)) * 1000;
-// Inizio dell'ultimo controllo riuscito: da lì si guarda `lastup` (in memoria, come lastSyncAt)
-let lastOkStartAt: Date | null = null;
 
 // Di notte (default 23:00–05:00, ora di Roma) non c'è produzione: un controllo ogni pochi minuti basta.
 const QUIET_FROM_HOUR   = envInt('WEBTHRON_QUIET_FROM_HOUR', 23);
@@ -105,6 +102,69 @@ export async function getActiveLineeWithCombos(): Promise<LineaCombo[]> {
   return rows as unknown as LineaCombo[];
 }
 
+/**
+ * Sostituisce nello storico la commessa delle schede modificate in iKnow (lastup): è l'unico dato che si sovrascrive.
+ * La riga si trova con `cod_seriale` + `data_inserimento` (datain); se non c'è (scheda fuori dal periodo
+ * che abbiamo) non si inserisce nulla, ma si conta: `nonTrovate` si vede nel log.
+ * `sostituite` = righe davvero cambiate; una scheda trovata ma identica non conta né come cambiata né come non trovata.
+ */
+async function sostituisciModificate(rows: WebthronEvent[]): Promise<{ sostituite: number; nonTrovate: number }> {
+  let sostituite = 0;
+  let nonTrovate = 0;
+  for (const r of dedupeByKey(rows.map(x => ({ ...x, data_cache: '' })))) {
+    const [esito] = await db`
+      WITH esiste AS (
+        SELECT 1 FROM webthron_events_history
+        WHERE cod_seriale = ${r.cod_seriale} AND data_inserimento = ${r.data_inserimento}
+        LIMIT 1
+      ), cambiate AS (
+        UPDATE webthron_events_history SET commessa = ${r.commessa ?? null}
+        WHERE cod_seriale = ${r.cod_seriale} AND data_inserimento = ${r.data_inserimento}
+          AND commessa IS DISTINCT FROM ${r.commessa ?? null}
+        RETURNING 1
+      )
+      SELECT (SELECT count(*) FROM esiste)::int AS trovate, (SELECT count(*) FROM cambiate)::int AS cambiate
+    `;
+    sostituite += Number(esito?.cambiate ?? 0);
+    if (Number(esito?.trovate ?? 0) === 0) nonTrovate++;
+  }
+  return { sostituite, nonTrovate };
+}
+
+/**
+ * Legge da WebThron le schede modificate da `since` e ne sostituisce le righe nello storico.
+ * Registrata come job «sync_lastup» (visibile in Sistema → Aggiornamenti). Ritorna le righe sostituite.
+ * Con `swallow` l'errore non si propaga (incrementale: gli eventi nuovi non devono dipenderne).
+ */
+async function passataLastup(
+  since: Date, combos: LineaCombo[], deliberaFasi: string[], origine: string, swallow: boolean,
+): Promise<number> {
+  const n = await trackedPass('sync_lastup', async () => {
+    const modificate = await queryWebthronEvents(combos, deliberaFasi, { mode: 'modified', since });
+    const { sostituite, nonTrovate } = await sostituisciModificate(modificate);
+    const msg = `[LastupSync] ${origine}: ${modificate.length} schede modificate, ${sostituite} righe sostituite, ${nonTrovate} non trovate nello storico`;
+    if (nonTrovate > 0 || sostituite > 0) logger.info(msg); else logger.debug(msg);
+    return sostituite;
+  }, {
+    swallow,
+    onError: err => logger.error(`[LastupSync] ${origine}: passata fallita, gli eventi nuovi proseguono: ${err instanceof Error ? err.message : String(err)}`),
+  });
+  return n ?? 0;
+}
+
+/**
+ * Passata su `lastup` per la carica dei 180 giorni: sostituisce nello storico le righe delle schede
+ * modificate da `fromDay` (YYYY-MM-DD, ora di Roma) in poi. Solo se il flag `iknow_andon_lastup_enabled`
+ * è acceso. Ritorna le righe sostituite; lancia l'errore se WebThron non risponde.
+ */
+export async function sostituisciModificateDal(fromDay: string): Promise<number> {
+  if (!(await isIKnowEnabled('iknow_andon_lastup_enabled'))) return 0;
+  const combos       = await getActiveLineeWithCombos();
+  const deliberaFasi = getDeliberaFasi();
+  if (combos.length === 0) return 0;
+  return passataLastup(midnightRome(fromDay), combos, deliberaFasi, `dal ${fromDay}`, false);
+}
+
 // ─── Main sync ────────────────────────────────────────────────────────────────
 
 export async function syncWebthronToPostgres(): Promise<void> {
@@ -145,19 +205,17 @@ export async function syncWebthronToPostgres(): Promise<void> {
     const ultimo = (last?.ultimo as Date | null) ?? null;
     since = ultimo && ultimo > midnight ? new Date(ultimo.getTime() - OVERLAP_MS) : midnight;
   }
-  // Opzione (spenta finché non provata): oltre a `datain` anche `lastup` negli ultimi minuti
-  // (= frequenza del ciclo, dall'ultimo controllo riuscito) ed escluse le schede di `deletedubidocum`.
-  const startedAt = new Date();
-  const useLastup = await isIKnowEnabled('iknow_andon_lastup_enabled');
-  const modifiedSince = useLastup
-    ? new Date((lastOkStartAt ?? new Date(startedAt.getTime() - SYNC_INTERVAL_MS)).getTime() - OVERLAP_MS)
-    : undefined;
-  const dateFilter = { mode: 'since' as const, since, modifiedSince };
+  const dateFilter = { mode: 'since' as const, since };
   const jobName = since > midnight ? 'sync_incremental' : 'sync_full';
   startRun(jobName);
   try {
     const rows = await queryWebthronEvents(combos, deliberaFasi, dateFilter);
-    lastOkStartAt = startedAt;
+
+    // Opzione (spenta finché non provata): schede già lette ma modificate dopo (lastup), stessa data `since`
+    // Un errore qui non ferma l'incrementale: è registrato nel job «sync_lastup» e gli eventi nuovi entrano comunque.
+    if (await isIKnowEnabled('iknow_andon_lastup_enabled')) {
+      await passataLastup(since, combos, deliberaFasi, 'incrementale', true);
+    }
 
     if (rows.length === 0) {
       endRun(jobName, 0);
@@ -198,7 +256,8 @@ export async function syncWebthronToPostgres(): Promise<void> {
          OR (webthron_events_history.protocollo_cesta IS NULL AND EXCLUDED.protocollo_cesta IS NOT NULL)
     `;
 
-    const ultimoVisto = rows[rows.length - 1].data_inserimento;
+    // Le righe di `lastup` (schede vecchie) non sono in ordine con le nuove: si prende il massimo di `datain`
+    const ultimoVisto = rows.reduce((max, r) => (r.data_inserimento > max ? r.data_inserimento : max), rows[0].data_inserimento);
     if (!lastSyncAt || ultimoVisto > lastSyncAt) lastSyncAt = ultimoVisto;
     endRun(jobName, result.count);
     if (result.count > 0) {
@@ -250,6 +309,19 @@ export async function loadDayIntoHistory(dateStr: string): Promise<number> {
     protocollo_cesta: r.protocollo_cesta ?? null,
   })));
 
+  const changed = await upsertHistory(records);
+  logger.info(`[FullDaySync] ${dateStr} — ${rows.length} eventi da WebThron, ${changed} modificati in history`);
+  return rows.length;
+}
+
+type HistoryRecord = {
+  fase: string; modello: string; componente: string; cod_seriale: string;
+  commessa: string | null; esito_delibera: string | null; data_inserimento: Date; data_cache: string;
+  versione: string | null; operatore: string | null; colore: string | null; protocollo_cesta: string | null;
+};
+
+/** Scrive le righe nello storico (upsert idempotente, a blocchi). Ritorna le righe modificate. */
+async function upsertHistory(records: HistoryRecord[]): Promise<number> {
   let changed = 0;
   for (let i = 0; i < records.length; i += INSERT_CHUNK) {
     const result = await db`
@@ -264,7 +336,40 @@ export async function loadDayIntoHistory(dateStr: string): Promise<number> {
     `;
     changed += result.count;
   }
-  logger.info(`[FullDaySync] ${dateStr} — ${rows.length} eventi da WebThron, ${changed} modificati in history`);
+  return changed;
+}
+
+/**
+ * Legge un intervallo di giorni [from, to] (YYYY-MM-DD, estremi inclusi) da WebThron e lo scrive
+ * nello storico. Le query restano a rebanadine di 4 ore (vedi mysql-client.ts); ogni riga prende
+ * il proprio giorno di produzione. Non controlla gli interruttori: li controlla il chiamante.
+ * Ritorna le righe lette; lancia l'errore se WebThron non risponde.
+ */
+export async function loadRangeIntoHistory(from: string, to: string): Promise<number> {
+  const combos       = await getActiveLineeWithCombos();
+  const deliberaFasi = getDeliberaFasi();
+  if (combos.length === 0) return 0;
+
+  const rows = await queryWebthronEvents(combos, deliberaFasi, { mode: 'range', from, to, sliceHours: BULK_SLICE_HOURS });
+  if (rows.length === 0) return 0;
+
+  const records = dedupeByKey(rows.map(r => ({
+    fase:             r.fase,
+    modello:          r.modello,
+    componente:       r.componente,
+    cod_seriale:      r.cod_seriale,
+    commessa:         r.commessa ?? null,
+    esito_delibera:   r.esito_delibera ?? null,
+    data_inserimento: r.data_inserimento,
+    data_cache:       productionDayOf(r.data_inserimento),
+    versione:         r.versione ?? null,
+    operatore:        r.operatore ?? null,
+    colore:           r.colore ?? null,
+    protocollo_cesta: r.protocollo_cesta ?? null,
+  })));
+
+  const changed = await upsertHistory(records);
+  logger.info(`[RangeSync] ${from} → ${to} — ${rows.length} eventi da WebThron, ${changed} modificati in history`);
   return rows.length;
 }
 
