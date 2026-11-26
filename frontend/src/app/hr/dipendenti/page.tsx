@@ -87,6 +87,9 @@ function parseItalianDate(s: string | undefined): string | null {
   return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
 }
 
+// aaaa-mm-gg (anche con l'ora in coda) → gg-mm-aaaa per la tabella; vuoto → «—»
+const dmy = (d: string | null | undefined) => d ? d.slice(0, 10).split('-').reverse().join('-') : '—';
+
 export default function DipendentiPage() {
   const router = useRouter();
   const { canManage } = useAuth();
@@ -1086,7 +1089,7 @@ export default function DipendentiPage() {
               <div className="text-sm text-muted truncate">{e.contract_company_name ?? '—'}</div>
               <div className="text-sm text-muted truncate">{e.nazionalita?.toUpperCase() ?? '—'}</div>
               <div className="text-sm text-muted truncate">{tipoNazLabel(e.tipo_nazionalita) || '—'}</div>
-              <div className="text-sm text-muted truncate">{e.data_nascita?.slice(0, 10) ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{dmy(e.data_nascita)}</div>
               <div className="text-sm text-muted truncate" title={e.email ?? undefined}>{e.email ?? '—'}</div>
               <div className="text-sm text-muted truncate" title={e.indirizzo ?? undefined}>{e.indirizzo ?? '—'}</div>
               <div className="text-sm text-muted truncate">{e.citta ?? '—'}</div>
@@ -1101,8 +1104,8 @@ export default function DipendentiPage() {
               <div className="text-sm text-muted truncate">{e.tipo_contratto ?? '—'}</div>
               <div className="text-sm text-muted truncate">{e.gruppo_orario ?? '—'}</div>
               <div className="text-sm text-muted truncate" title={e.nome_osti ?? undefined}>{e.nome_osti ?? '—'}</div>
-              <div className="text-sm text-muted truncate">{e.data_assunzione?.slice(0, 10) ?? '—'}</div>
-              <div className="text-sm text-muted truncate">{e.data_cessazione?.slice(0, 10) ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{dmy(e.data_assunzione)}</div>
+              <div className="text-sm text-muted truncate">{dmy(e.data_cessazione)}</div>
               <div className="text-center text-sm text-muted">{e.in_prova ? 'Sì' : '—'}</div>
               <div className="text-center">
                 <StatusBadge tone={STATO_TONE[e.stato] ?? 'neutral'}>{STATO_LABEL[e.stato]}</StatusBadge>

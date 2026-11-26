@@ -39,10 +39,10 @@ interface Contratto { matricola: string | null; qualifica: string | null; inizio
 
 // Registra un contratto (riga in hr_employee_contract + eventi in timeline). false = già presente
 // (stessa persona e stesse date): rieseguire non duplica nulla.
-async function registraContratto(
+export async function registraContratto(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any, employeeId: number, r: Contratto,
-  user: { id: number; display_name: string }, today: string, etichetta: string,
+  user: { id: number | null; display_name: string }, today: string, etichetta: string,
 ): Promise<boolean> {
   const [ins] = await tx<{ id: number }[]>`
     INSERT INTO hr_employee_contract (employee_id, matricola, qualifica, data_inizio, data_fine, tipo)

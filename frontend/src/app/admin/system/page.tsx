@@ -989,7 +989,8 @@ type RunStats = {
   lastDurationSec:  number | null;
   lastRowCount:     number | null;
   lastError:        string | null;
-  runCount:         number;
+  lastDetail?:      string | null;
+  runCount:        number;
   consecutiveErrors: number;
   nextScheduledAt:  string | null;
   status:           'idle' | 'running' | 'ok' | 'error';
@@ -1065,6 +1066,7 @@ const JOB_LABELS: Record<string, string> = {
   spma_onedrive_poll: 'OneDrive SPMA (10 min)',
   edi_ferrari_scan:  'EDI Ferrari DELINS (06:00)',
   edi_auto_generate: 'EDI Auto-generate (23:45)',
+  osti_sync:         'HR — Sync Osti (ogni ora)',
 };
 
 function SystemCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -1308,6 +1310,7 @@ function AggiornamentiTab() {
                     <tr key={job} className="hover:bg-gray-50">
                       <td className="py-2.5 pr-4 font-medium text-gray-700">
                         {JOB_LABELS[job] ?? job}
+                        {s.lastDetail && <span className="block text-xs font-normal text-gray-500">{s.lastDetail}</span>}
                       </td>
                       <td className="py-2.5 pr-4">
                         <span className={statusBadge(s.status)}>{s.status.toUpperCase()}</span>
