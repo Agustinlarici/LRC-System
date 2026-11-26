@@ -1,9 +1,12 @@
 import cron from 'node-cron';
 import { syncPackArticles } from './modules/packing/bc-client.js';
 import { snapshotDayFromHistory } from './modules/dashboards/heatmap.js';
-import { syncFullDayToHistory, refreshLookupTables } from './modules/monitor/pg-webthron-sync.js';
+import { refreshLookupTables } from './modules/monitor/pg-webthron-sync.js';
 import { syncBom } from './modules/monitor/bom-sync.js';
 import { daysToReread } from './modules/monitor/webthron-time.js';
+import { getSyncMode, BACKFILL_DAYS, FULL_SYNC_PAUSE_SEC } from './modules/monitor/sync-mode.js';
+import { startFirstSync, getFirstSyncStatus, waitForFirstSync } from './modules/monitor/first-sync.js';
+import { isIKnowEnabled } from './lib/system-flags.js';
 import { checkSpmaDelays } from './modules/spma/delay-checker.js';
 import { sendDelayReportEmail, emailConfigured, type SmtpConfig } from './modules/spma/spma-email-notifier.js';
 import { autoGenerateEdi } from './modules/edi/auto-generate.js';
@@ -16,11 +19,21 @@ import { logger } from './lib/logger.js';
 import { recepcionesEmitter } from './gateway/recepciones-emitter.js';
 import { letturaNotturna } from './modules/ferrari/cartella.js';
 import { pollOneDriveFolder } from './modules/spma/onedrive-watcher.js';
+import { sincronizza as sincronizzaFatturazione } from './modules/fatturazione/sync.js';
+import { runOstiSync } from './modules/hr/osti-sync.js';
+import { runPhotoFeed } from './modules/quality-control-station/feed.js';
 
 function nextEvery10Min(): Date {
   const now = new Date();
   const secsLeft = (10 - (now.getMinutes() % 10)) * 60 - now.getSeconds();
   return new Date(now.getTime() + secsLeft * 1000);
+}
+
+function nextHourAt(minute: number): Date {
+  const next = new Date();
+  next.setMinutes(minute, 0, 0);
+  if (next <= new Date()) next.setHours(next.getHours() + 1);
+  return next;
 }
 
 function nextOccurrence(hour: number, minute = 0): Date {
@@ -32,6 +45,8 @@ function nextOccurrence(hour: number, minute = 0): Date {
 }
 
 export function startScheduler() {
+  const todayRome = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
+
   // 00:05 — applica turni standard per oggi alle linee senza dati salvati
   cron.schedule('5 0 * * *', async () => {
     const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
@@ -44,33 +59,37 @@ export function startScheduler() {
     }
   }, { timezone: 'Europe/Rome' });
 
-  // Rilettura completa WebThron degli ultimi 2 giorni (un giorno alla volta, a rebanadine di 4 ore).
-  const REREAD_DAYS = 2;
-  const todayRome = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
-
-  async function rileggiGiorni(days: string[]) {
-    for (const dateStr of days) {
-      logger.info(`[scheduler] Rilettura completa WebThron per ${dateStr}...`);
+  // 01:00 — in modo «incrementale» si rileggono gli ultimi 180 giorni (una query per settimana,
+  // stessa carica del pulsante). Nei modi «full» e «mista» la rilettura la fanno già loro ogni 10 min / ogni ora:
+  // qui si aspetta solo che quella in corso finisca. Richiede il toggle «Rilettura notturna».
+  async function rileggiStorico(): Promise<void> {
+    const mode = await getSyncMode();
+    if (mode === 'incremental' && !getFirstSyncStatus().running) {
+      if (!(await isIKnowEnabled('iknow_nightly_enabled'))) {
+        logger.debug('[scheduler] Rilettura 180 giorni disabilitata — skip');
+        return;
+      }
+      logger.info('[scheduler] Rilettura WebThron degli ultimi 180 giorni...');
       startRun('sync_full_day');
       try {
-        await syncFullDayToHistory(dateStr);
+        startFirstSync({ days: BACKFILL_DAYS, pauseSec: FULL_SYNC_PAUSE_SEC, flag: 'iknow_nightly_enabled' });
+        await waitForFirstSync();
+        const st = getFirstSyncStatus();
+        if (st.errors.length > 0 && st.errors.length >= st.done) failRun('sync_full_day', new Error(st.errors[st.errors.length - 1]));
+        else endRun('sync_full_day', st.rows);
       } catch (e) {
         failRun('sync_full_day', e);
-        logger.error(`[scheduler] syncFullDayToHistory fallito per ${dateStr}: ${e instanceof Error ? e.message : e}`);
+        logger.error(`[scheduler] Rilettura 180 giorni fallita: ${e instanceof Error ? e.message : e}`);
       }
+      return;
     }
+    await waitForFirstSync();
   }
 
-  // 11:30 — rilettura di oggi (fin qui) e di ieri
-  cron.schedule('30 11 * * *', async () => {
-    await rileggiGiorni(daysToReread(todayRome(), REREAD_DAYS, true));
-  }, { timezone: 'Europe/Rome' });
-
-  // 01:00 — rilettura completa WebThron di ieri e dell'altro ieri + snapshot OEE di ieri
+  // 01:00 — rilettura dei 180 giorni + snapshot OEE di ieri (aspetta che la lettura sia finita)
   cron.schedule('0 1 * * *', async () => {
-    const days = daysToReread(todayRome(), REREAD_DAYS, false);
-    const dateStr = days[0];   // ieri
-    await rileggiGiorni(days);
+    const dateStr = daysToReread(todayRome(), 1, false)[0];   // ieri
+    await rileggiStorico();
 
     logger.info(`[scheduler] Snapshot OEE per ${dateStr}...`);
     startRun('heatmap_snapshot');
@@ -154,6 +173,11 @@ export function startScheduler() {
     setNextRun('spma_onedrive_poll', nextEvery10Min());
   }, { timezone: 'Europe/Rome' });
 
+  // Every minute — Quality Control Station: ordini di foto dalla copia del DB di iKnow (spento finché non lo si accende)
+  cron.schedule('* * * * *', async () => {
+    try { await runPhotoFeed(); } catch { /* runPhotoFeed registra già i suoi errori */ }
+  }, { timezone: 'Europe/Rome' });
+
   // Every minute — rilevamento automatico fermate di linea
   cron.schedule('* * * * *', async () => {
     try { await detectStopsAllLines(); } catch { /* silenzioso */ }
@@ -186,6 +210,33 @@ export function startScheduler() {
     } catch (e) {
       logger.error(`[scheduler] Lettura cartella schede fallita: ${e instanceof Error ? e.message : e}`);
     }
+  }, { timezone: 'Europe/Rome' });
+
+  // Ogni ora (minuto 40) — Fatturazione: copia da BC delle righe di spedizione dei conti configurati
+  cron.schedule('40 * * * *', async () => {
+    startRun('fatturazione_sync');
+    try {
+      const n = await sincronizzaFatturazione();
+      if (n >= 0) endRun('fatturazione_sync', n); else endRun('fatturazione_sync', 0);
+    } catch (e) {
+      failRun('fatturazione_sync', e);
+      logger.error(`[scheduler] Fatturazione sync fallita: ${e instanceof Error ? e.message : e}`);
+    }
+  }, { timezone: 'Europe/Rome' });
+
+  // Ogni ora (minuto 50) — HR: sincronizza le schede dipendenti con Osti (sola lettura su Osti; vedi hr/osti-sync.ts)
+  cron.schedule('50 * * * *', async () => {
+    if (!process.env.OSTI_HOST || !process.env.OSTI_USER) return;   // Osti non configurato: niente da fare
+    startRun('osti_sync');
+    try {
+      const r = await runOstiSync();
+      if (r.errors > 0 && r.updated === 0) failRun('osti_sync', new Error(r.detail)); else endRun('osti_sync', r.updated, r.detail);
+      logger.info(`[scheduler] Sync Osti: ${r.detail}`);
+    } catch (e) {
+      failRun('osti_sync', e);
+      logger.error(`[scheduler] Sync Osti fallita: ${e instanceof Error ? e.message : e}`);
+    }
+    setNextRun('osti_sync', nextHourAt(50));
   }, { timezone: 'Europe/Rome' });
 
   // 06:00 — scansione Ferrari DELINS inbox → aggiorna edi_ferrari_delins
@@ -250,5 +301,5 @@ export function startScheduler() {
   setNextRun('spma_onedrive_poll', nextEvery10Min());
   setNextRun('edi_auto_generate',  nextOccurrence(23, 45));
 
-  logger.info('Scheduler avviato — Ferrari DELINS 06:00, EDI auto 23:45, rilettura WebThron 11:30 e 01:00 (2 giorni), snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
+  logger.info('Scheduler avviato — Ferrari DELINS 06:00, EDI auto 23:45, rilettura WebThron 01:00 (180 giorni), snapshot OEE 01:00, lookup 02:00, sync BC 03:00, SPMA delay check ogni 4h 06-18, OneDrive poll ogni 10 min, promemoria DDT ogni 5 min (Europe/Rome)');
 }

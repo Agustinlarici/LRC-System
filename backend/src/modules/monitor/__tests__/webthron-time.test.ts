@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dayBoundsNaive, buildRangeSlices, isQuietHour, pastDays, daysToReread } from '../webthron-time.js';
+import { dayBoundsNaive, buildRangeSlices, isQuietHour, pastDays, weeksOf, splitSlice, productionDayOf, daysToReread } from '../webthron-time.js';
 
 describe('daysToReread', () => {
   it('alle 01:00 rilegge ieri e l\'altro ieri', () => {
@@ -91,5 +91,71 @@ describe('isQuietHour (ora di Roma)', () => {
     expect(isQuietHour(at('12:00'), 13, 15)).toBe(true);   // 13:00 Roma
     expect(isQuietHour(at('09:00'), 13, 15)).toBe(false);
     expect(isQuietHour(at('12:00'), 0, 0)).toBe(false);
+  });
+});
+
+describe('weeksOf', () => {
+  it('90 giorni che finiscono oggi: 13 settimane dalla più recente, senza buchi né doppioni', () => {
+    const days = daysToReread('2026-11-24', 90, true);   // oggi + 89 giorni prima
+    const weeks = weeksOf(days);
+    expect(weeks).toHaveLength(13);                       // 12 settimane piene + 6 giorni
+    expect(weeks[0]).toEqual({ from: '2026-11-18', to: '2026-11-24' });   // finisce oggi
+    expect(weeks[1].to).toBe('2026-11-17');               // la successiva parte il giorno dopo
+    expect(weeks[12].from).toBe(days[days.length - 1]);   // l'ultima arriva al giorno più vecchio
+    expect(weeks[12]).toEqual({ from: '2026-08-27', to: '2026-09-01' });  // 6 giorni
+  });
+
+  it('ultima settimana più corta se i giorni non sono multipli di 7', () => {
+    expect(weeksOf(pastDays('2026-11-24', 10))).toEqual([
+      { from: '2026-11-17', to: '2026-11-23' },
+      { from: '2026-11-14', to: '2026-11-16' },
+    ]);
+  });
+
+  it('lista vuota', () => {
+    expect(weeksOf([])).toEqual([]);
+  });
+});
+
+describe('splitSlice', () => {
+  it('divide una settimana a metà a ore intere, senza buchi', () => {
+    const [a, b] = splitSlice({ from: '2026-03-03 23:00:00', to: '2026-03-10 23:00:00' }, 4)!;
+    expect(a).toEqual({ from: '2026-03-03 23:00:00', to: '2026-03-07 11:00:00' });
+    expect(b).toEqual({ from: '2026-03-07 11:00:00', to: '2026-03-10 23:00:00' });
+  });
+
+  it('scendendo si arriva a 4 ore e poi non divide più', () => {
+    let slice = { from: '2026-03-03 23:00:00', to: '2026-03-10 23:00:00' };
+    for (let i = 0; i < 20; i++) {
+      const halves = splitSlice(slice, 4);
+      if (!halves) break;
+      slice = halves[0];
+    }
+    expect(splitSlice(slice, 4)).toBeNull();
+    expect(splitSlice({ from: '2026-03-03 23:00:00', to: '2026-03-04 03:00:00' }, 4)).toBeNull();
+  });
+});
+
+describe('productionDayOf', () => {
+  // Il pool legge datain in fuso locale: i componenti locali ridanno l'ora "naive" in qualunque fuso.
+  const naive = (y: number, m: number, d: number, h: number, mi = 0, s = 0) => new Date(y, m - 1, d, h, mi, s);
+
+  it('è coerente con i limiti di dayBoundsNaive: 22:59:59 è ancora il giorno prima', () => {
+    expect(productionDayOf(naive(2026, 3, 10, 22, 59, 59))).toBe('2026-03-10');
+    expect(productionDayOf(naive(2026, 3, 10, 23, 0, 0))).toBe('2026-03-11');
+  });
+
+  it('ogni rebanadina di un giorno cade nello stesso giorno di produzione', () => {
+    const { from, to } = dayBoundsNaive('2026-03-10');   // [2026-03-09 23:00, 2026-03-10 23:00)
+    expect(from).toBe('2026-03-09 23:00:00');
+    expect(to).toBe('2026-03-10 23:00:00');
+    for (const h of [23, 3, 7, 11, 15, 19, 22]) {
+      const day = h === 23 ? naive(2026, 3, 9, h) : naive(2026, 3, 10, h);
+      expect(productionDayOf(day)).toBe('2026-03-10');
+    }
+  });
+
+  it('cambio di mese e di anno', () => {
+    expect(productionDayOf(naive(2026, 12, 31, 23, 30))).toBe('2027-01-01');
   });
 });

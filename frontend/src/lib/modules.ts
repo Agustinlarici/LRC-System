@@ -99,6 +99,11 @@ export const MODULES: ModuleConfig[] = [
     sidebar: 'IconTicket', hidden: false, moduleKey: 'tickets',
   },
   {
+    href: '/quality-control-station', label: 'QC Station', group: 'IT',
+    description: 'Quality Control Station: ordini di foto per la PC Camere e foto acquisite',
+    sidebar: 'IconScan', hidden: false, moduleKey: 'photo_station',
+  },
+  {
     href: '/progetti', label: 'Progetti', group: 'IT',
     description: 'Progetti, attività, avanzamenti e cronologia: cosa fare oggi e cosa aspetta una risposta',
     sidebar: 'IconProject', hidden: false, moduleKey: 'tickets_it',
@@ -134,6 +139,13 @@ export const MODULES: ModuleConfig[] = [
     description: 'Generazione automatica file Electronic Data Interchange per le spedizioni',
     sidebar: 'IconEdi', hidden: false, moduleKey: 'edi',
   },
+  // ── Amministrazione ────────────────────────────────────────────────────────
+  {
+    href: '/fatturazione', label: 'Fatturazione', group: 'Amministrazione',
+    description: 'Prezzo di vendita stimato dei despachi',
+    sidebar: 'IconInvoice', hidden: false, moduleKey: 'fatturazione',
+  },
+
   {
     href: '/webddt', label: 'WebDDT', group: 'Logistica',
     description: 'Scarica documenti di trasporto Ferrari in formato Excel per le spedizioni',
@@ -182,7 +194,7 @@ export const MODULES: ModuleConfig[] = [
   },
   {
     href: '/hr/vestiario', label: 'Vestiario', group: 'HR',
-    description: 'Taglie di pantaloni, maglia e scarpe per reparto, da usare negli ordini',
+    description: 'Taglie di pantaloni, maglia, scarpe e giubbotto da ordinare',
     sidebar: 'IconClipboard', hidden: false, moduleKey: 'hr',
   },
   {
@@ -211,7 +223,7 @@ export const MODULES: ModuleConfig[] = [
 
 export const visibleModules = MODULES.filter(m => !m.hidden);
 
-export const MODULE_GROUPS = ['Logistica', 'Produzione', 'Qualità', 'Dashboard', 'HR', 'IT'] as const;
+export const MODULE_GROUPS = ['Logistica', 'Produzione', 'Qualità', 'Amministrazione', 'Dashboard', 'HR', 'IT'] as const;
 export type ModuleGroup = typeof MODULE_GROUPS[number];
 
 export const modulesByGroup = (group: string) =>

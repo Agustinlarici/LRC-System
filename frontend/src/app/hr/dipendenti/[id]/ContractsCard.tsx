@@ -10,6 +10,9 @@ const BACKEND = typeof window !== 'undefined'
 
 const DAY = 86_400_000;
 
+// Senza tipo (contratti registrati prima della colonna) = interinale
+const TIPO_LABEL = { STR: 'STR', INTERINALE: 'Interinale', ESTERNO: 'Esterno' } as const;
+
 function fmtDate(d: string): string {
   return new Date(`${d.slice(0, 10)}T12:00:00Z`).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
@@ -53,7 +56,7 @@ export function ContractsCard({ employeeId }: { employeeId: number }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-[11px] text-muted uppercase tracking-wide">
-            <th className="font-medium py-1">Inizio</th><th className="font-medium py-1">Fine</th>
+            <th className="font-medium py-1 pr-6">Tipo</th><th className="font-medium py-1">Inizio</th><th className="font-medium py-1">Fine</th>
             <th className="font-medium py-1 pr-6 text-right">Giorni</th><th className="font-medium py-1 px-6 border-l border-stone-100">Matricola</th><th className="font-medium py-1" />
           </tr>
         </thead>
@@ -62,8 +65,9 @@ export function ContractsCard({ employeeId }: { employeeId: number }) {
             const ongoing = !c.data_fine || c.data_fine > today;
             return (
               <tr key={c.id} className="border-t border-stone-100">
+                <td className="py-1.5 pr-6">{TIPO_LABEL[c.tipo ?? 'INTERINALE']}</td>
                 <td className="py-1.5">{fmtDate(c.data_inizio)}</td>
-                <td className="py-1.5">{c.data_fine ? fmtDate(c.data_fine) : '—'}</td>
+                <td className="py-1.5">{c.data_fine ? fmtDate(c.data_fine) : 'Indeterminato'}</td>
                 <td className="py-1.5 pr-6 text-right tabular-nums">{c.data_fine ? days(c.data_inizio, c.data_fine) : `${days(c.data_inizio, today)}+`}</td>
                 <td className="py-1.5 px-6 border-l border-stone-100">{c.matricola ?? ''}</td>
                 <td className="py-1.5 text-right">{ongoing && <StatusBadge tone="success">In corso</StatusBadge>}</td>

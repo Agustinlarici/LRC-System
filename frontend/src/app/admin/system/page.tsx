@@ -45,10 +45,10 @@ function PersonSelect({ people, value, onChange, currentUserId, className }: {
     </div>
   );
 }
-type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci' | 'programma_produzione' | 'hr' | 'hr_salary' | 'hr_team' | 'ferrari_schede' | 'ferrari_supervisore';
+type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci' | 'programma_produzione' | 'hr' | 'hr_salary' | 'hr_team' | 'ferrari_schede' | 'ferrari_supervisore' | 'photo_station' | 'fatturazione';
 type Permission = { module_key: ModuleKey; can_view: boolean; can_manage: boolean };
 
-const MODULE_CATEGORIES = ['Logistica', 'Produzione', 'Dashboard', 'IT', 'Qualità', 'HR'] as const;
+const MODULE_CATEGORIES = ['Logistica', 'Amministrazione', 'Produzione', 'Dashboard', 'IT', 'Qualità', 'HR'] as const;
 
 const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATEGORIES[number] }[] = [
   // ── Logistica ──────────────────────────────────────────────────────────────
@@ -60,6 +60,7 @@ const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATE
   { key: 'edi',                  label: 'EDI',                  category: 'Logistica' },
   { key: 'webddt',               label: 'WebDDT',                category: 'Logistica' },
   { key: 'spedizione_bucci',     label: 'Spedizione Bucci',      category: 'Logistica' },
+  { key: 'fatturazione',         label: 'Fatturazione',          category: 'Amministrazione' },
 
   // ── Produzione ─────────────────────────────────────────────────────────────
   { key: 'monitor',         label: 'Andon',           category: 'Produzione' },
@@ -79,6 +80,7 @@ const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATE
   { key: 'impostazioni',  label: 'Impostazioni',           category: 'IT' },
   { key: 'ferrari_schede',      label: 'Programma produzione (schede)',               category: 'IT' },
   { key: 'ferrari_supervisore', label: 'Programma produzione (schede) — Supervisore',   category: 'IT' },
+  { key: 'photo_station', label: 'Quality Control Station (ordini di foto)',   category: 'IT' },
 
   // ── Qualità ────────────────────────────────────────────────────────────────
   { key: 'qualita', label: 'Difetti', category: 'Qualità' },
@@ -128,14 +130,133 @@ interface IKnowFlags {
 }
 
 const IKNOW_QUERIES: { key: keyof Omit<IKnowFlags, 'iknow_enabled'>; label: string; description: string }[] = [
-  { key: 'iknow_andon_enabled',    label: 'Andon / Monitor — sincronizzazione continua', description: 'Legge i nuovi eventi di produzione da iKnow — ogni 10 minuti' },
-  { key: 'iknow_nightly_enabled',  label: 'Rilettura notturna',                           description: 'Rilegge gli ultimi 2 giorni per sistemare i dati — ogni giorno alle 11:30 e ogni notte alle 01:00' },
+  { key: 'iknow_andon_enabled',    label: 'Andon / Monitor — sincronizzazione continua', description: 'Legge i nuovi eventi di produzione da iKnow — ogni 5 minuti' },
+  { key: 'iknow_nightly_enabled',  label: 'Rilettura notturna',                           description: 'Modo incrementale: rilegge gli ultimi 6 mesi per sistemare i dati — ogni notte alle 01:00' },
   { key: 'iknow_lookup_enabled',   label: 'Fasi e combinazioni',                          description: 'Aggiorna fasi, modelli e componenti — ogni notte alle 02:00, a mano da Fasi iKnow e all’avvio se le liste sono vuote' },
   { key: 'iknow_buffer_enabled',   label: 'Buffer',                                       description: 'Ricalcola i seriali in pre-area dallo storico locale — ogni 30 minuti' },
   { key: 'iknow_bom_enabled',      label: 'BOM notturno',                                 description: 'Copia i BOM di iKnow (vista v_iknow_bom per Power BI) — una volta a notte alle 04:15; parte spento' },
   { key: 'iknow_andon_lastup_enabled', label: 'Sync continua — anche schede modificate', description: 'Oltre alle schede nuove (datain) legge quelle modificate (lastup) negli ultimi minuti ed esclude le cancellate (deletedubidocum). Parte spento: provare prima con EXPLAIN' },
   { key: 'iknow_backfill_enabled', label: 'Backfill manuali',                            description: 'Carica iniziale dello storico (pulsante in Aggiornamenti sistema → Azioni manuali), Heatmap, Lead time e correzione commesse (solo su richiesta)' },
 ];
+
+type SyncMode = 'incremental' | 'full' | 'mixed';
+
+interface FirstSyncStatus {
+  running: boolean; cancelled: boolean; total: number; done: number;
+  current: string; rows: number; errors: string[];
+}
+
+const SYNC_MODES: { key: SyncMode; label: string; description: string }[] = [
+  { key: 'incremental', label: 'Incrementale', description: 'Nuovi eventi ogni 5 minuti. Alle 01:00 rilegge gli ultimi 6 mesi (una query per settimana)' },
+  { key: 'full',        label: 'Solo ultimi 3 mesi', description: 'Rilegge gli ultimi 3 mesi ogni 10 minuti (una query per settimana), senza incrementale. Pesante per WebThron' },
+  { key: 'mixed',       label: 'Mista',         description: 'Incrementale ogni 5 minuti + ogni ora rilegge gli ultimi 3 mesi. L’incrementale resta fermo finché la lettura non è finita' },
+];
+
+function SyncModeCard({ flags }: { flags: IKnowFlags }) {
+  const [mode,   setMode]   = useState<SyncMode | null>(null);
+  const [status, setStatus] = useState<FirstSyncStatus | null>(null);
+  const [busy,   setBusy]   = useState(false);
+  const [msg,    setMsg]    = useState('');
+
+  useEffect(() => {
+    apiFetch('/api/system/sync-mode').then(r => r.json() as Promise<{ mode: SyncMode }>)
+      .then(d => setMode(d.mode)).catch(() => setMsg('Errore caricamento modalità'));
+  }, []);
+
+  // Stato della carica: si aggiorna ogni 3 s finché è in corso
+  const running = status?.running ?? false;
+  useEffect(() => {
+    let stop = false;
+    const load = () => apiFetch('/api/system/first-sync').then(r => r.json() as Promise<FirstSyncStatus>)
+      .then(d => { if (!stop) setStatus(d); }).catch(() => {});
+    void load();
+    if (!running) return () => { stop = true; };
+    const t = setInterval(load, 3000);
+    return () => { stop = true; clearInterval(t); };
+  }, [running]);
+
+  async function choose(next: SyncMode) {
+    if (next === mode) return;
+    setBusy(true); setMsg('');
+    try {
+      const res = await apiFetch('/api/system/sync-mode', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: next }),
+      });
+      if (!res.ok) throw new Error();
+      setMode(((await res.json()) as { mode: SyncMode }).mode);
+    } catch { setMsg('Errore salvataggio modalità'); }
+    finally { setBusy(false); }
+  }
+
+  async function launch() {
+    setBusy(true); setMsg('');
+    try {
+      const res = await apiFetch('/api/system/first-sync?days=180', { method: 'POST' });
+      const d = await res.json() as { message?: string; status?: FirstSyncStatus };
+      setMsg(d.message ?? '');
+      if (d.status) setStatus(d.status);
+    } catch { setMsg('Errore avvio'); }
+    finally { setBusy(false); }
+  }
+
+  async function cancel() {
+    await apiFetch('/api/system/first-sync/cancel', { method: 'POST' }).catch(() => {});
+    setMsg('Si fermerà dopo il giorno in corso');
+  }
+
+  if (!mode) return null;
+  const masterOff = !flags.iknow_enabled;
+  const needsBackfill = mode !== 'incremental' && !flags.iknow_backfill_enabled;
+
+  return (
+    <div className="card">
+      <h2 className="font-semibold text-gray-800 mb-1">Modalità sincronizzazione WebThron</h2>
+      <p className="text-xs text-gray-500 mb-4">
+        Come si aggiorna lo storico. Le letture dei 3 mesi di «Solo 3 mesi» e «Mista» richiedono il toggle «Backfill manuali»; quella delle 01:00 il toggle «Rilettura notturna».
+      </p>
+      <div className="divide-y divide-gray-100">
+        {SYNC_MODES.map(m => (
+          <label key={m.key} className="flex items-start gap-3 py-3 cursor-pointer">
+            <input type="radio" name="sync-mode" className="mt-1" checked={mode === m.key}
+              disabled={busy} onChange={() => void choose(m.key)} />
+            <span>
+              <span className="block text-sm font-medium text-gray-800">{m.label}</span>
+              <span className="block text-xs text-gray-500">{m.description}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      {needsBackfill && (
+        <p className="mt-3 text-xs text-orange-600 bg-orange-50 border border-orange-200 rounded px-3 py-2">
+          ⚠ «Backfill manuali» è disattivato: la carica dei 3 mesi non partirà.
+        </p>
+      )}
+      <div className="mt-4 pt-4 border-t border-gray-100">
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => void launch()}
+            disabled={busy || running || masterOff || !flags.iknow_backfill_enabled}
+            className="px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-sm text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+            {running ? '⟳ Carica in corso...' : 'Lancia ora gli ultimi 6 mesi'}
+          </button>
+          {running && (
+            <button type="button" onClick={() => void cancel()}
+              className="px-3 py-2 rounded-lg border border-red-200 text-sm text-red-600 hover:bg-red-50">Ferma</button>
+          )}
+        </div>
+        {status && (running || status.done > 0) && (
+          <p className="mt-2 text-xs text-gray-500">
+            {status.done}/{status.total} settimane{status.current ? ` — ora: ${status.current}` : ''} — {status.rows} eventi
+            {status.errors.length > 0 ? ` — ${status.errors.length} errori` : ''}
+          </p>
+        )}
+        {msg && <p className="mt-2 text-xs text-gray-600">{msg}</p>}
+        {(masterOff || !flags.iknow_backfill_enabled) && (
+          <p className="mt-2 text-xs text-gray-400">Serve attivare «iKnow — Generale» e «Backfill manuali».</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function AvanzataTab() {
   const [flags,  setFlags]  = useState<IKnowFlags | null>(null);
@@ -198,6 +319,8 @@ function AvanzataTab() {
           <Toggle checked={flags.iknow_bucci_enabled} onChange={v => toggle('iknow_bucci_enabled', v)} disabled={masterOff || saving === 'iknow_bucci_enabled'} />
         </div>
       </div>
+
+      <SyncModeCard flags={flags} />
 
       <div className="card">
         <h2 className="font-semibold text-gray-800 mb-1">Query iKnow per modulo</h2>
@@ -866,7 +989,8 @@ type RunStats = {
   lastDurationSec:  number | null;
   lastRowCount:     number | null;
   lastError:        string | null;
-  runCount:         number;
+  lastDetail?:      string | null;
+  runCount:        number;
   consecutiveErrors: number;
   nextScheduledAt:  string | null;
   status:           'idle' | 'running' | 'ok' | 'error';
@@ -902,6 +1026,16 @@ function ago(iso: string | null): string {
   return `${h} h fa`;
 }
 
+/** Per un orario futuro («Prossimo»): «tra 4 min»; se è già passato, «in ritardo di N min». */
+function fromNow(iso: string | null): string {
+  if (!iso) return '—';
+  const min = Math.round((new Date(iso).getTime() - Date.now()) / 60_000);
+  if (min === 0) return 'adesso';
+  const abs = Math.abs(min);
+  const txt = abs < 60 ? `${abs} min` : `${Math.round(abs / 60)} h`;
+  return min > 0 ? `tra ${txt}` : `in ritardo di ${txt}`;
+}
+
 function statusBadge(s: string) {
   const base = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold';
   if (s === 'ok')      return `${base} bg-green-100 text-green-700`;
@@ -919,11 +1053,12 @@ function severityBadge(s: string) {
 }
 
 const JOB_LABELS: Record<string, string> = {
-  sync_incremental:  'Sync WebThron (10 min)',
+  sync_incremental:  'Sync WebThron (5 min)',
   bom_sync:          'BOM iKnow (04:15)',
   first_sync:        'Carica iniziale storico iKnow',
-  sync_full:         'Sync WebThron — prima esecuzione',
-  sync_full_day:     'Sync Full Day (11:30 e 01:00)',
+  sync_full:         'Sync WebThron — primo ciclo del giorno',
+  sync_full_day:     'Sync Full Day (01:00)',
+  sync_lastup:       'Schede modificate (lastup)',
   heatmap_snapshot:  'Snapshot OEE (01:00)',
   lookup_refresh:    'Lookup Tables (02:00)',
   bc_sync:           'Sync Business Central (03:00)',
@@ -931,6 +1066,7 @@ const JOB_LABELS: Record<string, string> = {
   spma_onedrive_poll: 'OneDrive SPMA (10 min)',
   edi_ferrari_scan:  'EDI Ferrari DELINS (06:00)',
   edi_auto_generate: 'EDI Auto-generate (23:45)',
+  osti_sync:         'HR — Sync Osti (ogni ora)',
 };
 
 function SystemCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -1102,7 +1238,7 @@ function AggiornamentiTab() {
               <div className="space-y-2">
                 {([
                   ['force-sync',              'Sync WebThron ora'],
-                  ['first-sync',              'Carica storico iKnow (ultimi 90 giorni)'],
+                  ['first-sync',              'Carica storico iKnow (ultimi 180 giorni)'],
                   ['force-bc-sync',           'Sync Business Central ora'],
                   ['force-lookup',            'Refresh lookup tables'],
                   ['force-snapshot',          'Snapshot OEE ieri'],
@@ -1174,6 +1310,7 @@ function AggiornamentiTab() {
                     <tr key={job} className="hover:bg-gray-50">
                       <td className="py-2.5 pr-4 font-medium text-gray-700">
                         {JOB_LABELS[job] ?? job}
+                        {s.lastDetail && <span className="block text-xs font-normal text-gray-500">{s.lastDetail}</span>}
                       </td>
                       <td className="py-2.5 pr-4">
                         <span className={statusBadge(s.status)}>{s.status.toUpperCase()}</span>
@@ -1183,7 +1320,7 @@ function AggiornamentiTab() {
                         {s.lastDurationSec != null ? `${s.lastDurationSec}s` : '—'}
                       </td>
                       <td className="py-2.5 pr-4 text-gray-500">{s.lastRowCount ?? '—'}</td>
-                      <td className="py-2.5 pr-4 text-gray-500">{ago(s.nextScheduledAt)}</td>
+                      <td className="py-2.5 pr-4 text-gray-500">{fromNow(s.nextScheduledAt)}</td>
                       <td className="py-2.5 max-w-xs">
                         {s.lastError ? (
                           <span className="text-red-500 text-xs truncate block" title={s.lastError}>

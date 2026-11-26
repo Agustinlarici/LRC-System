@@ -201,4 +201,29 @@ describe('isTimeoutError', () => {
     expect(isTimeoutError({ code: 'ER_PARSE_ERROR' })).toBe(false);
     expect(isTimeoutError(null)).toBe(false);
   });
+
+  it('soglia «lenta» per singola chiamata: una lettura grossa da 8 s non fa scattare l\'interruttore', async () => {
+    const { guard, advance, onOpen } = makeGuard();
+    for (let i = 0; i < 3; i++) {
+      await guard.run(async () => { advance(8000); }, { slowMs: 10_000 });
+    }
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(guard.getState().open).toBe(false);
+  });
+
+  it('con soglia alzata un timeout conta comunque come strike', async () => {
+    const { guard, onOpen } = makeGuard();
+    const timeout = Object.assign(new Error('timeout'), { errno: 1969 });
+    for (let i = 0; i < 2; i++) {
+      await guard.run(async () => { throw timeout; }, { slowMs: 10_000 }).catch(() => {});
+    }
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('senza soglia propria resta quella standard: 8 s sono lenti', async () => {
+    const { guard, advance, onOpen } = makeGuard();
+    await guard.run(async () => { advance(8000); });
+    await guard.run(async () => { advance(8000); });
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
 });

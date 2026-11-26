@@ -4,44 +4,31 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import * as XLSX from 'xlsx';
 import { useAuth } from '@/lib/auth';
-import type { HrEmployee, HrDepartment, HrPlant } from '@/types';
+import type { HrEmployee } from '@/types';
 import { MultiSelectDropdown } from '@/components/ui/MultiSelectDropdown';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Tabs } from '@/components/ui/Tabs';
 import { SkeletonTable } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { api } from '@/lib/api';
+import { ImportCapiModal, GestisciCapiModal, type Capo } from './CapiModals';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
-type Cat = 'pantaloni' | 'maglia' | 'scarpe';
-const CATS: { key: Cat; label: string; field: 'taglia_pantaloni' | 'taglia_maglia' | 'taglia_scarpe' }[] = [
-  { key: 'pantaloni', label: 'Pantaloni', field: 'taglia_pantaloni' },
-  { key: 'maglia',    label: 'Maglia',    field: 'taglia_maglia' },
-  { key: 'scarpe',    label: 'Scarpe',    field: 'taglia_scarpe' },
-];
-
-const TABS = ['riepilogo', 'elenco'] as const;
+const TABS = ['capi', 'elenco'] as const;
 type Tab = typeof TABS[number];
 
-const SENZA_REPARTO = 'Senza reparto';
-const LETTER_ORDER = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', 'XXXL', '3XL', '4XL', '5XL', '6XL'];
+type Dividi = '' | 'funzione' | 'responsabile';
+const SENZA_FUNZIONE = 'Senza funzione';
+const SENZA_RESP = 'Senza responsabile';
+const LETTER_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', '5XL'];
 
-// Normalizza la taglia scritta a mano: spazi, maiuscole, virgola decimale (42,5 → 42.5)
-const norm = (v: string | null | undefined) => (v ?? '').trim().toUpperCase().replace(',', '.');
-
-// Ordine naturale: prima le taglie a lettere (XS…6XL), poi le numeriche, poi il resto
-function sizeRank(s: string): [number, number, string] {
-  const li = LETTER_ORDER.indexOf(s);
-  if (li >= 0) return [0, li, s];
-  const n = parseFloat(s);
-  if (!isNaN(n)) return [1, n, s];
-  return [2, 0, s];
-}
+// Ordine naturale delle taglie: XS…5XL, poi il resto
 function compareSize(a: string, b: string) {
-  const ra = sizeRank(a), rb = sizeRank(b);
-  return ra[0] - rb[0] || ra[1] - rb[1] || ra[2].localeCompare(rb[2]);
+  const ia = LETTER_ORDER.indexOf(a), ib = LETTER_ORDER.indexOf(b);
+  return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
 }
 
 export default function VestiarioPage() {
@@ -49,98 +36,118 @@ export default function VestiarioPage() {
   const allowed = canView('hr');
 
   const [employees, setEmployees] = useState<HrEmployee[]>([]);
-  const [departments, setDepartments] = useState<HrDepartment[]>([]);
-  const [plants, setPlants] = useState<HrPlant[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>('riepilogo');
-  const [repartoSel, setRepartoSel] = useState<string[]>([]);
-  const [plantSel, setPlantSel] = useState<string[]>([]);
-  const [soloAttivi, setSoloAttivi] = useState(true);
-  const [soloMancanti, setSoloMancanti] = useState(false);
-  const [perReparto, setPerReparto] = useState(false);
-  const [search, setSearch] = useState('');
+  const [tab, setTab] = useState<Tab>('capi');
+  const [funzioneSel, setFunzioneSel] = useState<string[]>([]);
+  const [respSel, setRespSel] = useState<string[]>([]);
+  const [dividi, setDividi] = useState<Dividi>('');
+  const [capi, setCapi] = useState<Capo[]>([]);
+  const [taglie, setTaglie] = useState<{ employee_id: number; capo_id: number; taglia: string }[]>([]);
+  const [modal, setModal] = useState<'import' | 'gestisci' | null>(null);
+
+  async function loadCapi() {
+    try {
+      const [k, t] = await Promise.all([
+        api.get<Capo[]>('/api/hr/vestiario/capi'),
+        api.get<{ employee_id: number; capo_id: number; taglia: string }[]>('/api/hr/vestiario/taglie'),
+      ]);
+      setCapi(k); setTaglie(t);
+    } catch { /* la pagina funziona anche senza capi */ }
+  }
 
   useEffect(() => {
     if (!allowed) { setLoading(false); return; }
+    void loadCapi();
     let cancelled = false;
     (async () => {
-      const [e, d, p] = await Promise.all([
-        fetch(`${BACKEND}/api/hr/employees`, { credentials: 'include' }),
-        fetch(`${BACKEND}/api/hr/departments`, { credentials: 'include' }),
-        fetch(`${BACKEND}/api/hr/plants`, { credentials: 'include' }),
-      ]);
+      const res = await fetch(`${BACKEND}/api/hr/employees`, { credentials: 'include' });
       if (cancelled) return;
-      if (e.ok) setEmployees(await e.json());
-      if (d.ok) setDepartments(await d.json());
-      if (p.ok) setPlants(await p.json());
+      if (res.ok) setEmployees(await res.json());
       setLoading(false);
     })();
     return () => { cancelled = true; };
   }, [allowed]);
 
-  const manca = (e: HrEmployee) => CATS.some(c => !norm(e[c.field]));
+  // I cessati non servono mai: niente vestiario da ordinare
+  const attivi = useMemo(() => employees.filter(e => e.stato !== 'cessato'), [employees]);
 
-  const rows = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return employees.filter(e => {
-      if (soloAttivi && e.stato === 'cessato') return false;
-      if (repartoSel.length && !repartoSel.includes(String(e.reparto_id ?? 0))) return false;
-      if (plantSel.length && !(e.plant_ids ?? []).some(id => plantSel.includes(String(id)))) return false;
-      if (soloMancanti && !manca(e)) return false;
-      if (q && !`${e.cognome} ${e.nome} ${e.matricola ?? ''}`.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [employees, soloAttivi, repartoSel, plantSel, soloMancanti, search]);
+  const funzioneOf = (e: HrEmployee) => e.funzione_aziendale?.trim() || SENZA_FUNZIONE;
+  const respOf = (e: HrEmployee) => {
+    const c = e.capo_id != null ? employees.find(x => x.id === e.capo_id) : null;
+    return c ? `${c.cognome} ${c.nome}` : SENZA_RESP;
+  };
 
-  const repartoName = (e: HrEmployee) => e.reparto_name ?? SENZA_REPARTO;
-
-  // Reparti presenti nel filtro (colonne della vista "per reparto")
-  const repartiCols = useMemo(
-    () => Array.from(new Set(rows.map(repartoName))).sort((a, b) => a.localeCompare(b)),
-    [rows],
+  const funzioneOptions = useMemo(
+    () => Array.from(new Set(attivi.map(funzioneOf))).sort((a, b) => a.localeCompare(b)).map(v => ({ value: v, label: v })),
+    [attivi],
+  );
+  // Responsabili = chi ha persone sotto di sé
+  const respOptions = useMemo(
+    () => attivi.filter(e => e.n_riporti > 0).sort((a, b) => a.cognome.localeCompare(b.cognome) || a.nome.localeCompare(b.nome))
+      .map(e => ({ value: String(e.id), label: `${e.cognome} ${e.nome}` })),
+    [attivi],
   );
 
-  // Per ogni categoria: taglia → { totale, per reparto }
-  const riepilogo = useMemo(() => CATS.map(c => {
-    const map = new Map<string, { tot: number; byRep: Map<string, number> }>();
-    let mancanti = 0;
-    for (const e of rows) {
-      const s = norm(e[c.field]);
-      if (!s) { mancanti++; continue; }
-      const slot = map.get(s) ?? { tot: 0, byRep: new Map() };
-      slot.tot++;
-      const r = repartoName(e);
-      slot.byRep.set(r, (slot.byRep.get(r) ?? 0) + 1);
-      map.set(s, slot);
-    }
-    const sizes = Array.from(map.entries()).sort((a, b) => compareSize(a[0], b[0]));
-    return { ...c, sizes, mancanti, totale: sizes.reduce((n, [, v]) => n + v.tot, 0) };
-  }), [rows]);
+  const rows = useMemo(() => attivi.filter(e => {
+    if (funzioneSel.length && !funzioneSel.includes(funzioneOf(e))) return false;
+    if (respSel.length && !(e.capo_id != null && respSel.includes(String(e.capo_id)))) return false;
+    return true;
+  }), [attivi, funzioneSel, respSel]);
 
-  const nMancanti = useMemo(() => rows.filter(manca).length, [rows]);
+  const groupOf = (e: HrEmployee) => (dividi === 'responsabile' ? respOf(e) : funzioneOf(e));
+
+  // Colonne della divisione scelta (funzioni o responsabili presenti nel filtro)
+  const groupCols = useMemo(
+    () => (dividi ? Array.from(new Set(rows.map(groupOf))).sort((a, b) => a.localeCompare(b)) : []),
+    [rows, dividi],
+  );
+
+  // Per ogni capo+colore: taglia → totale e per gruppo (solo i dipendenti filtrati)
+  const riepilogoCapi = useMemo(() => {
+    const empIds = new Map(rows.map(e => [e.id, e]));
+    return capi.map(k => {
+      const map = new Map<string, { tot: number; byGroup: Map<string, number> }>();
+      for (const t of taglie) {
+        if (t.capo_id !== k.id) continue;
+        const e = empIds.get(t.employee_id);
+        if (!e) continue;
+        const slot = map.get(t.taglia) ?? { tot: 0, byGroup: new Map() };
+        slot.tot++;
+        if (dividi) { const g = groupOf(e); slot.byGroup.set(g, (slot.byGroup.get(g) ?? 0) + 1); }
+        map.set(t.taglia, slot);
+      }
+      const sizes = Array.from(map.entries()).sort((a, b) => compareSize(a[0], b[0]));
+      return { ...k, sizes, totale: sizes.reduce((n, [, v]) => n + v.tot, 0) };
+    });
+  }, [capi, taglie, rows, dividi]);
+
+  // taglia di ogni dipendente per capo: "employee_id:capo_id" → taglia
+  const tagliaOf = useMemo(() => new Map(taglie.map(t => [`${t.employee_id}:${t.capo_id}`, t.taglia])), [taglie]);
+  const nSenzaTaglie = useMemo(() => rows.filter(e => !capi.some(k => tagliaOf.has(`${e.id}:${k.id}`))).length, [rows, capi, tagliaOf]);
 
   const elenco = useMemo(
-    () => [...rows].sort((a, b) => repartoName(a).localeCompare(repartoName(b)) || a.cognome.localeCompare(b.cognome) || a.nome.localeCompare(b.nome)),
+    () => [...rows].sort((a, b) => funzioneOf(a).localeCompare(funzioneOf(b)) || a.cognome.localeCompare(b.cognome) || a.nome.localeCompare(b.nome)),
     [rows],
   );
 
   function exportExcel() {
     const wb = XLSX.utils.book_new();
-    // Foglio 1: da ordinare (taglia × quantità, con reparti)
+    // Foglio 1: da ordinare (capo + colore × taglia, con reparti)
     const ordine: Record<string, string | number>[] = [];
-    for (const c of riepilogo) {
-      for (const [taglia, v] of c.sizes) {
-        const r: Record<string, string | number> = { Capo: c.label, Taglia: taglia, Totale: v.tot };
-        for (const rep of repartiCols) r[rep] = v.byRep.get(rep) ?? 0;
+    for (const k of riepilogoCapi) {
+      for (const [taglia, v] of k.sizes) {
+        const r: Record<string, string | number> = { Capo: k.nome, Colore: k.colore, Taglia: taglia, Totale: v.tot };
+        for (const g of groupCols) r[g] = v.byGroup.get(g) ?? 0;
         ordine.push(r);
       }
     }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ordine), 'Da ordinare');
-    // Foglio 2: elenco persone
-    const persone = elenco.map(e => ({
-      Cognome: e.cognome, Nome: e.nome, Matricola: e.matricola ?? '', Reparto: e.reparto_name ?? '', Plant: e.plant_name ?? '',
-      Pantaloni: e.taglia_pantaloni ?? '', Maglia: e.taglia_maglia ?? '', Scarpe: e.taglia_scarpe ?? '',
-    }));
+    // Foglio 2: elenco persone, una colonna per capo
+    const persone = elenco.map(e => {
+      const r: Record<string, string> = { Cognome: e.cognome, Nome: e.nome, Matricola: e.matricola ?? '', Funzione: e.funzione_aziendale ?? '', Responsabile: respOf(e) === SENZA_RESP ? '' : respOf(e) };
+      for (const k of capi) r[k.colore ? `${k.nome} (${k.colore})` : k.nome] = tagliaOf.get(`${e.id}:${k.id}`) ?? '';
+      return r;
+    });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(persone), 'Elenco');
     XLSX.writeFile(wb, `vestiario-${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
@@ -154,12 +161,6 @@ export default function VestiarioPage() {
     );
   }
 
-  const repOptions = [
-    ...departments.filter(d => d.is_active).map(d => ({ value: String(d.id), label: d.name })),
-    { value: '0', label: SENZA_REPARTO },
-  ];
-  const plantOptions = plants.filter(p => p.is_active).map(p => ({ value: String(p.id), label: p.name }));
-
   const cell = (n: number) => (n > 0 ? n : <span className="text-stone-300">·</span>);
 
   return (
@@ -167,94 +168,92 @@ export default function VestiarioPage() {
       <PageHeader
         title="Vestiario"
         back={{ label: 'Risorse Umane', href: '/hr' }}
-        description="Taglie di pantaloni, maglia e scarpe: quante ne servono per reparto, per ordinare"
-        actions={<button onClick={exportExcel} disabled={!rows.length} className="btn-secondary text-sm">Esporta Excel</button>}
+        actions={<>
+          <button onClick={() => setModal('gestisci')} className="btn-secondary text-sm">Capi e colori</button>
+          <button onClick={exportExcel} disabled={!rows.length} className="btn-secondary text-sm">Esporta Excel</button>
+          <button onClick={() => setModal('import')} className="btn-primary text-sm">Importa Excel</button>
+        </>}
       />
 
       <div className="card space-y-3">
         <div className="flex flex-wrap items-end gap-3">
           <div className="w-56">
-            <label className="label">Reparto</label>
-            <MultiSelectDropdown options={repOptions} selected={repartoSel} onChange={setRepartoSel} allLabel="Tutti i reparti" />
-          </div>
-          <div className="w-44">
-            <label className="label">Plant</label>
-            <MultiSelectDropdown options={plantOptions} selected={plantSel} onChange={setPlantSel} allLabel="Tutti i plant" />
+            <label className="label">Funzione</label>
+            <MultiSelectDropdown options={funzioneOptions} selected={funzioneSel} onChange={setFunzioneSel} allLabel="Tutte le funzioni" />
           </div>
           <div className="w-56">
-            <label className="label">Cerca</label>
-            <input className="input" value={search} onChange={e => setSearch(e.target.value)} placeholder="Cognome, nome, matricola" />
+            <label className="label">Responsabile</label>
+            <MultiSelectDropdown options={respOptions} selected={respSel} onChange={setRespSel} allLabel="Tutti i responsabili" />
           </div>
-          <label className="flex items-center gap-2 pb-2 text-sm text-ink-900">
-            <input type="checkbox" checked={soloAttivi} onChange={e => setSoloAttivi(e.target.checked)} /> Escludi cessati
-          </label>
-          <label className="flex items-center gap-2 pb-2 text-sm text-ink-900">
-            <input type="checkbox" checked={soloMancanti} onChange={e => setSoloMancanti(e.target.checked)} /> Solo con taglie mancanti
-          </label>
+          {tab === 'capi' && (
+            <div className="w-48">
+              <label className="label">Dividi per</label>
+              <select className="input" value={dividi} onChange={e => setDividi(e.target.value as Dividi)}>
+                <option value="">Nessuno (solo totali)</option>
+                <option value="funzione">Funzione</option>
+                <option value="responsabile">Responsabile</option>
+              </select>
+            </div>
+          )}
         </div>
         <p className="text-sm text-muted">
           {rows.length} {rows.length === 1 ? 'persona' : 'persone'}
-          {nMancanti > 0 && <> · <span className="text-warning">{nMancanti} con almeno una taglia mancante</span></>}
+          {capi.length > 0 && nSenzaTaglie > 0 && <> · <span className="text-warning">{nSenzaTaglie} senza nessuna taglia</span></>}
         </p>
       </div>
 
-      <Tabs tabs={TABS} value={tab} onChange={setTab} labels={{ riepilogo: 'Da ordinare', elenco: 'Elenco persone' }} />
+      <Tabs tabs={TABS} value={tab} onChange={setTab} labels={{ capi: 'Da ordinare', elenco: 'Elenco persone' }} />
 
       {loading ? (
         <SkeletonTable rows={6} cols={5} />
       ) : rows.length === 0 ? (
         <div className="card"><EmptyState title="Nessun dipendente" hint="Cambia i filtri per vedere altri risultati." /></div>
-      ) : tab === 'riepilogo' ? (
-        <>
-          <label className="flex items-center gap-2 text-sm text-ink-900">
-            <input type="checkbox" checked={perReparto} onChange={e => setPerReparto(e.target.checked)} /> Dividi per reparto
-          </label>
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-            {riepilogo.map(c => (
-              <div key={c.key} className="card overflow-x-auto !p-0">
-                <div className="flex items-baseline justify-between border-b border-line px-4 py-3">
-                  <h2 className="font-semibold text-ink-900">{c.label}</h2>
-                  <span className="text-sm text-muted">{c.totale} da ordinare</span>
+      ) : tab === 'capi' ? (
+        capi.length === 0 ? (
+          <div className="card"><EmptyState title="Nessun capo" hint="Importa un Excel con le taglie per creare capi e colori." /></div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-4">
+            {riepilogoCapi.map(k => (
+              <div key={k.id} className="card overflow-x-auto !p-0">
+                <div className="flex items-baseline justify-between gap-3 border-b border-line px-4 py-3">
+                  <h2 className="font-semibold text-ink-900">{k.nome}{k.colore && <span className="ml-2 font-normal text-muted">{k.colore}</span>}</h2>
+                  <span className="whitespace-nowrap text-sm text-muted">{k.totale} da ordinare</span>
                 </div>
-                {c.sizes.length === 0 ? (
-                  <EmptyState title="Nessuna taglia inserita" />
+                {k.sizes.length === 0 ? (
+                  <EmptyState title="Nessuna taglia" />
                 ) : (
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted">
                         <th className="px-4 py-2 font-medium">Taglia</th>
-                        {perReparto && repartiCols.map(r => <th key={r} className="px-3 py-2 text-right font-medium">{r}</th>)}
+                        {groupCols.map(g => <th key={g} className="px-3 py-2 text-right font-medium">{g}</th>)}
                         <th className="px-4 py-2 text-right font-medium">Totale</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {c.sizes.map(([taglia, v]) => (
+                      {k.sizes.map(([taglia, v]) => (
                         <tr key={taglia} className="border-b border-line last:border-0">
                           <td className="px-4 py-2 font-medium text-ink-900">{taglia}</td>
-                          {perReparto && repartiCols.map(r => <td key={r} className="px-3 py-2 text-right tabular-nums">{cell(v.byRep.get(r) ?? 0)}</td>)}
+                          {groupCols.map(g => <td key={g} className="px-3 py-2 text-right tabular-nums">{cell(v.byGroup.get(g) ?? 0)}</td>)}
                           <td className="px-4 py-2 text-right font-semibold tabular-nums text-ink-900">{v.tot}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 )}
-                {c.mancanti > 0 && (
-                  <p className="border-t border-line px-4 py-2 text-xs text-warning">{c.mancanti} senza taglia</p>
-                )}
               </div>
             ))}
           </div>
-        </>
+        )
       ) : (
         <div className="card overflow-x-auto !p-0">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted">
                 <th className="px-4 py-2 font-medium">Dipendente</th>
-                <th className="px-3 py-2 font-medium">Matricola</th>
-                <th className="px-3 py-2 font-medium">Reparto</th>
-                <th className="px-3 py-2 font-medium">Plant</th>
-                {CATS.map(c => <th key={c.key} className="px-3 py-2 font-medium">{c.label}</th>)}
+                <th className="px-3 py-2 font-medium">Funzione</th>
+                <th className="px-3 py-2 font-medium">Responsabile</th>
+                {capi.map(k => <th key={k.id} className="px-3 py-2 font-medium">{k.nome}{k.colore && <span className="block text-[10px] normal-case tracking-normal">{k.colore}</span>}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -263,13 +262,10 @@ export default function VestiarioPage() {
                   <td className="px-4 py-2">
                     <Link href={`/hr/dipendenti/${e.id}`} className="font-medium text-ink-900 hover:text-accent-ink">{e.cognome} {e.nome}</Link>
                   </td>
-                  <td className="px-3 py-2 text-muted">{e.matricola ?? '—'}</td>
-                  <td className="px-3 py-2">{e.reparto_name ?? '—'}</td>
-                  <td className="px-3 py-2">{e.plant_name ?? '—'}</td>
-                  {CATS.map(c => (
-                    <td key={c.key} className="px-3 py-2">
-                      {norm(e[c.field]) ? e[c.field] : <span className="text-warning">mancante</span>}
-                    </td>
+                  <td className="px-3 py-2">{e.funzione_aziendale ?? '—'}</td>
+                  <td className="px-3 py-2">{respOf(e) === SENZA_RESP ? '—' : respOf(e)}</td>
+                  {capi.map(k => (
+                    <td key={k.id} className="px-3 py-2">{tagliaOf.get(`${e.id}:${k.id}`) ?? <span className="text-stone-300">·</span>}</td>
                   ))}
                 </tr>
               ))}
@@ -277,6 +273,8 @@ export default function VestiarioPage() {
           </table>
         </div>
       )}
+      {modal === 'import' && <ImportCapiModal onClose={() => setModal(null)} onDone={() => { setModal(null); void loadCapi(); }} />}
+      {modal === 'gestisci' && <GestisciCapiModal capi={capi} onClose={() => setModal(null)} onChanged={() => void loadCapi()} />}
     </div>
   );
 }

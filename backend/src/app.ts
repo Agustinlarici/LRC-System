@@ -17,6 +17,7 @@ import { spmaRoutes } from './modules/spma/routes.js';
 import { recepcionesRoutes } from './modules/recepciones/routes.js';
 import { ediRoutes } from './modules/edi/routes.js';
 import { webddtRoutes } from './modules/webddt/routes.js';
+import { fatturazioneRoutes } from './modules/fatturazione/routes.js';
 import { spedizioneBucciRoutes } from './modules/spedizione-bucci/routes.js';
 import { qualitaRoutes } from './modules/qualita/routes.js';
 import { programmaProduzioneRoutes } from './modules/programma-produzione/routes.js';
@@ -24,6 +25,9 @@ import { hrRoutes } from './modules/hr/routes.js';
 import { ferrariRoutes } from './modules/ferrari/routes.js';
 import { activityRoutes } from './modules/activity/routes.js';
 import { progettiRoutes } from './modules/progetti/routes.js';
+import { qualityControlStationRoutes, qualityControlStationDeviceRoutes } from './modules/quality-control-station/routes.js';
+import { iknowRoutes } from './modules/quality-control-station/iknow.js';
+import { iaLiveRoutes } from './modules/ia-live/routes.js';
 import { logger } from './lib/logger.js';
 import { db } from './db/client.js';
 import { getWebthronGuardState } from './modules/monitor/mysql-client.js';
@@ -99,6 +103,7 @@ app.route('/api/spma', spmaRoutes);
 app.route('/api/recepciones', recepcionesRoutes);
 app.route('/api/edi', ediRoutes);
 app.route('/api/webddt', webddtRoutes);
+app.route('/api/fatturazione', fatturazioneRoutes);
 app.route('/api/bucci', spedizioneBucciRoutes);
 app.route('/api/qualita', qualitaRoutes);
 app.route('/api/prod', programmaProduzioneRoutes);
@@ -106,6 +111,14 @@ app.route('/api/hr', hrRoutes);
 app.route('/api/ferrari', ferrariRoutes);
 app.route('/api/activity', activityRoutes);
 app.route('/api/progetti', progettiRoutes);
+app.route('/api/quality-control-station/device', qualityControlStationDeviceRoutes);   // token stazione (PC Camere)
+app.route('/api/quality-control-station', qualityControlStationRoutes);
+// Nome precedente (Photo Station): le PC Camere già installate chiamano ancora questi percorsi. Stesse rotte,
+// stessi controlli di accesso. Da togliere quando tutte le PC Camere avranno la versione nuova.
+app.route('/api/photo-station/device', qualityControlStationDeviceRoutes);
+app.route('/api/photo-station', qualityControlStationRoutes);
+app.route('/ia', iaLiveRoutes);   // PC IA (STR-IASystem): richieste firmate HMAC, sola lettura; chiusa se manca IA_VM_SECRET
+app.route('/api/delibere', iknowRoutes);   // chiamata di iKnow: pubblica, protetta dal token concordato
 
 // Stub para módulos aún no migrados
 const stub = (module: string) =>

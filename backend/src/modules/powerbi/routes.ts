@@ -2,7 +2,7 @@
  * Dati per Power BI via HTTP (alternativa al connettore PostgreSQL, che richiede Npgsql sul gateway).
  *
  *   GET /api/powerbi/bom.csv      BOM di iKnow (vista v_iknow_bom)
- *   GET /api/powerbi/eventi.csv   eventi iKnow degli ultimi 3 mesi (vista v_iknow_ultimi_3_mesi)
+ *   GET /api/powerbi/eventi.csv   eventi iKnow degli ultimi 6 mesi (vista v_iknow_ultimi_3_mesi: il nome è storico)
  *
  * Intestazione richiesta:  X-Api-Key: <POWERBI_API_KEY>
  *

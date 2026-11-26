@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { db } from '../../db/client.js';
 import { requireManage, type Env } from '../../lib/auth.js';
@@ -27,18 +28,67 @@ const importSchema = z.object({
     data_inizio: z.string().optional().nullable(),
     data_fine:   z.string().optional().nullable(),
   })).max(20000),
-  // create_missing: crea chi non è in anagrafica (solo se l'utente l'ha confermato)
-  create_missing: z.boolean().default(false),
+  // Scelta dell'utente per chi non è in anagrafica, per chiave persona: 'new' = crea scheda,
+  // 'skip' = non importare, numero = collega a quella scheda. Senza scelta non si fa nulla.
+  decisions: z.record(z.string(), z.union([z.literal('new'), z.literal('skip'), z.number().int()])).default({}),
   // dry_run: calcola l'esito e annulla tutto (nessuna scrittura)
   dry_run: z.boolean().default(false),
 });
 
+interface Contratto { matricola: string | null; qualifica: string | null; inizio: string; fine: string | null; tipo: string | null }
+
+// Registra un contratto (riga in hr_employee_contract + eventi in timeline). false = già presente
+// (stessa persona e stesse date): rieseguire non duplica nulla.
+export async function registraContratto(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any, employeeId: number, r: Contratto,
+  user: { id: number | null; display_name: string }, today: string, etichetta: string,
+): Promise<boolean> {
+  const [ins] = await tx<{ id: number }[]>`
+    INSERT INTO hr_employee_contract (employee_id, matricola, qualifica, data_inizio, data_fine, tipo)
+    VALUES (${employeeId}, ${r.matricola}, ${r.qualifica}, ${r.inizio}, ${r.fine}, ${r.tipo})
+    ON CONFLICT (employee_id, data_inizio, (COALESCE(data_fine, 'infinity'::date))) DO NOTHING
+    RETURNING id`;
+  if (!ins) {
+    // Già presente: se mancava il tipo (contratto registrato prima della colonna) lo si completa
+    if (r.tipo) {
+      await tx`
+        UPDATE hr_employee_contract SET tipo = ${r.tipo}
+        WHERE employee_id = ${employeeId} AND data_inizio = ${r.inizio}
+          AND COALESCE(data_fine, 'infinity'::date) = COALESCE(${r.fine}::date, 'infinity'::date) AND tipo IS NULL`;
+    }
+    return false;
+  }
+  const note = `${etichetta}${r.matricola ? ` · matricola ${r.matricola}` : ''}`;
+  await tx`
+    INSERT INTO hr_employee_event ${tx({
+      employee_id: employeeId, event_type: 'assunzione', event_date: r.inizio, end_date: r.fine,
+      to_value: r.qualifica, note, created_by_user_id: user.id, created_by_name: user.display_name,
+    })}`;
+  if (r.fine && r.fine <= today) {
+    await tx`
+      INSERT INTO hr_employee_event ${tx({
+        employee_id: employeeId, event_type: 'cessazione', event_date: r.fine,
+        note: `Fine ${etichetta.toLowerCase()}`, created_by_user_id: user.id, created_by_name: user.display_name,
+      })}`;
+  }
+  return true;
+}
+
 interface Issue { type: string; name: string; note: string }
 class DryRun extends Error {}
+// true se le due parole differiscono per una sola lettera (sostituita, in più o in meno)
+function lev1(a: string, b: string): boolean {
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1);
+  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : b.slice(i + 1) === a.slice(i);
+}
 interface Person { id: number; cognome: string; nome: string; nome_osti: string | null }
 
 hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
-  const { rows, create_missing, dry_run } = await parseBody(c, importSchema);
+  const { rows, decisions, dry_run } = await parseBody(c, importSchema);
   const user = c.get('user');
   const today = new Date().toISOString().slice(0, 10);
   const issues: Issue[] = [];
@@ -79,7 +129,7 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
     return best;
   };
 
-  const newPeople: string[] = [];
+  const newPeople: { key: string; name: string; contracts: number; suggestions: { id: number; label: string }[]; best: number | null }[] = [];
   let result: { created: number; linked: number; contracts: number; duplicates: number };
   try {
   result = await db.begin(async (tx) => {
@@ -102,29 +152,50 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
         return truncOf(canon, full) || truncOf(full, canon);
       });
     };
-    // Schede con parole in comune (almeno due): si mostrano come "simile a" per evitare doppioni
-    const similarTo = (canon: string): string => {
-      const t = new Set(tokens(canon));
-      return employees
-        .filter(e => tokens(`${e.cognome} ${e.nome}`).filter(w => t.has(w)).length >= 2)
-        .slice(0, 3).map(e => `${e.cognome} ${e.nome}`).join('; ');
+    // Suggerimenti come nell'import Osti: parole uguali o quasi uguali (una lettera di differenza, nome troncato),
+    // anche quando il CSV ha parole in più o in meno (ARUMADURA ISHAN SANJEEVA DE SILVA ~ Arumadura Ishan Sanjeewa).
+    const wordsMatch = (a: string, b: string) => a === b || (a.length >= 5 && b.length >= 5 && (a.startsWith(b) || b.startsWith(a) || lev1(a, b)));
+    const suggest = (canon: string): { list: { id: number; label: string }[]; best: number | null } => {
+      const csv = tokens(canon);
+      const scored: { id: number; label: string; score: number; strong: boolean }[] = [];
+      for (const e of employees) {
+        const emp = tokens(`${e.cognome} ${e.nome}`);
+        const used = new Set<number>();
+        let hit = 0;
+        for (const w of csv) {
+          const k = emp.findIndex((x, idx) => !used.has(idx) && wordsMatch(w, x));
+          if (k >= 0) { used.add(k); hit++; }
+        }
+        if (hit < 2) continue;
+        const cover = hit / Math.min(csv.length, emp.length);
+        if (cover < 0.66) continue;
+        scored.push({ id: e.id, label: `${e.cognome} ${e.nome}`, score: hit / Math.max(csv.length, emp.length), strong: cover === 1 });
+      }
+      scored.sort((a, b) => b.score - a.score);
+      const top = scored.slice(0, 4);
+      // Preselezione solo se c'è un solo candidato forte
+      const strong = top.filter(t => t.strong && t.score >= 0.6);
+      return { list: top.map(t => ({ id: t.id, label: t.label })), best: strong.length === 1 ? strong[0].id : null };
     };
 
     // Raggruppa per persona (stesse parole, nomi troncati unificati)
-    const groups = new Map<string, { canon: string; rows: typeof valid }>();
+    const groups = new Map<string, { key: string; canon: string; rows: typeof valid }>();
     for (const r of valid) {
       const canon = canonicalFull(r);
       const k = sortedKey(canon);
-      const g = groups.get(k) ?? { canon, rows: [] };
+      const g = groups.get(k) ?? { key: k, canon, rows: [] };
       g.rows.push(r);
       groups.set(k, g);
     }
 
     let created = 0, linked = 0, contracts = 0, duplicates = 0;
-    for (const { canon, rows: list } of groups.values()) {
+    for (const { key, canon, rows: list } of groups.values()) {
       const first = list[0];
       const label = `${first.cognome} ${first.nome}`;
-      const found = findPerson(canon);
+      let found = findPerson(canon);
+      const decision = decisions[key];
+      // Scelta manuale: collegare a una scheda esistente
+      if (!found.length && typeof decision === 'number') found = employees.filter(e => e.id === decision);
       if (found.length > 1) {
         skipped += list.length;
         issues.push({ type: 'Ambiguo', name: label, note: `${found.length} dipendenti con questo nome: ${list.length} contratti non importati` });
@@ -135,15 +206,15 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
       if (found.length === 1) {
         employeeId = found[0].id; linked++;
       } else {
-        if (!create_missing) {
+        if (decision !== 'new') {
+          // Senza scelta (o "non importare"): si propone all'utente con i suggerimenti, nessuna scrittura
           skipped += list.length;
-          const sim = similarTo(canon);
-          issues.push({ type: 'Non in anagrafica', name: label, note: `${list.length} contratti non importati (persona non creata)${sim ? ` · simile a: ${sim}` : ''}` });
+          const sug = suggest(canon);
+          if (decision === undefined) newPeople.push({ key, name: label, contracts: list.length, suggestions: sug.list, best: sug.best });
+          issues.push({ type: 'Non in anagrafica', name: label, note: `${list.length} contratti non importati${sug.list.length ? ` · simile a: ${sug.list.map(x => x.label).join('; ')}` : ''}` });
           continue;
         }
-        const sim = similarTo(canon);
-        newPeople.push(sim ? `${label} (simile a: ${sim})` : label);
-        issues.push({ type: 'Creato', name: label, note: `nuova scheda interinale (${list.length} contratti)${sim ? ` · simile a: ${sim}` : ''}` });
+        issues.push({ type: 'Creato', name: label, note: `nuova scheda interinale (${list.length} contratti)` });
         // Persona non ancora in anagrafica: si crea come interinale (cessata se tutti i contratti sono finiti)
         const longest = list.reduce((a, b) => (b.nome.length > a.nome.length ? b : a)).nome;
         const inizio = list.map(r => r.inizio).sort()[0];
@@ -166,26 +237,8 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
       }
 
       for (const r of list) {
-        const [ins] = await tx<{ id: number }[]>`
-          INSERT INTO hr_employee_contract (employee_id, matricola, qualifica, data_inizio, data_fine)
-          VALUES (${employeeId}, ${r.matricola}, ${r.qualifica}, ${r.inizio}, ${r.fine})
-          ON CONFLICT (employee_id, data_inizio, (COALESCE(data_fine, 'infinity'::date))) DO NOTHING
-          RETURNING id`;
-        if (!ins) { duplicates++; continue; }
-        contracts++;
-        const note = `Contratto interinale${r.matricola ? ` · matricola ${r.matricola}` : ''}`;
-        await tx`
-          INSERT INTO hr_employee_event ${tx({
-            employee_id: employeeId, event_type: 'assunzione', event_date: r.inizio, end_date: r.fine,
-            to_value: r.qualifica, note, created_by_user_id: user.id, created_by_name: user.display_name,
-          })}`;
-        if (r.fine && r.fine <= today) {
-          await tx`
-            INSERT INTO hr_employee_event ${tx({
-              employee_id: employeeId, event_type: 'cessazione', event_date: r.fine,
-              note: 'Fine contratto interinale', created_by_user_id: user.id, created_by_name: user.display_name,
-            })}`;
-        }
+        if (await registraContratto(tx, employeeId, { ...r, tipo: 'INTERINALE' }, user, today, 'Contratto interinale')) contracts++;
+        else duplicates++;
       }
     }
     if (dry_run) throw new DryRun();
@@ -198,4 +251,42 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
 
   await auditLog({ userId: user.id, username: user.username, action: 'hr.contracts.import', entity: 'hr_employee_contract', details: result });
   return c.json({ ...result, skipped, issues, new_people: newPeople });
+});
+
+// Contratti di una persona già abbinata (import elenco Osti: più righe di Osti per la stessa persona =
+// più contratti). Stessa registrazione dell'import interinali; non cambia stato né date della scheda.
+const contrattiOstiSchema = z.object({
+  contratti: z.array(z.object({
+    matricola:   z.string().max(30).optional().nullable(),
+    qualifica:   z.string().max(100).optional().nullable(),
+    tipo:        z.enum(['STR', 'INTERINALE', 'ESTERNO']).optional().nullable(),
+    data_inizio: z.string().regex(ISO),
+    data_fine:   z.string().regex(ISO).optional().nullable(),
+  }).refine(r => !r.data_fine || r.data_fine >= r.data_inizio, { message: 'data fine prima della data inizio' })).min(1).max(50),
+});
+
+hrContractRoutes.post('/employee/:id', requireManage('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const { contratti } = await parseBody(c, contrattiOstiSchema);
+  const user = c.get('user');
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [emp] = await db`SELECT id FROM hr_employee WHERE id = ${id}`;
+  if (!emp) throw new HTTPException(404, { message: 'Dipendente non trovato' });
+
+  const result = await db.begin(async (tx) => {
+    let added = 0, duplicates = 0;
+    for (const r of contratti) {
+      const ok = await registraContratto(tx, id, {
+        matricola: r.matricola?.trim() || null, qualifica: r.qualifica?.trim() || null,
+        inizio: r.data_inizio, fine: r.data_fine || null, tipo: r.tipo ?? null,
+      }, user, today, 'Contratto Osti');
+      if (ok) added++; else duplicates++;
+    }
+    return { added, duplicates };
+  });
+
+  await auditLog({ userId: user.id, username: user.username, action: 'hr.contracts.osti', entity: 'hr_employee_contract', entityId: id, details: result });
+  return c.json(result);
 });

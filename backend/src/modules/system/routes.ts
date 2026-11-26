@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { parseBody } from '../../lib/validate.js';
 import { getIKnowFlags, setIKnowFlags, assertIKnowEnabled, isIKnowEnabled, IKNOW_QUERY_FLAGS } from '../../lib/system-flags.js';
+import { getSyncMode, setSyncMode, isSyncMode, SYNC_MODES, BACKFILL_DAYS } from '../monitor/sync-mode.js';
 import { getAllStats, startRun, endRun, failRun } from '../../lib/sync-stats.js';
 import { refreshLookupTables } from '../monitor/pg-webthron-sync.js';
 import { startFirstSync, getFirstSyncStatus, cancelFirstSync } from '../monitor/first-sync.js';
@@ -35,6 +36,19 @@ systemRoutes.patch('/iknow-flags', async (c) => {
   return c.json(flags);
 });
 
+// Modalità della sync WebThron: incremental | full (90 giorni) | mixed (incrementale + 90 giorni ogni ora)
+systemRoutes.get('/sync-mode', requireAuth, async (c) => c.json({ mode: await getSyncMode() }));
+
+systemRoutes.patch('/sync-mode', requireAuth, async (c) => {
+  const user = c.get('user');
+  if (user.role !== 'admin' && user.role !== 'it') {
+    throw new HTTPException(403, { message: 'Solo admin/it possono cambiare la modalità di sync' });
+  }
+  const body = await parseBody(c, z.object({ mode: z.enum(SYNC_MODES) }));
+  if (!isSyncMode(body.mode)) throw new HTTPException(400, { message: 'Modalità non valida' });
+  return c.json({ mode: await setSyncMode(body.mode) });
+});
+
 // GET /api/system/sync-status — performance metrics for all WebThron sync jobs
 systemRoutes.get('/sync-status', (c) => {
   const stats = getAllStats();
@@ -49,7 +63,7 @@ systemRoutes.get('/sync-status', (c) => {
 });
 
 // ─── Carica iniziale dello storico (ultimi N giorni, default 90) ─────────────────
-// Richiede i toggle «iKnow generale» e «Backfill manuali». Un giorno alla volta, in background.
+// Richiede i toggle «iKnow generale» e «Backfill manuali». Una settimana alla volta, in background.
 
 const clampInt = (raw: string | undefined, fallback: number, min: number, max: number) => {
   const n = parseInt(raw ?? '', 10);
@@ -74,10 +88,10 @@ systemRoutes.post('/first-sync', requireAuth, async (c) => {
   if (getFirstSyncStatus().running) {
     return c.json({ message: 'Carica iniziale già in corso', status: getFirstSyncStatus() }, 409);
   }
-  const days     = clampInt(c.req.query('days'), 90, 1, 120);
-  const pauseSec = clampInt(c.req.query('pause_sec'), 3, 1, 600);
+  const days     = clampInt(c.req.query('days'), BACKFILL_DAYS, 1, 200);
+  const pauseSec = clampInt(c.req.query('pause_sec'), 2, 1, 600);
   const status   = startFirstSync({ days, pauseSec });
-  return c.json({ message: `Carica iniziale avviata: ultimi ${days} giorni, un giorno alla volta`, status }, 202);
+  return c.json({ message: `Carica iniziale avviata: ultimi ${days} giorni, una settimana alla volta`, status }, 202);
 });
 
 systemRoutes.get('/first-sync', (c) => c.json(getFirstSyncStatus()));
