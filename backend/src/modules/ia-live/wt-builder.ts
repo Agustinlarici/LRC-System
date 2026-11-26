@@ -17,6 +17,7 @@ const FILTRI: Array<[string, string]> = [
   ['fase', 'fase'], ['seriale', 'cod_seriale'], ['esito', 'esito_delibera'],
 ];
 const MAX_GIORNI = 92;
+const GIORNI_PREDEFINITI = 7;   // senza commessa/seriale/date: ultimi 7 giorni (indice su data_cache)
 const MAX_CONTEMPORANEE = 2;
 const STATEMENT_TIMEOUT_MS = 5000;
 const MAX_RIGHE = 200;
@@ -38,7 +39,7 @@ export const ParametriWt = z.object({
     if (Number.isNaN(g) || g < 0) return err('intervallo di date non valido');
     if (g > MAX_GIORNI) return err(`intervallo troppo lungo (massimo ${MAX_GIORNI} giorni)`);
   }
-  if (!p.commessa && !p.seriale && !(p.dal && p.al)) return err('serve commessa, seriale oppure un intervallo di date (dal/al)');
+  if (!FILTRI.some(([nome]) => (p as Record<string, string | undefined>)[nome]) && !(p.dal && p.al)) return err('serve almeno un filtro (commessa, seriale, fase, componente, modello, esito) oppure dal/al');
   if (p.raggruppa) {
     const g = p.raggruppa.split(',').map(s => s.trim());
     if (g.length > 3 || new Set(g).size !== g.length || g.some(x => !Object.prototype.hasOwnProperty.call(COLONNE_GRUPPO, x))) {
@@ -55,6 +56,8 @@ export interface PianoWt {
 }
 
 // Funzione pura (testabile senza database): dai parametri già convalidati al piano.
+const oggiRoma = (spostaGiorni = 0) => new Date(Date.now() + spostaGiorni * 86_400_000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+
 export function pianoWt(p: ParametriWt): PianoWt {
   const filtri = FILTRI.flatMap(([nome, colonna]) => {
     const v = (p as Record<string, string | undefined>)[nome];
@@ -62,7 +65,12 @@ export function pianoWt(p: ParametriWt): PianoWt {
   });
   const gruppi = (p.raggruppa ? p.raggruppa.split(',').map(s => s.trim()) : [])
     .map(n => ({ nome: n as NomeGruppo, colonna: COLONNE_GRUPPO[n as NomeGruppo] }));
-  return { filtri, dal: p.dal, al: p.al, gruppi };
+  // senza chiave precisa né date: solo gli ultimi giorni, così la lettura usa l'indice e non scorre tutto lo storico
+  const conIntervallo = !!(p.dal && p.al);
+  const precisa = !!(p.commessa || p.seriale);
+  const dal = conIntervallo ? p.dal : precisa ? undefined : oggiRoma(-(GIORNI_PREDEFINITI - 1));
+  const al = conIntervallo ? p.al : precisa ? undefined : oggiRoma();
+  return { filtri, dal, al, gruppi };
 }
 
 let inCorso = 0;
