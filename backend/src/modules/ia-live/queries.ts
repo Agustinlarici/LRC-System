@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { getDynamicsConfig } from '../edi/dynamics-client.js';
 import { getRigheDespachi } from '../fatturazione/bc.js';
 import { db } from '../../db/client.js';
+import { ParametriWt, eseguiWt } from './wt-builder.js';
 
 export type Cella = string | number | boolean | null;
 export interface RisultatoIa {
@@ -14,8 +15,8 @@ export interface RisultatoIa {
 }
 export interface QueryIa {
   descrizione: string;
-  parametri: z.ZodType<Record<string, string | number>>;
-  esegui: (p: Record<string, string | number>) => Promise<RisultatoIa>;
+  parametri: z.ZodType<Record<string, string | number | undefined>>;
+  esegui: (p: Record<string, string | number | undefined>) => Promise<RisultatoIa>;
 }
 
 const TABELLA_RIGA_ORDINE = 'STR$Sales Line$437dbf0e-84ff-417a-965d-ed2bb9650972';
@@ -69,6 +70,12 @@ export const IA_QUERIES: Record<string, QueryIa> = {
   },
 
   // ---- Storico WebThron: legge la COPIA in PostgreSQL (webthron_events_history), mai WebThron direttamente (MyISAM fragile). ----
+  // Costruttore generico (vedi wt-builder.ts): filtri opzionali + raggruppamento; risponde con conteggi e date, non con migliaia di righe.
+  wt_events: {
+    descrizione: 'Riepilogo eventi WebThron: filtri opzionali (commessa, componente, modello, fase, seriale, esito, dal/al) e raggruppamento (fase, componente, modello, commessa, esito, seriale, data)',
+    parametri: ParametriWt,
+    esegui: (p) => eseguiWt(ParametriWt.parse(p)),
+  },
   wt_events_commessa: {
     descrizione: 'Ultimi eventi WebThron di una commessa (fase, componente, seriale, esito, data), dal più recente',
     parametri: z.object({ commessa: CODICE }).strict(),
