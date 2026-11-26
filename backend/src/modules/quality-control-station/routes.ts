@@ -1,4 +1,4 @@
-// Photo Station: coda degli ordini di foto (vedi docs/PHOTO-STATION.md).
+// Quality Control Station: coda degli ordini di foto (vedi docs/QUALITY-CONTROL-STATION.md).
 // Flusso: ordine creato (a mano o da iKnow) → la PC Camere lo prende (claim) → scatta →
 // carica ogni foto → chiude l'ordine (complete). La PC Camere chiama la VM, mai il contrario.
 import { Hono } from 'hono';
@@ -13,12 +13,15 @@ import { requireModule, requireManage, type Env } from '../../lib/auth.js';
 import { requireStation, type StationEnv } from './station-auth.js';
 import { activePhaseRules, matchPhase } from './events.js';
 import { lastRun } from './feed.js';
+import { spmaInfo } from './spma-lookup.js';
 import { ignoredApiCalls } from './iknow.js';
+import { listCalls } from './iknow-log.js';
 import {
   CAMERA_RE, MAX_ATTEMPTS, MAX_PHOTO_BYTES, STALE_CLAIM_MINUTES,
   isJpeg, newStationToken, normalizeCommessa, sha256Hex,
 } from './helpers.js';
 
+// La cartella delle foto mantiene il nome precedente ('photo-station'): rinominarla lascerebbe orfane le foto già salvate.
 const UPLOAD_DIR = process.env.UPLOAD_DIR
   ? join(process.env.UPLOAD_DIR, 'photo-station')
   : join(process.cwd(), 'uploads', 'photo-station');
@@ -32,27 +35,56 @@ function idParam(raw: string | undefined, label = 'ID'): number {
 }
 
 // ═══ Lato utenti (interfaccia web) ═══════════════════════════════════════════════
-export const photoStationRoutes = new Hono<Env & StationEnv>();
+export const qualityControlStationRoutes = new Hono<Env & StationEnv>();
 
 const JOB_COLS = db`
   j.id::int AS id, j.commessa, j.phase, j.seriale, j.componente, j.versione, j.event_at, j.source, j.status, j.attempts, j.capture_status, j.capture_errors, j.error,
   j.created_by, j.created_at, j.claimed_at, j.finished_at, s.name AS station_name,
-  (SELECT count(*)::int FROM photo_job_files f WHERE f.job_id = j.id) AS photos
+  (SELECT count(*)::int FROM photo_job_files f WHERE f.job_id = j.id) AS photos,
+  NULLIF(sp.model_code, '-') AS modello, sp.line_name AS linea
 `;
 
-photoStationRoutes.get('/jobs', requireModule('photo_station'), async (c) => {
+// Modello e linea dalla tabella SPMA (stessa regola di spma-lookup.ts: codice esatto, altrimenti senza zeri iniziali)
+const SPMA_JOIN = db`
+  LEFT JOIN LATERAL (
+    SELECT c.model_code, l.name AS line_name FROM spma_commessa c LEFT JOIN spma_line l ON l.id = c.line_id
+    WHERE c.commessa_code = j.commessa OR (ltrim(j.commessa, '0') <> '' AND ltrim(c.commessa_code, '0') = ltrim(j.commessa, '0'))
+    ORDER BY (c.commessa_code = j.commessa) DESC, c.id LIMIT 1
+  ) sp ON TRUE
+`;
+
+qualityControlStationRoutes.get('/jobs', requireModule('photo_station'), async (c) => {
   const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 50) || 50, 1), 200);
   const jobs = await db`
-    SELECT ${JOB_COLS} FROM photo_jobs j LEFT JOIN photo_stations s ON s.id = j.station_id
+    SELECT ${JOB_COLS} FROM photo_jobs j LEFT JOIN photo_stations s ON s.id = j.station_id ${SPMA_JOIN}
     ORDER BY j.id DESC LIMIT ${limit}
   `;
-  return c.json({ jobs });
+  // Total de pedidos en cola (la lista de arriba esta limitada): lo usa el boton "Annulla tutti i pendenti"
+  const [{ n }] = await db`SELECT count(*)::int AS n FROM photo_jobs WHERE status = 'pending'`;
+  return c.json({ jobs, pending_count: n });
 });
 
-photoStationRoutes.get('/jobs/:id', requireModule('photo_station'), async (c) => {
+// Anula DE UNA VEZ todos los pedidos en cola (status 'pending'): por ejemplo cuando la PC de cámaras estuvo apagada y
+// se acumularon pedidos de piezas que ya no están. No toca los que la estación ya tomó ('claimed') ni los terminados;
+// los anulados se pueden rilanciare uno por uno con «Riprova». Opcional: solo una fase.
+qualityControlStationRoutes.post('/jobs/cancel-pending', requireManage('photo_station'), async (c) => {
+  const user = c.get('user');
+  const { phase } = await parseBody(c, z.object({ phase: PHASE.optional() }));
+  const rows = await db`
+    UPDATE photo_jobs
+    SET status = 'cancelled', error = 'Annullato in blocco', finished_at = now(), updated_at = now()
+    WHERE status = 'pending' ${phase ? db`AND phase = ${phase}` : db``}
+    RETURNING id::int AS id
+  `;
+  await auditLog({ userId: user.id, username: user.username, action: 'photo_job_cancel_pending', entity: 'photo_job',
+                   details: { count: rows.length, phase: phase ?? null } });
+  return c.json({ cancelled: rows.length });
+});
+
+qualityControlStationRoutes.get('/jobs/:id', requireModule('photo_station'), async (c) => {
   const id = idParam(c.req.param('id'));
   const [job] = await db`
-    SELECT ${JOB_COLS} FROM photo_jobs j LEFT JOIN photo_stations s ON s.id = j.station_id WHERE j.id = ${id}
+    SELECT ${JOB_COLS} FROM photo_jobs j LEFT JOIN photo_stations s ON s.id = j.station_id ${SPMA_JOIN} WHERE j.id = ${id}
   `;
   if (!job) throw new HTTPException(404, { message: 'Ordine non trovato' });
   const files = await db`SELECT id, camera, bytes, sha256, created_at FROM photo_job_files WHERE job_id = ${id} ORDER BY camera`;
@@ -63,13 +95,19 @@ const PHASE = z.string().regex(/^[a-z0-9_]{1,40}$/, 'fase non valida (minuscole,
 const NewJob = z.object({ commessa: z.string().min(1).max(100), phase: PHASE });
 
 // ─── Integrazione iKnow: token concordato con l'azienda (mai riletto, solo l'hash) ─────
-photoStationRoutes.get('/iknow', requireModule('photo_station'), async (c) => {
+qualityControlStationRoutes.get('/iknow', requireModule('photo_station'), async (c) => {
   const [cfg] = await db`SELECT updated_at, updated_by FROM photo_iknow_config WHERE id = 1`;
   const [last] = await db`SELECT max(created_at) AS last_call_at FROM photo_jobs WHERE source = 'iknow'`;
   return c.json({ configured: !!cfg, updated_at: cfg?.updated_at ?? null, updated_by: cfg?.updated_by ?? null, last_call_at: last?.last_call_at ?? null });
 });
 
-photoStationRoutes.put('/iknow-token', requireManage('photo_station'), async (c) => {
+// Ultime chiamate ricevute da iKnow (anche quelle rifiutate), per capire se arrivano e perché falliscono
+qualityControlStationRoutes.get('/iknow/calls', requireModule('photo_station'), async (c) => {
+  const limit = Math.min(Math.max(Number(c.req.query('limit') ?? 50) || 50, 1), 200);
+  return c.json(await listCalls(limit));
+});
+
+qualityControlStationRoutes.put('/iknow-token', requireManage('photo_station'), async (c) => {
   const user = c.get('user');
   const { token } = await parseBody(c, z.object({ token: z.string().regex(/^[\x21-\x7e]{16,200}$/, 'token: 16-200 caratteri, senza spazi') }));
   await db`
@@ -81,7 +119,7 @@ photoStationRoutes.put('/iknow-token', requireManage('photo_station'), async (c)
 });
 
 // ─── Alimentatore dalla copia del DB di iKnow (provvisorio, finché non c'è l'API) ───────
-photoStationRoutes.get('/feed', requireModule('photo_station'), async (c) => {
+qualityControlStationRoutes.get('/feed', requireModule('photo_station'), async (c) => {
   const [cfg] = await db`SELECT mode, esiti_ok, enabled_since, updated_by FROM photo_feed_config WHERE id = 1`;
   // Esiti realmente presenti nelle fasi del catalogo (ultimi 7 giorni), per sceglierli senza indovinare
   const rules = await activePhaseRules();
@@ -96,7 +134,7 @@ photoStationRoutes.get('/feed', requireModule('photo_station'), async (c) => {
   });
 });
 
-photoStationRoutes.put('/feed', requireManage('photo_station'), async (c) => {
+qualityControlStationRoutes.put('/feed', requireManage('photo_station'), async (c) => {
   const user = c.get('user');
   const { mode, esiti_ok } = await parseBody(c, z.object({
     mode: z.enum(['off', 'db', 'api']), esiti_ok: z.array(z.string().trim().min(1).max(200)).max(20),
@@ -121,12 +159,12 @@ photoStationRoutes.put('/feed', requireManage('photo_station'), async (c) => {
 });
 
 // ─── Fasi (arrivano da iKnow): catalogo, ognuna con le sue stazioni ───────────────
-photoStationRoutes.get('/phases', requireModule('photo_station'), async (c) => {
+qualityControlStationRoutes.get('/phases', requireModule('photo_station'), async (c) => {
   const phases = await db`SELECT key, label, iknow_fase, active FROM photo_phases ORDER BY key`;
   return c.json({ phases });
 });
 
-photoStationRoutes.post('/phases', requireManage('photo_station'), async (c) => {
+qualityControlStationRoutes.post('/phases', requireManage('photo_station'), async (c) => {
   const user = c.get('user');
   const { key, label, iknow_fase } = await parseBody(c, z.object({ key: PHASE, label: z.string().trim().min(1).max(80), iknow_fase: z.string().trim().max(80).optional() }));
   const [p] = await db`INSERT INTO photo_phases (key, label, iknow_fase) VALUES (${key}, ${label}, ${iknow_fase || null}) ON CONFLICT (key) DO NOTHING RETURNING key`;
@@ -135,7 +173,7 @@ photoStationRoutes.post('/phases', requireManage('photo_station'), async (c) => 
   return c.json({ ok: true }, 201);
 });
 
-photoStationRoutes.put('/phases/:key', requireManage('photo_station'), async (c) => {
+qualityControlStationRoutes.put('/phases/:key', requireManage('photo_station'), async (c) => {
   const user = c.get('user');
   const key = c.req.param('key') ?? '';
   const { active } = await parseBody(c, z.object({ active: z.boolean() }));
@@ -145,7 +183,7 @@ photoStationRoutes.put('/phases/:key', requireManage('photo_station'), async (c)
   return c.json({ ok: true });
 });
 
-photoStationRoutes.post('/jobs', requireManage('photo_station'), async (c) => {
+qualityControlStationRoutes.post('/jobs', requireManage('photo_station'), async (c) => {
   const user = c.get('user');
   const { commessa: raw, phase } = await parseBody(c, NewJob);
   const commessa = normalizeCommessa(raw);
@@ -163,7 +201,7 @@ photoStationRoutes.post('/jobs', requireManage('photo_station'), async (c) => {
   return c.json({ job }, 201);
 });
 
-photoStationRoutes.post('/jobs/:id/cancel', requireManage('photo_station'), async (c) => {
+qualityControlStationRoutes.post('/jobs/:id/cancel', requireManage('photo_station'), async (c) => {
   const user = c.get('user');
   const id = idParam(c.req.param('id'));
   const [job] = await db`
@@ -175,7 +213,7 @@ photoStationRoutes.post('/jobs/:id/cancel', requireManage('photo_station'), asyn
   return c.json({ ok: true });
 });
 
-photoStationRoutes.post('/jobs/:id/retry', requireManage('photo_station'), async (c) => {
+qualityControlStationRoutes.post('/jobs/:id/retry', requireManage('photo_station'), async (c) => {
   const user = c.get('user');
   const id = idParam(c.req.param('id'));
   const [job] = await db`
@@ -190,7 +228,7 @@ photoStationRoutes.post('/jobs/:id/retry', requireManage('photo_station'), async
   return c.json({ ok: true });
 });
 
-photoStationRoutes.get('/jobs/:id/files/:fileId', requireModule('photo_station'), async (c) => {
+qualityControlStationRoutes.get('/jobs/:id/files/:fileId', requireModule('photo_station'), async (c) => {
   const id = idParam(c.req.param('id'));
   const fileId = idParam(c.req.param('fileId'), 'File');
   const [f] = await db`SELECT filename FROM photo_job_files WHERE id = ${fileId} AND job_id = ${id}`;
@@ -211,7 +249,7 @@ async function assertPhasesExist(phases: string[]) {
   const bad = phases.filter(p => !found.some(f => f.key === p));
   if (bad.length) throw new HTTPException(400, { message: `Fasi sconosciute: ${bad.join(', ')}` });
 }
-photoStationRoutes.get('/stations', requireModule('photo_station'), async (c) => {
+qualityControlStationRoutes.get('/stations', requireModule('photo_station'), async (c) => {
   const rows = await db`
     SELECT id, name, phases, created_at, last_seen_at, revoked_at,
            (revoked_at IS NULL AND last_seen_at > now() - make_interval(secs => ${ONLINE_SECONDS})) AS online
@@ -220,7 +258,7 @@ photoStationRoutes.get('/stations', requireModule('photo_station'), async (c) =>
   return c.json({ stations: rows });
 });
 
-photoStationRoutes.post('/stations', requireManage('photo_station'), async (c) => {
+qualityControlStationRoutes.post('/stations', requireManage('photo_station'), async (c) => {
   const user = c.get('user');
   const { name, phases } = await parseBody(c, StationBody);
   await assertPhasesExist(phases);
@@ -232,7 +270,7 @@ photoStationRoutes.post('/stations', requireManage('photo_station'), async (c) =
   return c.json({ station: st, token }, 201);   // il token non si può rileggere
 });
 
-photoStationRoutes.put('/stations/:id/phases', requireManage('photo_station'), async (c) => {
+qualityControlStationRoutes.put('/stations/:id/phases', requireManage('photo_station'), async (c) => {
   const user = c.get('user');
   const id = idParam(c.req.param('id'));
   const { phases } = await parseBody(c, z.object({ phases: z.array(PHASE).max(20) }));
@@ -243,7 +281,7 @@ photoStationRoutes.put('/stations/:id/phases', requireManage('photo_station'), a
   return c.json({ ok: true });
 });
 
-photoStationRoutes.post('/stations/:id/revoke', requireManage('photo_station'), async (c) => {
+qualityControlStationRoutes.post('/stations/:id/revoke', requireManage('photo_station'), async (c) => {
   const user = c.get('user');
   const id = idParam(c.req.param('id'));
   const [st] = await db`UPDATE photo_stations SET revoked_at = now() WHERE id = ${id} AND revoked_at IS NULL RETURNING id`;
@@ -253,8 +291,8 @@ photoStationRoutes.post('/stations/:id/revoke', requireManage('photo_station'), 
 });
 
 // ═══ Lato stazione (PC Camere) — solo token Bearer ═══════════════════════════════
-export const photoStationDeviceRoutes = new Hono<StationEnv>();
-photoStationDeviceRoutes.use('*', requireStation);
+export const qualityControlStationDeviceRoutes = new Hono<StationEnv>();
+qualityControlStationDeviceRoutes.use('*', requireStation);
 
 // Libera gli ordini presi da una stazione sparita: riprova, oppure fallisce dopo MAX_ATTEMPTS.
 async function releaseStaleClaims() {
@@ -270,7 +308,7 @@ async function releaseStaleClaims() {
 
 // Prende solo ordini delle fasi abilitate a questa stazione.
 // Chiamata a intervalli (3-5 s): serve anche da "sono vivo" per l'indicatore online.
-photoStationDeviceRoutes.post('/claim', async (c) => {
+qualityControlStationDeviceRoutes.post('/claim', async (c) => {
   const st = c.get('station');
   await releaseStaleClaims();
   // Un ordine già suo (l'app si è riavviata a metà): lo riconsegna invece di prenderne un altro.
@@ -285,7 +323,8 @@ photoStationDeviceRoutes.post('/claim', async (c) => {
       RETURNING id::int AS id, commessa, phase, seriale, componente, versione
     `;
   }
-  return c.json({ job: job ?? null });
+  // Modello e linea della commessa dalla tabella SPMA, cercati ora (l'import può essere arrivato dopo l'ordine)
+  return c.json({ job: job ? { ...job, ...(await spmaInfo(job.commessa as string)) } : null });
 });
 
 async function ownJob(jobId: number, stationId: number) {
@@ -298,7 +337,7 @@ async function ownJob(jobId: number, stationId: number) {
 }
 
 // Foto grezza nel body (image/jpeg). Il server calcola l'hash: la stazione lo confronta col suo.
-photoStationDeviceRoutes.put('/jobs/:id/photos/:camera', async (c) => {
+qualityControlStationDeviceRoutes.put('/jobs/:id/photos/:camera', async (c) => {
   const st = c.get('station');
   const id = idParam(c.req.param('id'));
   const camera = c.req.param('camera');
@@ -335,7 +374,7 @@ const Complete = z.object({
 
 // Chiude l'ordine: ogni foto dichiarata deve essere arrivata intera (stesso hash). Altrimenti 409
 // con l'elenco di quelle da ricaricare: l'ordine resta aperto.
-photoStationDeviceRoutes.post('/jobs/:id/complete', async (c) => {
+qualityControlStationDeviceRoutes.post('/jobs/:id/complete', async (c) => {
   const st = c.get('station');
   const id = idParam(c.req.param('id'));
   await ownJob(id, st.id);
@@ -360,7 +399,7 @@ photoStationDeviceRoutes.post('/jobs/:id/complete', async (c) => {
 });
 
 // La stazione non può nemmeno provare (es. nessuna camera): ordine fallito con il motivo.
-photoStationDeviceRoutes.post('/jobs/:id/fail', async (c) => {
+qualityControlStationDeviceRoutes.post('/jobs/:id/fail', async (c) => {
   const st = c.get('station');
   const id = idParam(c.req.param('id'));
   await ownJob(id, st.id);

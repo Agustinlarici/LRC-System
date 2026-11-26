@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { db } from '../../db/client.js';
 import { requireManage, type Env } from '../../lib/auth.js';
@@ -33,6 +34,46 @@ const importSchema = z.object({
   // dry_run: calcola l'esito e annulla tutto (nessuna scrittura)
   dry_run: z.boolean().default(false),
 });
+
+interface Contratto { matricola: string | null; qualifica: string | null; inizio: string; fine: string | null; tipo: string | null }
+
+// Registra un contratto (riga in hr_employee_contract + eventi in timeline). false = già presente
+// (stessa persona e stesse date): rieseguire non duplica nulla.
+export async function registraContratto(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any, employeeId: number, r: Contratto,
+  user: { id: number | null; display_name: string }, today: string, etichetta: string,
+): Promise<boolean> {
+  const [ins] = await tx<{ id: number }[]>`
+    INSERT INTO hr_employee_contract (employee_id, matricola, qualifica, data_inizio, data_fine, tipo)
+    VALUES (${employeeId}, ${r.matricola}, ${r.qualifica}, ${r.inizio}, ${r.fine}, ${r.tipo})
+    ON CONFLICT (employee_id, data_inizio, (COALESCE(data_fine, 'infinity'::date))) DO NOTHING
+    RETURNING id`;
+  if (!ins) {
+    // Già presente: se mancava il tipo (contratto registrato prima della colonna) lo si completa
+    if (r.tipo) {
+      await tx`
+        UPDATE hr_employee_contract SET tipo = ${r.tipo}
+        WHERE employee_id = ${employeeId} AND data_inizio = ${r.inizio}
+          AND COALESCE(data_fine, 'infinity'::date) = COALESCE(${r.fine}::date, 'infinity'::date) AND tipo IS NULL`;
+    }
+    return false;
+  }
+  const note = `${etichetta}${r.matricola ? ` · matricola ${r.matricola}` : ''}`;
+  await tx`
+    INSERT INTO hr_employee_event ${tx({
+      employee_id: employeeId, event_type: 'assunzione', event_date: r.inizio, end_date: r.fine,
+      to_value: r.qualifica, note, created_by_user_id: user.id, created_by_name: user.display_name,
+    })}`;
+  if (r.fine && r.fine <= today) {
+    await tx`
+      INSERT INTO hr_employee_event ${tx({
+        employee_id: employeeId, event_type: 'cessazione', event_date: r.fine,
+        note: `Fine ${etichetta.toLowerCase()}`, created_by_user_id: user.id, created_by_name: user.display_name,
+      })}`;
+  }
+  return true;
+}
 
 interface Issue { type: string; name: string; note: string }
 class DryRun extends Error {}
@@ -196,26 +237,8 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
       }
 
       for (const r of list) {
-        const [ins] = await tx<{ id: number }[]>`
-          INSERT INTO hr_employee_contract (employee_id, matricola, qualifica, data_inizio, data_fine)
-          VALUES (${employeeId}, ${r.matricola}, ${r.qualifica}, ${r.inizio}, ${r.fine})
-          ON CONFLICT (employee_id, data_inizio, (COALESCE(data_fine, 'infinity'::date))) DO NOTHING
-          RETURNING id`;
-        if (!ins) { duplicates++; continue; }
-        contracts++;
-        const note = `Contratto interinale${r.matricola ? ` · matricola ${r.matricola}` : ''}`;
-        await tx`
-          INSERT INTO hr_employee_event ${tx({
-            employee_id: employeeId, event_type: 'assunzione', event_date: r.inizio, end_date: r.fine,
-            to_value: r.qualifica, note, created_by_user_id: user.id, created_by_name: user.display_name,
-          })}`;
-        if (r.fine && r.fine <= today) {
-          await tx`
-            INSERT INTO hr_employee_event ${tx({
-              employee_id: employeeId, event_type: 'cessazione', event_date: r.fine,
-              note: 'Fine contratto interinale', created_by_user_id: user.id, created_by_name: user.display_name,
-            })}`;
-        }
+        if (await registraContratto(tx, employeeId, { ...r, tipo: 'INTERINALE' }, user, today, 'Contratto interinale')) contracts++;
+        else duplicates++;
       }
     }
     if (dry_run) throw new DryRun();
@@ -228,4 +251,42 @@ hrContractRoutes.post('/import', requireManage('hr'), async (c) => {
 
   await auditLog({ userId: user.id, username: user.username, action: 'hr.contracts.import', entity: 'hr_employee_contract', details: result });
   return c.json({ ...result, skipped, issues, new_people: newPeople });
+});
+
+// Contratti di una persona già abbinata (import elenco Osti: più righe di Osti per la stessa persona =
+// più contratti). Stessa registrazione dell'import interinali; non cambia stato né date della scheda.
+const contrattiOstiSchema = z.object({
+  contratti: z.array(z.object({
+    matricola:   z.string().max(30).optional().nullable(),
+    qualifica:   z.string().max(100).optional().nullable(),
+    tipo:        z.enum(['STR', 'INTERINALE', 'ESTERNO']).optional().nullable(),
+    data_inizio: z.string().regex(ISO),
+    data_fine:   z.string().regex(ISO).optional().nullable(),
+  }).refine(r => !r.data_fine || r.data_fine >= r.data_inizio, { message: 'data fine prima della data inizio' })).min(1).max(50),
+});
+
+hrContractRoutes.post('/employee/:id', requireManage('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const { contratti } = await parseBody(c, contrattiOstiSchema);
+  const user = c.get('user');
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [emp] = await db`SELECT id FROM hr_employee WHERE id = ${id}`;
+  if (!emp) throw new HTTPException(404, { message: 'Dipendente non trovato' });
+
+  const result = await db.begin(async (tx) => {
+    let added = 0, duplicates = 0;
+    for (const r of contratti) {
+      const ok = await registraContratto(tx, id, {
+        matricola: r.matricola?.trim() || null, qualifica: r.qualifica?.trim() || null,
+        inizio: r.data_inizio, fine: r.data_fine || null, tipo: r.tipo ?? null,
+      }, user, today, 'Contratto Osti');
+      if (ok) added++; else duplicates++;
+    }
+    return { added, duplicates };
+  });
+
+  await auditLog({ userId: user.id, username: user.username, action: 'hr.contracts.osti', entity: 'hr_employee_contract', entityId: id, details: result });
+  return c.json(result);
 });

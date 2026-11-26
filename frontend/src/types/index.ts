@@ -3,7 +3,7 @@
 export type ModuleKey =
   | 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer'
   | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
-  | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci'
+  | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci' | 'fatturazione'
   | 'programma_produzione' | 'hr' | 'hr_salary' | 'hr_team' | 'ferrari_schede' | 'ferrari_supervisore' | 'photo_station';
 
 export interface ModulePermission {
@@ -740,10 +740,6 @@ export interface HrEmployee {
   cap:                      string | null;
   gruppo_orario:            string | null;
   nome_osti:                string | null;
-  taglia_pantaloni:         string | null;
-  taglia_maglia:            string | null;
-  taglia_scarpe:            string | null;
-  taglia_campera:           string | null;
   badge:                    string | null;
   transponder:              string | null;
   terminale:                string | null;
@@ -799,6 +795,7 @@ export interface HrEmployeeContract {
   employee_id: number;
   matricola:   string | null;
   qualifica:   string | null;
+  tipo:        'STR' | 'INTERINALE' | 'ESTERNO' | null;   // null = contratti precedenti, tutti interinali
   data_inizio: string;
   data_fine:   string | null;
 }

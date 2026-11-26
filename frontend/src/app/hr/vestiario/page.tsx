@@ -10,41 +10,25 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { Tabs } from '@/components/ui/Tabs';
 import { SkeletonTable } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { api } from '@/lib/api';
+import { ImportCapiModal, GestisciCapiModal, type Capo } from './CapiModals';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
-type Cat = 'pantaloni' | 'maglia' | 'scarpe' | 'giubbotto';
-const CATS: { key: Cat; label: string; field: 'taglia_pantaloni' | 'taglia_maglia' | 'taglia_scarpe' | 'taglia_campera' }[] = [
-  { key: 'pantaloni', label: 'Pantaloni', field: 'taglia_pantaloni' },
-  { key: 'maglia',    label: 'Maglia',    field: 'taglia_maglia' },
-  { key: 'scarpe',    label: 'Scarpe',    field: 'taglia_scarpe' },
-  { key: 'giubbotto',   label: 'Giubbotto',   field: 'taglia_campera' },
-];
-
-const TABS = ['riepilogo', 'elenco'] as const;
+const TABS = ['capi', 'elenco'] as const;
 type Tab = typeof TABS[number];
 
 type Dividi = '' | 'funzione' | 'responsabile';
 const SENZA_FUNZIONE = 'Senza funzione';
 const SENZA_RESP = 'Senza responsabile';
-const LETTER_ORDER = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', 'XXXL', '3XL', '4XL', '5XL', '6XL'];
+const LETTER_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', '5XL'];
 
-// Normalizza la taglia scritta a mano: spazi, maiuscole, virgola decimale (42,5 → 42.5)
-const norm = (v: string | null | undefined) => (v ?? '').trim().toUpperCase().replace(',', '.');
-
-// Ordine naturale: prima le taglie a lettere (XS…6XL), poi le numeriche, poi il resto
-function sizeRank(s: string): [number, number, string] {
-  const li = LETTER_ORDER.indexOf(s);
-  if (li >= 0) return [0, li, s];
-  const n = parseFloat(s);
-  if (!isNaN(n)) return [1, n, s];
-  return [2, 0, s];
-}
+// Ordine naturale delle taglie: XS…5XL, poi il resto
 function compareSize(a: string, b: string) {
-  const ra = sizeRank(a), rb = sizeRank(b);
-  return ra[0] - rb[0] || ra[1] - rb[1] || ra[2].localeCompare(rb[2]);
+  const ia = LETTER_ORDER.indexOf(a), ib = LETTER_ORDER.indexOf(b);
+  return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
 }
 
 export default function VestiarioPage() {
@@ -53,13 +37,27 @@ export default function VestiarioPage() {
 
   const [employees, setEmployees] = useState<HrEmployee[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>('riepilogo');
+  const [tab, setTab] = useState<Tab>('capi');
   const [funzioneSel, setFunzioneSel] = useState<string[]>([]);
   const [respSel, setRespSel] = useState<string[]>([]);
   const [dividi, setDividi] = useState<Dividi>('');
+  const [capi, setCapi] = useState<Capo[]>([]);
+  const [taglie, setTaglie] = useState<{ employee_id: number; capo_id: number; taglia: string }[]>([]);
+  const [modal, setModal] = useState<'import' | 'gestisci' | null>(null);
+
+  async function loadCapi() {
+    try {
+      const [k, t] = await Promise.all([
+        api.get<Capo[]>('/api/hr/vestiario/capi'),
+        api.get<{ employee_id: number; capo_id: number; taglia: string }[]>('/api/hr/vestiario/taglie'),
+      ]);
+      setCapi(k); setTaglie(t);
+    } catch { /* la pagina funziona anche senza capi */ }
+  }
 
   useEffect(() => {
     if (!allowed) { setLoading(false); return; }
+    void loadCapi();
     let cancelled = false;
     (async () => {
       const res = await fetch(`${BACKEND}/api/hr/employees`, { credentials: 'include' });
@@ -90,8 +88,6 @@ export default function VestiarioPage() {
     [attivi],
   );
 
-  const manca = (e: HrEmployee) => CATS.some(c => !norm(e[c.field]));
-
   const rows = useMemo(() => attivi.filter(e => {
     if (funzioneSel.length && !funzioneSel.includes(funzioneOf(e))) return false;
     if (respSel.length && !(e.capo_id != null && respSel.includes(String(e.capo_id)))) return false;
@@ -106,23 +102,28 @@ export default function VestiarioPage() {
     [rows, dividi],
   );
 
-  // Per ogni capo: taglia → { totale, per gruppo }
-  const riepilogo = useMemo(() => CATS.map(c => {
-    const map = new Map<string, { tot: number; byGroup: Map<string, number> }>();
-    let mancanti = 0;
-    for (const e of rows) {
-      const s = norm(e[c.field]);
-      if (!s) { mancanti++; continue; }
-      const slot = map.get(s) ?? { tot: 0, byGroup: new Map() };
-      slot.tot++;
-      if (dividi) { const g = groupOf(e); slot.byGroup.set(g, (slot.byGroup.get(g) ?? 0) + 1); }
-      map.set(s, slot);
-    }
-    const sizes = Array.from(map.entries()).sort((a, b) => compareSize(a[0], b[0]));
-    return { ...c, sizes, mancanti, totale: sizes.reduce((n, [, v]) => n + v.tot, 0) };
-  }), [rows, dividi]);
+  // Per ogni capo+colore: taglia → totale e per gruppo (solo i dipendenti filtrati)
+  const riepilogoCapi = useMemo(() => {
+    const empIds = new Map(rows.map(e => [e.id, e]));
+    return capi.map(k => {
+      const map = new Map<string, { tot: number; byGroup: Map<string, number> }>();
+      for (const t of taglie) {
+        if (t.capo_id !== k.id) continue;
+        const e = empIds.get(t.employee_id);
+        if (!e) continue;
+        const slot = map.get(t.taglia) ?? { tot: 0, byGroup: new Map() };
+        slot.tot++;
+        if (dividi) { const g = groupOf(e); slot.byGroup.set(g, (slot.byGroup.get(g) ?? 0) + 1); }
+        map.set(t.taglia, slot);
+      }
+      const sizes = Array.from(map.entries()).sort((a, b) => compareSize(a[0], b[0]));
+      return { ...k, sizes, totale: sizes.reduce((n, [, v]) => n + v.tot, 0) };
+    });
+  }, [capi, taglie, rows, dividi]);
 
-  const nMancanti = useMemo(() => rows.filter(manca).length, [rows]);
+  // taglia di ogni dipendente per capo: "employee_id:capo_id" → taglia
+  const tagliaOf = useMemo(() => new Map(taglie.map(t => [`${t.employee_id}:${t.capo_id}`, t.taglia])), [taglie]);
+  const nSenzaTaglie = useMemo(() => rows.filter(e => !capi.some(k => tagliaOf.has(`${e.id}:${k.id}`))).length, [rows, capi, tagliaOf]);
 
   const elenco = useMemo(
     () => [...rows].sort((a, b) => funzioneOf(a).localeCompare(funzioneOf(b)) || a.cognome.localeCompare(b.cognome) || a.nome.localeCompare(b.nome)),
@@ -131,21 +132,22 @@ export default function VestiarioPage() {
 
   function exportExcel() {
     const wb = XLSX.utils.book_new();
-    // Foglio 1: da ordinare (taglia × quantità, con reparti)
+    // Foglio 1: da ordinare (capo + colore × taglia, con reparti)
     const ordine: Record<string, string | number>[] = [];
-    for (const c of riepilogo) {
-      for (const [taglia, v] of c.sizes) {
-        const r: Record<string, string | number> = { Capo: c.label, Taglia: taglia, Totale: v.tot };
+    for (const k of riepilogoCapi) {
+      for (const [taglia, v] of k.sizes) {
+        const r: Record<string, string | number> = { Capo: k.nome, Colore: k.colore, Taglia: taglia, Totale: v.tot };
         for (const g of groupCols) r[g] = v.byGroup.get(g) ?? 0;
         ordine.push(r);
       }
     }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ordine), 'Da ordinare');
-    // Foglio 2: elenco persone
-    const persone = elenco.map(e => ({
-      Cognome: e.cognome, Nome: e.nome, Matricola: e.matricola ?? '', Funzione: e.funzione_aziendale ?? '', Responsabile: respOf(e) === SENZA_RESP ? '' : respOf(e),
-      Pantaloni: e.taglia_pantaloni ?? '', Maglia: e.taglia_maglia ?? '', Scarpe: e.taglia_scarpe ?? '', Giubbotto: e.taglia_campera ?? '',
-    }));
+    // Foglio 2: elenco persone, una colonna per capo
+    const persone = elenco.map(e => {
+      const r: Record<string, string> = { Cognome: e.cognome, Nome: e.nome, Matricola: e.matricola ?? '', Funzione: e.funzione_aziendale ?? '', Responsabile: respOf(e) === SENZA_RESP ? '' : respOf(e) };
+      for (const k of capi) r[k.colore ? `${k.nome} (${k.colore})` : k.nome] = tagliaOf.get(`${e.id}:${k.id}`) ?? '';
+      return r;
+    });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(persone), 'Elenco');
     XLSX.writeFile(wb, `vestiario-${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
@@ -166,7 +168,11 @@ export default function VestiarioPage() {
       <PageHeader
         title="Vestiario"
         back={{ label: 'Risorse Umane', href: '/hr' }}
-        actions={<button onClick={exportExcel} disabled={!rows.length} className="btn-secondary text-sm">Esporta Excel</button>}
+        actions={<>
+          <button onClick={() => setModal('gestisci')} className="btn-secondary text-sm">Capi e colori</button>
+          <button onClick={exportExcel} disabled={!rows.length} className="btn-secondary text-sm">Esporta Excel</button>
+          <button onClick={() => setModal('import')} className="btn-primary text-sm">Importa Excel</button>
+        </>}
       />
 
       <div className="card space-y-3">
@@ -179,7 +185,7 @@ export default function VestiarioPage() {
             <label className="label">Responsabile</label>
             <MultiSelectDropdown options={respOptions} selected={respSel} onChange={setRespSel} allLabel="Tutti i responsabili" />
           </div>
-          {tab === 'riepilogo' && (
+          {tab === 'capi' && (
             <div className="w-48">
               <label className="label">Dividi per</label>
               <select className="input" value={dividi} onChange={e => setDividi(e.target.value as Dividi)}>
@@ -192,52 +198,53 @@ export default function VestiarioPage() {
         </div>
         <p className="text-sm text-muted">
           {rows.length} {rows.length === 1 ? 'persona' : 'persone'}
-          {nMancanti > 0 && <> · <span className="text-warning">{nMancanti} con almeno una taglia mancante</span></>}
+          {capi.length > 0 && nSenzaTaglie > 0 && <> · <span className="text-warning">{nSenzaTaglie} senza nessuna taglia</span></>}
         </p>
       </div>
 
-      <Tabs tabs={TABS} value={tab} onChange={setTab} labels={{ riepilogo: 'Da ordinare', elenco: 'Elenco persone' }} />
+      <Tabs tabs={TABS} value={tab} onChange={setTab} labels={{ capi: 'Da ordinare', elenco: 'Elenco persone' }} />
 
       {loading ? (
         <SkeletonTable rows={6} cols={5} />
       ) : rows.length === 0 ? (
         <div className="card"><EmptyState title="Nessun dipendente" hint="Cambia i filtri per vedere altri risultati." /></div>
-      ) : tab === 'riepilogo' ? (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-4">
-          {riepilogo.map(c => (
-            <div key={c.key} className="card overflow-x-auto !p-0">
-              <div className="flex items-baseline justify-between border-b border-line px-4 py-3">
-                <h2 className="font-semibold text-ink-900">{c.label}</h2>
-                <span className="text-sm text-muted">{c.totale} da ordinare</span>
-              </div>
-              {c.sizes.length === 0 ? (
-                <EmptyState title="Nessuna taglia inserita" />
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted">
-                      <th className="px-4 py-2 font-medium">Taglia</th>
-                      {groupCols.map(g => <th key={g} className="px-3 py-2 text-right font-medium">{g}</th>)}
-                      <th className="px-4 py-2 text-right font-medium">Totale</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {c.sizes.map(([taglia, v]) => (
-                      <tr key={taglia} className="border-b border-line last:border-0">
-                        <td className="px-4 py-2 font-medium text-ink-900">{taglia}</td>
-                        {groupCols.map(g => <td key={g} className="px-3 py-2 text-right tabular-nums">{cell(v.byGroup.get(g) ?? 0)}</td>)}
-                        <td className="px-4 py-2 text-right font-semibold tabular-nums text-ink-900">{v.tot}</td>
+      ) : tab === 'capi' ? (
+        capi.length === 0 ? (
+          <div className="card"><EmptyState title="Nessun capo" hint="Importa un Excel con le taglie per creare capi e colori." /></div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-4">
+            {riepilogoCapi.map(k => (
+              <div key={k.id} className="card overflow-x-auto !p-0">
+                <div className="flex items-baseline justify-between gap-3 border-b border-line px-4 py-3">
+                  <h2 className="font-semibold text-ink-900">{k.nome}{k.colore && <span className="ml-2 font-normal text-muted">{k.colore}</span>}</h2>
+                  <span className="whitespace-nowrap text-sm text-muted">{k.totale} da ordinare</span>
+                </div>
+                {k.sizes.length === 0 ? (
+                  <EmptyState title="Nessuna taglia" />
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted">
+                        <th className="px-4 py-2 font-medium">Taglia</th>
+                        {groupCols.map(g => <th key={g} className="px-3 py-2 text-right font-medium">{g}</th>)}
+                        <th className="px-4 py-2 text-right font-medium">Totale</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              {c.mancanti > 0 && (
-                <p className="border-t border-line px-4 py-2 text-xs text-warning">{c.mancanti} senza taglia</p>
-              )}
-            </div>
-          ))}
-        </div>
+                    </thead>
+                    <tbody>
+                      {k.sizes.map(([taglia, v]) => (
+                        <tr key={taglia} className="border-b border-line last:border-0">
+                          <td className="px-4 py-2 font-medium text-ink-900">{taglia}</td>
+                          {groupCols.map(g => <td key={g} className="px-3 py-2 text-right tabular-nums">{cell(v.byGroup.get(g) ?? 0)}</td>)}
+                          <td className="px-4 py-2 text-right font-semibold tabular-nums text-ink-900">{v.tot}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            ))}
+          </div>
+        )
       ) : (
         <div className="card overflow-x-auto !p-0">
           <table className="w-full text-sm">
@@ -246,7 +253,7 @@ export default function VestiarioPage() {
                 <th className="px-4 py-2 font-medium">Dipendente</th>
                 <th className="px-3 py-2 font-medium">Funzione</th>
                 <th className="px-3 py-2 font-medium">Responsabile</th>
-                {CATS.map(c => <th key={c.key} className="px-3 py-2 font-medium">{c.label}</th>)}
+                {capi.map(k => <th key={k.id} className="px-3 py-2 font-medium">{k.nome}{k.colore && <span className="block text-[10px] normal-case tracking-normal">{k.colore}</span>}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -257,10 +264,8 @@ export default function VestiarioPage() {
                   </td>
                   <td className="px-3 py-2">{e.funzione_aziendale ?? '—'}</td>
                   <td className="px-3 py-2">{respOf(e) === SENZA_RESP ? '—' : respOf(e)}</td>
-                  {CATS.map(c => (
-                    <td key={c.key} className="px-3 py-2">
-                      {norm(e[c.field]) ? e[c.field] : <span className="text-warning">mancante</span>}
-                    </td>
+                  {capi.map(k => (
+                    <td key={k.id} className="px-3 py-2">{tagliaOf.get(`${e.id}:${k.id}`) ?? <span className="text-stone-300">·</span>}</td>
                   ))}
                 </tr>
               ))}
@@ -268,6 +273,8 @@ export default function VestiarioPage() {
           </table>
         </div>
       )}
+      {modal === 'import' && <ImportCapiModal onClose={() => setModal(null)} onDone={() => { setModal(null); void loadCapi(); }} />}
+      {modal === 'gestisci' && <GestisciCapiModal capi={capi} onClose={() => setModal(null)} onChanged={() => void loadCapi()} />}
     </div>
   );
 }

@@ -1,15 +1,15 @@
-// Photo Station: coda ordini → claim → upload → complete, con DB vero.
-// Serve PHOTOSTATION_TEST_DATABASE_URL: un DB con TUTTE le migrazioni (senza la variabile il file è saltato).
+// Quality Control Station: coda ordini → claim → upload → complete, con DB vero.
+// Serve QCSTATION_TEST_DATABASE_URL: un DB con TUTTE le migrazioni (senza la variabile il file è saltato).
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const URL = process.env.PHOTOSTATION_TEST_DATABASE_URL;
+const URL = process.env.QCSTATION_TEST_DATABASE_URL;
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 1, 2, 3, 4, 0xff, 0xd9]);
 
-describe.skipIf(!URL)('Photo Station (integrazione)', () => {
+describe.skipIf(!URL)('Quality Control Station (integrazione)', () => {
   let app: Hono;
   let db: typeof import('../../../db/client.js').db;
   let helpers: typeof import('../helpers.js');
@@ -17,9 +17,9 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
   let tok: string, tok2: string, tok3: string;
 
   const user = (path: string, init: RequestInit = {}, cookie = admin) =>
-    app.request(`/api/photo-station${path}`, { ...init, headers: { cookie, 'content-type': 'application/json', ...(init.headers ?? {}) } });
+    app.request(`/api/quality-control-station${path}`, { ...init, headers: { cookie, 'content-type': 'application/json', ...(init.headers ?? {}) } });
   const station = (path: string, init: RequestInit = {}, token = tok) =>
-    app.request(`/api/photo-station/device${path}`, { ...init, headers: { authorization: `Bearer ${token}`, ...(init.headers ?? {}) } });
+    app.request(`/api/quality-control-station/device${path}`, { ...init, headers: { authorization: `Bearer ${token}`, ...(init.headers ?? {}) } });
   const newJob = async (commessa: string, phase = 'delibera_finale') => (await (await user('/jobs', { method: 'POST', body: JSON.stringify({ commessa, phase }) })).json() as any).job;
   const put = (jobId: number, cam: string, body: Buffer = JPEG, token = tok) =>
     station(`/jobs/${jobId}/photos/${cam}`, { method: 'PUT', body: new Uint8Array(body), headers: { 'content-type': 'image/jpeg' } }, token);
@@ -32,12 +32,14 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
     process.env.UPLOAD_DIR = mkdtempSync(join(tmpdir(), 'ps-'));
     db = (await import('../../../db/client.js')).db;
     helpers = await import('../helpers.js');
-    const { photoStationRoutes, photoStationDeviceRoutes } = await import('../routes.js');
+    const { qualityControlStationRoutes, qualityControlStationDeviceRoutes } = await import('../routes.js');
     const { errorHandler } = await import('../../../middleware/error-handler.js');
     const { signToken, COOKIE_NAME } = await import('../../../lib/auth.js');
     app = new Hono();
-    app.route('/api/photo-station/device', photoStationDeviceRoutes);
-    app.route('/api/photo-station', photoStationRoutes);
+    app.route('/api/quality-control-station/device', qualityControlStationDeviceRoutes);
+    app.route('/api/quality-control-station', qualityControlStationRoutes);
+    app.route('/api/photo-station/device', qualityControlStationDeviceRoutes);   // nombre anterior (compatibilidad)
+    app.route('/api/photo-station', qualityControlStationRoutes);
     const { iknowRoutes } = await import('../iknow.js');
     app.route('/api/delibere', iknowRoutes);
     app.onError(errorHandler);
@@ -50,8 +52,10 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
     guest = `${COOKIE_NAME}=${signToken({ id: g, username: 'ps_guest', display_name: 'ps_guest', role: 'guest' })}`;
   });
   beforeEach(async () => {
-    await db`TRUNCATE photo_job_files, photo_jobs, photo_stations, photo_phases, photo_iknow_config, photo_feed_config RESTART IDENTITY CASCADE`;
+    await db`TRUNCATE photo_job_files, photo_jobs, photo_stations, photo_phases, photo_iknow_config, photo_feed_config, photo_iknow_calls RESTART IDENTITY CASCADE`;
     await db`DELETE FROM webthron_events_history WHERE cod_seriale LIKE 'TST%'`;
+    await db`DELETE FROM spma_commessa WHERE commessa_code LIKE '99900%'`;
+    await db`DELETE FROM spma_line WHERE name = 'PSTEST LINEA'`;
     await db`INSERT INTO photo_phases (key, label) VALUES ('delibera_finale', 'Delibera finale'), ('delibera_finale_proximiti', 'Delibera finale Proximiti')`;
     const mkStation = async (name: string, phases: string[]) => {
       const { token, hash } = helpers.newStationToken();
@@ -63,7 +67,7 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
     tok3 = await mkStation('Proximiti', ['delibera_finale_proximiti']);
   });
   afterAll(async () => {
-    await db`TRUNCATE photo_job_files, photo_jobs, photo_stations, photo_phases, photo_iknow_config, photo_feed_config RESTART IDENTITY CASCADE`;
+    await db`TRUNCATE photo_job_files, photo_jobs, photo_stations, photo_phases, photo_iknow_config, photo_feed_config, photo_iknow_calls RESTART IDENTITY CASCADE`;
     await db`DELETE FROM webthron_events_history WHERE cod_seriale LIKE 'TST%'`;
     await db`DELETE FROM users WHERE username LIKE 'ps_%'`;
   });
@@ -136,7 +140,7 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
   });
 
   it('senza token valido (o revocato) la rotta stazione è chiusa', async () => {
-    expect((await app.request('/api/photo-station/device/claim', { method: 'POST' })).status).toBe(401);
+    expect((await app.request('/api/quality-control-station/device/claim', { method: 'POST' })).status).toBe(401);
     expect((await station('/claim', { method: 'POST' }, 'f'.repeat(64))).status).toBe(401);
     await db`UPDATE photo_stations SET revoked_at = now()`;
     expect((await station('/claim', { method: 'POST' })).status).toBe(401);
@@ -145,7 +149,7 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
   it('permessi: il guest non vede né crea; il token stazione non apre le rotte utente', async () => {
     expect((await user('/jobs', {}, guest)).status).toBe(403);
     expect((await user('/jobs', { method: 'POST', body: JSON.stringify({ commessa: 'X', phase: 'delibera_finale' }) }, guest)).status).toBe(403);
-    expect((await app.request('/api/photo-station/jobs', { headers: { authorization: `Bearer ${tok}` } })).status).toBe(401);
+    expect((await app.request('/api/quality-control-station/jobs', { headers: { authorization: `Bearer ${tok}` } })).status).toBe(401);
   });
 
   it('ordine preso da una stazione sparita: torna in coda, dopo 3 tentativi fallisce', async () => {
@@ -303,6 +307,30 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
     expect(st).not.toContain(IK_TOKEN);
   });
 
+  it('iKnow: ogni chiamata lascia una riga nel registro, con esito corretto e mai il token', async () => {
+    await iknow(body());                                              // token non configurato
+    await setToken();
+    await iknow(body(), 'token-sbagliato-0000000');                   // token errato: i campi non si leggono
+    await iknow(body({ data_ora: 'ieri' }));                          // corpo non valido
+    await iknow(body()); await iknow(body());                         // ok + duplicata
+    await user('/feed', { method: 'PUT', body: JSON.stringify({ mode: 'off', esiti_ok: [] }) });
+    await iknow(body({ seriale: 'ZZ' }));                             // origine non API
+    const r = await (await user('/iknow/calls')).json() as any;
+    expect(r.calls.map((x: any) => x.esito).reverse()).toEqual(
+      ['token_non_configurato', 'token_errato', 'corpo_non_valido', 'ok', 'duplicata', 'ignorata_origine']);
+    const errato = r.calls.find((x: any) => x.esito === 'token_errato');
+    expect(errato).toMatchObject({ http_status: 401, seriale: null });
+    expect(r.calls.find((x: any) => x.esito === 'ok')).toMatchObject({ http_status: 200, seriale: '123456789', commessa: '000000', job_id: expect.any(Number) });
+    expect(r.calls.find((x: any) => x.esito === 'ignorata_origine').seriale).toBe('ZZ');
+    expect(r.summary_24h).toMatchObject({ ok: 1, duplicata: 1, token_errato: 1 });
+    expect(JSON.stringify(r)).not.toContain(IK_TOKEN);
+  });
+
+  it('iKnow: il registro lo vede chi ha accesso al modulo, non chi è guest', async () => {
+    expect((await user('/iknow/calls')).status).toBe(200);
+    expect((await user('/iknow/calls', {}, guest)).status).toBe(403);
+  });
+
   // ─── Alimentatore dalla copia del DB di iKnow ───────────────────────────────────
   const hist = (over: Record<string, unknown> = {}) => db`
     INSERT INTO webthron_events_history (fase, modello, componente, cod_seriale, commessa, versione, esito_delibera, data_inserimento, data_cache)
@@ -403,5 +431,118 @@ describe.skipIf(!URL)('Photo Station (integrazione)', () => {
     await user('/feed', { method: 'PUT', body: JSON.stringify({ mode: 'api', esiti_ok: [] }) });
     expect((await (await iknow(body())).json() as any).result).toBe('created');
     expect(await count()).toBe(1);
+  });
+
+  // ─── Modello e linea desde la tabla SPMA (la que actualiza /spma/import) ───────────
+  const spma = async (code: string, model: string, withLine = true) => {
+    const [line] = await db`INSERT INTO spma_line (name) VALUES ('PSTEST LINEA') ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id`;
+    await db`INSERT INTO spma_commessa (commessa_code, model_code, line_id) VALUES (${code}, ${model}, ${withLine ? line.id : null})`;
+  };
+  const claimOf = async (commessa: string) => {
+    await newJob(commessa);
+    return (await (await station('/claim', { method: 'POST' })).json() as any).job;
+  };
+
+  it('spma: el pedido toma modello y linea de la commessa', async () => {
+    await spma('9990001', 'F175');
+    const job = await claimOf('9990001');
+    expect(job).toMatchObject({ commessa: '9990001', modello: 'F175', linea: 'PSTEST LINEA' });
+  });
+
+  it('spma: una commessa con ceros delante ("0009990002") encuentra la de la tabla ("9990002") y al revés', async () => {
+    await spma('9990002', 'F8');
+    expect(await claimOf('0009990002')).toMatchObject({ modello: 'F8', linea: 'PSTEST LINEA' });
+    await db`UPDATE photo_jobs SET status = 'captured'`;
+    await spma('0009990003', 'F9');
+    expect(await claimOf('9990003')).toMatchObject({ modello: 'F9' });
+  });
+
+  it('spma: si hay una coincidencia exacta gana sobre la que solo coincide sin ceros', async () => {
+    await spma('9990004', 'EXACTA');
+    await spma('09990004', 'SIN-CEROS');
+    expect((await claimOf('9990004')).modello).toBe('EXACTA');
+  });
+
+  it('spma: sin commessa en la tabla, modelo "-" o sin linea → null, nunca error', async () => {
+    expect(await claimOf('9990005')).toMatchObject({ modello: null, linea: null });
+    await db`UPDATE photo_jobs SET status = 'captured'`;
+    await spma('9990006', '-', false);
+    expect(await claimOf('9990006')).toMatchObject({ modello: null, linea: null });
+  });
+
+  it('spma: la lista de pedidos de la pagina tambien muestra modello y linea', async () => {
+    await spma('9990007', 'F175');
+    await newJob('9990007');
+    const j = ((await (await user('/jobs')).json() as any).jobs as any[]).find(x => x.commessa === '9990007');
+    expect(j).toMatchObject({ modello: 'F175', linea: 'PSTEST LINEA' });
+  });
+
+  // ─── Compatibilidad: las PC Camere ya instaladas usan el nombre anterior (/api/photo-station) ──────
+  it('el nombre anterior de la API sigue funcionando para las PC Camere ya instaladas', async () => {
+    const job = await newJob('ORD-OLD');
+    const oldClaim = await app.request('/api/photo-station/device/claim', { method: 'POST', headers: { authorization: `Bearer ${tok}` } });
+    expect(oldClaim.status).toBe(200);
+    expect(((await oldClaim.json()) as any).job).toMatchObject({ id: job.id, commessa: 'ORD-OLD' });
+    // mismos controles de acceso con el nombre viejo: sin token 401, y el token de estación no abre las rutas de usuario
+    expect((await app.request('/api/photo-station/device/claim', { method: 'POST' })).status).toBe(401);
+    expect((await app.request('/api/photo-station/jobs', { headers: { authorization: `Bearer ${tok}` } })).status).toBe(401);
+    expect((await app.request('/api/photo-station/jobs', { headers: { cookie: guest } })).status).toBe(403);
+  });
+
+  // ─── Anular de una vez todos los pedidos en cola ─────────────────────────────────────────
+  const cancelPending = (body: unknown = {}, cookie = admin) =>
+    user('/jobs/cancel-pending', { method: 'POST', body: JSON.stringify(body) }, cookie);
+
+  it('anular en bloque: cancela solo los pedidos en cola; no toca los tomados ni los terminados', async () => {
+    const a = await newJob('PEND-1');
+    await newJob('PEND-2', 'delibera_finale_proximiti');
+    await newJob('PEND-3');
+    const taken = await newJob('TOMADO');                                  // en cola → lo toma la estación (claimed)
+    await db`UPDATE photo_jobs SET status = 'claimed', station_id = (SELECT id FROM photo_stations LIMIT 1), claimed_at = now() WHERE id = ${taken.id}`;
+    const done = await newJob('TERMINADO');
+    await db`UPDATE photo_jobs SET status = 'captured', finished_at = now() WHERE id = ${done.id}`;
+
+    const list = await (await user('/jobs')).json() as any;
+    expect(list.pending_count).toBe(3);
+
+    const r = await cancelPending();
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as any).cancelled).toBe(3);
+    const states = await db`SELECT commessa, status, error FROM photo_jobs ORDER BY id`;
+    expect(states.map(x => [x.commessa, x.status])).toEqual([
+      ['PEND-1', 'cancelled'], ['PEND-2', 'cancelled'], ['PEND-3', 'cancelled'], ['TOMADO', 'claimed'], ['TERMINADO', 'captured'],
+    ]);
+    expect(states[0].error).toBe('Annullato in blocco');
+    expect(((await (await user('/jobs')).json()) as any).pending_count).toBe(0);
+    // la estación, al volver, ya no encuentra nada en cola
+    expect((await (await station('/claim', { method: 'POST' }, tok3)).json() as any).job).toBeNull();
+    expect(a.id).toBeGreaterThan(0);
+  });
+
+  it('anular en bloque: se puede limitar a una fase, y repetirlo no hace nada', async () => {
+    await newJob('F-A', 'delibera_finale');
+    await newJob('F-B', 'delibera_finale_proximiti');
+    expect(((await (await cancelPending({ phase: 'delibera_finale_proximiti' })).json()) as any).cancelled).toBe(1);
+    expect((await db`SELECT status FROM photo_jobs WHERE commessa = 'F-A'`)[0].status).toBe('pending');   // la otra fase sigue en cola
+    expect(((await (await cancelPending({ phase: 'delibera_finale_proximiti' })).json()) as any).cancelled).toBe(0);
+    expect(((await (await cancelPending()).json()) as any).cancelled).toBe(1);
+  });
+
+  it('anular en bloque: solo quien gestiona; la estación no puede; los anulados se pueden relanzar', async () => {
+    const job = await newJob('PERM-1');
+    expect((await cancelPending({}, guest)).status).toBe(403);
+    expect((await app.request('/api/quality-control-station/jobs/cancel-pending', { method: 'POST', body: '{}', headers: { authorization: `Bearer ${tok}`, 'content-type': 'application/json' } })).status).toBe(401);
+    expect((await db`SELECT status FROM photo_jobs WHERE id = ${job.id}`)[0].status).toBe('pending');     // nada se anulo
+    expect((await cancelPending({ phase: 'Fase Mala' })).status).toBe(400);
+    await cancelPending();
+    expect((await user(`/jobs/${job.id}/retry`, { method: 'POST' })).status).toBe(200);                    // «Riprova» sigue funcionando
+    expect((await db`SELECT status FROM photo_jobs WHERE id = ${job.id}`)[0].status).toBe('pending');
+  });
+
+  it('anular en bloque queda en el registro de auditoria con la cantidad', async () => {
+    await newJob('AUD-1'); await newJob('AUD-2');
+    await cancelPending();
+    const [row] = await db`SELECT details FROM audit_log WHERE action = 'photo_job_cancel_pending' ORDER BY id DESC LIMIT 1`;
+    expect(row.details).toMatchObject({ count: 2, phase: null });
   });
 });

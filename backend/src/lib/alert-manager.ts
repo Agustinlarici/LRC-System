@@ -9,6 +9,7 @@
 import { db } from '../db/client.js';
 import { sendAlert, sendResolved } from './notifier.js';
 import { getAllStats } from './sync-stats.js';
+import { incrementalIsPaused } from '../modules/monitor/sync-mode.js';
 import { logger } from './logger.js';
 
 export type Severity = 'critical' | 'warning' | 'info';
@@ -104,7 +105,8 @@ export async function checkSyncHealth(): Promise<void> {
 
   // ── sync_incremental ──────────────────────────────────────────────────────
   const inc = stats['sync_incremental'];
-  if (inc) {
+  // In modalità «full», o «mista» durante la carica, l'incrementale è fermo di proposito: nessun allarme «bloccato»
+  if (inc && !(await incrementalIsPaused())) {
     const lastMs       = inc.lastFinishedAt ? new Date(inc.lastFinishedAt).getTime() : 0;
     const minSinceLast = (now - lastMs) / 60_000;
 
@@ -124,7 +126,7 @@ export async function checkSyncHealth(): Promise<void> {
       await raiseAlert(
         'sync_incremental_missed', 'critical',
         'Sync WebThron bloccato',
-        `Nessun ciclo da ${Math.round(minSinceLast)} min (atteso ogni 10 min)`,
+        `Nessun ciclo da ${Math.round(minSinceLast)} min (atteso ogni 5 min)`,
       );
     } else if (isAlertActive('sync_incremental_missed') && minSinceLast < 15) {
       await resolveAlert('sync_incremental_missed', 'Sync ripreso');
