@@ -1,5 +1,6 @@
 // Regole dei componenti (stile Outlook): tipi e chiamate verso /api/ferrari/regole-componenti.
 import { api } from '@/lib/api';
+import { inviaFile } from '@/lib/ferrari';
 
 export type Condizione =
   | { tipo: 'presente'; sigla: string }
@@ -50,11 +51,15 @@ export const perApi = (r: RegolaComp): RegolaComp => ({
   nome: r.nome, attiva: r.attiva, modello: r.modello, logica: r.logica, condizioni: r.condizioni, eccezioni: r.eccezioni, azioni: r.azioni, ferma: r.ferma,
 });
 
+export interface RisultatoImport { regole: RegolaComp[]; errori: { riga: number; motivo: string }[]; righe: number }
+
 const B = '/api/ferrari/regole-componenti';
 export const regoleApi = {
   elenco: () => api.get<{ regole: RegolaComp[] }>(B),
   salva: (regole: RegolaComp[]) => api.put<{ regole: RegolaComp[] }>(B, { regole: regole.map(perApi) }),
   tabella: (modello: string, q: string) => api.get<TabellaComponenti>(`${B}/tabella?modello=${encodeURIComponent(modello)}&q=${encodeURIComponent(q)}`),
+  esportabili: (regole: RegolaComp[]) => api.post<{ indici: number[] }>(`${B}/esportabili`, { regole: regole.map(perApi) }),
+  importa: (file: File) => inviaFile<RisultatoImport>(`${B}/importa`, 'file', [file]),
   prova: (commessa: string, regole?: RegolaComp[]) => api.post<ProvaRegole>(`${B}/prova`, { commessa, regole: regole?.map(perApi) }),
 };
 
@@ -70,4 +75,36 @@ export function descriviAzione(a: Azione): string {
   const v = a.valore;
   const cosa = v.tipo === 'sigla' ? v.sigla : v.tipo === 'fisso' ? `«${v.testo}»` : `il testo di ${v.sigla}`;
   return `${a.componente || '…'}: ${cosa || '…'}`;
+}
+
+/** Chiave per riconoscere una regola uguale a un'altra (senza nome ne' id): serve a non importare due volte la stessa. */
+export const chiaveRegola = (r: RegolaComp) => JSON.stringify([r.modello, r.logica, r.condizioni, r.eccezioni, r.azioni, r.ferma]);
+
+/** Scarica il modello Excel per caricare molte regole: intestazioni, tre esempi e le istruzioni. */
+export async function scaricaModelloRegole() {
+  const XLSX = await import('xlsx');
+  const regole = XLSX.utils.aoa_to_sheet([
+    ['Se ha', 'Non ha', 'Aggiungi a', 'Valore', 'Modello', 'Ferma'],
+    ['AS06 + AS07', '', 'Paraurti', 'AS06', '', 'SI'],
+    ['AS06', '', 'Paraurti, Minigonne', '', '', ''],
+    ['', 'EXAB', 'Paraurti', 'EXAT', '', ''],
+  ]);
+  regole['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 26 }, { wch: 18 }, { wch: 12 }, { wch: 8 }];
+  const istruzioni = XLSX.utils.aoa_to_sheet([
+    ['Una riga = una regola. Le regole si applicano nell\'ordine delle righe: metti sopra quelle specifiche.'],
+    [''],
+    ['Se ha', 'Sigle che la scheda deve avere, separate da + (tutte). «MRKT=CINA» = il valore di MRKT e\' CINA.'],
+    ['Non ha', 'Sigle che la scheda NON deve avere, separate da +.'],
+    ['Aggiungi a', 'Componenti dove aggiungere il valore, separati da virgola.'],
+    ['Valore', 'Cosa aggiungere. Vuoto = la sigla di «Se ha» (se ce n\'e\' una sola). Una sigla di «Se ha» = quella sigla con la sua descrizione. Altro = un testo fisso (es. EXAT).'],
+    ['Modello', 'Vuoto o «tutti» = tutti i modelli; oppure un modello (es. F171VS).'],
+    ['Ferma', 'SI = se la regola scatta, le regole seguenti non si applicano.'],
+    [''],
+    ['Condizioni piu\' complesse (oppure, eccezioni, testo contiene) si creano nella pagina Regole.'],
+  ]);
+  istruzioni['!cols'] = [{ wch: 14 }, { wch: 110 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, regole, 'Regole');
+  XLSX.utils.book_append_sheet(wb, istruzioni, 'Istruzioni');
+  XLSX.writeFile(wb, 'modello-regole-componenti.xlsx');
 }
