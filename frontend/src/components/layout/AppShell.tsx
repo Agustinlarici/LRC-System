@@ -7,11 +7,15 @@ import { ToastProvider } from '@/components/ui/Toast';
 import { useAuth } from '@/lib/auth';
 import type { ModuleKey } from '@/types';
 import { isKioskPath } from '@/lib/kiosk';
+import { usePageTracking } from '@/lib/usePageTracking';
 
 // ─── Route → module mapping ───────────────────────────────────────────────────
 
 function getModuleForPath(pathname: string): { key: ModuleKey | ModuleKey[]; needsManage?: boolean } | null {
   if (pathname.startsWith('/tickets/dashboard'))      return { key: 'tickets_it' };
+  if (pathname.startsWith('/progetti'))               return { key: 'tickets_it' };
+  if (pathname.startsWith('/photo-station'))          return { key: 'photo_station' };   // nome precedente: reindirizza
+  if (pathname.startsWith('/quality-control-station'))          return { key: 'photo_station' };
   if (pathname.startsWith('/admin/system'))           return { key: 'impostazioni', needsManage: true };
   if (pathname.startsWith('/tickets'))               return { key: 'tickets' };
   if (pathname.startsWith('/ingresso-merci'))        return { key: 'ingresso_merci' };
@@ -33,6 +37,9 @@ function getModuleForPath(pathname: string): { key: ModuleKey | ModuleKey[]; nee
   if (pathname.startsWith('/qualita'))               return { key: 'qualita' };
   if (pathname.startsWith('/produzione'))            return { key: 'programma_produzione' };
   if (pathname.startsWith('/ferrari'))               return { key: 'ferrari_schede' };
+  // HR: Documenti, Analisi ed Evoluzione solo con il permesso HR completo; il resto anche ai capi (hr_team)
+  if (/^\/hr\/(documenti|analisi|evoluzione)/.test(pathname)) return { key: 'hr' };
+  if (pathname.startsWith('/hr'))                    return { key: ['hr', 'hr_team'] };
   return null;
 }
 
@@ -97,6 +104,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       router.replace('/cambio-password');
     }
   }, [loading, user, pathname, router]);
+
+  usePageTracking(user?.id ?? null, pathname, isFullscreen);
 
   // ── Fullscreen layouts (no sidebar) ────────────────────────────────────────
 

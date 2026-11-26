@@ -1,0 +1,161 @@
+import { describe, it, expect } from 'vitest';
+import { dayBoundsNaive, buildRangeSlices, isQuietHour, pastDays, weeksOf, splitSlice, productionDayOf, daysToReread } from '../webthron-time.js';
+
+describe('daysToReread', () => {
+  it('alle 01:00 rilegge ieri e l\'altro ieri', () => {
+    expect(daysToReread('2026-11-11', 2, false)).toEqual(['2026-11-10', '2026-11-09']);
+  });
+
+  it('alle 11:30 rilegge oggi e ieri', () => {
+    expect(daysToReread('2026-11-11', 2, true)).toEqual(['2026-11-11', '2026-11-10']);
+  });
+
+  it('attraversa il cambio di mese e con un solo giorno legge solo oggi', () => {
+    expect(daysToReread('2026-12-01', 2, true)).toEqual(['2026-12-01', '2026-11-30']);
+    expect(daysToReread('2026-12-01', 1, true)).toEqual(['2026-12-01']);
+  });
+});
+
+describe('pastDays', () => {
+  it('parte da ieri e va indietro, senza includere oggi', () => {
+    expect(pastDays('2026-11-06', 3)).toEqual(['2026-11-05', '2026-11-04', '2026-11-03']);
+  });
+
+  it('attraversa mese e anno', () => {
+    expect(pastDays('2027-01-02', 3)).toEqual(['2027-01-01', '2026-12-31', '2026-12-30']);
+    expect(pastDays('2026-03-02', 2)).toEqual(['2026-03-01', '2026-02-28']);
+  });
+
+  it('90 giorni = 90 date distinte, in ordine decrescente', () => {
+    const d = pastDays('2026-11-06', 90);
+    expect(d).toHaveLength(90);
+    expect(new Set(d).size).toBe(90);
+    expect(d[0]).toBe('2026-11-05');
+    expect(d[89]).toBe('2026-08-08');
+    expect([...d].sort().reverse()).toEqual(d);
+  });
+});
+
+describe('dayBoundsNaive', () => {
+  it('equivale a DATE(CONVERT_TZ(datain, +00:00, +01:00)) = giorno: da 23:00 del giorno prima a 23:00', () => {
+    expect(dayBoundsNaive('2026-11-05')).toEqual({ from: '2026-11-04 23:00:00', to: '2026-11-05 23:00:00' });
+  });
+
+  it('gestisce cambio di mese e di anno', () => {
+    expect(dayBoundsNaive('2026-03-01')).toEqual({ from: '2026-02-28 23:00:00', to: '2026-03-01 23:00:00' });
+    expect(dayBoundsNaive('2027-01-01')).toEqual({ from: '2026-12-31 23:00:00', to: '2027-01-01 23:00:00' });
+  });
+});
+
+describe('buildRangeSlices', () => {
+  it('un giorno = 6 rebanadine da 4 ore, contigue e senza buchi', () => {
+    const s = buildRangeSlices('2026-11-05', '2026-11-05', 4);
+    expect(s).toHaveLength(6);
+    expect(s[0].from).toBe('2026-11-04 23:00:00');
+    expect(s[5].to).toBe('2026-11-05 23:00:00');
+    for (let i = 1; i < s.length; i++) expect(s[i].from).toBe(s[i - 1].to);
+  });
+
+  it('più giorni: copre l\'intero intervallo e rispetta il limite di ogni rebanadina', () => {
+    const s = buildRangeSlices('2026-11-03', '2026-11-05', 4);
+    expect(s).toHaveLength(18);
+    expect(s[0].from).toBe('2026-11-02 23:00:00');
+    expect(s[17].to).toBe('2026-11-05 23:00:00');
+  });
+
+  it('se la durata non divide il giorno, l\'ultima rebanadina si ferma al limite', () => {
+    const s = buildRangeSlices('2026-11-05', '2026-11-05', 5);
+    expect(s).toHaveLength(5);
+    expect(s[4].to).toBe('2026-11-05 23:00:00');
+  });
+
+  it('intervallo invertito: nessuna rebanadina', () => {
+    expect(buildRangeSlices('2026-11-06', '2026-11-05')).toEqual([]);
+  });
+});
+
+describe('isQuietHour (ora di Roma)', () => {
+  // 7 novembre 2026: ora solare (UTC+1)
+  const at = (utc: string) => new Date(`2026-11-07T${utc}:00Z`);
+
+  it('fascia a cavallo della mezzanotte (23 → 5)', () => {
+    expect(isQuietHour(at('22:00'), 23, 5)).toBe(true);   // 23:00 Roma
+    expect(isQuietHour(at('23:30'), 23, 5)).toBe(true);   // 00:30 Roma
+    expect(isQuietHour(at('03:30'), 23, 5)).toBe(true);   // 04:30 Roma
+    expect(isQuietHour(at('04:00'), 23, 5)).toBe(false);  // 05:00 Roma
+    expect(isQuietHour(at('10:00'), 23, 5)).toBe(false);  // 11:00 Roma
+    expect(isQuietHour(at('21:59'), 23, 5)).toBe(false);  // 22:59 Roma
+  });
+
+  it('fascia nello stesso giorno e fascia disattivata', () => {
+    expect(isQuietHour(at('12:00'), 13, 15)).toBe(true);   // 13:00 Roma
+    expect(isQuietHour(at('09:00'), 13, 15)).toBe(false);
+    expect(isQuietHour(at('12:00'), 0, 0)).toBe(false);
+  });
+});
+
+describe('weeksOf', () => {
+  it('90 giorni che finiscono oggi: 13 settimane dalla più recente, senza buchi né doppioni', () => {
+    const days = daysToReread('2026-11-24', 90, true);   // oggi + 89 giorni prima
+    const weeks = weeksOf(days);
+    expect(weeks).toHaveLength(13);                       // 12 settimane piene + 6 giorni
+    expect(weeks[0]).toEqual({ from: '2026-11-18', to: '2026-11-24' });   // finisce oggi
+    expect(weeks[1].to).toBe('2026-11-17');               // la successiva parte il giorno dopo
+    expect(weeks[12].from).toBe(days[days.length - 1]);   // l'ultima arriva al giorno più vecchio
+    expect(weeks[12]).toEqual({ from: '2026-08-27', to: '2026-09-01' });  // 6 giorni
+  });
+
+  it('ultima settimana più corta se i giorni non sono multipli di 7', () => {
+    expect(weeksOf(pastDays('2026-11-24', 10))).toEqual([
+      { from: '2026-11-17', to: '2026-11-23' },
+      { from: '2026-11-14', to: '2026-11-16' },
+    ]);
+  });
+
+  it('lista vuota', () => {
+    expect(weeksOf([])).toEqual([]);
+  });
+});
+
+describe('splitSlice', () => {
+  it('divide una settimana a metà a ore intere, senza buchi', () => {
+    const [a, b] = splitSlice({ from: '2026-03-03 23:00:00', to: '2026-03-10 23:00:00' }, 4)!;
+    expect(a).toEqual({ from: '2026-03-03 23:00:00', to: '2026-03-07 11:00:00' });
+    expect(b).toEqual({ from: '2026-03-07 11:00:00', to: '2026-03-10 23:00:00' });
+  });
+
+  it('scendendo si arriva a 4 ore e poi non divide più', () => {
+    let slice = { from: '2026-03-03 23:00:00', to: '2026-03-10 23:00:00' };
+    for (let i = 0; i < 20; i++) {
+      const halves = splitSlice(slice, 4);
+      if (!halves) break;
+      slice = halves[0];
+    }
+    expect(splitSlice(slice, 4)).toBeNull();
+    expect(splitSlice({ from: '2026-03-03 23:00:00', to: '2026-03-04 03:00:00' }, 4)).toBeNull();
+  });
+});
+
+describe('productionDayOf', () => {
+  // Il pool legge datain in fuso locale: i componenti locali ridanno l'ora "naive" in qualunque fuso.
+  const naive = (y: number, m: number, d: number, h: number, mi = 0, s = 0) => new Date(y, m - 1, d, h, mi, s);
+
+  it('è coerente con i limiti di dayBoundsNaive: 22:59:59 è ancora il giorno prima', () => {
+    expect(productionDayOf(naive(2026, 3, 10, 22, 59, 59))).toBe('2026-03-10');
+    expect(productionDayOf(naive(2026, 3, 10, 23, 0, 0))).toBe('2026-03-11');
+  });
+
+  it('ogni rebanadina di un giorno cade nello stesso giorno di produzione', () => {
+    const { from, to } = dayBoundsNaive('2026-03-10');   // [2026-03-09 23:00, 2026-03-10 23:00)
+    expect(from).toBe('2026-03-09 23:00:00');
+    expect(to).toBe('2026-03-10 23:00:00');
+    for (const h of [23, 3, 7, 11, 15, 19, 22]) {
+      const day = h === 23 ? naive(2026, 3, 9, h) : naive(2026, 3, 10, h);
+      expect(productionDayOf(day)).toBe('2026-03-10');
+    }
+  });
+
+  it('cambio di mese e di anno', () => {
+    expect(productionDayOf(naive(2026, 12, 31, 23, 30))).toBe('2027-01-01');
+  });
+});

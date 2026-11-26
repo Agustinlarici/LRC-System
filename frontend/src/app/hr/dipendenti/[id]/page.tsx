@@ -8,11 +8,14 @@ import { StatusBadge, type Tone } from '@/components/ui/StatusBadge';
 import { useAuth } from '@/lib/auth';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
 import { EditEmployeeModal } from './EditEmployeeModal';
+import { ProponiModificaModal } from './ProponiModificaModal';
 import { EventTimeline } from './EventTimeline';
 import { SalaryHistory } from './SalaryHistory';
+import { ContractsCard } from './ContractsCard';
 import { EmployeeAvatar } from '@/components/hr/EmployeeAvatar';
 import { tagBadgeStyle } from '@/lib/tagColors';
 import { resizePhoto } from '@/lib/hrPhoto';
+import { OstiMark, OstiLegend, isOstiLabel } from '@/components/ui/OstiMark';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -46,7 +49,7 @@ function InfoCard({ title, children }: { title: string; children: React.ReactNod
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <p className="text-[11px] font-medium text-muted uppercase tracking-wide">{label}</p>
+      <p className="text-[11px] font-medium text-muted uppercase tracking-wide">{label}{isOstiLabel(label) && <OstiMark />}</p>
       <p className="text-sm text-ink-800 mt-0.5">{value ?? '—'}</p>
     </div>
   );
@@ -56,7 +59,7 @@ export default function EmployeeDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = Number(params.id);
-  const { user, canManage, canView } = useAuth();
+  const { canManage, canView } = useAuth();
   const manage = canManage('hr');
   const salaryView = canView('hr_salary') || canManage('hr_salary');
 
@@ -73,9 +76,8 @@ export default function EmployeeDetailPage() {
   const [photoError, setPhotoError] = useState('');
   const [photoZoom, setPhotoZoom] = useState(false);
 
-  const isDirectCapo = employee != null && user != null &&
-    allEmployees.some(e => e.id === employee.capo_id && e.user_id === user.id);
-  const canEditLimited = manage || isDirectCapo;
+  const [showPropose, setShowPropose] = useState(false);
+  const [proposeSent, setProposeSent] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -144,6 +146,16 @@ export default function EmployeeDetailPage() {
           />
         </div>
       )}
+      {proposeSent && (
+        <p className="mb-4 rounded-ctl bg-success-soft px-3 py-2 text-sm text-success">
+          Proposta inviata a HR: la scheda cambierà solo dopo l&apos;approvazione. Vedi lo stato in Risorse Umane → Richieste.
+        </p>
+      )}
+      {manage && employee.n_riporti > 0 && !employee.user_id && (
+        <p className="mb-4 rounded-ctl bg-warning-soft px-3 py-2 text-sm text-warning">
+          Questo capo non ha un account collegato: non può vedere il suo team né fare richieste. L'account si collega dal menu IT (Sistema → Utenti → campo "Persona").
+        </p>
+      )}
       <PageHeader
         back={{ label: 'Dipendenti', href: '/hr/dipendenti' }}
         title={`${employee.cognome} ${employee.nome}`}
@@ -160,7 +172,9 @@ export default function EmployeeDetailPage() {
           {employee.in_prova && <StatusBadge tone="info">In prova</StatusBadge>}
           {employee.l68 && <StatusBadge tone="neutral">Legge 68</StatusBadge>}
         </>}
-        actions={canEditLimited && <button onClick={() => setShowEdit(true)} className="btn-primary text-sm">Modifica</button>}
+        actions={manage
+          ? <button onClick={() => setShowEdit(true)} className="btn-primary text-sm">Modifica</button>
+          : <button onClick={() => { setProposeSent(false); setShowPropose(true); }} className="btn-primary text-sm">Proponi modifica</button>}
       />
 
       <div className="flex items-center gap-4 flex-wrap">
@@ -207,13 +221,15 @@ export default function EmployeeDetailPage() {
         </div>
       )}
 
+      <OstiLegend className="mb-3" />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
         {/* Colonna sinistra: dati della persona */}
         <div className="lg:col-span-2 space-y-5">
           <InfoCard title="Anagrafica e contatti">
             <Field label="Sesso" value={employee.sesso} />
             <Field label="Data di nascita" value={employee.data_nascita ? `${fmtDate(employee.data_nascita)}${employee.eta != null ? ` (${employee.eta} anni)` : ''}` : null} />
-            <Field label="Nazionalità" value={employee.nazionalita} />
+            <Field label="Nazionalità" value={employee.nazionalita?.toUpperCase()} />
+            <Field label="Extra UE / Italia" value={employee.tipo_nazionalita === 'ITALIANO' ? 'ITALIA' : employee.tipo_nazionalita} />
             <Field label="Codice fiscale" value={employee.codice_fiscale} />
             <Field label="Nome Osti" value={employee.nome_osti} />
             <Field label="Email" value={employee.email} />
@@ -231,27 +247,9 @@ export default function EmployeeDetailPage() {
             <Field label="Categoria" value={employee.categoria} />
             <Field label="Tipologia" value={employee.tipo_contratto} />
             <Field label="Data assunzione" value={fmtDate(employee.data_assunzione)} />
+            {manage && <Field label="Account di sistema" value={employee.account_username} />}
             <Field label="Anzianità" value={`${employee.anzianita_anni} ${employee.anzianita_anni === 1 ? 'anno' : 'anni'}`} />
             {employee.data_cessazione && <Field label="Fine contratto / cessazione" value={fmtDate(employee.data_cessazione)} />}
-          </InfoCard>
-
-          <InfoCard title="Vestiario">
-            <Field label="Taglia pantaloni" value={employee.taglia_pantaloni} />
-            <Field label="Taglia maglia" value={employee.taglia_maglia} />
-            <Field label="Taglia scarpe" value={employee.taglia_scarpe} />
-          </InfoCard>
-
-          <InfoCard title="Altri dati (Osti)">
-            <Field label="Badge" value={employee.badge} />
-            <Field label="Transponder" value={employee.transponder} />
-            <Field label="Terminale di timbratura" value={employee.terminale} />
-            <Field label="Qualifica" value={employee.qualifica} />
-            <Field label="Tempo indeterminato" value={employee.indeterminato == null ? null : employee.indeterminato ? 'Sì' : 'No'} />
-            <Field label="Passaggio a indeterminato" value={employee.indeterminato_data ? fmtDate(employee.indeterminato_data) : null} />
-            <Field label="Part-time" value={employee.part_time} />
-            <Field label="Luogo di nascita" value={employee.luogo_nascita} />
-            <Field label="Titolo di studio" value={employee.titolo_studio} />
-            <Field label="Stato civile" value={employee.stato_civile} />
           </InfoCard>
 
           <InfoCard title="Domicilio">
@@ -274,14 +272,37 @@ export default function EmployeeDetailPage() {
               : null} />
             <Field label="Riporti diretti" value={employee.n_riporti > 0 ? persone(employee.n_riporti) : null} />
           </InfoCard>
+
+          <InfoCard title="Altri dati (Osti)">
+            <Field label="Badge" value={employee.badge} />
+            <Field label="Transponder" value={employee.transponder} />
+            <Field label="Terminale di timbratura" value={employee.terminale} />
+            <Field label="Qualifica" value={employee.qualifica} />
+            <Field label="Tempo indeterminato" value={employee.indeterminato == null ? null : employee.indeterminato ? 'Sì' : 'No'} />
+            <Field label="Passaggio a indeterminato" value={employee.indeterminato_data ? fmtDate(employee.indeterminato_data) : null} />
+            <Field label="Part-time" value={employee.part_time} />
+            <Field label="Luogo di nascita" value={employee.luogo_nascita} />
+            <Field label="Titolo di studio" value={employee.titolo_studio} />
+            <Field label="Stato civile" value={employee.stato_civile} />
+          </InfoCard>
         </div>
 
         {/* Colonna destra: retribuzione e storico */}
         <div className="space-y-5">
           {salaryView && <SalaryHistory employeeId={employee.id} canManageSalary={canManage('hr_salary')} />}
-          <EventTimeline employeeId={employee.id} employee={employee} departments={departments} plants={plants} allEmployees={allEmployees} canManage={manage} canManageLimited={canEditLimited} />
+          <ContractsCard employeeId={employee.id} />
+          <EventTimeline employeeId={employee.id} employee={employee} departments={departments} plants={plants} allEmployees={allEmployees} canManage={manage} canManageLimited={manage} />
         </div>
       </div>
+
+      {showPropose && (
+        <ProponiModificaModal
+          employee={employee}
+          departments={departments}
+          onClose={() => setShowPropose(false)}
+          onSent={() => { setShowPropose(false); setProposeSent(true); }}
+        />
+      )}
 
       {showEdit && (
         <EditEmployeeModal

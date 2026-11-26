@@ -53,7 +53,9 @@ function fmtDateTime(d: string): string {
   return new Date(d).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
-const COLS = 'grid-cols-[160px_minmax(110px,1fr)_minmax(110px,1fr)_minmax(100px,1fr)_70px_100px_130px_80px]';
+const COLS_HR = 'grid-cols-[160px_minmax(110px,1fr)_minmax(110px,1fr)_minmax(100px,1fr)_70px_100px_130px_80px]';
+// Il capo non vede la colonna "In carico" (flusso HR)
+const COLS_TEAM = 'grid-cols-[minmax(110px,1fr)_minmax(110px,1fr)_minmax(100px,1fr)_70px_100px_130px_80px]';
 
 interface RuleFormState {
   label: string;
@@ -66,6 +68,7 @@ const EMPTY_RULE_FORM = (): RuleFormState => ({ label: '', contract_company_ids:
 export default function ScadenzePage() {
   const { canManage } = useAuth();
   const manage = canManage('hr');
+  const COLS = manage ? COLS_HR : COLS_TEAM;
   const toast = useToast();
 
   const [employees, setEmployees] = useState<HrEmployee[]>([]);
@@ -223,11 +226,11 @@ export default function ScadenzePage() {
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-        <div className="rounded-card border border-warning/30 bg-warning-soft px-4 py-3">
+        <div className="rounded-card border border-warning/30 bg-warning-soft px-4 py-3 text-center">
           <p className="text-[11px] font-medium uppercase tracking-wide text-warning">In avviso</p>
           <p className="text-3xl font-semibold text-warning leading-tight mt-1">{counts.avviso}</p>
         </div>
-        <div className="rounded-card border border-danger/30 bg-danger-soft px-4 py-3">
+        <div className="rounded-card border border-danger/30 bg-danger-soft px-4 py-3 text-center">
           <p className="text-[11px] font-medium uppercase tracking-wide text-danger">Scadute</p>
           <p className="text-3xl font-semibold text-danger leading-tight mt-1">{counts.scadute}</p>
         </div>
@@ -241,14 +244,14 @@ export default function ScadenzePage() {
               <p className="text-sm font-medium text-ink-800 truncate">{rule.label || ruleDescription(rule)}</p>
               <p className="text-[11px] text-muted whitespace-nowrap">{rule.giorni_avviso} giorni</p>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="mt-3 grid grid-cols-2 gap-3 text-center">
               <div>
                 <p className="text-3xl font-semibold leading-none text-warning">{avviso}</p>
-                <p className="mt-1 flex items-center gap-1.5 text-xs text-muted"><span className="w-2 h-2 rounded-full bg-warning" />in avviso</p>
+                <p className="mt-1 text-xs text-muted">in avviso</p>
               </div>
               <div>
                 <p className="text-3xl font-semibold leading-none text-danger">{scadute}</p>
-                <p className="mt-1 flex items-center gap-1.5 text-xs text-muted"><span className="w-2 h-2 rounded-full bg-danger" />scadute</p>
+                <p className="mt-1 text-xs text-muted">scadute</p>
               </div>
             </div>
           </div>
@@ -363,7 +366,7 @@ export default function ScadenzePage() {
         </div>
 
         <div className={`grid ${COLS} gap-x-3 px-4 py-2.5 bg-stone-50 border-b border-stone-100 text-xs font-medium text-muted uppercase tracking-wide`}>
-          <div>In carico</div><div>Cognome</div><div>Nome</div><div>Società</div><div className="text-center">Prova</div>
+          {manage && <div>In carico</div>}<div>Cognome</div><div>Nome</div><div>Società</div><div className="text-center">Prova</div>
           <div>Cessazione</div><div>Regola applicata</div><div className="text-center">Giorni</div>
         </div>
         {loading ? (
@@ -373,13 +376,13 @@ export default function ScadenzePage() {
         ) : deadlines.map(d => {
           // Lo stato vale solo per la data di cessazione a cui si riferiva.
           const stored = acks.get(d.employee.id);
-          const ack = stored && stored.data_cessazione === d.employee.data_cessazione?.slice(0, 10) ? stored : null;
+          const ack = manage && stored && stored.data_cessazione === d.employee.data_cessazione?.slice(0, 10) ? stored : null;
           return (
           <Link key={d.employee.id} href={`/hr/dipendenti/${d.employee.id}`}
             className={`grid ${COLS} gap-x-3 px-4 py-3 border-b border-stone-50 last:border-b-0 hover:bg-stone-50 transition-colors items-center
               ${ack ? 'opacity-60' : d.overdue ? 'bg-danger-soft/60' : d.inAvviso ? 'bg-warning-soft/60' : ''}`}
           >
-            <div className="flex items-center gap-2 min-w-0">
+            {manage && <div className="flex items-center gap-2 min-w-0">
               {ack ? (
                 <>
                   <button
@@ -407,7 +410,7 @@ export default function ScadenzePage() {
                   Prendi in carico
                 </button>
               )}
-            </div>
+            </div>}
             <div className="text-sm font-medium text-ink-800 truncate">{d.employee.cognome}</div>
             <div className="text-sm text-ink-800 truncate">{d.employee.nome}</div>
             <div className="text-sm text-muted truncate">{d.employee.contract_company_name ?? '—'}</div>

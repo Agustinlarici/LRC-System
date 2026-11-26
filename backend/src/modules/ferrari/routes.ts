@@ -14,6 +14,12 @@ import {
 import { applicaComponente, configurazioneSigle, decidiTutteDaDecidere, ereditaPerModello, importaElenco, impostaSigla, STATI_IMPOSTABILI } from './impostazioni.js';
 import { aggiungiDaSchede, rifiutaDescrizioni, salvaDescrizioni } from './descrizioni.js';
 import { creaModello, modelloErroreDi, togliModello } from './modelli.js';
+import { iaRoutes } from './ia/routes.js';
+import { accodaDopoCarico, rianalizzaDuplicato } from './ia/aggancio.js';
+import { aggiungiRegoleSuggerite, confrontoSop, elencoImport, importaSop, leggiRegole, RegolaSchema, salvaRegole, segnaViste } from './sop.js';
+import { leggiRegoleComp, provaRegoleComp, salvaRegoleComp, tabellaComponenti } from './regole-comp.js';
+import { MAX_REGOLE, RegolaCompSchema } from './regole-comp-base.js';
+import { aggiungiCategorieEsempio, eliminaCategoria, elencoCategorie, riordinaCategorie, salvaCategoria } from './categorie.js';
 import { leggiCartella, leggiConfig, salvaConfig, statoLettura, ultimeLetture } from './cartella.js';
 import { logger } from '../../lib/logger.js';
 import {
@@ -21,6 +27,7 @@ import {
 } from './componenti.js';
 
 export const ferrariRoutes = new Hono<Env>();
+ferrariRoutes.route('/ia', iaRoutes);
 
 const VISTA = 'ferrari_schede' as const;
 const SUPERVISORE = 'ferrari_supervisore' as const;
@@ -185,6 +192,76 @@ ferrariRoutes.post('/componenti/proposte', requireManage(VISTA), async (c) => {
   return c.json({ trattate: await risolviProposteComponenti(utente(c), b.azione.startsWith('accetta'), tutte ? undefined : b.modello, tutte ? undefined : b.nome) });
 });
 
+// ─── Categorie delle colonne (raggruppano la tabella) ───────────────────────────
+
+ferrariRoutes.get('/categorie', requireModule(VISTA), async (c) => c.json({ categorie: await elencoCategorie() }));
+
+ferrariRoutes.post('/categorie', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ id: z.number().int().positive().optional(), nome: z.string().min(1).max(40), termini: z.array(z.string().max(60)).max(150) }));
+  return c.json(await salvaCategoria(utente(c), b));
+});
+
+ferrariRoutes.post('/categorie/ordine', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ ids: z.array(z.number().int().positive()).max(40) }));
+  await riordinaCategorie(utente(c), b.ids);
+  return c.json({ ok: true });
+});
+
+ferrariRoutes.post('/categorie/esempio', requireManage(VISTA), async (c) => c.json({ aggiunte: await aggiungiCategorieEsempio(utente(c)) }));
+
+ferrariRoutes.delete('/categorie/:id', requireManage(VISTA), async (c) => {
+  await eliminaCategoria(utente(c), parseId(c.req.param('id')));
+  return c.json({ ok: true });
+});
+
+// ─── Controllo con il SOP ─────────────────────────────────────────────────────
+
+ferrariRoutes.get('/sop/importazioni', requireModule(VISTA), async (c) => c.json({ importazioni: await elencoImport() }));
+
+ferrariRoutes.post('/sop/import', requireManage(VISTA), async (c) => {
+  const [f] = await leggiFile(c, 'file', 1);
+  if (!/\.(xls|xlsx)$/i.test(f!.name)) throw new HTTPException(400, { message: 'Estensione non consentita (solo .xls / .xlsx)' });
+  return c.json(await importaSop(utente(c), f!.name, f!.buf));
+});
+
+ferrariRoutes.get('/sop/confronto', requireModule(VISTA), async (c) => {
+  const id = c.req.query('import');
+  return c.json(await confrontoSop(id ? parseId(id) : undefined));
+});
+
+ferrariRoutes.post('/sop/viste', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({
+    viste: z.boolean(),
+    differenze: z.array(z.object({ commessa: z.string().max(40), colonna: z.string().max(60), sop: z.string().max(500), vm: z.string().max(1000) })).min(1).max(5000),
+  }));
+  return c.json({ cambiate: await segnaViste(utente(c), b.differenze, b.viste) });
+});
+
+ferrariRoutes.get('/sop/regole', requireModule(VISTA), async (c) => c.json({ regole: await leggiRegole() }));
+
+ferrariRoutes.put('/sop/regole', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ regole: z.array(RegolaSchema).max(60) }));
+  return c.json({ salvate: await salvaRegole(utente(c), b.regole) });
+});
+
+// Regole dei componenti (stile Outlook)
+ferrariRoutes.get('/regole-componenti', requireModule(VISTA), async (c) => c.json({ regole: await leggiRegoleComp() }));
+
+ferrariRoutes.put('/regole-componenti', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ regole: z.array(RegolaCompSchema).max(MAX_REGOLE) }));
+  return c.json({ regole: await salvaRegoleComp(utente(c), b.regole) });
+});
+
+ferrariRoutes.get('/regole-componenti/tabella', requireModule(VISTA), async (c) =>
+  c.json(await tabellaComponenti(c.req.query('modello')?.slice(0, 30), c.req.query('q')?.slice(0, 40))));
+
+ferrariRoutes.post('/regole-componenti/prova', requireModule(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ commessa: z.string().min(1).max(40), regole: z.array(RegolaCompSchema).max(MAX_REGOLE).optional() }));
+  return c.json(await provaRegoleComp(b.commessa, b.regole));
+});
+
+ferrariRoutes.post('/sop/regole/suggerite', requireManage(VISTA), async (c) => c.json({ aggiunte: await aggiungiRegoleSuggerite(utente(c)) }));
+
 ferrariRoutes.post('/sigle', requireManage(VISTA), async (c) => {
   const b = await parseBody(c, z.object({
     modello: z.string().max(30), codice: z.string().min(1).max(60), va: z.boolean(), tutti: z.boolean(), sub: z.boolean().optional(),
@@ -248,6 +325,7 @@ ferrariRoutes.get('/files/:id/original', requireModule(VISTA), async (c) => {
 
 ferrariRoutes.post('/files', requireManage(VISTA), async (c) => {
   const user = utente(c);
+  const riprova = c.req.query('riprova') === '1';
   const files = await leggiFile(c, 'files');
   const risultati = [];
   for (const f of files) {
@@ -261,7 +339,9 @@ ferrariRoutes.post('/files', requireManage(VISTA), async (c) => {
     }
     const r = await caricaScheda(user, f.name, f.buf);
     if (!r.duplicato) await ereditaPerModello(r.modello).catch(() => 0);       // sigle gia' decise da altri modelli: si decidono da sole
-    risultati.push(r);
+    await accodaDopoCarico(user, r);                                            // analisi IA, se l'interruttore e' acceso
+    // Solo per prova (?riprova=1): un file gia' caricato non si rifiuta, si rimanda alla IA per una nuova analisi
+    risultati.push(r.duplicato && riprova ? { ...r, riprova: await rianalizzaDuplicato(user, r.id) } : r);
   }
   return c.json({ risultati });
 });

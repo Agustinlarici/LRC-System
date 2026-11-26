@@ -10,6 +10,7 @@ export interface RunStats {
   lastDurationMs:   number | null;
   lastRowCount:     number | null;
   lastError:        string | null;
+  lastDetail:       string | null;   // esito in parole (opzionale), mostrato in Sistema
   runCount:         number;
   consecutiveErrors: number;
   nextScheduledAt:  string | null;
@@ -23,7 +24,7 @@ function ensure(job: string): RunStats {
     stats[job] = {
       lastStartedAt: null, lastFinishedAt: null,
       lastDurationMs: null, lastRowCount: null,
-      lastError: null, runCount: 0, consecutiveErrors: 0,
+      lastError: null, lastDetail: null, runCount: 0, consecutiveErrors: 0,
       nextScheduledAt: null, status: 'idle',
     };
   }
@@ -40,12 +41,13 @@ export function startRun(job: string): void {
   runStartMs[job] = Date.now();
 }
 
-export function endRun(job: string, rows: number): void {
+export function endRun(job: string, rows: number, detail?: string): void {
   const s = ensure(job);
   const ms = Date.now() - (runStartMs[job] ?? Date.now());
   s.lastFinishedAt   = new Date().toISOString();
   s.lastDurationMs   = ms;
   s.lastRowCount     = rows;
+  s.lastDetail       = detail ?? null;
   s.lastError        = null;
   s.status           = 'ok';
   s.runCount++;

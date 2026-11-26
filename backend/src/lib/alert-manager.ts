@@ -9,6 +9,7 @@
 import { db } from '../db/client.js';
 import { sendAlert, sendResolved } from './notifier.js';
 import { getAllStats } from './sync-stats.js';
+import { incrementalIsPaused } from '../modules/monitor/sync-mode.js';
 import { logger } from './logger.js';
 
 export type Severity = 'critical' | 'warning' | 'info';
@@ -73,6 +74,21 @@ export async function resolveAlert(key: string, resolvedMsg?: string): Promise<v
   logger.info(`[AlertManager] RESOLVED ${key}`);
 }
 
+// Dopo un riavvio del backend la memoria è vuota: gli avvisi del backend rimasti aperti nel DB
+// sono orfani (i controlli li riaprono entro 2 minuti se il problema c'è ancora).
+// Quelli di scripts/monitor (chiave monitor_*) li gestisce lo script, non si toccano.
+export async function closeOrphanAlerts(): Promise<void> {
+  try {
+    await db`
+      UPDATE system_alerts
+      SET resolved_at = NOW(), resolved_message = 'Chiuso al riavvio del backend'
+      WHERE resolved_at IS NULL AND alert_key NOT LIKE 'monitor%'
+    `;
+  } catch (e) {
+    logger.warn(`[AlertManager] Chiusura avvisi orfani fallita: ${e}`);
+  }
+}
+
 export function isAlertActive(key: string): boolean {
   return active.has(key);
 }
@@ -89,7 +105,8 @@ export async function checkSyncHealth(): Promise<void> {
 
   // ── sync_incremental ──────────────────────────────────────────────────────
   const inc = stats['sync_incremental'];
-  if (inc) {
+  // In modalità «full», o «mista» durante la carica, l'incrementale è fermo di proposito: nessun allarme «bloccato»
+  if (inc && !(await incrementalIsPaused())) {
     const lastMs       = inc.lastFinishedAt ? new Date(inc.lastFinishedAt).getTime() : 0;
     const minSinceLast = (now - lastMs) / 60_000;
 
@@ -109,7 +126,7 @@ export async function checkSyncHealth(): Promise<void> {
       await raiseAlert(
         'sync_incremental_missed', 'critical',
         'Sync WebThron bloccato',
-        `Nessun ciclo da ${Math.round(minSinceLast)} min (atteso ogni 10 min)`,
+        `Nessun ciclo da ${Math.round(minSinceLast)} min (atteso ogni 5 min)`,
       );
     } else if (isAlertActive('sync_incremental_missed') && minSinceLast < 15) {
       await resolveAlert('sync_incremental_missed', 'Sync ripreso');

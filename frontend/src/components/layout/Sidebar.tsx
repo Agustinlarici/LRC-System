@@ -54,7 +54,7 @@ function CountBadge({ n, className = '' }: { n: number; className?: string }) {
 
 // ─── Permission key map ───────────────────────────────────────────────────────
 
-const MODULE_KEY_MAP: Record<string, ModuleKey> = {
+const MODULE_KEY_MAP: Record<string, ModuleKey | ModuleKey[]> = {
   '/ingresso-merci':     'ingresso_merci',
   '/packing':            'packing',
   '/monitor':            'monitor',
@@ -62,6 +62,8 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/buffer':             'buffer',
   '/mappa':              'mappa',
   '/tickets':            'tickets',
+  '/progetti':           'tickets_it',
+  '/quality-control-station':      'photo_station',
   '/admin/system':       'impostazioni',
   '/dashboards':              'dashboards',
   '/dashboards/heatmap':      'dashboards',
@@ -73,17 +75,20 @@ const MODULE_KEY_MAP: Record<string, ModuleKey> = {
   '/recepciones':             'recepciones',
   '/edi':                     'edi',
   '/webddt':                  'webddt',
+  '/fatturazione':            'fatturazione',
   '/spedizione-bucci':        'spedizione_bucci',
   '/admin/monitor/parate':    'monitor_parate',
   '/admin/monitor/motivi':    'monitor_motivi',
   '/qualita':                 'qualita',
   '/produzione':              'programma_produzione',
   '/ferrari':                 'ferrari_schede',
-  '/hr':                      'hr',
-  '/hr/dipendenti':           'hr',
-  '/hr/scadenze':             'hr',
+  '/hr':                      ['hr', 'hr_team'],
+  '/hr/dipendenti':           ['hr', 'hr_team'],
+  '/hr/richieste':            ['hr', 'hr_team'],
+  '/hr/scadenze':             ['hr', 'hr_team'],
   '/hr/documenti':            'hr',
-  '/hr/organigramma':         'hr',
+  '/hr/vestiario':            'hr',
+  '/hr/organigramma':         ['hr', 'hr_team'],
   '/hr/analisi':              'hr',
   '/hr/evoluzione':           'hr',
 };
@@ -96,6 +101,7 @@ export function Sidebar() {
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const { user, canView, canManage, logout } = useAuth();
   const [deadlineCount, setDeadlineCount] = useState(0);
+  const [requestCount, setRequestCount] = useState(0);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -126,6 +132,22 @@ export function Sidebar() {
     window.addEventListener('hr-deadlines-changed', loadCount);
     return () => { cancelled = true; window.removeEventListener('hr-deadlines-changed', loadCount); };
   }, [canSeeHr, pathname]);
+
+  // Richieste (ferie, assenze, modifiche scheda) in attesa di decisione: solo per chi gestisce HR.
+  const canManageHr = canManage('hr');
+  useEffect(() => {
+    if (!canManageHr) { setRequestCount(0); return; }
+    let cancelled = false;
+    async function loadCount() {
+      try {
+        const res = await fetch(`${BACKEND}/api/hr/requests-pending-count`, { credentials: 'include' });
+        if (res.ok && !cancelled) setRequestCount((await res.json()).count ?? 0);
+      } catch { /* badge opzionale */ }
+    }
+    loadCount();
+    window.addEventListener('hr-requests-changed', loadCount);
+    return () => { cancelled = true; window.removeEventListener('hr-requests-changed', loadCount); };
+  }, [canManageHr, pathname]);
 
   // Restore sidebar expanded state + open the group containing the current page
   useEffect(() => {
@@ -165,9 +187,9 @@ export function Sidebar() {
 
   // Check if a module is accessible
   function canAccess(href: string, manageOnly?: boolean): boolean {
-    const key = MODULE_KEY_MAP[href];
-    if (!key) return true;
-    return manageOnly ? canView(key) || canManage(key) : canView(key);
+    const keys = [MODULE_KEY_MAP[href]].flat();
+    if (!keys[0]) return true;
+    return keys.some(key => manageOnly ? canView(key) || canManage(key) : canView(key));
   }
 
   function isActive(href: string): boolean {
@@ -188,8 +210,8 @@ export function Sidebar() {
     }`}>
 
       {/* Logo */}
-      <div className="flex items-center justify-center border-b border-white/10 h-14 px-4">
-        <img src="/logo-white.png" alt="STR" className="h-9 select-none object-contain" />
+      <div className="flex items-center justify-center border-b border-white/10 h-20 px-4">
+        <img src="/logo-white.png" alt="STR" className="h-11 select-none object-contain" />
       </div>
 
       {/* Nav */}
@@ -220,7 +242,7 @@ export function Sidebar() {
 
         {/* Grouped modules */}
         {MODULE_GROUPS.map(group => {
-          const items = modulesByGroup(group).filter(m => canAccess(m.href, m.manageOnly));
+          const items = modulesByGroup(group).filter(m => m.adminOnly ? user?.role === 'admin' : canAccess(m.href, m.manageOnly));
           if (items.length === 0) return null;
 
           const groupOpen   = openGroups.has(group);
@@ -241,7 +263,7 @@ export function Sidebar() {
                   >
                     <span>{group}</span>
                     <span className="flex items-center gap-1.5">
-                      {group === 'HR' && !groupOpen && <CountBadge n={deadlineCount} />}
+                      {group === 'HR' && !groupOpen && <CountBadge n={deadlineCount + requestCount} />}
                       <IconChevron open={groupOpen} />
                     </span>
                   </button>
@@ -259,6 +281,7 @@ export function Sidebar() {
                             <span className="nudge-icon flex"><Icon /></span>
                             <span className="truncate font-medium flex-1">{m.label}</span>
                             {m.href === '/hr/scadenze' && <CountBadge n={deadlineCount} />}
+                            {m.href === '/hr/richieste' && <CountBadge n={requestCount} />}
                           </Link>
                         );
                       })}
@@ -273,7 +296,7 @@ export function Sidebar() {
                 >
                   <span className="relative">
                     <GroupIcon />
-                    {group === 'HR' && <CountBadge n={deadlineCount} className="absolute -top-1.5 -right-2" />}
+                    {group === 'HR' && <CountBadge n={deadlineCount + requestCount} className="absolute -top-1.5 -right-2" />}
                   </span>
                 </button>
               )}

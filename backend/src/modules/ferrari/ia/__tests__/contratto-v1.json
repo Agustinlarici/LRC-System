@@ -1,0 +1,231 @@
+{
+  "snapshot": {
+    "versione_sigle": "cfdf59342ec54ad64c34779e424e8730e14b94102f8f532329085ae33349de4b",
+    "colonne": [
+      "BIC2",
+      "LIVR",
+      "PAR2"
+    ],
+    "sotto_sigle": [
+      {
+        "codice": "TLM13",
+        "padre": "LIVR"
+      },
+      {
+        "codice": "TLM5",
+        "padre": null
+      }
+    ],
+    "alias": {
+      "TLM15": "TLM16"
+    },
+    "modelli": [
+      "F171VS",
+      "F999XX"
+    ],
+    "esempi": [
+      {
+        "voce": "LIVREA SPECIALE",
+        "testo": "LIVREA TLM13 SUGLI SPECCHI à \"x\"\n",
+        "dettaglio": "TLM13 sugli specchi"
+      }
+    ]
+  },
+  "risultato": {
+    "commessa": "100001",
+    "modello": "F999XX",
+    "lettura": [
+      {
+        "riga": 8,
+        "codice": "BIC2",
+        "descrizione": "CARROZZERIA BICOLORE",
+        "valore": "NERO DS 1250",
+        "nota": "",
+        "testi": []
+      },
+      {
+        "riga": 9,
+        "codice": "LIVR",
+        "descrizione": "LIVREA SPECIALE",
+        "valore": "SI",
+        "nota": "",
+        "testi": [
+          "LIVREA TLM13 SUGLI SPECCHI (VEDI IMMAGINI)"
+        ]
+      }
+    ],
+    "dettagli": [
+      {
+        "codice": "LIVR",
+        "chiave": "cccccccccccccccccccccccccccccccccccccccc",
+        "dettaglio": "TLM13 sugli specchi",
+        "stato": "ok"
+      }
+    ],
+    "avvisi": [],
+    "metriche": {
+      "secondi": 12.5,
+      "chiamate": 3,
+      "versione_prompt": "3",
+      "modello": "gemma4:e2b"
+    }
+  },
+  "salute": {
+    "schema": 1,
+    "versione_api": 1,
+    "ollama": true,
+    "modello": "gemma4:e2b",
+    "in_coda": 0,
+    "in_corso": 0,
+    "versione_prompt": "3"
+  },
+  "stato_fatto": {
+    "schema": 1,
+    "id": "job-1",
+    "stato": "fatto",
+    "passo": "fine",
+    "avanzamento": null,
+    "risultato": {
+      "commessa": "100001",
+      "modello": "F999XX",
+      "lettura": [
+        {
+          "riga": 8,
+          "codice": "BIC2",
+          "descrizione": "CARROZZERIA BICOLORE",
+          "valore": "NERO DS 1250",
+          "nota": "",
+          "testi": []
+        },
+        {
+          "riga": 9,
+          "codice": "LIVR",
+          "descrizione": "LIVREA SPECIALE",
+          "valore": "SI",
+          "nota": "",
+          "testi": [
+            "LIVREA TLM13 SUGLI SPECCHI (VEDI IMMAGINI)"
+          ]
+        }
+      ],
+      "dettagli": [
+        {
+          "codice": "LIVR",
+          "chiave": "cccccccccccccccccccccccccccccccccccccccc",
+          "dettaglio": "TLM13 sugli specchi",
+          "stato": "ok"
+        }
+      ],
+      "avvisi": [],
+      "metriche": {
+        "secondi": 12.5,
+        "chiamate": 3,
+        "versione_prompt": "3",
+        "modello": "gemma4:e2b"
+      }
+    }
+  },
+  "snapshot_v2": {
+    "versione_sigle": "ee2882bfb9d061692b0a3e113bc99694b34601f3dbff884a9fe70b90ae92c0df",
+    "colonne": [
+      "BIC2",
+      "LIVR"
+    ],
+    "sotto_sigle": [
+      {
+        "codice": "TLM13",
+        "padre": "LIVR"
+      }
+    ],
+    "alias": {
+      "TLM15": "TLM16"
+    },
+    "modelli": [
+      "F999XX"
+    ],
+    "esempi": [],
+    "decisioni": [
+      {
+        "modello": "*",
+        "codice": "BIC2",
+        "va": true,
+        "sub": false,
+        "alias": null,
+        "nosigla": false,
+        "padre": null
+      },
+      {
+        "modello": "F999XX",
+        "codice": "LIVR",
+        "va": true,
+        "sub": false,
+        "alias": null,
+        "nosigla": false,
+        "padre": null
+      },
+      {
+        "modello": "F999XX",
+        "codice": "0TMC",
+        "va": false,
+        "sub": false,
+        "alias": null,
+        "nosigla": false,
+        "padre": null
+      },
+      {
+        "modello": "*",
+        "codice": "ROSSO",
+        "va": false,
+        "sub": false,
+        "alias": null,
+        "nosigla": true,
+        "padre": null
+      },
+      {
+        "modello": "F999XX",
+        "codice": "TLM13",
+        "va": true,
+        "sub": true,
+        "alias": null,
+        "nosigla": false,
+        "padre": "LIVR"
+      },
+      {
+        "modello": "*",
+        "codice": "TLM15",
+        "va": true,
+        "sub": false,
+        "alias": "TLM16",
+        "nosigla": false,
+        "padre": null
+      }
+    ],
+    "componenti": [
+      {
+        "modello": "F171VS",
+        "nome": "Cofano",
+        "termini": [
+          "BIC2"
+        ]
+      },
+      {
+        "modello": "F999XX",
+        "nome": "Paraurti",
+        "termini": [
+          "PAR2",
+          "LIVR"
+        ]
+      }
+    ],
+    "modelli_noti": [
+      "F171VS",
+      "F999XX"
+    ],
+    "modelli_alias": [
+      {
+        "sbagliato": "F171V5",
+        "giusto": "F171VS"
+      }
+    ]
+  }
+}

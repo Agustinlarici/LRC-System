@@ -73,6 +73,15 @@ export function IconTicket({ className = base }: IconProps) {
     </svg>
   );
 }
+export function IconProject({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
+      <rect x="3" y="4" width="5" height="16" rx="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="10" y="4" width="5" height="10" rx="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="17" y="4" width="4" height="6" rx="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 export function IconChart({ className = base }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
@@ -168,6 +177,14 @@ export function IconSparkles({ className = base }: IconProps) {
     </svg>
   );
 }
+export function IconInvoice({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 4H4a1 1 0 00-1 1v14a1 1 0 001 1h16a1 1 0 001-1V9l-5-5H7z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14 4v5h5M9 13h6M9 17h4" />
+    </svg>
+  );
+}
 
 export type ModuleIcon = (props: IconProps) => React.ReactElement;
 
@@ -175,7 +192,7 @@ export const ICON_MAP: Record<string, ModuleIcon> = {
   IconBox, IconTruck, IconMonitor, IconArchive, IconMap,
   IconClipboard, IconFactory, IconSettings, IconTicket, IconChart,
   IconHeatmap, IconList, IconScan, IconEdi, IconWebDdt, IconSparkles, IconSearch,
-  IconUsers, IconOrgChart, IconTrendUp,
+  IconUsers, IconOrgChart, IconTrendUp, IconProject, IconInvoice,
 };
 
 // ─── Group representative icons ─────────────────────────────────────────────
@@ -187,4 +204,5 @@ export const GROUP_ICON_MAP: Record<string, ModuleIcon> = {
   Dashboard:  IconChart,
   IT:         IconSettings,
   HR:         IconUsers,
+  Amministrazione: IconInvoice,
 };

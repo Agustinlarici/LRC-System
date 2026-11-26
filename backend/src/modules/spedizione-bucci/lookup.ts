@@ -1,4 +1,4 @@
-import { getWebthronPool } from '../monitor/mysql-client.js';
+import { getBucciPool } from '../monitor/mysql-client.js';
 
 // Documenti iKnow "cofano Bucci": ubidocum.tipdoc 0330, componente 'cofano'
 const BUCCI_TIPDOC     = '0330';
@@ -82,7 +82,7 @@ async function run(column: string, values: string[], days: number, maxRows = MAX
   const marks = values.map(() => '?').join(',');
   const sql   = `${SQL_BASE} AND ${column} IN (${marks}) ORDER BY ubi.datain DESC LIMIT ${maxRows}`;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [rows] = await (getWebthronPool() as any).execute(
+  const [rows] = await (getBucciPool() as any).execute(
     { sql, timeout: QUERY_TIMEOUT_MS },
     [BUCCI_TIPDOC, since, BUCCI_COMPONENTE, ...values],
   );
@@ -135,7 +135,7 @@ export async function findTipoLottoPrimerMany(seriali: string[], days = lookback
   const since = new Date(Date.now() - days * 86_400_000);
   const sql   = SQL_PRIMER.replace('%MARKS%', seriali.map(() => '?').join(','));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [rows] = await (getWebthronPool() as any).execute(
+  const [rows] = await (getBucciPool() as any).execute(
     { sql, timeout: QUERY_TIMEOUT_MS },
     [PRIMER_TIPDOC, since, PRIMER_FASE_LIKE, ...seriali],
   );

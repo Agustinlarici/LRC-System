@@ -11,11 +11,44 @@ type User = {
   id: number; username: string; display_name: string; email: string | null;
   phone: string | null; department_id: number | null; department_name: string | null;
   role: 'guest' | 'operator' | 'it' | 'admin'; is_active: boolean;
+  employee_id: number | null; employee_name: string | null;
 };
-type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci' | 'programma_produzione' | 'hr' | 'hr_salary' | 'ferrari_schede' | 'ferrari_supervisore';
+type HrPerson = { id: number; nome: string; cognome: string; matricola: string | null; user_id: number | null; linked_username: string | null };
+
+// Persone (schede HR) tra cui scegliere a chi appartiene l'account
+function useHrPeople(): HrPerson[] {
+  const [people, setPeople] = useState<HrPerson[]>([]);
+  useEffect(() => {
+    apiFetch('/api/auth/hr-employees').then(r => r.json()).then(setPeople).catch(() => {});
+  }, []);
+  return people;
+}
+
+function PersonSelect({ people, value, onChange, currentUserId, className }: {
+  people: HrPerson[]; value: string; onChange: (v: string) => void; currentUserId?: number; className: string;
+}) {
+  return (
+    <div>
+      <label className="block text-xs text-gray-600 mb-1">Persona (scheda HR)</label>
+      <select value={value} onChange={e => onChange(e.target.value)} className={className}>
+        <option value="">— Nessuna —</option>
+        {people.map(p => {
+          const taken = p.user_id !== null && p.user_id !== currentUserId;
+          return (
+            <option key={p.id} value={p.id} disabled={taken}>
+              {p.cognome} {p.nome}{p.matricola ? ` · ${p.matricola}` : ''}{taken ? ` — già collegata a ${p.linked_username}` : ''}
+            </option>
+          );
+        })}
+      </select>
+      <p className="text-xs text-gray-500 mt-1">Serve ai capi: con la persona collegata vedono il proprio team e fanno le richieste.</p>
+    </div>
+  );
+}
+type ModuleKey = 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer' | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards' | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci' | 'programma_produzione' | 'hr' | 'hr_salary' | 'hr_team' | 'ferrari_schede' | 'ferrari_supervisore' | 'photo_station' | 'fatturazione';
 type Permission = { module_key: ModuleKey; can_view: boolean; can_manage: boolean };
 
-const MODULE_CATEGORIES = ['Logistica', 'Produzione', 'Dashboard', 'IT', 'Qualità', 'HR'] as const;
+const MODULE_CATEGORIES = ['Logistica', 'Amministrazione', 'Produzione', 'Dashboard', 'IT', 'Qualità', 'HR'] as const;
 
 const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATEGORIES[number] }[] = [
   // ── Logistica ──────────────────────────────────────────────────────────────
@@ -27,6 +60,7 @@ const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATE
   { key: 'edi',                  label: 'EDI',                  category: 'Logistica' },
   { key: 'webddt',               label: 'WebDDT',                category: 'Logistica' },
   { key: 'spedizione_bucci',     label: 'Spedizione Bucci',      category: 'Logistica' },
+  { key: 'fatturazione',         label: 'Fatturazione',          category: 'Amministrazione' },
 
   // ── Produzione ─────────────────────────────────────────────────────────────
   { key: 'monitor',         label: 'Andon',           category: 'Produzione' },
@@ -46,12 +80,14 @@ const ALL_MODULES: { key: ModuleKey; label: string; category: typeof MODULE_CATE
   { key: 'impostazioni',  label: 'Impostazioni',           category: 'IT' },
   { key: 'ferrari_schede',      label: 'Programma produzione (schede)',               category: 'IT' },
   { key: 'ferrari_supervisore', label: 'Programma produzione (schede) — Supervisore',   category: 'IT' },
+  { key: 'photo_station', label: 'Quality Control Station (ordini di foto)',   category: 'IT' },
 
   // ── Qualità ────────────────────────────────────────────────────────────────
   { key: 'qualita', label: 'Difetti', category: 'Qualità' },
 
   // ── HR ─────────────────────────────────────────────────────────────────────
   { key: 'hr',        label: 'HR — Dipendenti',        category: 'HR' },
+  { key: 'hr_team',   label: 'HR — Capo (di norma si attiva da solo; qui solo eccezioni)', category: 'HR' },
   { key: 'hr_salary', label: 'HR — Livello retributivo', category: 'HR' },
 ];
 
@@ -82,15 +118,145 @@ function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (
 // ─── Avanzata tab ─────────────────────────────────────────────────────────────
 
 interface IKnowFlags {
-  iknow_enabled:        boolean;
-  iknow_andon_enabled:  boolean;
-  iknow_buffer_enabled: boolean;
+  iknow_enabled:          boolean;
+  iknow_andon_enabled:    boolean;
+  iknow_nightly_enabled:  boolean;
+  iknow_lookup_enabled:   boolean;
+  iknow_buffer_enabled:   boolean;
+  iknow_bucci_enabled:    boolean;
+  iknow_backfill_enabled: boolean;
+  iknow_bom_enabled:      boolean;
+  iknow_andon_lastup_enabled: boolean;
 }
 
 const IKNOW_QUERIES: { key: keyof Omit<IKnowFlags, 'iknow_enabled'>; label: string; description: string }[] = [
-  { key: 'iknow_andon_enabled',  label: 'Andon / Monitor', description: 'Sincronizzazione dati produzione (esecutivo) — ogni 5 minuti' },
-  { key: 'iknow_buffer_enabled', label: 'Buffer',          description: 'Sincronizzazione seriali in pre-area — ogni 30 minuti' },
+  { key: 'iknow_andon_enabled',    label: 'Andon / Monitor — sincronizzazione continua', description: 'Legge i nuovi eventi di produzione da iKnow — ogni 5 minuti' },
+  { key: 'iknow_nightly_enabled',  label: 'Rilettura notturna',                           description: 'Modo incrementale: rilegge gli ultimi 6 mesi per sistemare i dati — ogni notte alle 01:00' },
+  { key: 'iknow_lookup_enabled',   label: 'Fasi e combinazioni',                          description: 'Aggiorna fasi, modelli e componenti — ogni notte alle 02:00, a mano da Fasi iKnow e all’avvio se le liste sono vuote' },
+  { key: 'iknow_buffer_enabled',   label: 'Buffer',                                       description: 'Ricalcola i seriali in pre-area dallo storico locale — ogni 30 minuti' },
+  { key: 'iknow_bom_enabled',      label: 'BOM notturno',                                 description: 'Copia i BOM di iKnow (vista v_iknow_bom per Power BI) — una volta a notte alle 04:15; parte spento' },
+  { key: 'iknow_andon_lastup_enabled', label: 'Sync continua — anche schede modificate', description: 'Oltre alle schede nuove (datain) legge quelle modificate (lastup) negli ultimi minuti ed esclude le cancellate (deletedubidocum). Parte spento: provare prima con EXPLAIN' },
+  { key: 'iknow_backfill_enabled', label: 'Backfill manuali',                            description: 'Carica iniziale dello storico (pulsante in Aggiornamenti sistema → Azioni manuali), Heatmap, Lead time e correzione commesse (solo su richiesta)' },
 ];
+
+type SyncMode = 'incremental' | 'full' | 'mixed';
+
+interface FirstSyncStatus {
+  running: boolean; cancelled: boolean; total: number; done: number;
+  current: string; rows: number; errors: string[];
+}
+
+const SYNC_MODES: { key: SyncMode; label: string; description: string }[] = [
+  { key: 'incremental', label: 'Incrementale', description: 'Nuovi eventi ogni 5 minuti. Alle 01:00 rilegge gli ultimi 6 mesi (una query per settimana)' },
+  { key: 'full',        label: 'Solo ultimi 3 mesi', description: 'Rilegge gli ultimi 3 mesi ogni 10 minuti (una query per settimana), senza incrementale. Pesante per WebThron' },
+  { key: 'mixed',       label: 'Mista',         description: 'Incrementale ogni 5 minuti + ogni ora rilegge gli ultimi 3 mesi. L’incrementale resta fermo finché la lettura non è finita' },
+];
+
+function SyncModeCard({ flags }: { flags: IKnowFlags }) {
+  const [mode,   setMode]   = useState<SyncMode | null>(null);
+  const [status, setStatus] = useState<FirstSyncStatus | null>(null);
+  const [busy,   setBusy]   = useState(false);
+  const [msg,    setMsg]    = useState('');
+
+  useEffect(() => {
+    apiFetch('/api/system/sync-mode').then(r => r.json() as Promise<{ mode: SyncMode }>)
+      .then(d => setMode(d.mode)).catch(() => setMsg('Errore caricamento modalità'));
+  }, []);
+
+  // Stato della carica: si aggiorna ogni 3 s finché è in corso
+  const running = status?.running ?? false;
+  useEffect(() => {
+    let stop = false;
+    const load = () => apiFetch('/api/system/first-sync').then(r => r.json() as Promise<FirstSyncStatus>)
+      .then(d => { if (!stop) setStatus(d); }).catch(() => {});
+    void load();
+    if (!running) return () => { stop = true; };
+    const t = setInterval(load, 3000);
+    return () => { stop = true; clearInterval(t); };
+  }, [running]);
+
+  async function choose(next: SyncMode) {
+    if (next === mode) return;
+    setBusy(true); setMsg('');
+    try {
+      const res = await apiFetch('/api/system/sync-mode', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: next }),
+      });
+      if (!res.ok) throw new Error();
+      setMode(((await res.json()) as { mode: SyncMode }).mode);
+    } catch { setMsg('Errore salvataggio modalità'); }
+    finally { setBusy(false); }
+  }
+
+  async function launch() {
+    setBusy(true); setMsg('');
+    try {
+      const res = await apiFetch('/api/system/first-sync?days=180', { method: 'POST' });
+      const d = await res.json() as { message?: string; status?: FirstSyncStatus };
+      setMsg(d.message ?? '');
+      if (d.status) setStatus(d.status);
+    } catch { setMsg('Errore avvio'); }
+    finally { setBusy(false); }
+  }
+
+  async function cancel() {
+    await apiFetch('/api/system/first-sync/cancel', { method: 'POST' }).catch(() => {});
+    setMsg('Si fermerà dopo il giorno in corso');
+  }
+
+  if (!mode) return null;
+  const masterOff = !flags.iknow_enabled;
+  const needsBackfill = mode !== 'incremental' && !flags.iknow_backfill_enabled;
+
+  return (
+    <div className="card">
+      <h2 className="font-semibold text-gray-800 mb-1">Modalità sincronizzazione WebThron</h2>
+      <p className="text-xs text-gray-500 mb-4">
+        Come si aggiorna lo storico. Le letture dei 3 mesi di «Solo 3 mesi» e «Mista» richiedono il toggle «Backfill manuali»; quella delle 01:00 il toggle «Rilettura notturna».
+      </p>
+      <div className="divide-y divide-gray-100">
+        {SYNC_MODES.map(m => (
+          <label key={m.key} className="flex items-start gap-3 py-3 cursor-pointer">
+            <input type="radio" name="sync-mode" className="mt-1" checked={mode === m.key}
+              disabled={busy} onChange={() => void choose(m.key)} />
+            <span>
+              <span className="block text-sm font-medium text-gray-800">{m.label}</span>
+              <span className="block text-xs text-gray-500">{m.description}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      {needsBackfill && (
+        <p className="mt-3 text-xs text-orange-600 bg-orange-50 border border-orange-200 rounded px-3 py-2">
+          ⚠ «Backfill manuali» è disattivato: la carica dei 3 mesi non partirà.
+        </p>
+      )}
+      <div className="mt-4 pt-4 border-t border-gray-100">
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => void launch()}
+            disabled={busy || running || masterOff || !flags.iknow_backfill_enabled}
+            className="px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-sm text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+            {running ? '⟳ Carica in corso...' : 'Lancia ora gli ultimi 6 mesi'}
+          </button>
+          {running && (
+            <button type="button" onClick={() => void cancel()}
+              className="px-3 py-2 rounded-lg border border-red-200 text-sm text-red-600 hover:bg-red-50">Ferma</button>
+          )}
+        </div>
+        {status && (running || status.done > 0) && (
+          <p className="mt-2 text-xs text-gray-500">
+            {status.done}/{status.total} settimane{status.current ? ` — ora: ${status.current}` : ''} — {status.rows} eventi
+            {status.errors.length > 0 ? ` — ${status.errors.length} errori` : ''}
+          </p>
+        )}
+        {msg && <p className="mt-2 text-xs text-gray-600">{msg}</p>}
+        {(masterOff || !flags.iknow_backfill_enabled) && (
+          <p className="mt-2 text-xs text-gray-400">Serve attivare «iKnow — Generale» e «Backfill manuali».</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function AvanzataTab() {
   const [flags,  setFlags]  = useState<IKnowFlags | null>(null);
@@ -141,8 +307,24 @@ function AvanzataTab() {
       </div>
 
       <div className="card">
+        <h2 className="font-semibold text-gray-800 mb-1">Spedizione Bucci</h2>
+        <p className="text-xs text-gray-500 mb-4">
+          Interruttore indipendente dalle sincronizzazioni: non si spegne quando ne attivi una. Efficace solo se il toggle generale è attivo.
+        </p>
+        <div className="flex items-center justify-between py-3">
+          <div>
+            <p className={`text-sm font-medium ${masterOff ? 'text-gray-400' : 'text-gray-800'}`}>Ricerca in iKnow</p>
+            <p className="text-xs text-gray-500">Cerca seriali e commesse in iKnow durante scansione e verifica delle spedizioni (connessione separata)</p>
+          </div>
+          <Toggle checked={flags.iknow_bucci_enabled} onChange={v => toggle('iknow_bucci_enabled', v)} disabled={masterOff || saving === 'iknow_bucci_enabled'} />
+        </div>
+      </div>
+
+      <SyncModeCard flags={flags} />
+
+      <div className="card">
         <h2 className="font-semibold text-gray-800 mb-1">Query iKnow per modulo</h2>
-        <p className="text-xs text-gray-500 mb-4">Attiva o disattiva le singole query. Efficace solo se il toggle generale è attivo.</p>
+        <p className="text-xs text-gray-500 mb-4">Attiva o disattiva ogni singola query verso iKnow. Efficace solo se il toggle generale è attivo.</p>
         <div className="divide-y divide-gray-100">
           {IKNOW_QUERIES.map(q => (
             <div key={q.key} className="flex items-center justify-between py-3">
@@ -374,7 +556,9 @@ function CreateUserTab({ departments, onCreated }: { departments: Department[]; 
     phone:         '',
     department_id: '',
     role:          'operator' as 'guest' | 'operator' | 'it' | 'admin',
+    employee_id:   '',
   });
+  const hrPeople = useHrPeople();
   const [permEdits, setPermEdits] = useState<Record<ModuleKey, { can_view: boolean; can_manage: boolean }>>(emptyPermEdits);
   const [saving,    setSaving]    = useState(false);
   const [error,     setError]     = useState('');
@@ -401,6 +585,7 @@ function CreateUserTab({ departments, onCreated }: { departments: Department[]; 
           email:         form.email || undefined,
           phone:         form.phone || undefined,
           department_id: form.department_id ? Number(form.department_id) : undefined,
+          employee_id:   form.employee_id ? Number(form.employee_id) : undefined,
         }),
       });
       const data = await res.json();
@@ -419,7 +604,7 @@ function CreateUserTab({ departments, onCreated }: { departments: Department[]; 
       });
 
       setSuccess(`Utente "${data.display_name}" creato.`);
-      setForm({ username: '', password: '', display_name: '', email: '', phone: '', department_id: '', role: 'operator' });
+      setForm({ username: '', password: '', display_name: '', email: '', phone: '', department_id: '', role: 'operator', employee_id: '' });
       setPermEdits(emptyPermEdits());
       onCreated();
     } catch { setError('Errore di connessione'); }
@@ -469,6 +654,8 @@ function CreateUserTab({ departments, onCreated }: { departments: Department[]; 
           </div>
         </div>
 
+        <PersonSelect people={hrPeople} value={form.employee_id} onChange={v => setForm(p => ({ ...p, employee_id: v }))} className={`${inputClass} bg-white`} />
+
         <div>
           <label className="block text-xs text-gray-600 mb-1">Ruolo</label>
           <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value as typeof form.role }))}
@@ -512,7 +699,9 @@ function EditUserTab({ users, departments, onSaved }: { users: User[]; departmen
     role:          'operator' as 'guest' | 'operator' | 'it' | 'admin',
     is_active:     true,
     password:      '',
+    employee_id:   '',
   });
+  const hrPeople = useHrPeople();
   const [saving,  setSaving]  = useState(false);
   const [error,   setError]   = useState('');
   const [success, setSuccess] = useState('');
@@ -530,6 +719,7 @@ function EditUserTab({ users, departments, onSaved }: { users: User[]; departmen
       role:          u.role,
       is_active:     u.is_active,
       password:      '',
+      employee_id:   u.employee_id?.toString() ?? '',
     });
   }
 
@@ -548,6 +738,7 @@ function EditUserTab({ users, departments, onSaved }: { users: User[]; departmen
           department_id: form.department_id ? Number(form.department_id) : null,
           role:          form.role,
           is_active:     form.is_active,
+          employee_id:   form.employee_id ? Number(form.employee_id) : null,
           ...(form.password ? { password: form.password } : {}),
         }),
       });
@@ -609,6 +800,8 @@ function EditUserTab({ users, departments, onSaved }: { users: User[]; departmen
                 {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
             </div>
+            <PersonSelect people={hrPeople} value={form.employee_id} onChange={v => setForm(p => ({ ...p, employee_id: v }))}
+              currentUserId={Number(selectedId) || undefined} className={`${inputClass} bg-white`} />
             <div>
               <label className="block text-xs text-gray-600 mb-1">Ruolo</label>
               <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value as typeof form.role }))}
@@ -796,7 +989,8 @@ type RunStats = {
   lastDurationSec:  number | null;
   lastRowCount:     number | null;
   lastError:        string | null;
-  runCount:         number;
+  lastDetail?:      string | null;
+  runCount:        number;
   consecutiveErrors: number;
   nextScheduledAt:  string | null;
   status:           'idle' | 'running' | 'ok' | 'error';
@@ -814,6 +1008,9 @@ type SystemAlert = {
   is_active:        boolean;
 };
 
+const ALERTS_COLLAPSED = 4;
+const SEVERITY_ORDER: Record<SystemAlert['severity'], number> = { critical: 0, warning: 1, info: 2 };
+
 function fmt(iso: string | null): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleString('it-IT', { timeZone: 'Europe/Rome', hour12: false });
@@ -827,6 +1024,16 @@ function ago(iso: string | null): string {
   if (min < 60) return `${min} min fa`;
   const h = Math.round(min / 60);
   return `${h} h fa`;
+}
+
+/** Per un orario futuro («Prossimo»): «tra 4 min»; se è già passato, «in ritardo di N min». */
+function fromNow(iso: string | null): string {
+  if (!iso) return '—';
+  const min = Math.round((new Date(iso).getTime() - Date.now()) / 60_000);
+  if (min === 0) return 'adesso';
+  const abs = Math.abs(min);
+  const txt = abs < 60 ? `${abs} min` : `${Math.round(abs / 60)} h`;
+  return min > 0 ? `tra ${txt}` : `in ritardo di ${txt}`;
 }
 
 function statusBadge(s: string) {
@@ -846,9 +1053,12 @@ function severityBadge(s: string) {
 }
 
 const JOB_LABELS: Record<string, string> = {
-  sync_incremental:  'Sync WebThron (10 min)',
-  sync_full:         'Sync WebThron — prima esecuzione',
+  sync_incremental:  'Sync WebThron (5 min)',
+  bom_sync:          'BOM iKnow (04:15)',
+  first_sync:        'Carica iniziale storico iKnow',
+  sync_full:         'Sync WebThron — primo ciclo del giorno',
   sync_full_day:     'Sync Full Day (01:00)',
+  sync_lastup:       'Schede modificate (lastup)',
   heatmap_snapshot:  'Snapshot OEE (01:00)',
   lookup_refresh:    'Lookup Tables (02:00)',
   bc_sync:           'Sync Business Central (03:00)',
@@ -856,6 +1066,7 @@ const JOB_LABELS: Record<string, string> = {
   spma_onedrive_poll: 'OneDrive SPMA (10 min)',
   edi_ferrari_scan:  'EDI Ferrari DELINS (06:00)',
   edi_auto_generate: 'EDI Auto-generate (23:45)',
+  osti_sync:         'HR — Sync Osti (ogni ora)',
 };
 
 function SystemCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -888,6 +1099,7 @@ function AggiornamentiTab() {
   const [toast,     setToast]     = useState('');
   const [acting,    setActing]    = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [showAllAlerts, setShowAllAlerts] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
@@ -937,6 +1149,13 @@ function AggiornamentiTab() {
   }
 
   const activeAlerts = alerts.filter(a => a.is_active);
+  const sortedActive = [...activeAlerts].sort((a, b) => {
+    const disk = Number(b.alert_key.startsWith('monitor_disk')) - Number(a.alert_key.startsWith('monitor_disk'));
+    if (disk) return disk;
+    const sev = SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity];
+    return sev || new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+  const visibleAlerts = showAllAlerts ? sortedActive : sortedActive.slice(0, ALERTS_COLLAPSED);
   const historyAlerts = alerts.filter(a => !a.is_active);
 
   return (
@@ -966,19 +1185,29 @@ function AggiornamentiTab() {
         <div className="text-gray-400 text-sm">Caricamento...</div>
       ) : (
         <>
-          {/* Active alerts banner */}
+          {/* Avvisi attivi: i più gravi in alto, il disco sempre visibile; il resto si espande */}
           {activeAlerts.length > 0 && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-red-600 font-semibold text-sm">{activeAlerts.length} alert attivi</span>
+            <div className="rounded-card border border-danger/20 bg-danger-soft p-4">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <span className="text-danger font-semibold text-sm">
+                  {activeAlerts.length} {activeAlerts.length === 1 ? 'alert attivo' : 'alert attivi'}
+                </span>
+                {sortedActive.length > ALERTS_COLLAPSED && (
+                  <button
+                    onClick={() => setShowAllAlerts(v => !v)}
+                    className="text-xs font-medium text-danger underline underline-offset-2"
+                  >
+                    {showAllAlerts ? 'Mostra meno' : `Mostra tutti (${sortedActive.length})`}
+                  </button>
+                )}
               </div>
               <div className="space-y-1">
-                {activeAlerts.map(a => (
+                {visibleAlerts.map(a => (
                   <div key={a.id} className="flex items-start gap-2 text-sm">
                     <span className={severityBadge(a.severity)}>{a.severity}</span>
-                    <span className="font-medium text-red-700">{a.title}</span>
-                    {a.message && <span className="text-red-600">— {a.message}</span>}
-                    <span className="ml-auto text-red-400 text-xs shrink-0">{ago(a.created_at)}</span>
+                    <span className="font-medium text-danger">{a.title}</span>
+                    {a.message && <span className="text-danger/80">— {a.message}</span>}
+                    <span className="ml-auto text-danger/60 text-xs shrink-0">{ago(a.created_at)}</span>
                   </div>
                 ))}
               </div>
@@ -1009,6 +1238,7 @@ function AggiornamentiTab() {
               <div className="space-y-2">
                 {([
                   ['force-sync',              'Sync WebThron ora'],
+                  ['first-sync',              'Carica storico iKnow (ultimi 180 giorni)'],
                   ['force-bc-sync',           'Sync Business Central ora'],
                   ['force-lookup',            'Refresh lookup tables'],
                   ['force-snapshot',          'Snapshot OEE ieri'],
@@ -1080,6 +1310,7 @@ function AggiornamentiTab() {
                     <tr key={job} className="hover:bg-gray-50">
                       <td className="py-2.5 pr-4 font-medium text-gray-700">
                         {JOB_LABELS[job] ?? job}
+                        {s.lastDetail && <span className="block text-xs font-normal text-gray-500">{s.lastDetail}</span>}
                       </td>
                       <td className="py-2.5 pr-4">
                         <span className={statusBadge(s.status)}>{s.status.toUpperCase()}</span>
@@ -1089,7 +1320,7 @@ function AggiornamentiTab() {
                         {s.lastDurationSec != null ? `${s.lastDurationSec}s` : '—'}
                       </td>
                       <td className="py-2.5 pr-4 text-gray-500">{s.lastRowCount ?? '—'}</td>
-                      <td className="py-2.5 pr-4 text-gray-500">{ago(s.nextScheduledAt)}</td>
+                      <td className="py-2.5 pr-4 text-gray-500">{fromNow(s.nextScheduledAt)}</td>
                       <td className="py-2.5 max-w-xs">
                         {s.lastError ? (
                           <span className="text-red-500 text-xs truncate block" title={s.lastError}>

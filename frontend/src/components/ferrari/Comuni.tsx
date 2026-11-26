@@ -6,7 +6,8 @@ import type { Esito, StatoFile } from '@/lib/ferrari';
 import { STATI } from '@/lib/ferrari';
 import { StatusBadge, type Tone } from '@/components/ui/StatusBadge';
 
-export function Cella({ testo, intero }: { testo?: string; intero?: string }) {
+/** `compatta`: a schermo il testo lungo sta su una riga con i puntini (il testo intero e' nel suggerimento); in stampa resta intero. */
+export function Cella({ testo, intero, compatta = false }: { testo?: string; intero?: string; compatta?: boolean }) {
   if (!testo) return <span className="text-stone-300">—</span>;
   if (testo === 'Sì') return <span className="font-bold text-success" title={intero}>Sì</span>;
   if (testo === 'Extra campionario') return <span className="font-bold text-warning" title={intero}>Extra campionario</span>;
@@ -17,7 +18,7 @@ export function Cella({ testo, intero }: { testo?: string; intero?: string }) {
   // più pezzi distinti (es. due livree): uno per riga
   const pezzi = corpo.split(' | ');
   return (
-    <span title={intero}>
+    <span className={compatta ? 'cella-compatta' : undefined} title={intero ?? (compatta ? testo : undefined)}>
       {testa}
       {pezzi.length > 1
         ? pezzi.map((p, i) => <div key={i} className={i > 0 ? 'mt-1 border-t border-dashed border-line pt-1' : ''}>{p}</div>)
@@ -92,8 +93,8 @@ export async function correggiCodice(modello: string, scritto: string, giusto: s
 const btnFix = 'rounded-full border border-line bg-white px-2 py-0 text-xs hover:bg-stone-50';
 
 /** Un errore di scrittura dentro un testo (es. TLM15 al posto di TLM16) con i pulsanti per correggerlo. */
-export function SottoSigla({ x, modello, onFatto, onErrore }: {
-  x: { codice: string; testo: string; avviso: string | null; scritto?: string | null }; modello: string; onFatto: () => void; onErrore: (m: string) => void;
+export function SottoSigla({ x, modello, onFatto, onErrore, compatta = false }: {
+  x: { codice: string; testo: string; avviso: string | null; scritto?: string | null }; modello: string; onFatto: () => void; onErrore: (m: string) => void; compatta?: boolean;
 }) {
   const correggibile = !!x.scritto && /^[A-Z0-9]{3,8}$/.test(x.scritto) && !/corretta in/.test(x.avviso ?? '');
   const vai = (az: Correzione) => correggiCodice(modello, x.scritto!, x.codice, az).then(ok => ok && onFatto()).catch(e => onErrore((e as Error).message));
@@ -111,7 +112,7 @@ export function SottoSigla({ x, modello, onFatto, onErrore }: {
           )}
         </div>
       )}
-      <b>{x.codice}</b> {x.testo}
+      <span className={compatta ? 'cella-compatta' : undefined} title={compatta ? `${x.codice} ${x.testo}` : undefined}><b>{x.codice}</b> {x.testo}</span>
     </div>
   );
 }

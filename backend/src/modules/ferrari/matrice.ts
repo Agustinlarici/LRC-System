@@ -105,6 +105,30 @@ export function simileA(codice: string, noti: Iterable<string>): string | null {
   return vicini[0] ?? null;
 }
 
+// Cache: la stessa colonna si cerca in centinaia di schede e lo stesso testo si confronta con decine di colonne.
+// Il risultato non cambia: si evita solo di ricostruire la regex e di normalizzare di nuovo lo stesso testo.
+const REGEX_TERMINE = new Map<string, RegExp | null>();
+function regexTermine(termine: string): RegExp | null {
+  let rx = REGEX_TERMINE.get(termine);
+  if (rx === undefined) {
+    try { rx = phraseRegex(termine); } catch { rx = null; }
+    if (REGEX_TERMINE.size > 5000) REGEX_TERMINE.clear();
+    REGEX_TERMINE.set(termine, rx);
+  }
+  if (rx) rx.lastIndex = 0;                      // la regex e' globale: ogni uso riparte dall'inizio
+  return rx;
+}
+interface OpzioneNorm { valore: string; descrizione: string; nota: string; blocchi: string[] }
+const NORMALIZZATE = new WeakMap<Opzione, OpzioneNorm>();
+function normalizzata(o: Opzione): OpzioneNorm {
+  let n = NORMALIZZATE.get(o);
+  if (!n) {
+    n = { valore: norm(o.valore), descrizione: norm(o.descrizione), nota: norm(o.nota), blocchi: o.blocchi_testo.map(b => norm(b.testo)) };
+    NORMALIZZATE.set(o, n);
+  }
+  return n;
+}
+
 export function cellaTermine(
   termine: string, opzioni: Opzione[], dettagli: Record<string, string> = {}, ctx?: CtxSigle,
 ): { testo: string; completo: string | null; opzione: Opzione | null; avviso: string | null } {
@@ -117,24 +141,18 @@ export function cellaTermine(
     }
   }
 
-  const rx = phraseRegex(termine);
-  for (const o of opzioni) if (rx.test(norm(o.valore))) return { testo: o.valore.trim(), completo: null, opzione: o, avviso: null };
+  const rx = regexTermine(termine)!;
+  for (const o of opzioni) if (rx.test(normalizzata(o).valore)) return { testo: o.valore.trim(), completo: null, opzione: o, avviso: null };
   for (const o of opzioni) {
-    for (const b of o.blocchi_testo) {
-      const m = rx.exec(norm(b.testo));
+    const nb = normalizzata(o).blocchi;
+    for (let i = 0; i < o.blocchi_testo.length; i++) {
+      const b = o.blocchi_testo[i]!;
+      const m = rx.exec(nb[i]!);
       if (m) return { testo: dettagli[o.codice] || estratto(b.testo, m.index, m.index + m[0].length), completo: testoLibero(o), opzione: o, avviso: null };
     }
   }
-  for (const o of opzioni) if (rx.test(norm(o.descrizione)) || rx.test(norm(o.nota))) return { testo: SI, completo: null, opzione: o, avviso: null };
-  // una sigla che non c'e': un codice della scheda a un carattere di distanza e MAI deciso e' un probabile errore di scrittura
-  if (t.length >= 4 && /^[A-Z0-9]+$/.test(t) && ctx) {
-    for (const o of opzioni) {
-      const c = o.codice.toUpperCase();
-      if (!ctx.decisi.has(c) && !ctx.alias.has(c) && entroUno(c, t)) {
-        return { testo: cellaOpzione(o, dettagli[o.codice]), completo: testoLibero(o) || null, opzione: o, avviso: `scritta ${c} (suggerito ${t})` };
-      }
-    }
-  }
+  for (const o of opzioni) { const n = normalizzata(o); if (rx.test(n.descrizione) || rx.test(n.nota)) return { testo: SI, completo: null, opzione: o, avviso: null }; }
+  // una sigla simile (AS13 per AS03) NON si assegna da sola: la conferma e' una decisione della persona (alias), poi vale qui sopra
   return { testo: '', completo: null, opzione: null, avviso: null };
 }
 
@@ -153,6 +171,7 @@ export function costruisciMatrice(
   schede: { id: number; stato: string; canonico: Canonico }[], termini: string[], dettagli?: DettagliPerCommessa, subOk: ReadonlySet<string> = new Set(),
   ctx?: CtxSigle, subPadre: ReadonlyMap<string, string> = new Map(),
 ): RigaMatrice[] {
+  const subPerTermine = new Map(termini.map(t => [t, new Set([...subOk].filter(x => (subPadre.get(x) ?? t) === t))] as [string, Set<string>]));
   return schede.map(s => {
     const det = dettagliValidi(s.canonico.header.commessa ?? '', s.canonico.opzioni, dettagli);
     const celle: Record<string, string> = {};
@@ -167,7 +186,7 @@ export function costruisciMatrice(
       if (c.avviso) avvisi[t] = c.avviso;
       celle[t] = c.testo;
       // solo le sotto-sigle di questa voce (o di nessuna voce in particolare)
-      const subQui = new Set([...subOk].filter(x => (subPadre.get(x) ?? t) === t));
+      const subQui = subPerTermine.get(t)!;
       if (c.opzione && subQui.size > 0) {
         const { resto, sub: dentro } = dividiSottoSigle(c.opzione, subQui, ctx, propri, det.testi[c.opzione.codice]);
         if (dentro.length > 0) {
@@ -248,7 +267,8 @@ export function sottosigleAccettate(
         else if (ctx && !ctx.decisi.has(t) && !propri.has(t)) {
           const vicini = ordinate.filter(s => s.length >= 4 && t.length >= 4 && entroUno(t, s))
             .sort((x, y) => Number(x.length !== t.length) - Number(y.length !== t.length) || (x < y ? -1 : 1));
-          if (vicini.length === 1) trovate.push({ pos: m.index!, codice: vicini[0]!, scritto: t, avviso: `scritta ${t} (suggerito ${vicini[0]})` });
+          // mai assegnata alla sigla simile: resta il codice com'e' scritto, con il suggerimento da confermare
+          if (vicini.length === 1) trovate.push({ pos: m.index!, codice: t, scritto: t, avviso: `scritta ${t} (suggerito ${vicini[0]})` });
           else if (vicini.length > 1) trovate.push({ pos: m.index!, codice: t, scritto: t, avviso: `scritta ${t} (suggeriti ${vicini.join(' o ')})` });
         }
       }

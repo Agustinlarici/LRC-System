@@ -2,9 +2,12 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { parseBody } from '../../lib/validate.js';
-import { getIKnowFlags, setIKnowFlags } from '../../lib/system-flags.js';
+import { getIKnowFlags, setIKnowFlags, assertIKnowEnabled, isIKnowEnabled, IKNOW_QUERY_FLAGS } from '../../lib/system-flags.js';
+import { getSyncMode, setSyncMode, isSyncMode, SYNC_MODES, BACKFILL_DAYS } from '../monitor/sync-mode.js';
 import { getAllStats, startRun, endRun, failRun } from '../../lib/sync-stats.js';
 import { refreshLookupTables } from '../monitor/pg-webthron-sync.js';
+import { startFirstSync, getFirstSyncStatus, cancelFirstSync } from '../monitor/first-sync.js';
+import { syncBom, isBomSyncRunning } from '../monitor/bom-sync.js';
 import { executiveRefresh } from '../monitor/executive-cache.js';
 import { syncPackArticles } from '../packing/bc-client.js';
 import { snapshotDayFromHistory } from '../dashboards/heatmap.js';
@@ -26,12 +29,24 @@ systemRoutes.get('/iknow-flags', async (c) => {
 
 systemRoutes.patch('/iknow-flags', async (c) => {
   const body = await parseBody(c, z.object({
-    iknow_enabled:        z.boolean().optional(),
-    iknow_andon_enabled:  z.boolean().optional(),
-    iknow_buffer_enabled: z.boolean().optional(),
+    iknow_enabled: z.boolean().optional(),
+    ...Object.fromEntries(IKNOW_QUERY_FLAGS.map(k => [k, z.boolean().optional()])),
   }));
   const flags = await setIKnowFlags(body);
   return c.json(flags);
+});
+
+// Modalità della sync WebThron: incremental | full (90 giorni) | mixed (incrementale + 90 giorni ogni ora)
+systemRoutes.get('/sync-mode', requireAuth, async (c) => c.json({ mode: await getSyncMode() }));
+
+systemRoutes.patch('/sync-mode', requireAuth, async (c) => {
+  const user = c.get('user');
+  if (user.role !== 'admin' && user.role !== 'it') {
+    throw new HTTPException(403, { message: 'Solo admin/it possono cambiare la modalità di sync' });
+  }
+  const body = await parseBody(c, z.object({ mode: z.enum(SYNC_MODES) }));
+  if (!isSyncMode(body.mode)) throw new HTTPException(400, { message: 'Modalità non valida' });
+  return c.json({ mode: await setSyncMode(body.mode) });
 });
 
 // GET /api/system/sync-status — performance metrics for all WebThron sync jobs
@@ -47,8 +62,48 @@ systemRoutes.get('/sync-status', (c) => {
   return c.json(out);
 });
 
+// ─── Carica iniziale dello storico (ultimi N giorni, default 90) ─────────────────
+// Richiede i toggle «iKnow generale» e «Backfill manuali». Una settimana alla volta, in background.
+
+const clampInt = (raw: string | undefined, fallback: number, min: number, max: number) => {
+  const n = parseInt(raw ?? '', 10);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+};
+
+// ─── Copia dei BOM di iKnow (la stessa che gira di notte alle 04:15) ───────────
+// Richiede «iKnow generale» e «BOM notturno»; parte in background (stato in sync-status → bom_sync).
+systemRoutes.post('/bom-sync', requireAuth, async (c) => {
+  if (!(await isIKnowEnabled('iknow_bom_enabled'))) {
+    throw new HTTPException(503, { message: 'Attivare «iKnow generale» e «BOM notturno» in Sistema → Avanzata' });
+  }
+  if (isBomSyncRunning()) return c.json({ message: 'Sync BOM già in corso' }, 409);
+  void syncBom().catch(() => { /* errore già registrato in sync-stats e nel log */ });
+  return c.json({ message: 'Sync BOM avviata' }, 202);
+});
+
+systemRoutes.post('/first-sync', requireAuth, async (c) => {
+  if (!(await isIKnowEnabled('iknow_backfill_enabled'))) {
+    return c.json({ message: 'Attiva prima «iKnow — Generale» e «Backfill manuali» in Avanzata' }, 503);
+  }
+  if (getFirstSyncStatus().running) {
+    return c.json({ message: 'Carica iniziale già in corso', status: getFirstSyncStatus() }, 409);
+  }
+  const days     = clampInt(c.req.query('days'), BACKFILL_DAYS, 1, 200);
+  const pauseSec = clampInt(c.req.query('pause_sec'), 2, 1, 600);
+  const status   = startFirstSync({ days, pauseSec });
+  return c.json({ message: `Carica iniziale avviata: ultimi ${days} giorni, una settimana alla volta`, status }, 202);
+});
+
+systemRoutes.get('/first-sync', (c) => c.json(getFirstSyncStatus()));
+
+systemRoutes.post('/first-sync/cancel', requireAuth, (c) => {
+  const stopped = cancelFirstSync();
+  return c.json({ message: stopped ? 'Si fermerà dopo il giorno in corso' : 'Nessuna carica in corso' });
+});
+
 // POST /api/system/lookup-refresh — aggiorna fasi e combos da WebThron subito
-systemRoutes.post('/lookup-refresh', (c) => {
+systemRoutes.post('/lookup-refresh', async (c) => {
+  await assertIKnowEnabled('iknow_lookup_enabled');
   refreshLookupTables()
     .then(() => {})
     .catch(() => {});
@@ -154,9 +209,9 @@ systemRoutes.get('/alerts', requireAuth, async (c) => {
         LIMIT 100
       `;
 
-  // Arricchisci con flag in-memory per gli alert attivi
-  const activeKeys = new Set(getActiveAlerts().map(a => a.key));
-  return c.json(rows.map(r => ({ ...r, is_active: activeKeys.has(r.alert_key as string) })));
+  // "Attivo" = ancora aperto nel DB. Gli avvisi di scripts/monitor (disco, backup, container)
+  // sono scritti direttamente nel DB e non stanno nella memoria del backend.
+  return c.json(rows.map(r => ({ ...r, is_active: r.resolved_at === null })));
 });
 
 // GET /api/system/alerts/active — alert attivi in-memory (istantaneo, no DB)

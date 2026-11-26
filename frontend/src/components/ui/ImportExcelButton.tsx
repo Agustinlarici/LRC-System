@@ -8,6 +8,7 @@ export interface ImportIssueAction { label: string; needsChoice?: boolean; run: 
 export interface ImportIssue {
   type: string; name: string; note?: string;
   choices?: { value: string; label: string }[];   // se presente: campo di ricerca per scegliere (es. il dipendente)
+  suggested?: { value: string; label: string }[]; // i più probabili tra le choices: si scelgono con un clic
   actions?: ImportIssueAction[];
 }
 export interface ImportResult { inserted: number; skipped: number; errors: number; warnings?: number; updated?: number; detail?: string; issues?: ImportIssue[]; }
@@ -24,6 +25,8 @@ interface Props {
   label?: string;
   iconOnly?: boolean;
   hideButton?: boolean;   // niente pulsante: si apre con ref.open(); resta solo il riquadro dell'esito
+  // variant → lettura delle righe da una fonte diversa dal file (es. database): open(variant) parte subito, senza scelta del file
+  sources?: Record<string, () => Promise<Record<string, string>[]>>;
 }
 
 // Legge il file come UTF-8; se non lo è (CSV esportati da vecchi gestionali, Windows-1252) lo rilegge così
@@ -121,6 +124,17 @@ function IssueRow({ issue, listId, done, onDone }: { issue: ImportIssue; listId:
       <td className="px-3 py-1.5">
         {done ? <span className="text-green-700">✓ {done}</span> : issue.actions && (
           <div className="flex flex-col gap-1">
+            {!!issue.suggested?.length && (
+              <div className="flex items-center gap-1.5 flex-wrap text-xs text-gray-500">
+                <span>Suggeriti:</span>
+                {issue.suggested.map(s => (
+                  <button key={s.value} type="button" onClick={() => setText(s.label)}
+                    className={`rounded-full border px-2 py-0.5 ${text === s.label ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-gray-200 hover:bg-gray-50 text-gray-700'}`}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex items-center gap-1.5 flex-wrap">
               {issue.choices && (
                 <>
@@ -143,7 +157,7 @@ function IssueRow({ issue, listId, done, onDone }: { issue: ImportIssue; listId:
 }
 
 export const ImportExcelButton = forwardRef<ImportExcelHandle, Props>(function ImportExcelButton(
-  { columns, processRows, onDone, label = 'Importa CSV', iconOnly = false, hideButton = false }, ref,
+  { columns, processRows, onDone, label = 'Importa CSV', iconOnly = false, hideButton = false, sources }, ref,
 ) {
   const fileRef  = useRef<HTMLInputElement>(null);
   const variantRef = useRef<string | undefined>(undefined);
@@ -153,18 +167,18 @@ export const ImportExcelButton = forwardRef<ImportExcelHandle, Props>(function I
   const [showIssues, setShowIssues] = useState(false);
   const [issueDone, setIssueDone] = useState<Record<number, string>>({});
 
-  useImperativeHandle(ref, () => ({
-    open: (variant?: string) => { variantRef.current = variant; setResult(null); setShowIssues(false); setIssueDone({}); fileRef.current?.click(); },
-  }));
-
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    await run(async () => parseCSV(decodeText(await file.arrayBuffer())), 'File vuoto o formato non riconosciuto.');
+  }
+
+  async function run(getRows: () => Promise<Record<string, string>[]>, emptyMsg: string) {
     setRunning(true); setResult(null);
     try {
-      const rows = parseCSV(decodeText(await file.arrayBuffer()));
+      const rows = await getRows();
       if (rows.length === 0) {
-        setResult({ inserted: 0, skipped: 0, errors: 0, detail: 'File vuoto o formato non riconosciuto.' });
+        setResult({ inserted: 0, skipped: 0, errors: 0, detail: emptyMsg });
         return;
       }
       const res = await processRows(rows, variantRef.current);
@@ -178,6 +192,14 @@ export const ImportExcelButton = forwardRef<ImportExcelHandle, Props>(function I
       if (fileRef.current) fileRef.current.value = '';
     }
   }
+
+  useImperativeHandle(ref, () => ({
+    open: (variant?: string) => {
+      variantRef.current = variant; setResult(null); setShowIssues(false); setIssueDone({});
+      const source = variant ? sources?.[variant] : undefined;
+      if (source) void run(source, 'Nessun dato ricevuto.'); else fileRef.current?.click();
+    },
+  }));
 
   const hasIssue = result && (result.errors > 0 || result.skipped > 0 || !!result.warnings);
 

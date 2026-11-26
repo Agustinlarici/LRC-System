@@ -39,11 +39,13 @@ const STATO_FILTER_OPTIONS: { value: string; label: string }[] = [
 ];
 
 // Colonna ⚠ (avvisi dell'import) in testa, solo se almeno una riga in elenco ne ha uno
+// ITALIANO / UE / EXTRA UE (come salvato) → testo per l'elenco
+const tipoNazLabel = (v: string | null | undefined) => (v === 'ITALIANO' ? 'ITALIA' : (v ?? '').toUpperCase());
 const gridCols = (warn: boolean) => (warn ? '24px ' : '') + GRID_COLS;
 // Larghezza minima della tabella: somma delle colonne, così righe e intestazione hanno lo stesso sfondo
-const TABLE_MIN_WIDTH = 3280;
+const TABLE_MIN_WIDTH = 3380;
 const GRID_COLS = '28px minmax(130px,1fr) minmax(110px,1fr) 90px 56px minmax(100px,1fr) minmax(120px,1fr) '
-  + 'minmax(100px,1fr) 92px minmax(170px,1.2fr) minmax(170px,1.2fr) minmax(110px,1fr) 60px 64px '
+  + 'minmax(100px,1fr) minmax(100px,1fr) 92px minmax(170px,1.2fr) minmax(170px,1.2fr) minmax(110px,1fr) 60px 64px '
   + 'minmax(120px,1fr) minmax(110px,1fr) minmax(110px,1fr) minmax(120px,1fr) 80px '
   + 'minmax(120px,1fr) minmax(110px,1fr) minmax(120px,1fr) minmax(150px,1.2fr) 100px 100px 68px 118px';
 
@@ -56,6 +58,13 @@ const IMPORT_COLUMNS = [
   // facoltative: se mancano o sono vuote non cancellano quanto già inserito nella scheda
   'DATA NASCITA', 'EMAIL', 'INDIRIZZO', 'CITTA', 'PROVINCIA', 'CAP', 'GRUPPO ORARIO',
 ];
+
+interface MissingPerson { key: string; name: string; contracts: number; suggestions: { id: number; label: string }[]; best: number | null }
+// Scelta per ogni persona non trovata: 'new' crea la scheda, 'skip' non importa, numero = collega a quella scheda
+type MissingDecision = 'new' | 'skip' | number;
+
+// CSV del gestionale paghe: una riga = un contratto interinale
+const CONTRACT_COLUMNS = ['MATRICOLA', 'COGNOME', 'NOME', 'QUALIFICA', 'DATA ASSUNZIONE', 'DATA LICENZIAMENTO'];
 
 // Valori riconosciuti come "sì" nella colonna IN PROVA (case-insensitive)
 const IN_PROVA_TRUE = new Set(['si', 'sì', 'x', '1', 'true', 'yes']);
@@ -78,6 +87,9 @@ function parseItalianDate(s: string | undefined): string | null {
   return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
 }
 
+// aaaa-mm-gg (anche con l'ora in coda) → gg-mm-aaaa per la tabella; vuoto → «—»
+const dmy = (d: string | null | undefined) => d ? d.slice(0, 10).split('-').reverse().join('-') : '—';
+
 export default function DipendentiPage() {
   const router = useRouter();
   const { canManage } = useAuth();
@@ -96,6 +108,7 @@ export default function DipendentiPage() {
   const [fSesso, setFSesso] = useState('');
   const [fCategoria, setFCategoria] = useState('');
   const [fNazionalita, setFNazionalita] = useState('');
+  const [fTipoNaz, setFTipoNaz] = useState('');
   const [fLivello, setFLivello] = useState('');
   const [fTipoContratto, setFTipoContratto] = useState('');
   const [funzioneFilter, setFunzioneFilter] = useState('');
@@ -114,6 +127,7 @@ export default function DipendentiPage() {
   const [fCitta, setFCitta] = useState('');
   const [fCap, setFCap] = useState('');
   const [fNomeOsti, setFNomeOsti] = useState('');
+  const [fOstiSync, setFOstiSync] = useState<'' | 'si' | 'no'>('');   // abbinato a Osti (ha il Nome Osti) o no
   const [fProv, setFProv] = useState('');
   const [fGruppo, setFGruppo] = useState('');
   const [fNascitaDa, setFNascitaDa] = useState('');
@@ -129,6 +143,7 @@ export default function DipendentiPage() {
   const [tagMenuFor,    setTagMenuFor]    = useState<number | null>(null);
   const [showMore,      setShowMore]      = useState(false);
   const importRef = useRef<ImportExcelHandle>(null);
+  const contractsRef = useRef<ImportExcelHandle>(null);
   const [tagMenuPos,    setTagMenuPos]    = useState<{ top: number; left: number } | null>(null);
   const [showMatricole, setShowMatricole] = useState(false);
   const [matricoleBands, setMatricoleBands] = useState<{ label: string; from: number; to: number; last: number | null; next: number | null; count: number }[] | null>(null);
@@ -160,6 +175,17 @@ export default function DipendentiPage() {
   const { ask, dialog: promptDialog } = usePromptDialog();
   const { choose, dialog: choiceDialog } = useChoiceDialog();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
+  // Finestra con la tabella delle persone del CSV che non sono in anagrafica (import contratti)
+  const [missingAsk, setMissingAsk] = useState<MissingPerson[] | null>(null);
+  const [missingChoice, setMissingChoice] = useState<Record<string, MissingDecision>>({});
+  const missingResolver = useRef<((c: Record<string, MissingDecision> | null) => void) | null>(null);
+  const askMissing = (list: MissingPerson[]) => new Promise<Record<string, MissingDecision> | null>(resolve => {
+    missingResolver.current = resolve;
+    // Preselezione: la scheda suggerita se è una sola e coincide bene, altrimenti non importare (creare è una scelta esplicita)
+    setMissingChoice(Object.fromEntries(list.map(m => [m.key, m.best ?? 'skip' as MissingDecision])));
+    setMissingAsk(list);
+  });
+  const answerMissing = (c: Record<string, MissingDecision> | null) => { setMissingAsk(null); missingResolver.current?.(c); missingResolver.current = null; };
 
   // Intestazione "congelata" fuori dall'area che scorre in verticale (invece di
   // position:sticky, che su Chrome dentro un contenitore overflow con bordi arrotondati
@@ -214,23 +240,23 @@ export default function DipendentiPage() {
   useEffect(() => { load(); }, [load]);
 
   // filtri aggiuntivi attivi: si vedono sul pulsante anche quando il pannello è chiuso
-  const extraCount = [fEmail, fIndirizzo, fCitta, fCap, fNomeOsti, fProv, fGruppo, fMese, fGiorno,
+  const extraCount = [fEmail, fIndirizzo, fCitta, fCap, fNomeOsti, fOstiSync, fProv, fGruppo, fMese, fGiorno,
     fNascitaDa || fNascitaA, fAssunzioneDa || fAssunzioneA, fCessazioneDa || fCessazioneA].filter(Boolean).length;
   const hasFilters = !!(fNominativo || fMatricola || fMansione || fResp || fSesso || fCategoria
-    || fNazionalita || fLivello || fTipoContratto || funzioneFilter || repartoFilter || plantFilter
+    || fNazionalita || fTipoNaz || fLivello || fTipoContratto || funzioneFilter || repartoFilter || plantFilter
     || societaFilter || tagFilter || inProvaFilter || avvisoFilter || statoFilter !== 'attivo'
     || extraCount > 0);
   function resetFilters() {
     setFNominativo(''); setFMatricola(''); setFMansione(''); setFResp('');
-    setFSesso(''); setFCategoria(''); setFNazionalita(''); setFLivello(''); setFTipoContratto('');
+    setFSesso(''); setFCategoria(''); setFNazionalita(''); setFTipoNaz(''); setFLivello(''); setFTipoContratto('');
     setFunzioneFilter(''); setRepartoFilter(''); setPlantFilter(''); setSocietaFilter('');
     setTagFilter(''); setInProvaFilter(''); setAvvisoFilter(''); setStatoFilter('attivo');
-    setFMese(''); setFGiorno(''); setFEmail(''); setFIndirizzo(''); setFCitta(''); setFCap(''); setFNomeOsti(''); setFProv(''); setFGruppo('');
+    setFMese(''); setFGiorno(''); setFEmail(''); setFIndirizzo(''); setFCitta(''); setFCap(''); setFNomeOsti(''); setFOstiSync(''); setFProv(''); setFGruppo('');
     setFNascitaDa(''); setFNascitaA(''); setFAssunzioneDa(''); setFAssunzioneA(''); setFCessazioneDa(''); setFCessazioneA('');
   }
   // `skip` esclude un filtro dal confronto: serve a calcolare le opzioni di quel menu
   // in base a tutti gli ALTRI filtri attivi.
-  type FilterKey = 'sesso' | 'categoria' | 'societa' | 'nazionalita' | 'funzione' | 'reparto' | 'plant'
+  type FilterKey = 'sesso' | 'categoria' | 'societa' | 'nazionalita' | 'tipoNaz' | 'funzione' | 'reparto' | 'plant'
     | 'mansione' | 'livello' | 'resp' | 'tipoContratto' | 'tag' | 'inProva' | 'avviso' | 'stato' | 'prov' | 'gruppo';
   const matches = (e: HrEmployee, skip?: FilterKey) => {
     const has = (v: string | null | undefined, q: string) => !q.trim() || (v ?? '').toLowerCase().includes(q.trim().toLowerCase());
@@ -241,6 +267,7 @@ export default function DipendentiPage() {
     return fNominativo.trim().toLowerCase().split(/\s+/).filter(Boolean).every(w => fullName.includes(w))
       && has(e.matricola, fMatricola)
       && has(e.email, fEmail) && has(e.indirizzo, fIndirizzo) && has(e.citta, fCitta) && has(e.cap, fCap) && has(e.nome_osti, fNomeOsti)
+      && (!fOstiSync || (fOstiSync === 'si') === !!e.nome_osti)
       && (skip === 'prov' || !fProv || (e.provincia ?? '') === fProv)
       && (skip === 'gruppo' || !fGruppo || (e.gruppo_orario ?? '') === fGruppo)
       && inRange(e.data_nascita, fNascitaDa, fNascitaA)
@@ -252,6 +279,7 @@ export default function DipendentiPage() {
       && (skip === 'mansione' || !fMansione || e.mansione === fMansione)
       && (skip === 'resp' || !fResp || e.capo_nome === fResp)
       && (skip === 'nazionalita' || !fNazionalita || e.nazionalita === fNazionalita)
+      && (skip === 'tipoNaz' || !fTipoNaz || e.tipo_nazionalita === fTipoNaz)
       && (skip === 'livello' || !fLivello || e.livello === fLivello)
       && (skip === 'sesso' || !fSesso || e.sesso === fSesso)
       && (skip === 'categoria' || !fCategoria || e.categoria === fCategoria)
@@ -300,13 +328,13 @@ export default function DipendentiPage() {
   function exportExcel() {
     const rows = visible.map(e => ({
       Cognome: e.cognome, Nome: e.nome, Matricola: e.matricola ?? '', Sesso: e.sesso ?? '',
-      Categoria: e.categoria ?? '', Società: e.contract_company_name ?? '', Nazionalità: e.nazionalita ?? '',
+      Categoria: e.categoria ?? '', Società: e.contract_company_name ?? '', Nazionalità: (e.nazionalita ?? '').toUpperCase(), 'Extra UE / Italia': tipoNazLabel(e.tipo_nazionalita),
       'Data nascita': e.data_nascita?.slice(0, 10) ?? '', Email: e.email ?? '', Indirizzo: e.indirizzo ?? '',
       Città: e.citta ?? '', Provincia: e.provincia ?? '', CAP: e.cap ?? '',
       Funzione: e.funzione_aziendale ?? '', Reparto: e.reparto_name ?? '', Plant: e.plant_name ?? '',
       Mansione: e.mansione ?? '', Livello: e.livello ?? '', Responsabile: e.capo_nome ?? '',
       'Tipo contratto': e.tipo_contratto ?? '', 'Gruppo orario': e.gruppo_orario ?? '', 'Nome Osti': e.nome_osti ?? '',
-      'Taglia pantaloni': e.taglia_pantaloni ?? '', 'Taglia maglia': e.taglia_maglia ?? '', 'Taglia scarpe': e.taglia_scarpe ?? '', Assunzione: e.data_assunzione?.slice(0, 10) ?? '',
+      Assunzione: e.data_assunzione?.slice(0, 10) ?? '',
       Cessazione: e.data_cessazione?.slice(0, 10) ?? '', 'In prova': e.in_prova ? 'Sì' : '',
       Stato: STATO_LABEL[e.stato] ?? e.stato,
     }));
@@ -333,14 +361,51 @@ export default function DipendentiPage() {
     if (res.ok) refreshEmployees();
   }
 
+  // Righe di Osti lette dal database (stesso formato del CSV): il backend legge solo, mai scrive
+  async function fetchOstiRows(): Promise<Record<string, string>[]> {
+    const res = await fetch(`${BACKEND}/api/hr/osti/dipendenti`, { credentials: 'include' });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? 'Impossibile leggere i dati da Osti');
+    return res.json();
+  }
+
+  // Contratti interinali: il backend collega le righe alle persone (o le crea), salva i contratti
+  // e scrive gli eventi in timeline. Le date si convertono qui (gg/mm/aaaa → aaaa-mm-gg).
+  async function importContracts(rows: Record<string, string>[]): Promise<ImportResult> {
+    const payload = rows.map(r => ({
+      matricola: r['matricola'] ?? '', cognome: r['cognome'] ?? '', nome: r['nome'] ?? '', qualifica: r['descriz._qualifica'] ?? r['qualifica'] ?? '',
+      data_inizio: parseItalianDate(r['data_assunzione']), data_fine: parseItalianDate(r['data_licenziamento']),
+    }));
+    const call = (extra: { dry_run?: boolean; decisions?: Record<string, MissingDecision> }) => fetch(`${BACKEND}/api/hr/contracts/import`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ rows: payload, ...extra }),
+    });
+    // Prova a vuoto: se ci sono persone non in anagrafica si chiede prima di crearle
+    const dry = await call({ dry_run: true });
+    if (!dry.ok) return { inserted: 0, skipped: 0, errors: 1, detail: (await dry.json().catch(() => ({}))).message ?? 'Import rifiutato dal server' };
+    const missing: MissingPerson[] = (await dry.json()).new_people ?? [];
+    let decisions: Record<string, MissingDecision> = {};
+    if (missing.length) {
+      const choice = await askMissing(missing);
+      if (!choice) return { inserted: 0, skipped: 0, errors: 0, detail: 'Import annullato, nessuna modifica.' };
+      decisions = choice;
+    }
+    const res = await call({ decisions });
+    if (!res.ok) return { inserted: 0, skipped: 0, errors: 1, detail: (await res.json().catch(() => ({}))).message ?? 'Import rifiutato dal server' };
+    const d: { created: number; linked: number; contracts: number; duplicates: number; skipped: number; issues: ImportIssue[] } = await res.json();
+    return {
+      inserted: d.contracts, skipped: d.skipped + d.duplicates, errors: 0, issues: d.issues,
+      detail: `${d.contracts} contratti registrati · ${d.linked} persone già in anagrafica · ${d.created} persone nuove create · ${d.duplicates} contratti già presenti`,
+    };
+  }
+
   async function importRows(rows: Record<string, string>[], variant?: string): Promise<ImportResult> {
-    if (variant === 'osti') {
+    if (variant === 'osti' || variant === 'osti-db') {
       const [empRes, depRes] = await Promise.all([
         fetch(`${BACKEND}/api/hr/employees`, { credentials: 'include' }),
         fetch(`${BACKEND}/api/hr/departments`, { credentials: 'include' }),
       ]);
       if (!empRes.ok || !depRes.ok) return { inserted: 0, skipped: 0, errors: 1, detail: 'Impossibile leggere dipendenti e reparti.' };
-      return runOstiImport(rows, { backend: BACKEND, employees: await empRes.json(), departments: await depRes.json(), confirm, onChanged: refreshEmployees });
+      return runOstiImport(rows, { backend: BACKEND, employees: await empRes.json(), departments: await depRes.json(), plants, companies, confirm, onChanged: refreshEmployees });
     }
     // 'storico': i cambiamenti compaiono nella timeline con la data di oggi.
     // 'sostituisci': i dati si aggiornano senza lasciare eventi, come se fossero sempre stati così.
@@ -696,19 +761,31 @@ export default function DipendentiPage() {
                       title={`Da Excel: File → Salva con nome → CSV UTF-8. Colonne attese: ${IMPORT_COLUMNS.join(', ')}`}
                       onClick={() => { setShowMore(false); importRef.current?.open('storico'); }}
                       className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
-                      Importa da Excel — registra i cambiamenti
+                      Importa da Excel (registra evento)
                     </button>
                     <button type="button" role="menuitem"
                       title={`Da Excel: File → Salva con nome → CSV UTF-8. Colonne attese: ${IMPORT_COLUMNS.join(', ')}`}
                       onClick={() => { setShowMore(false); importRef.current?.open('sostituisci'); }}
                       className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
-                      Importa da Excel — sostituisci tutto
+                      Importa da Excel (senza eventi)
+                    </button>
+                    <button type="button" role="menuitem"
+                      title={`CSV del gestionale paghe, una riga per contratto. Colonne attese: ${CONTRACT_COLUMNS.join(', ')}`}
+                      onClick={() => { setShowMore(false); contractsRef.current?.open(); }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
+                      Import massivo contratti interinali
                     </button>
                     <button type="button" role="menuitem"
                       title="Elenco dipendenti di Osti (CSV): abbina per cognome e nome (o Nome Osti) e aggiorna le schede"
                       onClick={() => { setShowMore(false); importRef.current?.open('osti'); }}
                       className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
-                      Importa elenco Osti (CSV)
+                      Importa CSV (Osti)
+                    </button>
+                    <button type="button" role="menuitem"
+                      title="Legge l'elenco dipendenti direttamente dal database di Osti (sola lettura) e aggiorna le schede"
+                      onClick={() => { setShowMore(false); importRef.current?.open('osti-db'); }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
+                      Sincronizza con Osti
                     </button>
                     <button type="button" role="menuitem"
                       onClick={() => { setShowMore(false); router.push('/hr/dipendenti/foto-massiva'); }}
@@ -728,7 +805,51 @@ export default function DipendentiPage() {
         </>}
       />
 
-      {manage && <ImportExcelButton ref={importRef} hideButton columns={IMPORT_COLUMNS} processRows={importRows} onDone={load} />}
+      {missingAsk && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] p-4" onClick={() => answerMissing(null)}>
+          <div role="dialog" aria-modal="true" className="bg-white rounded-card shadow-float w-full max-w-4xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-line">
+              <h2 className="text-base font-medium">{missingAsk.length} persone del CSV non trovate in anagrafica</h2>
+              <p className="text-sm text-muted mt-1">Per ognuna scegli: collegarla a una scheda simile già presente, crearne una nuova o non importare i suoi contratti.</p>
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-stone-50 text-left text-xs font-medium text-muted uppercase tracking-wide">
+                  <tr><th className="px-5 py-2">Nel CSV</th><th className="px-3 py-2 text-right">Contratti</th><th className="px-3 py-2">Cosa fare</th></tr>
+                </thead>
+                <tbody>
+                  {missingAsk.map(m => (
+                    <tr key={m.key} className="border-t border-line align-top">
+                      <td className="px-5 py-1.5 font-medium">{m.name}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{m.contracts}</td>
+                      <td className="px-3 py-1.5">
+                        <select
+                          className="input text-sm w-full"
+                          value={String(missingChoice[m.key] ?? 'skip')}
+                          onChange={e => {
+                            const v = e.target.value;
+                            setMissingChoice(c => ({ ...c, [m.key]: v === 'new' || v === 'skip' ? v : Number(v) }));
+                          }}
+                        >
+                          {m.suggestions.map(x => <option key={x.id} value={x.id}>Collega a: {x.label}</option>)}
+                          <option value="new">Crea nuova scheda interinale</option>
+                          <option value="skip">Non importare</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3 border-t border-line">
+              <button type="button" onClick={() => answerMissing(null)} className="btn-secondary text-sm">Annulla import</button>
+              <button type="button" onClick={() => answerMissing(missingChoice)} className="btn-primary text-sm">Conferma e importa</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {manage && <ImportExcelButton ref={contractsRef} hideButton columns={CONTRACT_COLUMNS} processRows={importContracts} onDone={load} />}
+      {manage && <ImportExcelButton ref={importRef} hideButton columns={IMPORT_COLUMNS} processRows={importRows} onDone={load} sources={{ 'osti-db': fetchOstiRows }} />}
 
       <div className="card p-0 overflow-hidden">
         <div className={`flex items-center justify-between px-4 py-2.5 bg-stone-50 ${showFilters ? 'border-b border-stone-100' : ''}`}>
@@ -746,100 +867,95 @@ export default function DipendentiPage() {
         {showFilters && (
         <>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 px-4 py-3">
-          <input value={fNominativo} onChange={e => setFNominativo(e.target.value)} placeholder="Nome e cognome" className="input text-sm min-w-0" />
-          <input value={fMatricola} onChange={e => setFMatricola(e.target.value)} placeholder="Matricola" className="input text-sm min-w-0" />
-          <select value={fSesso} onChange={e => setFSesso(e.target.value)} className={`input text-sm min-w-0 ${fSesso ? '' : 'text-muted'}`}>
+          <input value={fNominativo} onChange={e => setFNominativo(e.target.value)} placeholder="Nome e cognome" className={`input text-sm min-w-0 ${fNominativo ? '!border-accent ring-2 ring-accent/40' : ''}`} />
+          <input value={fMatricola} onChange={e => setFMatricola(e.target.value)} placeholder="Matricola" className={`input text-sm min-w-0 ${fMatricola ? '!border-accent ring-2 ring-accent/40' : ''}`} />
+          <select value={fSesso} onChange={e => setFSesso(e.target.value)} className={`input text-sm min-w-0 ${fSesso ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Sesso</option>
             {(sessoDisponibili.has('M') || fSesso === 'M') && <option value="M" className="text-ink-900">M</option>}
             {(sessoDisponibili.has('F') || fSesso === 'F') && <option value="F" className="text-ink-900">F</option>}
           </select>
-          <select value={fCategoria} onChange={e => setFCategoria(e.target.value)} className={`input text-sm min-w-0 ${fCategoria ? '' : 'text-muted'}`}>
+          <select value={fCategoria} onChange={e => setFCategoria(e.target.value)} className={`input text-sm min-w-0 ${fCategoria ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Categoria</option>
             {categorie.map(c => <option key={c} value={c} className="text-ink-900">{c}</option>)}
           </select>
-          <select value={societaFilter} onChange={e => setSocietaFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${societaFilter ? '' : 'text-muted'}`}>
+          <select value={societaFilter} onChange={e => setSocietaFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${societaFilter ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Società contratto</option>
             {companiesShown.map(c => <option key={c.id} value={c.id} className="text-ink-900">{c.name}</option>)}
           </select>
-          <select value={fNazionalita} onChange={e => setFNazionalita(e.target.value)} className={`input text-sm min-w-0 ${fNazionalita ? '' : 'text-muted'}`}>
+          <select value={fNazionalita} onChange={e => setFNazionalita(e.target.value)} className={`input text-sm min-w-0 ${fNazionalita ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Nazionalità</option>
-            {nazionalita.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
+            {nazionalita.map(v => <option key={v} value={v} className="text-ink-900">{v.toUpperCase()}</option>)}
           </select>
-          <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className={`input text-sm min-w-0 ${funzioneFilter ? '' : 'text-muted'}`}>
+          <select value={fTipoNaz} onChange={e => setFTipoNaz(e.target.value)} className={`input text-sm min-w-0 ${fTipoNaz ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
+            <option value="">Extra UE / Italia</option>
+            {['ITALIANO', 'UE', 'EXTRA UE'].map(v => <option key={v} value={v} className="text-ink-900">{tipoNazLabel(v)}</option>)}
+          </select>
+          <select value={funzioneFilter} onChange={e => setFunzioneFilter(e.target.value)} className={`input text-sm min-w-0 ${funzioneFilter ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Funzione</option>
             {funzioni.map(f => <option key={f} value={f} className="text-ink-900">{f}</option>)}
           </select>
-          <select value={repartoFilter} onChange={e => setRepartoFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${repartoFilter ? '' : 'text-muted'}`}>
+          <select value={repartoFilter} onChange={e => setRepartoFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${repartoFilter ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Reparto</option>
             {departmentsShown.map(d => <option key={d.id} value={d.id} className="text-ink-900">{d.name}</option>)}
           </select>
-          <select value={plantFilter} onChange={e => setPlantFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${plantFilter ? '' : 'text-muted'}`}>
+          <select value={plantFilter} onChange={e => setPlantFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${plantFilter ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Plant</option>
             {plantsShown.map(p => <option key={p.id} value={p.id} className="text-ink-900">{p.name}</option>)}
           </select>
-          <select value={fMansione} onChange={e => setFMansione(e.target.value)} className={`input text-sm min-w-0 ${fMansione ? '' : 'text-muted'}`}>
+          <select value={fMansione} onChange={e => setFMansione(e.target.value)} className={`input text-sm min-w-0 ${fMansione ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Mansione</option>
             {mansioni.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
           </select>
-          <select value={fLivello} onChange={e => setFLivello(e.target.value)} className={`input text-sm min-w-0 ${fLivello ? '' : 'text-muted'}`}>
+          <select value={fLivello} onChange={e => setFLivello(e.target.value)} className={`input text-sm min-w-0 ${fLivello ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Livello</option>
             {livelli.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
           </select>
-          <select value={fResp} onChange={e => setFResp(e.target.value)} className={`input text-sm min-w-0 ${fResp ? '' : 'text-muted'}`}>
+          <select value={fResp} onChange={e => setFResp(e.target.value)} className={`input text-sm min-w-0 ${fResp ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Responsabile</option>
             {responsabili.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
           </select>
-          <select value={fTipoContratto} onChange={e => setFTipoContratto(e.target.value)} className={`input text-sm min-w-0 ${fTipoContratto ? '' : 'text-muted'}`}>
+          <select value={fTipoContratto} onChange={e => setFTipoContratto(e.target.value)} className={`input text-sm min-w-0 ${fTipoContratto ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Tipo contratto</option>
             {tipiContratto.map(t => <option key={t} value={t} className="text-ink-900">{t}</option>)}
           </select>
-          <select value={tagFilter} onChange={e => setTagFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${tagFilter ? '' : 'text-muted'}`}>
+          <select value={tagFilter} onChange={e => setTagFilter(e.target.value ? Number(e.target.value) : '')} className={`input text-sm min-w-0 ${tagFilter ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Etichetta</option>
             {tagsShown.map(t => <option key={t.id} value={t.id} className="text-ink-900">{t.name}</option>)}
           </select>
-          <select value={inProvaFilter} onChange={e => setInProvaFilter(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${inProvaFilter ? '' : 'text-muted'}`}>
+          <select value={inProvaFilter} onChange={e => setInProvaFilter(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${inProvaFilter ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">In prova</option>
             {(provaSi || inProvaFilter === 'si') && <option value="si" className="text-ink-900">Sì</option>}
             {(provaNo || inProvaFilter === 'no') && <option value="no" className="text-ink-900">No</option>}
           </select>
-          <select value={avvisoFilter} onChange={e => setAvvisoFilter(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${avvisoFilter ? '' : 'text-muted'}`}>
+          <select value={avvisoFilter} onChange={e => setAvvisoFilter(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${avvisoFilter ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Errori import</option>
             {(avvisoSi || avvisoFilter === 'si') && <option value="si" className="text-ink-900">Con errori</option>}
             {(avvisoNo || avvisoFilter === 'no') && <option value="no" className="text-ink-900">Senza errori</option>}
           </select>
-          <select value={statoFilter} onChange={e => setStatoFilter(e.target.value)} className={`input text-sm min-w-0 ${statoFilter ? '' : 'text-muted'}`}>
+          <select value={statoFilter} onChange={e => setStatoFilter(e.target.value)} className={`input text-sm min-w-0 ${statoFilter ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
             <option value="">Stato</option>
             {statiShown.map(o => <option key={o.value} value={o.value} className="text-ink-900">{o.label}</option>)}
           </select>
           {showExtraFilters && (
             <>
-              <input value={fEmail} onChange={e => setFEmail(e.target.value)} placeholder="Email" className="input text-sm min-w-0" />
-              <input value={fIndirizzo} onChange={e => setFIndirizzo(e.target.value)} placeholder="Indirizzo" className="input text-sm min-w-0" />
-              <input value={fCitta} onChange={e => setFCitta(e.target.value)} placeholder="Città" className="input text-sm min-w-0" />
-              <select value={fProv} onChange={e => setFProv(e.target.value)} className={`input text-sm min-w-0 ${fProv ? '' : 'text-muted'}`}>
+              <input value={fEmail} onChange={e => setFEmail(e.target.value)} placeholder="Email" className={`input text-sm min-w-0 ${fEmail ? '!border-accent ring-2 ring-accent/40' : ''}`} />
+              <input value={fIndirizzo} onChange={e => setFIndirizzo(e.target.value)} placeholder="Indirizzo" className={`input text-sm min-w-0 ${fIndirizzo ? '!border-accent ring-2 ring-accent/40' : ''}`} />
+              <input value={fCitta} onChange={e => setFCitta(e.target.value)} placeholder="Città" className={`input text-sm min-w-0 ${fCitta ? '!border-accent ring-2 ring-accent/40' : ''}`} />
+              <select value={fProv} onChange={e => setFProv(e.target.value)} className={`input text-sm min-w-0 ${fProv ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
                 <option value="">Provincia</option>
                 {province.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
               </select>
-              <input value={fCap} onChange={e => setFCap(e.target.value)} placeholder="CAP" className="input text-sm min-w-0" />
-              <select value={fGruppo} onChange={e => setFGruppo(e.target.value)} className={`input text-sm min-w-0 ${fGruppo ? '' : 'text-muted'}`}>
+              <input value={fCap} onChange={e => setFCap(e.target.value)} placeholder="CAP" className={`input text-sm min-w-0 ${fCap ? '!border-accent ring-2 ring-accent/40' : ''}`} />
+              <select value={fGruppo} onChange={e => setFGruppo(e.target.value)} className={`input text-sm min-w-0 ${fGruppo ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
                 <option value="">Gruppo orario</option>
                 {gruppiOrari.map(v => <option key={v} value={v} className="text-ink-900">{v}</option>)}
               </select>
-              <input value={fNomeOsti} onChange={e => setFNomeOsti(e.target.value)} placeholder="Nome Osti" className="input text-sm min-w-0" />
-              <div className="col-span-2 min-w-0">
-                <div className="text-xs font-medium text-muted mb-1">Compleanno</div>
-                <div className="grid grid-cols-2 gap-2">
-                <select value={fGiorno} onChange={e => setFGiorno(e.target.value)} title="Giorno" className={`input text-sm min-w-0 ${fGiorno ? '' : 'text-muted'}`}>
-                  <option value="">Giorno</option>
-                  {Array.from({ length: 31 }, (_, i) => i + 1).map(d => <option key={d} value={d} className="text-ink-900">{d}</option>)}
-                </select>
-                <select value={fMese} onChange={e => setFMese(e.target.value)} title="Mese" className={`input text-sm min-w-0 ${fMese ? '' : 'text-muted'}`}>
-                  <option value="">Mese</option>
-                  {['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
-                    .map((m, i) => <option key={m} value={i + 1} className="text-ink-900">{m}</option>)}
-                </select>
-                </div>
-              </div>
+              <select value={fOstiSync} onChange={e => setFOstiSync(e.target.value as '' | 'si' | 'no')} className={`input text-sm min-w-0 ${fOstiSync ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
+                <option value="">Sincronizzato con Osti</option>
+                <option value="si" className="text-ink-900">Sincronizzati con Osti</option>
+                <option value="no" className="text-ink-900">Non ancora sincronizzati</option>
+              </select>
+              <input value={fNomeOsti} onChange={e => setFNomeOsti(e.target.value)} placeholder="Nome Osti" className={`input text-sm min-w-0 ${fNomeOsti ? '!border-accent ring-2 ring-accent/40' : ''}`} />
               {([
                 ['Data nascita', fNascitaDa, setFNascitaDa, fNascitaA, setFNascitaA],
                 ['Assunzione', fAssunzioneDa, setFAssunzioneDa, fAssunzioneA, setFAssunzioneA],
@@ -850,15 +966,29 @@ export default function DipendentiPage() {
                   <div className="grid grid-cols-2 gap-2">
                     <label className="flex items-center gap-1.5 text-xs text-muted min-w-0">
                       <span className="shrink-0">Dal</span>
-                      <input type="date" value={da} onChange={e => setDa(e.target.value)} className="input text-sm min-w-0" />
+                      <input type="date" value={da} onChange={e => setDa(e.target.value)} className={`input text-sm min-w-0 ${da ? '!border-accent ring-2 ring-accent/40' : ''}`} />
                     </label>
                     <label className="flex items-center gap-1.5 text-xs text-muted min-w-0">
                       <span className="shrink-0">Al</span>
-                      <input type="date" value={a} onChange={e => setA(e.target.value)} className="input text-sm min-w-0" />
+                      <input type="date" value={a} onChange={e => setA(e.target.value)} className={`input text-sm min-w-0 ${a ? '!border-accent ring-2 ring-accent/40' : ''}`} />
                     </label>
                   </div>
                 </div>
               ))}
+              <div className="col-span-2 min-w-0">
+                <div className="text-xs font-medium text-muted mb-1">Compleanno</div>
+                <div className="grid grid-cols-2 gap-2">
+                <select value={fGiorno} onChange={e => setFGiorno(e.target.value)} title="Giorno" className={`input text-sm min-w-0 ${fGiorno ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
+                  <option value="">Giorno</option>
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map(d => <option key={d} value={d} className="text-ink-900">{d}</option>)}
+                </select>
+                <select value={fMese} onChange={e => setFMese(e.target.value)} title="Mese" className={`input text-sm min-w-0 ${fMese ? '!border-accent ring-2 ring-accent/40' : 'text-muted'}`}>
+                  <option value="">Mese</option>
+                  {['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre']
+                    .map((m, i) => <option key={m} value={i + 1} className="text-ink-900">{m}</option>)}
+                </select>
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -880,7 +1010,7 @@ export default function DipendentiPage() {
             {showWarnCol && <div />}
             <div />
             <div>Cognome</div><div>Nome</div><div>Matricola</div><div>Sesso</div><div>Categoria</div>
-            <div>Società</div><div>Nazionalità</div>
+            <div>Società</div><div>Nazionalità</div><div>Extra UE / Italia</div>
             <div>Data nascita</div><div>Email</div><div>Indirizzo</div><div>Città</div><div>Prov.</div><div>CAP</div>
             <div>Funzione</div><div>Reparto</div><div>Plant</div>
             <div>Mansione</div><div>Livello</div><div>Responsabile</div><div>Tipo contratto</div><div>Gruppo orario</div><div>Nome Osti</div>
@@ -957,8 +1087,9 @@ export default function DipendentiPage() {
               <div className="text-sm text-muted truncate">{e.sesso ?? '—'}</div>
               <div className="text-sm text-muted truncate">{e.categoria ?? '—'}</div>
               <div className="text-sm text-muted truncate">{e.contract_company_name ?? '—'}</div>
-              <div className="text-sm text-muted truncate">{e.nazionalita ?? '—'}</div>
-              <div className="text-sm text-muted truncate">{e.data_nascita?.slice(0, 10) ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{e.nazionalita?.toUpperCase() ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{tipoNazLabel(e.tipo_nazionalita) || '—'}</div>
+              <div className="text-sm text-muted truncate">{dmy(e.data_nascita)}</div>
               <div className="text-sm text-muted truncate" title={e.email ?? undefined}>{e.email ?? '—'}</div>
               <div className="text-sm text-muted truncate" title={e.indirizzo ?? undefined}>{e.indirizzo ?? '—'}</div>
               <div className="text-sm text-muted truncate">{e.citta ?? '—'}</div>
@@ -973,8 +1104,8 @@ export default function DipendentiPage() {
               <div className="text-sm text-muted truncate">{e.tipo_contratto ?? '—'}</div>
               <div className="text-sm text-muted truncate">{e.gruppo_orario ?? '—'}</div>
               <div className="text-sm text-muted truncate" title={e.nome_osti ?? undefined}>{e.nome_osti ?? '—'}</div>
-              <div className="text-sm text-muted truncate">{e.data_assunzione?.slice(0, 10) ?? '—'}</div>
-              <div className="text-sm text-muted truncate">{e.data_cessazione?.slice(0, 10) ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{dmy(e.data_assunzione)}</div>
+              <div className="text-sm text-muted truncate">{dmy(e.data_cessazione)}</div>
               <div className="text-center text-sm text-muted">{e.in_prova ? 'Sì' : '—'}</div>
               <div className="text-center">
                 <StatusBadge tone={STATO_TONE[e.stato] ?? 'neutral'}>{STATO_LABEL[e.stato]}</StatusBadge>

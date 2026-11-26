@@ -3,8 +3,8 @@
 export type ModuleKey =
   | 'ingresso_merci' | 'packing' | 'monitor' | 'monitor_resumen' | 'buffer'
   | 'mappa' | 'tickets' | 'tickets_it' | 'tickets_admin' | 'impostazioni' | 'dashboards'
-  | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci'
-  | 'programma_produzione' | 'hr' | 'hr_salary' | 'ferrari_schede' | 'ferrari_supervisore';
+  | 'spma' | 'recepciones' | 'edi' | 'monitor_parate' | 'monitor_motivi' | 'webddt' | 'qualita' | 'spedizione_bucci' | 'fatturazione'
+  | 'programma_produzione' | 'hr' | 'hr_salary' | 'hr_team' | 'ferrari_schede' | 'ferrari_supervisore' | 'photo_station';
 
 export interface ModulePermission {
   module_key: ModuleKey;
@@ -346,6 +346,7 @@ export interface EdiClient {
   csg_supply_point:           string | null;
   output_folder:              string;
   auto_generate:              boolean;
+  edi_params:                 Record<string, string>;
   created_at:                 string;
   updated_at:                 string;
 }
@@ -739,9 +740,6 @@ export interface HrEmployee {
   cap:                      string | null;
   gruppo_orario:            string | null;
   nome_osti:                string | null;
-  taglia_pantaloni:         string | null;
-  taglia_maglia:            string | null;
-  taglia_scarpe:            string | null;
   badge:                    string | null;
   transponder:              string | null;
   terminale:                string | null;
@@ -757,6 +755,7 @@ export interface HrEmployee {
   titolo_studio:            string | null;
   stato_civile:             string | null;
   note_hr:                  string | null;
+  tipo_nazionalita:         string | null;
   mansione:                 string | null;
   livello:                  string | null;
   categoria:                string | null;
@@ -773,6 +772,7 @@ export interface HrEmployee {
   capo_id:                  number | null;
   capo_nome:                string | null;
   user_id:                  number | null;
+  account_username:         string | null;
   data_assunzione:          string;
   data_cessazione:          string | null;
   stato:                    HrEmployeeStatus;
@@ -788,6 +788,16 @@ export interface HrEmployee {
   photo_version:            number | null;
   created_at:               string;
   updated_at:               string;
+}
+
+export interface HrEmployeeContract {
+  id:          number;
+  employee_id: number;
+  matricola:   string | null;
+  qualifica:   string | null;
+  tipo:        'STR' | 'INTERINALE' | 'ESTERNO' | null;   // null = contratti precedenti, tutti interinali
+  data_inizio: string;
+  data_fine:   string | null;
 }
 
 export interface HrEmployeeEvent {

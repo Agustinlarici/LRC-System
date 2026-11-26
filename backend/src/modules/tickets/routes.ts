@@ -10,6 +10,7 @@ import { writeFile, mkdir } from 'fs/promises';
 import { join, extname } from 'path';
 import { randomBytes } from 'crypto';
 import { validateTicketFile } from '../../lib/mime-check.js';
+import { publicProjectInfo } from '../progetti/public.js';
 
 export const ticketRoutes = new Hono<Env>();
 
@@ -237,7 +238,10 @@ ticketRoutes.get('/numero/:number', async (c) => {
     FROM ticket_history WHERE ticket_id = ${ticket.id} ORDER BY created_at ASC
   `;
 
-  return c.json({ ...withSLAStatus(ticket), history });
+  // Progetto collegato: solo avanzamento generale e novità segnate come visibili
+  const project = ticket.project_id ? await publicProjectInfo(ticket.project_id) : null;
+
+  return c.json({ ...withSLAStatus(ticket), history, project });
 });
 
 // ─── Authenticated: tickets opened by the current user ─────────────────────
@@ -396,10 +400,11 @@ ticketRoutes.get('/:id', requireIT, async (c) => {
 
   await ensureDeletedAtChecked();
   const [ticket] = await db`
-    SELECT t.*, d.name AS department_name, u.display_name AS assigned_to_name
+    SELECT t.*, d.name AS department_name, u.display_name AS assigned_to_name, pr.name AS project_name
     FROM tickets t
     LEFT JOIN ticket_departments d ON d.id = t.department_id
     LEFT JOIN users u ON u.id = t.assigned_to
+    LEFT JOIN projects pr ON pr.id = t.project_id
     WHERE t.id = ${id} ${notDeletedFilter()}
   `;
   if (!ticket) throw new HTTPException(404, { message: 'Ticket non trovato' });

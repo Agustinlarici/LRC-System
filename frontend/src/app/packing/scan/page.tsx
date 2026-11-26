@@ -50,7 +50,7 @@ function Modal({ show, title, children, footer }: {
 }) {
   if (!show) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
         <div className="px-6 py-4 border-b border-gray-200">
           <h3 className="font-semibold text-gray-900 text-lg">{title}</h3>
@@ -499,7 +499,6 @@ function ScanPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr className="text-gray-600">
-                  <th className="py-2 px-3 text-left w-10">#</th>
                   <th className="py-2 px-3 text-left">Articolo</th>
                   <th className="py-2 px-3 text-center w-20">Quantità</th>
                   <th className="py-2 px-3 text-left">Commessa</th>
@@ -509,13 +508,12 @@ function ScanPage() {
               <tbody>
                 {palletItems.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-gray-400">Nessun prodotto scansionato</td>
+                    <td colSpan={4} className="py-8 text-center text-gray-400">Nessun prodotto scansionato</td>
                   </tr>
-                ) : palletItems.map((item, i) => {
+                ) : palletItems.map((item) => {
                   const hasDestError = !!destErrors[item.pallet_item_id];
                   return (
                   <tr key={item.pallet_item_id} className={`border-b border-gray-100 ${hasDestError ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
-                    <td className="py-2 px-3 text-gray-500">{i + 1}</td>
                     <td className="py-2 px-3 font-mono font-medium" style={{ color: hasDestError ? '#dc2626' : undefined }}>
                       {item.article_code}
                       {hasDestError && <span className="ml-2 text-xs font-normal">⚠ dest. errata</span>}

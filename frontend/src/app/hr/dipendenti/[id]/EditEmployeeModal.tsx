@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag, HrCapoPair } from '@/types';
 import { PlantMultiSelect } from '../PlantMultiSelect';
-import { usePromptDialog } from '@/components/ui/PromptDialog';
+import { usePromptDialog, useConfirmDialog } from '@/components/ui/PromptDialog';
+import { OstiMark, OstiLegend } from '@/components/ui/OstiMark';
 
 // Il set di stati validi è stato ridotto a questi 3: "aspettativa" e "malattia" restano
 // nel database solo per chi li aveva già (nessuna migrazione automatica, vedi migrate-hr-tags.sql),
@@ -37,6 +39,24 @@ interface Props {
 export function EditEmployeeModal({ employee, departments, plants, companies, tags, funzioni: initialFunzioni, allEmployees, fullManage, onClose, onSaved }: Props) {
   const [funzioni, setFunzioni] = useState(initialFunzioni);
   const { ask, dialog } = usePromptDialog();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
+  const router = useRouter();
+  const [deleting, setDeleting] = useState(false);
+
+  // Elimina la scheda (con contratti, eventi e storico): solo HR, dopo conferma
+  async function deleteEmployee() {
+    const ok = await confirm({
+      title: `Eliminare ${employee.cognome} ${employee.nome}?`,
+      message: 'Si eliminano la scheda e tutti i dati collegati (contratti, eventi, storico). Non si può annullare.',
+      confirmLabel: 'Elimina', cancelLabel: 'Annulla',
+    });
+    if (!ok) return;
+    setDeleting(true); setError('');
+    const res = await fetch(`${BACKEND}/api/hr/employees/${employee.id}`, { method: 'DELETE', credentials: 'include' });
+    if (res.ok) { router.push('/hr/dipendenti'); return; }
+    setDeleting(false);
+    setError((await res.json().catch(() => ({}))).message ?? 'Eliminazione non riuscita');
+  }
   const [form, setForm] = useState({
     matricola: employee.matricola ?? '',
     nome: employee.nome,
@@ -48,9 +68,6 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
     data_nascita: employee.data_nascita?.slice(0, 10) ?? '',
     gruppo_orario: employee.gruppo_orario ?? '',
     nome_osti: employee.nome_osti ?? '',
-    taglia_pantaloni: employee.taglia_pantaloni ?? '',
-    taglia_maglia: employee.taglia_maglia ?? '',
-    taglia_scarpe: employee.taglia_scarpe ?? '',
     badge: employee.badge ?? '',
     transponder: employee.transponder ?? '',
     terminale: employee.terminale ?? '',
@@ -61,6 +78,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
     luogo_nascita: employee.luogo_nascita ?? '',
     titolo_studio: employee.titolo_studio ?? '',
     stato_civile: employee.stato_civile ?? '',
+    tipo_nazionalita: employee.tipo_nazionalita ?? '',
     domicilio_indirizzo: employee.domicilio_indirizzo ?? '',
     domicilio_citta: employee.domicilio_citta ?? '',
     domicilio_provincia: employee.domicilio_provincia ?? '',
@@ -202,6 +220,7 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
       <div className="bg-white rounded-card shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="max-h-[90vh] overflow-y-auto p-6">
         <h2 className="text-base font-medium text-ink-900 mb-1">Modifica dipendente</h2>
+        <OstiLegend className="mb-2" />
         {!fullManage && <p className="text-xs text-warning mb-4">Puoi modificare solo i dati di contatto del tuo team diretto.</p>}
         <form onSubmit={submit} className="space-y-4">
           {fullManage && (
@@ -242,16 +261,17 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
             <div>
               <p className="text-sm font-semibold text-ink-800 mb-2">Anagrafica e contatti</p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div><label className="label">Sesso</label>
+                <div><label className="label">Sesso<OstiMark /></label>
                   <select className="input" value={form.sesso} onChange={e => set('sesso', e.target.value)}>
                     <option value="">—</option>
                     <option value="M">M</option>
                     <option value="F">F</option>
                   </select>
                 </div>
-                <div><label className="label">Data di nascita</label><input type="date" className="input" value={form.data_nascita} onChange={e => set('data_nascita', e.target.value)} /></div>
-                <div><label className="label">Nazionalità</label><input className="input" value={form.nazionalita} onChange={e => set('nazionalita', e.target.value)} /></div>
-                <div><label className="label">Nome Osti</label><input className="input" maxLength={200} value={form.nome_osti} onChange={e => set('nome_osti', e.target.value)} placeholder="Come compare in Osti" /></div>
+                <div><label className="label">Data di nascita<OstiMark /></label><input type="date" className="input" value={form.data_nascita} onChange={e => set('data_nascita', e.target.value)} /></div>
+                <div><label className="label">Nazionalità<OstiMark /></label><input className="input" value={form.nazionalita} onChange={e => set('nazionalita', e.target.value)} /></div>
+                <div><label className="label">Extra UE / Italia<OstiMark /></label><select className="input" value={form.tipo_nazionalita} onChange={e => set('tipo_nazionalita', e.target.value)}><option value="">—</option><option value="ITALIANO">ITALIA</option><option value="UE">UE</option><option value="EXTRA UE">EXTRA UE</option></select></div>
+                <div><label className="label">Nome Osti<OstiMark /></label><input className="input" maxLength={200} value={form.nome_osti} onChange={e => set('nome_osti', e.target.value)} placeholder="Come compare in Osti" /></div>
               </div>
             </div>
           )}
@@ -260,16 +280,16 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
             <div>
               <p className="text-sm font-semibold text-ink-800 mb-2">Contratto</p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div><label className="label">Matricola</label><input className="input" value={form.matricola} onChange={e => set('matricola', e.target.value)} placeholder="Vuota per contrattisti/agenzia" /></div>
-                <div><label className="label">Società contratto</label>
+                <div><label className="label">Matricola<OstiMark /></label><input className="input" value={form.matricola} onChange={e => set('matricola', e.target.value)} placeholder="Vuota per contrattisti/agenzia" /></div>
+                <div><label className="label">Società contratto<OstiMark /></label>
                   <select className="input" value={form.contract_company_id} onChange={e => set('contract_company_id', e.target.value)}>
                     <option value="">—</option>
                     {companies.map(co => <option key={co.id} value={co.id}>{co.name}</option>)}
                   </select>
                 </div>
                 <div><label className="label">Categoria</label><input className="input" value={form.categoria} onChange={e => set('categoria', e.target.value)} /></div>
-                <div><label className="label">Tipo contratto</label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
-                <div><label className="label">Data cessazione / fine contratto</label>
+                <div><label className="label">Tipo contratto<OstiMark /></label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
+                <div><label className="label">Data cessazione / fine contratto<OstiMark /></label>
                   <input type="date" className="input" value={form.data_cessazione} onChange={e => set('data_cessazione', e.target.value)} />
                   <p className="text-[11px] text-muted mt-1">Con stato Cessato, se vuota verrà usata la data di oggi. Una data futura con stato Attivo indica la scadenza del contratto.</p>
                 </div>
@@ -300,17 +320,17 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
                     >+</button>
                   </div>
                 </div>
-                <div><label className="label">Reparto</label>
+                <div><label className="label">Reparto<OstiMark /></label>
                   <select className="input" value={form.reparto_id} onChange={e => set('reparto_id', e.target.value)}>
                     <option value="">—</option>
                     {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </div>
-                <div className="col-span-full"><label className="label">Plant / Sede (anche più di una)</label>
+                <div className="col-span-full"><label className="label">Plant / Sede (anche più di una)<OstiMark /></label>
                   <PlantMultiSelect plants={plants} value={plantIds} onChange={setPlantIds} />
                 </div>
-                <div><label className="label">Mansione</label><input className="input" value={form.mansione} onChange={e => set('mansione', e.target.value)} /></div>
-                <div><label className="label">Livello</label><input className="input" value={form.livello} onChange={e => set('livello', e.target.value)} /></div>
+                <div><label className="label">Mansione<OstiMark /></label><input className="input" value={form.mansione} onChange={e => set('mansione', e.target.value)} /></div>
+                <div><label className="label">Livello<OstiMark /></label><input className="input" value={form.livello} onChange={e => set('livello', e.target.value)} /></div>
                 <div><label className="label">Gruppo orario</label><input className="input" value={form.gruppo_orario} onChange={e => set('gruppo_orario', e.target.value)} /></div>
                 <div><label className="label">Responsabile</label>
                   <select className="input" value={form.capo_id} onChange={e => set('capo_id', e.target.value)}>
@@ -324,35 +344,24 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
 
           {fullManage && (
             <div>
-              <p className="text-sm font-semibold text-ink-800 mb-2">Vestiario</p>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div><label className="label">Taglia pantaloni</label><input className="input" maxLength={20} value={form.taglia_pantaloni} onChange={e => set('taglia_pantaloni', e.target.value)} placeholder="es. 48" /></div>
-                <div><label className="label">Taglia maglia</label><input className="input" maxLength={20} value={form.taglia_maglia} onChange={e => set('taglia_maglia', e.target.value)} placeholder="es. L" /></div>
-                <div><label className="label">Taglia scarpe</label><input className="input" maxLength={20} value={form.taglia_scarpe} onChange={e => set('taglia_scarpe', e.target.value)} placeholder="es. 42" /></div>
-              </div>
-            </div>
-          )}
-
-          {fullManage && (
-            <div>
               <p className="text-sm font-semibold text-gray-700 mb-2">Altri dati (Osti)</p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div><label className="label">Badge</label><input className="input" maxLength={50} value={form.badge} onChange={e => set('badge', e.target.value)} /></div>
-                <div><label className="label">Transponder</label><input className="input" maxLength={50} value={form.transponder} onChange={e => set('transponder', e.target.value)} /></div>
-                <div><label className="label">Terminale di timbratura</label><input className="input" maxLength={50} value={form.terminale} onChange={e => set('terminale', e.target.value)} /></div>
-                <div><label className="label">Qualifica</label><input className="input" maxLength={100} value={form.qualifica} onChange={e => set('qualifica', e.target.value)} /></div>
-                <div><label className="label">Tempo indeterminato</label>
+                <div><label className="label">Badge<OstiMark /></label><input className="input" maxLength={50} value={form.badge} onChange={e => set('badge', e.target.value)} /></div>
+                <div><label className="label">Transponder<OstiMark /></label><input className="input" maxLength={50} value={form.transponder} onChange={e => set('transponder', e.target.value)} /></div>
+                <div><label className="label">Terminale di timbratura<OstiMark /></label><input className="input" maxLength={50} value={form.terminale} onChange={e => set('terminale', e.target.value)} /></div>
+                <div><label className="label">Qualifica<OstiMark /></label><input className="input" maxLength={100} value={form.qualifica} onChange={e => set('qualifica', e.target.value)} /></div>
+                <div><label className="label">Tempo indeterminato<OstiMark /></label>
                   <select className="input" value={form.indeterminato} onChange={e => set('indeterminato', e.target.value)}>
                     <option value="">—</option>
                     <option value="si">Sì</option>
                     <option value="no">No</option>
                   </select>
                 </div>
-                <div><label className="label">Data passaggio a indeterminato</label><input type="date" className="input" value={form.indeterminato_data} onChange={e => set('indeterminato_data', e.target.value)} /></div>
-                <div><label className="label">Part-time</label><input className="input" maxLength={30} value={form.part_time} onChange={e => set('part_time', e.target.value)} /></div>
-                <div><label className="label">Luogo di nascita</label><input className="input" maxLength={150} value={form.luogo_nascita} onChange={e => set('luogo_nascita', e.target.value)} /></div>
+                <div><label className="label">Data passaggio a indeterminato<OstiMark /></label><input type="date" className="input" value={form.indeterminato_data} onChange={e => set('indeterminato_data', e.target.value)} /></div>
+                <div><label className="label">Part-time<OstiMark /></label><input className="input" maxLength={30} value={form.part_time} onChange={e => set('part_time', e.target.value)} /></div>
+                <div><label className="label">Luogo di nascita<OstiMark /></label><input className="input" maxLength={150} value={form.luogo_nascita} onChange={e => set('luogo_nascita', e.target.value)} /></div>
                 <div><label className="label">Titolo di studio</label><input className="input" maxLength={100} value={form.titolo_studio} onChange={e => set('titolo_studio', e.target.value)} /></div>
-                <div><label className="label">Stato civile</label><input className="input" maxLength={50} value={form.stato_civile} onChange={e => set('stato_civile', e.target.value)} /></div>
+                <div><label className="label">Stato civile<OstiMark /></label><input className="input" maxLength={50} value={form.stato_civile} onChange={e => set('stato_civile', e.target.value)} /></div>
               </div>
             </div>
           )}
@@ -361,11 +370,11 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
             <div>
               <p className="text-sm font-semibold text-gray-700 mb-2">Domicilio</p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div><label className="label">Indirizzo</label><input className="input" maxLength={255} value={form.domicilio_indirizzo} onChange={e => set('domicilio_indirizzo', e.target.value)} /></div>
-                <div><label className="label">Città</label><input className="input" maxLength={100} value={form.domicilio_citta} onChange={e => set('domicilio_citta', e.target.value)} /></div>
-                <div><label className="label">Provincia</label><input className="input" maxLength={50} value={form.domicilio_provincia} onChange={e => set('domicilio_provincia', e.target.value.toUpperCase())} /></div>
-                <div><label className="label">CAP</label><input className="input" maxLength={10} value={form.domicilio_cap} onChange={e => set('domicilio_cap', e.target.value)} /></div>
-                <div className="col-span-full"><label className="label">Note HR</label><textarea className="input" rows={2} value={form.note_hr} onChange={e => set('note_hr', e.target.value)} /></div>
+                <div><label className="label">Indirizzo<OstiMark /></label><input className="input" maxLength={255} value={form.domicilio_indirizzo} onChange={e => set('domicilio_indirizzo', e.target.value)} /></div>
+                <div><label className="label">Città<OstiMark /></label><input className="input" maxLength={100} value={form.domicilio_citta} onChange={e => set('domicilio_citta', e.target.value)} /></div>
+                <div><label className="label">Provincia<OstiMark /></label><input className="input" maxLength={50} value={form.domicilio_provincia} onChange={e => set('domicilio_provincia', e.target.value.toUpperCase())} /></div>
+                <div><label className="label">CAP<OstiMark /></label><input className="input" maxLength={10} value={form.domicilio_cap} onChange={e => set('domicilio_cap', e.target.value)} /></div>
+                <div className="col-span-full"><label className="label">Note HR<OstiMark /></label><textarea className="input" rows={2} value={form.note_hr} onChange={e => set('note_hr', e.target.value)} /></div>
               </div>
             </div>
           )}
@@ -382,15 +391,15 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
           <div>
             {fullManage && <p className="text-sm font-semibold text-ink-800 mb-2">Contatti</p>}
             <div className="grid grid-cols-2 gap-4">
-              <div><label className="label">Telefono</label><input className="input" value={form.telefono} onChange={e => set('telefono', e.target.value)} /></div>
-              <div><label className="label">Email</label><input type="email" className="input" value={form.email} onChange={e => set('email', e.target.value)} /></div>
-              <div className="col-span-2"><label className="label">Indirizzo (residenza)</label><input className="input" value={form.indirizzo} onChange={e => set('indirizzo', e.target.value)} /></div>
-              <div><label className="label">Città</label><input className="input" value={form.citta} onChange={e => set('citta', e.target.value)} /></div>
+              <div><label className="label">Telefono<OstiMark /></label><input className="input" value={form.telefono} onChange={e => set('telefono', e.target.value)} /></div>
+              <div><label className="label">Email<OstiMark /></label><input type="email" className="input" value={form.email} onChange={e => set('email', e.target.value)} /></div>
+              <div className="col-span-2"><label className="label">Indirizzo (residenza)<OstiMark /></label><input className="input" value={form.indirizzo} onChange={e => set('indirizzo', e.target.value)} /></div>
+              <div><label className="label">Città<OstiMark /></label><input className="input" value={form.citta} onChange={e => set('citta', e.target.value)} /></div>
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="label">Provincia</label><input className="input" maxLength={50} value={form.provincia} onChange={e => set('provincia', e.target.value.toUpperCase())} placeholder="es. MO" /></div>
-                <div><label className="label">CAP</label><input className="input" maxLength={10} value={form.cap} onChange={e => set('cap', e.target.value)} /></div>
+                <div><label className="label">Provincia<OstiMark /></label><input className="input" maxLength={50} value={form.provincia} onChange={e => set('provincia', e.target.value.toUpperCase())} placeholder="es. MO" /></div>
+                <div><label className="label">CAP<OstiMark /></label><input className="input" maxLength={10} value={form.cap} onChange={e => set('cap', e.target.value)} /></div>
               </div>
-              <div className="col-span-2"><label className="label">Note</label><textarea className="input" rows={2} value={form.note} onChange={e => set('note', e.target.value)} /></div>
+              <div className="col-span-2"><label className="label">Note<OstiMark /></label><textarea className="input" rows={2} value={form.note} onChange={e => set('note', e.target.value)} /></div>
             </div>
           </div>
 
@@ -400,11 +409,19 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
             <button type="button" onClick={onClose} className="btn-secondary text-sm">Annulla</button>
             <button type="submit" disabled={saving} className="btn-primary text-sm">{saving ? 'Salvataggio…' : 'Salva'}</button>
           </div>
+
+          {fullManage && (
+            <div className="flex items-center justify-between gap-3 border-t border-line pt-4">
+              <p className="text-xs text-muted">Elimina la scheda e tutti i dati collegati. Non si può annullare.</p>
+              <button type="button" onClick={deleteEmployee} disabled={deleting} className="btn-danger text-sm shrink-0">{deleting ? 'Eliminazione…' : 'Elimina scheda'}</button>
+            </div>
+          )}
         </form>
         </div>
       </div>
     </div>
     {dialog}
+    {confirmDialog}
     </>
   );
 }

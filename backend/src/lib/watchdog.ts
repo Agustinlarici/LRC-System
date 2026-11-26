@@ -6,11 +6,13 @@
 
 import { logger } from './logger.js';
 import { getAllStats } from './sync-stats.js';
-import { checkSyncHealth } from './alert-manager.js';
+import { checkSyncHealth, closeOrphanAlerts } from './alert-manager.js';
 import { sendInfo } from './notifier.js';
+import { incrementalIsPaused } from '../modules/monitor/sync-mode.js';
 
 let _executiveRefresh: (() => Promise<void>) | null = null;
 let autoRecoveryCount = 0;
+let orphansClosed = false;
 
 export function injectExecutiveRefresh(fn: () => Promise<void>): void {
   _executiveRefresh = fn;
@@ -18,11 +20,12 @@ export function injectExecutiveRefresh(fn: () => Promise<void>): void {
 
 export async function runWatchdog(): Promise<void> {
   try {
+    if (!orphansClosed) { await closeOrphanAlerts(); orphansClosed = true; }
     await checkSyncHealth();
 
     // Auto-recovery: se sync è bloccato da >25 min, lo rilancia
     const inc = getAllStats()['sync_incremental'];
-    if (inc && _executiveRefresh) {
+    if (inc && _executiveRefresh && !(await incrementalIsPaused())) {
       const lastMs       = inc.lastFinishedAt ? new Date(inc.lastFinishedAt).getTime() : 0;
       const minSinceLast = (Date.now() - lastMs) / 60_000;
 

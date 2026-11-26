@@ -13,3 +13,6 @@ export const IconaOk = ({ className = 'h-4 w-4' }: P) => <svg {...base} classNam
 export const IconaAvviso = ({ className = 'h-3.5 w-3.5' }: P) => (
   <svg {...base} className={className}><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg>
 );
+export const IconaTrattino = ({ className = 'h-3.5 w-3.5' }: P) => <svg {...base} className={className}><path d="M6 12h12" /></svg>;
+export const IconaRotella = ({ className = 'h-3.5 w-3.5 motion-safe:animate-spin' }: P) => <svg {...base} className={className}><path d="M21 12a9 9 0 1 1-6.2-8.55" /></svg>;
+export const IconaAggiorna = ({ className = 'h-4 w-4' }: P) => <svg {...base} className={className}><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" /><path d="M3 12A9 9 0 0 1 18.5 5.8L21 8" /><path d="M21 3v5h-5" /><path d="M3 21v-5h5" /></svg>;

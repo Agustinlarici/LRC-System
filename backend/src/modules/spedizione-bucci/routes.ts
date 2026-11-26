@@ -5,7 +5,7 @@ import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
 import { requireModule, requireManage } from '../../lib/auth.js';
 import { auditLog } from '../../lib/audit.js';
-import { getIKnowFlags } from '../../lib/system-flags.js';
+import { assertIKnowEnabled } from '../../lib/system-flags.js';
 import { logger } from '../../lib/logger.js';
 import { parseScan, findBySerialiMany, findByCommesseMany, findByCommessa, findTipoLottoPrimerMany, lookbackDays } from './lookup.js';
 import { planResolution, type Problem } from './verify.js';
@@ -36,12 +36,7 @@ async function touchShipment(id: number, userName: string) {
   await db`UPDATE bucci_shipment SET modified_at = now(), modified_by_name = ${userName} WHERE id = ${id} AND was_closed`;
 }
 
-async function requireIKnow() {
-  const flags = await getIKnowFlags();
-  if (!flags.iknow_enabled) {
-    throw new HTTPException(503, { message: 'Connessione iKnow disabilitata dall\'amministratore' });
-  }
-}
+const requireIKnow = () => assertIKnowEnabled('iknow_bucci_enabled');
 
 // ─── Lista / dettaglio ────────────────────────────────────────────────────────
 

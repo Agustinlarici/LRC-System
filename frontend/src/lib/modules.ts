@@ -10,8 +10,9 @@ export interface ModuleConfig {
   hidden:       boolean;
   soon?:        boolean;
   group:        string;
-  moduleKey?:   ModuleKey;  // permesso richiesto per vedere la card in home
+  moduleKey?:   ModuleKey | ModuleKey[];  // permesso richiesto per vedere la card in home (basta uno dei permessi)
   manageOnly?:  boolean;    // true = richiede canManage invece di canView
+  adminOnly?:   boolean;    // true = visibile solo agli admin (nessun permesso di modulo)
 }
 
 export const MODULES: ModuleConfig[] = [
@@ -98,6 +99,16 @@ export const MODULES: ModuleConfig[] = [
     sidebar: 'IconTicket', hidden: false, moduleKey: 'tickets',
   },
   {
+    href: '/quality-control-station', label: 'QC Station', group: 'IT',
+    description: 'Quality Control Station: ordini di foto per la PC Camere e foto acquisite',
+    sidebar: 'IconScan', hidden: false, moduleKey: 'photo_station',
+  },
+  {
+    href: '/progetti', label: 'Progetti', group: 'IT',
+    description: 'Progetti, attività, avanzamenti e cronologia: cosa fare oggi e cosa aspetta una risposta',
+    sidebar: 'IconProject', hidden: false, moduleKey: 'tickets_it',
+  },
+  {
     href: '/ferrari', label: 'Programma produzione (schede)', group: 'IT',
     description: 'Validazione degli Excel di allestimento Ferrari: analisi con IA locale e VM, confronto e revisione',
     sidebar: 'IconClipboard', hidden: false, moduleKey: 'ferrari_schede',
@@ -106,6 +117,11 @@ export const MODULES: ModuleConfig[] = [
     href: '/admin/system', label: 'Sistema', group: 'IT',
     description: 'Utenti, permessi, reparti, configurazioni e stato del sistema',
     sidebar: 'IconMonitor', hidden: false, moduleKey: 'impostazioni',
+  },
+  {
+    href: '/admin/attivita', label: 'Attività', group: 'IT',
+    description: 'Accessi, utilizzo dei moduli, utenti online e sicurezza (solo amministratori)',
+    sidebar: 'IconTrendUp', hidden: false, adminOnly: true,
   },
 
   {
@@ -123,6 +139,13 @@ export const MODULES: ModuleConfig[] = [
     description: 'Generazione automatica file Electronic Data Interchange per le spedizioni',
     sidebar: 'IconEdi', hidden: false, moduleKey: 'edi',
   },
+  // ── Amministrazione ────────────────────────────────────────────────────────
+  {
+    href: '/fatturazione', label: 'Fatturazione', group: 'Amministrazione',
+    description: 'Prezzo di vendita stimato dei despachi',
+    sidebar: 'IconInvoice', hidden: false, moduleKey: 'fatturazione',
+  },
+
   {
     href: '/webddt', label: 'WebDDT', group: 'Logistica',
     description: 'Scarica documenti di trasporto Ferrari in formato Excel per le spedizioni',
@@ -152,12 +175,17 @@ export const MODULES: ModuleConfig[] = [
   {
     href: '/hr/dipendenti', label: 'Dipendenti', group: 'HR',
     description: 'Ficha completa, dati anagrafici e lavorativi, storico eventi',
-    sidebar: 'IconUsers', hidden: false, moduleKey: 'hr',
+    sidebar: 'IconUsers', hidden: false, moduleKey: ['hr', 'hr_team'],
+  },
+  {
+    href: '/hr/richieste', label: 'Richieste', group: 'HR',
+    description: 'Ferie, assenze e modifiche scheda proposte dai capi, da approvare da HR',
+    sidebar: 'IconClipboard', hidden: false, moduleKey: ['hr', 'hr_team'],
   },
   {
     href: '/hr/scadenze', label: 'Scadenze', group: 'HR',
     description: 'Contratti in scadenza e regole di avviso per società/periodo di prova',
-    sidebar: 'IconClipboard', hidden: false, moduleKey: 'hr',
+    sidebar: 'IconClipboard', hidden: false, moduleKey: ['hr', 'hr_team'],
   },
   {
     href: '/hr/documenti', label: 'Documenti', group: 'HR',
@@ -165,9 +193,14 @@ export const MODULES: ModuleConfig[] = [
     sidebar: 'IconClipboard', hidden: false, moduleKey: 'hr',
   },
   {
+    href: '/hr/vestiario', label: 'Vestiario', group: 'HR',
+    description: 'Taglie di pantaloni, maglia, scarpe e giubbotto da ordinare',
+    sidebar: 'IconClipboard', hidden: false, moduleKey: 'hr',
+  },
+  {
     href: '/hr/organigramma', label: 'Organigramma', group: 'HR',
     description: 'Struttura organizzativa dinamica, capi e team',
-    sidebar: 'IconOrgChart', hidden: false, moduleKey: 'hr',
+    sidebar: 'IconOrgChart', hidden: false, moduleKey: ['hr', 'hr_team'],
   },
   {
     href: '/hr/analisi', label: 'Analisi HR', group: 'HR',
@@ -190,7 +223,7 @@ export const MODULES: ModuleConfig[] = [
 
 export const visibleModules = MODULES.filter(m => !m.hidden);
 
-export const MODULE_GROUPS = ['Logistica', 'Produzione', 'Qualità', 'Dashboard', 'HR', 'IT'] as const;
+export const MODULE_GROUPS = ['Logistica', 'Produzione', 'Qualità', 'Amministrazione', 'Dashboard', 'HR', 'IT'] as const;
 export type ModuleGroup = typeof MODULE_GROUPS[number];
 
 export const modulesByGroup = (group: string) =>

@@ -1,8 +1,7 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import { readdir, access } from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { readdir } from 'node:fs/promises';
 import { join, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as XLSX from 'xlsx';
@@ -10,7 +9,7 @@ import { db } from '../../db/client.js';
 import { parseBody } from '../../lib/validate.js';
 import { requireModule, requireManage } from '../../lib/auth.js';
 import { getShipments, getShipmentLines, getShipmentPrices } from './dynamics-client.js';
-import { writeEdiFile, isUncPath, parseUnc, listUncFolder } from '../../lib/smb-writer.js';
+import { writeEdiFile, isUncPath, parseUnc, listUncFolder, cartellaOutputAccessibile } from '../../lib/smb-writer.js';
 import { scanFerrariFolder, CAMPI_OUTPUT } from './ferrari-ingresso-parser.js';
 import { startSyncInBackground, getSyncState } from './ferrari-delins-sync.js';
 
@@ -43,6 +42,8 @@ const EdiClientSchema = z.object({
   csg_supply_point:          z.string().max(17).nullish(),
   output_folder:             z.string().min(1),
   auto_generate:             z.boolean().default(false),
+  // Parametri specifici del tipo EDI (es. DESADV_AUDI: DUNS, acquirente, indirizzo di scarico)
+  edi_params:                z.record(z.string(), z.string().max(256)).default({}),
 });
 
 const GenerateSchema = z.object({
@@ -52,6 +53,10 @@ const GenerateSchema = z.object({
   document_date:   z.string().nullish(),
   is_extra_cee:    z.boolean().default(false),
   force:           z.boolean().default(false),
+  // Pesi della consegna in kg (DESADV_AUDI: MEA+AAX+AAD/AAL/T)
+  gross_weight:    z.number().nullish(),
+  net_weight:      z.number().nullish(),
+  tare_weight:     z.number().nullish(),
   lines: z.array(z.object({
     article_code:    z.string(),
     description:     z.string(),
@@ -99,12 +104,8 @@ ediRoutes.get('/clients', requireModule(MODULE), async (c) => {
 ediRoutes.post('/clients', requireManage(MODULE), async (c) => {
   const body = await parseBody(c, EdiClientSchema);
 
-  if (!isUncPath(body.output_folder)) {
-    try {
-      await access(body.output_folder, constants.W_OK);
-    } catch {
-      throw new HTTPException(400, { message: `Cartella non accessibile: "${body.output_folder}"` });
-    }
+  if (!(await cartellaOutputAccessibile(body.output_folder))) {
+    throw new HTTPException(400, { message: `Cartella non accessibile: "${body.output_folder}"` });
   }
 
   const b = body as Required<typeof body>;
@@ -116,7 +117,7 @@ ediRoutes.post('/clients', requireManage(MODULE), async (c) => {
       sdt_vat, supplier_code,
       csg_establishment_code, csg_company_name,
       csg_address_1, csg_address_2, csg_address_3, csg_address_4,
-      csg_supply_point, output_folder, auto_generate
+      csg_supply_point, output_folder, auto_generate, edi_params
     ) VALUES (
       ${b.customer_account}, ${b.description}, ${b.edi_type},
       ${b.cdt_company_name ?? ''}, ${b.cdt_vat ?? ''},
@@ -126,7 +127,8 @@ ediRoutes.post('/clients', requireManage(MODULE), async (c) => {
       ${b.csg_establishment_code}, ${b.csg_company_name ?? ''},
       ${b.csg_address_1 ?? null}, ${b.csg_address_2 ?? null},
       ${b.csg_address_3 ?? null}, ${b.csg_address_4 ?? null},
-      ${b.csg_supply_point ?? null}, ${b.output_folder}, ${b.auto_generate ?? false}
+      ${b.csg_supply_point ?? null}, ${b.output_folder}, ${b.auto_generate ?? false},
+      ${db.json(JSON.parse(JSON.stringify(b.edi_params ?? {})))}
     ) RETURNING *
   `;
   return c.json(row, 201);
@@ -141,9 +143,7 @@ ediRoutes.put('/clients/:id', requireManage(MODULE), async (c) => {
   const body = await parseBody(c, EdiClientSchema);
   const b = body as Required<typeof body>;
 
-  try {
-    await access(b.output_folder, constants.W_OK);
-  } catch {
+  if (!(await cartellaOutputAccessibile(b.output_folder))) {
     throw new HTTPException(400, { message: `Cartella non accessibile: "${b.output_folder}"` });
   }
 
@@ -169,6 +169,7 @@ ediRoutes.put('/clients/:id', requireManage(MODULE), async (c) => {
       csg_supply_point        = ${b.csg_supply_point ?? null},
       output_folder           = ${b.output_folder},
       auto_generate           = ${b.auto_generate ?? false},
+      edi_params              = ${db.json(JSON.parse(JSON.stringify(b.edi_params ?? {})))},
       updated_at              = NOW()
     WHERE id = ${id}
     RETURNING *
