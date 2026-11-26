@@ -20,12 +20,20 @@ import { recepcionesEmitter } from './gateway/recepciones-emitter.js';
 import { letturaNotturna } from './modules/ferrari/cartella.js';
 import { pollOneDriveFolder } from './modules/spma/onedrive-watcher.js';
 import { sincronizza as sincronizzaFatturazione } from './modules/fatturazione/sync.js';
+import { runOstiSync } from './modules/hr/osti-sync.js';
 import { runPhotoFeed } from './modules/quality-control-station/feed.js';
 
 function nextEvery10Min(): Date {
   const now = new Date();
   const secsLeft = (10 - (now.getMinutes() % 10)) * 60 - now.getSeconds();
   return new Date(now.getTime() + secsLeft * 1000);
+}
+
+function nextHourAt(minute: number): Date {
+  const next = new Date();
+  next.setMinutes(minute, 0, 0);
+  if (next <= new Date()) next.setHours(next.getHours() + 1);
+  return next;
 }
 
 function nextOccurrence(hour: number, minute = 0): Date {
@@ -214,6 +222,21 @@ export function startScheduler() {
       failRun('fatturazione_sync', e);
       logger.error(`[scheduler] Fatturazione sync fallita: ${e instanceof Error ? e.message : e}`);
     }
+  }, { timezone: 'Europe/Rome' });
+
+  // Ogni ora (minuto 50) — HR: sincronizza le schede dipendenti con Osti (sola lettura su Osti; vedi hr/osti-sync.ts)
+  cron.schedule('50 * * * *', async () => {
+    if (!process.env.OSTI_HOST || !process.env.OSTI_USER) return;   // Osti non configurato: niente da fare
+    startRun('osti_sync');
+    try {
+      const r = await runOstiSync();
+      if (r.errors > 0 && r.updated === 0) failRun('osti_sync', new Error(r.detail)); else endRun('osti_sync', r.updated, r.detail);
+      logger.info(`[scheduler] Sync Osti: ${r.detail}`);
+    } catch (e) {
+      failRun('osti_sync', e);
+      logger.error(`[scheduler] Sync Osti fallita: ${e instanceof Error ? e.message : e}`);
+    }
+    setNextRun('osti_sync', nextHourAt(50));
   }, { timezone: 'Europe/Rome' });
 
   // 06:00 — scansione Ferrari DELINS inbox → aggiorna edi_ferrari_delins
