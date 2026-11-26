@@ -66,7 +66,7 @@ const TIPO_LABEL: Record<Tipo, string> = { ferie: 'Ferie', permesso: 'Permesso',
 const CAMPO_LABEL: Record<string, string> = {
   mansione: 'Mansione', qualifica: 'Qualifica', reparto_id: 'Reparto', gruppo_orario: 'Gruppo orario',
   telefono: 'Telefono', email: 'Email', indirizzo: 'Indirizzo', citta: 'Città', provincia: 'Provincia', cap: 'CAP',
-  taglia_pantaloni: 'Taglia pantaloni', taglia_maglia: 'Taglia maglia', taglia_scarpe: 'Taglia scarpe', note: 'Note',
+  taglia_pantaloni: 'Taglia pantaloni', taglia_maglia: 'Taglia maglia', taglia_scarpe: 'Taglia scarpe', taglia_campera: 'Taglia giubbotto', note: 'Note',
 };
 
 function fmtDate(d: string): string {
@@ -91,7 +91,7 @@ export default function RichiestePage() {
   const [notes, setNotes] = useState<Record<number, string>>({});
   // Nuova proposta di modifica scheda: prima si sceglie la persona, poi si apre il modulo
   const [showPick, setShowPick] = useState(false);
-  const [pickId, setPickId] = useState('');
+  const [pickName, setPickName] = useState('');
   const [proposeFor, setProposeFor] = useState<{ employee: HrEmployee; departments: HrDepartment[] } | null>(null);
 
   const load = useCallback(async () => {
@@ -136,16 +136,20 @@ export default function RichiestePage() {
     }
   }
 
+  // La persona si cerca scrivendo il nome: deve corrispondere a una voce dell'elenco
+  const pickPerson = people.find(p => p.name.toLowerCase() === pickName.trim().toLowerCase());
+
   async function startPropose(e: React.FormEvent) {
     e.preventDefault();
+    if (!pickPerson) { toast.error("Scegli una persona dall'elenco"); return; }
     try {
       const [employee, departments] = await Promise.all([
-        api.get<HrEmployee>(`/api/hr/employees/${pickId}`),
+        api.get<HrEmployee>(`/api/hr/employees/${pickPerson?.id}`),
         api.get<HrDepartment[]>('/api/hr/departments'),
       ]);
       setProposeFor({ employee, departments });
       setShowPick(false);
-      setPickId('');
+      setPickName('');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Errore');
     }
@@ -192,7 +196,7 @@ export default function RichiestePage() {
       <PageHeader
         back={{ label: 'Risorse Umane', href: '/hr' }}
         title="Richieste"
-        description={canManage ? 'Ferie, permessi, malattie e modifiche scheda da approvare' : 'Richieste tue e del tuo team: le approva HR'}
+        description={canManage ? 'Ferie, permessi, malattie e modifiche scheda da approvare' : undefined}
         actions={<button type="button" className="btn-primary"
           onClick={() => (tab === 'ferie' ? setShowForm(v => !v) : setShowPick(v => !v))}>Nuova richiesta</button>}
       />
@@ -291,10 +295,11 @@ export default function RichiestePage() {
         <form onSubmit={startPropose} className="card mb-4 flex flex-wrap items-end gap-3">
           <div className="min-w-[220px] flex-1">
             <label className="label">Per chi vuoi proporre una modifica?</label>
-            <select className="input" required value={pickId} onChange={e => setPickId(e.target.value)}>
-              <option value="">—</option>
-              {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <input className="input" required list="hr-pick-people" placeholder="Cerca per nome…" autoComplete="off"
+              value={pickName} onChange={e => setPickName(e.target.value)} />
+            <datalist id="hr-pick-people">
+              {people.map(p => <option key={p.id} value={p.name} />)}
+            </datalist>
           </div>
           <button type="button" className="btn-secondary" onClick={() => setShowPick(false)}>Annulla</button>
           <button type="submit" className="btn-primary">Continua</button>
@@ -325,7 +330,12 @@ export default function RichiestePage() {
                       <p className="text-xs text-muted">Proposta di {req.requested_by_name}{req.motivo && ` · ${req.motivo}`}</p>
                     </div>
                     {req.stato === 'in_attesa' && <StatusBadge tone="warning">In attesa</StatusBadge>}
-                    {req.stato === 'decisa' && <StatusBadge tone="info">Decisa</StatusBadge>}
+                    {req.stato === 'decisa' && (() => {
+                      const ok = req.items.filter(i => i.stato === 'approvato').length;
+                      if (ok === req.items.length) return <StatusBadge tone="success">Approvata</StatusBadge>;
+                      if (ok === 0) return <StatusBadge tone="danger">Rifiutata</StatusBadge>;
+                      return <StatusBadge tone="warning">Approvata in parte</StatusBadge>;
+                    })()}
                     {req.stato === 'annullata' && <StatusBadge tone="neutral">Annullata</StatusBadge>}
                   </div>
 

@@ -15,7 +15,7 @@ const FIELD_LABEL: Record<string, string> = {
   nome_osti: 'Nome Osti', matricola: 'Matricola', data_assunzione: 'Data assunzione', data_cessazione: 'Data cessazione',
   mansione: 'Mansione', livello: 'Livello', stato: 'Stato', nazionalita: 'Nazionalità', tipo_nazionalita: 'Extra UE / Italia', indirizzo: 'Indirizzo', citta: 'Città',
   provincia: 'Provincia', cap: 'CAP', data_nascita: 'Data di nascita', sesso: 'Sesso', codice_fiscale: 'Codice fiscale',
-  telefono: 'Telefono', note: 'Note', email: 'Email', reparto_id: 'Reparto', plant_ids: 'Plant', contract_company_id: 'Società contratto', gruppo_orario: 'Gruppo orario',
+  telefono: 'Telefono', note: 'Note', email: 'Email', reparto_id: 'Reparto', plant_ids: 'Plant', contract_company_id: 'Società contratto', tipo_contratto: 'Tipo contratto', gruppo_orario: 'Gruppo orario',
   badge: 'Badge', transponder: 'Transponder', terminale: 'Terminale', qualifica: 'Qualifica',
   indeterminato: 'Tempo indeterminato', indeterminato_data: 'Data indeterminato', part_time: 'Part-time',
   luogo_nascita: 'Luogo di nascita', domicilio_indirizzo: 'Domicilio', domicilio_citta: 'Città domicilio',
@@ -63,6 +63,7 @@ interface Plan {
   change: Record<string, unknown>;                            // campi con valore diverso: cambio registrato
   changes: { field: string; from: string; to: string }[];     // per la nota dell'evento
   cessa: boolean;                                             // la persona passa a "cessato"
+  riassunta: string | null;                                   // data di riassunzione: chi era cessato torna attivo (evento "assunzione")
   takeFrom: number[];                                         // schede a cui si toglie la matricola (la stessa, scritta con o senza zeri)
 }
 
@@ -72,6 +73,27 @@ function pickBest(rows: Row[], today: string): Row {
   const inCorso = (r: Row) => { const d = ostiDate(r.dip_licenziato); return !d || d > today; };
   return [...rows].sort((a, b) =>
     Number(inCorso(b)) - Number(inCorso(a)) || (ostiDate(b.dip_assunto) ?? '').localeCompare(ostiDate(a.dip_assunto) ?? ''))[0];
+}
+
+// Un contratto per ogni riga di Osti con data di assunzione valida (stesse date = stesso contratto)
+interface ContrattoOsti { matricola: string | null; qualifica: string | null; tipo: 'STR' | 'INTERINALE' | 'ESTERNO' | null; data_inizio: string; data_fine: string | null }
+function contrattiOf(list: Row[]): ContrattoOsti[] {
+  const seen = new Set<string>();
+  const out: ContrattoOsti[] = [];
+  for (const r of list) {
+    const data_inizio = ostiDate(r.dip_assunto);
+    if (!data_inizio) continue;
+    let data_fine = ostiDate(r.dip_licenziato);
+    if (data_fine && data_fine < data_inizio) data_fine = null;
+    const k = `${data_inizio}|${data_fine ?? ''}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    // Tipo dalla ditta della riga: STR, GMG = esterno, qualsiasi altra = interinale (senza ditta, es. CSV: non si indica)
+    const ditta = norm(clean(r.ditta));
+    const tipo = !ditta ? null : ditta.startsWith('str') ? 'STR' : ditta.startsWith('gmg') ? 'ESTERNO' : 'INTERINALE';
+    out.push({ matricola: clean(r.dip_matricola) || null, qualifica: clean(r.dip_qualifica) || null, tipo, data_inizio, data_fine });
+  }
+  return out.sort((a, b) => a.data_inizio.localeCompare(b.data_inizio));
 }
 
 interface Ctx {
@@ -93,12 +115,24 @@ const json = { 'Content-Type': 'application/json' };
 // Una persona può avere più righe in Osti con nomi diversi (es. riassunta con il nome completo):
 // "Nome Osti" ricorda tutti i nomi collegati, separati da " | " (max 200 caratteri).
 const NOMI_SEP = ' | ';
-const ostiNames = (s: string | null | undefined) => (s ?? '').split('|').map(x => x.trim()).filter(Boolean);
+// I nomi si copiano com'è da Osti (anche con spazi ai bordi): si divide solo sul separatore " | "
+const ostiNames = (s: string | null | undefined) => (s ?? '').split(NOMI_SEP).filter(x => x.trim());
 function mergeOstiName(current: string | null | undefined, name: string): string {
   const names = ostiNames(current);
-  if (names.some(n => norm(n) === norm(name))) return names.join(NOMI_SEP);
+  if (!name.trim()) return names.join(NOMI_SEP);
+  // stesso nome a meno di spazi/maiuscole: si sostituisce con quello di Osti, così resta identico
+  if (names.some(n => norm(n) === norm(name))) return names.map(n => norm(n) === norm(name) ? name : n).join(NOMI_SEP);
   const merged = [...names, name].join(NOMI_SEP);
   return merged.length <= 200 ? merged : name;
+}
+
+// Tipo contratto dalla ditta di Osti: STR → INDETERMINATO/DETERMINATO (dip_indeterminato), GMG → ESTERNO,
+// qualsiasi altra ditta → INTERINALE. Senza ditta (es. CSV) non si propone nulla.
+function tipoContratto(r: Row): string | null {
+  const ditta = norm(clean(r.ditta));
+  if (!ditta) return null;
+  if (ditta.startsWith('str')) return r.dip_indeterminato === '1' ? 'INDETERMINATO' : r.dip_indeterminato === '0' ? 'DETERMINATO' : null;
+  return ditta.startsWith('gmg') ? 'ESTERNO' : 'INTERINALE';
 }
 
 // Valori che Osti propone per una persona, già puliti. Valore assente = null (non tocca nulla).
@@ -107,9 +141,9 @@ function wantOf(r: Row, ctx: Ctx): Record<string, string | number | boolean | nu
   const sesso = clean(r.dip_sesso).toUpperCase();
   const matricola = noLeadingZeros(r.dip_matricola);
   const livello = clean(r.dip_livello);
-  const plantId = ctx.plantByName.get(norm(clean(r.filiale)));   // filiale/ditta arrivano solo dalla lettura MySQL
+  const plantId = ctx.plantByName.get(norm(plantOf(r)));   // filiale/ditta arrivano solo dalla lettura MySQL
   return {
-    nome_osti: clean(r.dip_nome),
+    nome_osti: r.dip_nome ?? '',   // com'è in Osti, senza ripulire
     matricola: matricola && matricola !== '0' ? matricola : null,
     data_assunzione: ostiDate(r.dip_assunto),
     data_cessazione: ostiDate(r.dip_licenziato),
@@ -130,6 +164,7 @@ function wantOf(r: Row, ctx: Ctx): Record<string, string | number | boolean | nu
     reparto_id: ctx.deptByName.get(norm(repartoOf(r))) ?? null,
     plant_ids: plantId != null ? [plantId] : null,
     contract_company_id: ctx.companyByName.get(norm(clean(r.ditta))) ?? null,
+    tipo_contratto: tipoContratto(r),
     gruppo_orario: clean(r.gruppo_orario) || null,
     badge: positive(r.dip_badge),
     transponder: positive(r.dip_transponder),
@@ -150,12 +185,15 @@ function wantOf(r: Row, ctx: Ctx): Record<string, string | number | boolean | nu
 }
 
 // "REPARTO VERNICIATURA" in Osti = "VERNICIATURA" da noi
+// Plant: dalla filiale di Osti si usa solo la sigla iniziale (STR1…STR5, anche scritta "STR 1"); qualsiasi altro valore = nessun plant
+const plantOf = (r: Row) => { const m = clean(r.filiale).toUpperCase().match(/^STR\s*([1-5])(?!\d)/); return m ? `STR${m[1]}` : ''; };   // anche "STR 1"
+
 const repartoOf = (r: Row) => clean(r.reparto).replace(/^reparto\s+/i, '');
 
 // Confronta la scheda con quanto propone Osti e dice cosa scrivere
 function buildPlan(emp: HrEmployee, r: Row, ctx: Ctx): { plan: Plan | null; conflict: string | null } {
   const want = wantOf(r, ctx);
-  want.nome_osti = mergeOstiName(emp.nome_osti, clean(r.dip_nome));
+  want.nome_osti = mergeOstiName(emp.nome_osti, r.dip_nome ?? '');
   const licenziato = ostiDate(r.dip_licenziato);
   const have = (f: string): string => {
     const v = (emp as unknown as Record<string, unknown>)[f];
@@ -173,12 +211,12 @@ function buildPlan(emp: HrEmployee, r: Row, ctx: Ctx): { plan: Plan | null; conf
     : f === 'plant_ids' ? (v as number[]).map(id => ctx.plantName.get(id) ?? '').join(', ')
     : String(v);
 
-  const plan: Plan = { emp, fill: {}, change: {}, changes: [], cessa: false, takeFrom: [] };
+  const plan: Plan = { emp, fill: {}, change: {}, changes: [], cessa: false, riassunta: null, takeFrom: [] };
   let conflict: string | null = null;
   for (const [f, v] of Object.entries(want)) {
     if (v == null) continue;                                    // Osti vuoto: non tocca nulla
     const cur = have(f);
-    if (cur !== '' && norm(cur) === norm(show(f, v))) continue; // già uguale (a meno di maiuscole/spazi)
+    if (f === 'nome_osti' ? cur === v : cur !== '' && norm(cur) === norm(show(f, v))) continue; // già uguale (nome Osti: identico; gli altri a meno di maiuscole/spazi)
     if (f === 'matricola') {
       // La matricola di Osti vince: si scrive sempre senza zeri. Se un'altra scheda ha già lo stesso numero
       // (la base accetta una matricola per persona) la perde: resta traccia nella sua timeline.
@@ -201,17 +239,22 @@ function buildPlan(emp: HrEmployee, r: Row, ctx: Ctx): { plan: Plan | null; conf
     plan.change.data_cessazione = licenziato;
     delete plan.fill.data_cessazione;
   }
-  // Data di cessazione futura = contratto ancora in corso: chi risultava cessato torna attivo
-  if (licenziato && licenziato > ctx.today && emp.stato === 'cessato') {
+  // Riga in corso in Osti (senza data di cessazione, o con data futura = fine contratto): chi da noi risultava
+  // cessato è stato riassunto, quindi torna attivo e si registra una nuova assunzione nella timeline.
+  if ((!licenziato || licenziato > ctx.today) && emp.stato === 'cessato') {
     plan.change.stato = 'attivo';
-    plan.change.data_cessazione = licenziato;
+    if (licenziato) plan.change.data_cessazione = licenziato;   // senza data, il backend azzera quella vecchia
     plan.changes.push({ field: 'stato', from: 'cessato', to: 'attivo' });
+    plan.riassunta = ostiDate(r.dip_assunto) ?? ctx.today;
     delete plan.fill.data_cessazione;
   }
   const empty = !Object.keys(plan.fill).length && !Object.keys(plan.change).length;
   if (empty) plan.takeFrom = [];
   return { plan: empty ? null : plan, conflict };
 }
+
+// Date ISO (aaaa-mm-gg) → gg/mm/aaaa nelle note della timeline; altri valori restano com'è
+const dataIt = (v: string) => v.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3/$2/$1');
 
 // reparto, mansione e livello hanno già il loro evento automatico nel backend
 const AUTO_EVENT = new Set(['livello', 'mansione', 'reparto_id']);
@@ -242,10 +285,16 @@ async function applyPlan(p: Plan, ctx: Ctx): Promise<boolean> {
         method: 'POST', headers: json, credentials: 'include',
         body: JSON.stringify({
           event_type: 'altro', event_date: ctx.today,
-          note: 'Import Osti — ' + manual.map(c => `${FIELD_LABEL[c.field] ?? c.field}: «${c.from}» → «${c.to}»`).join('; '),
+          note: 'Import Osti — ' + manual.map(c => `${FIELD_LABEL[c.field] ?? c.field}: «${dataIt(c.from)}» → «${dataIt(c.to)}»`).join('; '),
         }),
       });
     }
+  }
+  if (ok && p.riassunta) {
+    await fetch(`${ctx.backend}/api/hr/employees/${p.emp.id}/events`, {
+      method: 'POST', headers: json, credentials: 'include',
+      body: JSON.stringify({ event_type: 'assunzione', event_date: p.riassunta, note: 'Riassunzione — import Osti' }),
+    });
   }
   if (!ok) {
     for (const t of taken) await setMatricola(t.id, t.old);   // salvataggio fallito: le altre schede riprendono la loro matricola
@@ -341,13 +390,32 @@ export async function runOstiImport(
   const suggestedIds = new Map<ImportIssue, number[]>();   // candidati per i casi 'Non trovato'; si filtrano a fine giro
   let storici = 0;   // ex dipendenti (licenziati in Osti da almeno 6 mesi) che da noi non esistono: normale, non si segnalano
   const sixMonthsAgo = new Date(Date.now() - 183 * 864e5).toISOString().slice(0, 10);
+  // Abbinamento di una riga: nome, poi "Nome Osti", poi matricola (solo se è di una persona sola)
+  const resolve = (r: Row): HrEmployee[] => {
+    const k = norm(clean(r.dip_nome));
+    let c = byName.get(k) ?? [];
+    if (c.length !== 1) { const o = byOsti.get(k) ?? []; if (c.length === 0 || o.length === 1) c = o; }
+    if (c.length !== 1) { const m = byMatricola.get(matKey(r.dip_matricola)) ?? []; if (m.length === 1) c = m; }
+    return c;
+  };
+  // Righe con lo stesso nome in Osti = la stessa persona (più contratti): se una riga è abbinata a una scheda
+  // (es. dalla matricola), anche le altre con lo stesso nome vanno a quella scheda, anche se non hanno matricola.
+  const ownerOfName = new Map<string, number | null>();   // null = nome con schede diverse: non si usa
+  for (const r of rows) {
+    const nome = clean(r.dip_nome);
+    if (!nome) continue;
+    const c = resolve(r);
+    if (c.length !== 1) continue;
+    const k = norm(nome);
+    ownerOfName.set(k, ownerOfName.has(k) && ownerOfName.get(k) !== c[0].id ? null : c[0].id);
+  }
+  const employeeById = new Map(employees.map(e => [e.id, e]));
   for (const r of rows) {
     const nome = clean(r.dip_nome);
     if (!nome) continue;
     const k = norm(nome);
-    let c = byName.get(k) ?? [];
-    if (c.length !== 1) { const o = byOsti.get(k) ?? []; if (c.length === 0 || o.length === 1) c = o; }
-    if (c.length !== 1) { const m = byMatricola.get(matKey(r.dip_matricola)) ?? []; if (m.length === 1) c = m; }   // solo se la matricola è di una persona sola
+    let c = resolve(r);
+    if (c.length !== 1) { const owner = ownerOfName.get(k); if (owner != null) c = [employeeById.get(owner)!]; }
     // Senza scheda (o con nome ambiguo) e licenziato da almeno 6 mesi: non è un caso da guardare
     if (c.length !== 1 && (ostiDate(r.dip_licenziato) ?? '9') <= sixMonthsAgo) { storici++; continue; }
     if (c.length === 1) matched.set(c[0].id, [...(matched.get(c[0].id) ?? []), r]);
@@ -385,6 +453,7 @@ export async function runOstiImport(
   const missingDepts = new Map<string, { label: string; emps: HrEmployee[] }>();   // reparto di Osti che da noi non esiste
   const missingCat = new Map<string, { kind: 'plant' | 'company'; label: string; emps: HrEmployee[] }>();   // filiale/ditta di Osti che da noi non esiste
   let duplicates = 0;
+  const contractJobs: { emp: HrEmployee; contratti: ContrattoOsti[] }[] = [];
   for (const [id, list] of matched) {
     const emp = empById.get(id)!;
     const r = pickBest(list, today);
@@ -395,7 +464,7 @@ export async function runOstiImport(
       m.emps.push(emp);
       missingDepts.set(norm(rep), m);
     }
-    for (const [kind, label, known] of [['plant', clean(r.filiale), ctx.plantByName], ['company', clean(r.ditta), ctx.companyByName]] as const) {
+    for (const [kind, label, known] of [['plant', plantOf(r), ctx.plantByName], ['company', clean(r.ditta), ctx.companyByName]] as const) {
       if (!label || known.has(norm(label))) continue;
       const m = missingCat.get(kind + norm(label)) ?? { kind, label, emps: [] };
       m.emps.push(emp);
@@ -404,6 +473,10 @@ export async function runOstiImport(
     const { plan, conflict } = buildPlan(emp, r, ctx);
     if (conflict) issues.push({ type: 'Matricola già assegnata', name: empLabel(emp), note: conflict });
     if (plan) plans.push(plan);
+    // Più righe di Osti per la stessa persona = più contratti: la scheda tiene la riga più recente
+    // (data assunzione), tutte le righe si registrano nei contratti della scheda
+    const contratti = contrattiOf(list);
+    if (list.length > 1 && contratti.length) contractJobs.push({ emp, contratti });
   }
   // Un reparto nuovo si crea una volta sola e si assegna a chi non ne ha uno (gli altri tengono il loro, più preciso)
   for (const { label, emps } of missingDepts.values()) {
@@ -463,8 +536,10 @@ export async function runOstiImport(
   const nTolte = plans.reduce((n, p) => n + p.takeFrom.length, 0);
   const summary = `${plans.length} dipendenti da aggiornare (${nFill} con campi da compilare, ${nChange} con valori da cambiare`
     + `${nCessa ? `, ${nCessa} da segnare come cessati` : ''}${nTolte ? `, ${nTolte} matricole tolte ad altre schede (stesso numero)` : ''}). Senza abbinamento: ${unmatched + ambiguous}.`;
-  if (plans.length === 0) return { inserted: 0, skipped: unmatched + ambiguous, errors: 0, detail: `Niente da aggiornare. ${summary}`, issues };
-  if (!(await confirm({ title: 'Importa elenco Osti', message: summary, confirmLabel: 'Aggiorna' }))) {
+  const nContratti = contractJobs.reduce((n, j) => n + j.contratti.length, 0);
+  const summaryC = summary + (contractJobs.length ? ` Contratti da registrare: ${nContratti} (${contractJobs.length} persone con più righe in Osti).` : '');
+  if (plans.length === 0 && contractJobs.length === 0) return { inserted: 0, skipped: unmatched + ambiguous, errors: 0, detail: `Niente da aggiornare. ${summary}`, issues };
+  if (!(await confirm({ title: 'Importa elenco Osti', message: summaryC, confirmLabel: 'Aggiorna' }))) {
     return { inserted: 0, skipped: 0, errors: 0, detail: 'Import annullato, nessuna modifica.' };
   }
 
@@ -475,9 +550,18 @@ export async function runOstiImport(
     else { errors++; issues.push({ type: 'Errore di salvataggio', name: empLabel(p.emp), note: 'il backend ha rifiutato i dati (campo troppo lungo o non valido)' }); }
   }
 
+  // Contratti: stesse date già registrate = già presente (rieseguire non duplica)
+  let contrattiNuovi = 0;
+  for (const j of contractJobs) {
+    const res = await fetch(`${backend}/api/hr/contracts/employee/${j.emp.id}`, { method: 'POST', headers: json, credentials: 'include', body: JSON.stringify({ contratti: j.contratti }) });
+    if (res.ok) contrattiNuovi += (await res.json().catch(() => ({ added: 0 }))).added ?? 0;
+    else { errors++; issues.push({ type: 'Errore di salvataggio', name: empLabel(j.emp), note: 'contratti non registrati' }); }
+  }
+
   return {
     inserted: 0, updated, skipped: unmatched + ambiguous, errors,
     detail: `Aggiornati ${updated}. Senza abbinamento: ${unmatched + ambiguous}.`
+      + (contractJobs.length ? ` Contratti registrati: ${contrattiNuovi}.` : '')
       + (storici ? ` Ex dipendenti Osti senza scheda da noi (ignorati): ${storici}.` : '')
       + (duplicates ? ` Righe doppie (vale la più recente): ${duplicates}.` : ''),
     issues,

@@ -907,7 +907,7 @@ export async function matrice(modello?: string, q?: string, conRighe = true) {
   const noti = ordinate.filter(([, d]) => d.va && !d.alias).map(([c]) => c);   // codici «giusti» a cui assomigliare
 
   const tutte = await db<{ id: number; stato: string; canonico: Canonico }[]>`
-    SELECT id, stato, canonico FROM ferrari_file
+    SELECT id, stato, canonico - 'celle' AS canonico FROM ferrari_file
     WHERE modello = ${scelto} AND stato NOT IN ('SOSTITUITO', 'QUARANTENA', 'RIFIUTATO') AND canonico IS NOT NULL
     ORDER BY caricato_at DESC, id DESC LIMIT 1000`;
   const nomi = new Map<string, string>();

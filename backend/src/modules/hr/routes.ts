@@ -8,11 +8,16 @@ import { auditLog } from '../../lib/audit.js';
 import { hrAnalyticsRoutes } from './analytics.js';
 import { hrDocumentRoutes } from './documents.js';
 import { hrOstiRoutes } from './osti.js';
+import { hrContractRoutes } from './contracts.js';
+import { hrVestiarioRoutes } from './vestiario-routes.js';
+import { applyEmployeeUpdate } from './employee-update.js';
 
 export const hrRoutes = new Hono<Env>();
 hrRoutes.route('/analytics', hrAnalyticsRoutes);
 hrRoutes.route('/documents', hrDocumentRoutes);
 hrRoutes.route('/osti', hrOstiRoutes);
+hrRoutes.route('/contracts', hrContractRoutes);
+hrRoutes.route('/vestiario', hrVestiarioRoutes);
 
 // Eventi il cui inizio/fine deve riflettersi sullo stato del dipendente — altrimenti
 // un evento "in corso" (senza end_date passata) resta invisibile ai filtri per stato
@@ -204,7 +209,7 @@ hrRoutes.post('/requests/:id/cancel', requireModuleAny('hr', 'hr_team'), async (
 const PROPOSABLE_FIELDS = [
   'mansione', 'qualifica', 'reparto_id', 'gruppo_orario',
   'telefono', 'email', 'indirizzo', 'citta', 'provincia', 'cap',
-  'taglia_pantaloni', 'taglia_maglia', 'taglia_scarpe', 'note',
+  'note',
 ] as const;
 
 const changeRequestSchema = z.object({
@@ -600,7 +605,7 @@ const employeeSelect = db`
   SELECT
     e.id, e.matricola, e.nome, e.cognome, e.sesso, e.data_nascita, e.codice_fiscale,
     e.nazionalita, e.email, e.telefono, e.indirizzo, e.citta, e.provincia, e.cap, e.gruppo_orario,
-    e.nome_osti, e.taglia_pantaloni, e.taglia_maglia, e.taglia_scarpe,
+    e.nome_osti,
     e.badge, e.transponder, e.terminale, e.qualifica, e.indeterminato, e.indeterminato_data, e.part_time,
     e.luogo_nascita, e.domicilio_indirizzo, e.domicilio_citta, e.domicilio_provincia, e.domicilio_cap,
     e.titolo_studio, e.stato_civile, e.note_hr, e.tipo_nazionalita,
@@ -718,6 +723,22 @@ hrRoutes.delete('/employees/:id/photo', requireManage('hr'), async (c) => {
   return c.json({ ok: true });
 });
 
+// Elimina la scheda (con contratti, eventi e storico retributivo collegati). Solo HR.
+hrRoutes.delete('/employees/:id', requireManage('hr'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+  const user = c.get('user');
+  const [existing] = await db`SELECT id, nome, cognome FROM hr_employee WHERE id = ${id}`;
+  if (!existing) throw new HTTPException(404, { message: 'Dipendente non trovato' });
+  try {
+    await db`DELETE FROM hr_employee WHERE id = ${id}`;
+  } catch {
+    throw new HTTPException(409, { message: 'La scheda è collegata ad altri dati (es. è responsabile di qualcuno) e non si può eliminare' });
+  }
+  await auditLog({ userId: user.id, username: user.username, action: 'hr.employee.delete', entity: 'hr_employee', entityId: id, details: { nome: existing.nome, cognome: existing.cognome } });
+  return c.json({ ok: true });
+});
+
 // Nomi e cognomi sempre con l'iniziale maiuscola e il resto minuscolo ("DE LUCA" → "De Luca", "D'ANGELO" → "D'Angelo")
 const titleCase = (s: string) => s.trim().toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
 
@@ -737,9 +758,6 @@ const employeeFieldsSchema = z.object({
   cap:                  z.string().max(10).optional().nullable(),
   gruppo_orario:        z.string().max(100).optional().nullable(),
   nome_osti:            z.string().max(200).optional().nullable(),
-  taglia_pantaloni:     z.string().max(20).optional().nullable(),
-  taglia_maglia:        z.string().max(20).optional().nullable(),
-  taglia_scarpe:        z.string().max(20).optional().nullable(),
   badge:                z.string().max(50).optional().nullable(),
   transponder:          z.string().max(50).optional().nullable(),
   terminale:            z.string().max(50).optional().nullable(),
@@ -845,71 +863,9 @@ hrRoutes.patch('/employees/:id', requireModule('hr'), async (c) => {
     if (cycle) throw new HTTPException(400, { message: "Il responsabile scelto dipende già da questa persona: creerebbe un ciclo nell'organigramma" });
   }
 
-  // Traccia nella timeline i cambi strutturali rilevanti prima di applicarli — con
-  // nomi leggibili (non gli id grezzi) così la timeline ha senso per chi la legge.
-  const events: { event_type: string; from_value: string | null; to_value: string | null }[] = [];
-  if (manage) {
-    if (updates.reparto_id !== undefined && updates.reparto_id !== existing.reparto_id) {
-      const ids = [existing.reparto_id, updates.reparto_id].filter((v): v is number => v != null);
-      const names = ids.length
-        ? new Map((await db`SELECT id, name FROM hr_department WHERE id = ANY(${ids})`).map((d: any) => [d.id, d.name]))
-        : new Map();
-      events.push({
-        event_type: 'cambio_reparto',
-        from_value: existing.reparto_id != null ? names.get(existing.reparto_id) ?? null : null,
-        to_value: updates.reparto_id != null ? names.get(updates.reparto_id) ?? null : null,
-      });
-    }
-    if (updates.mansione !== undefined && updates.mansione !== existing.mansione) {
-      events.push({ event_type: 'cambio_mansione', from_value: existing.mansione, to_value: updates.mansione });
-    }
-    if (updates.livello !== undefined && updates.livello !== existing.livello) {
-      events.push({ event_type: 'cambio_livello', from_value: existing.livello, to_value: updates.livello });
-    }
-    if (updates.capo_id !== undefined && updates.capo_id !== existing.capo_id) {
-      const ids = [existing.capo_id, updates.capo_id].filter((v): v is number => v != null);
-      const names = ids.length
-        ? new Map((await db`SELECT id, (nome || ' ' || cognome) AS nome FROM hr_employee WHERE id = ANY(${ids})`).map((e: any) => [e.id, e.nome]))
-        : new Map();
-      events.push({
-        event_type: 'cambio_capo',
-        from_value: existing.capo_id != null ? names.get(existing.capo_id) ?? null : null,
-        to_value: updates.capo_id != null ? names.get(updates.capo_id) ?? null : null,
-      });
-    }
-    if (updates.stato === 'cessato' && existing.stato !== 'cessato') {
-      updates.data_cessazione = updates.data_cessazione || new Date().toISOString().slice(0, 10);
-      events.push({ event_type: 'cessazione', from_value: existing.stato, to_value: 'cessato' });
-    }
-    // Riattivazione: un dipendente che torna da 'cessato' non può restare con una
-    // data di cessazione appesa, altrimenti resterebbe uno stato inconsistente.
-    if (updates.stato !== undefined && updates.stato !== 'cessato' && existing.stato === 'cessato'
-        && !(updates.data_cessazione && updates.data_cessazione > new Date().toISOString().slice(0, 10))) {
-      updates.data_cessazione = null;
-    }
-  }
-
-  updates.updated_at = new Date();
-  await db`UPDATE hr_employee SET ${db(updates)} WHERE id = ${id}`;
-
+  // Eventi in timeline (cambi strutturali, cessazione) e scrittura: vedi employee-update.ts
   // ?storico=0 (import da Excel "sostituisci tutto"): i dati cambiano senza lasciare eventi in timeline
-  if (c.req.query('storico') === '0') events.length = 0;
-  for (const ev of events) {
-    const eventDate = ev.event_type === 'cessazione' && updates.data_cessazione
-      ? updates.data_cessazione
-      : new Date().toISOString().slice(0, 10);
-    await db`
-      INSERT INTO hr_employee_event ${db({
-        employee_id: id,
-        event_type: ev.event_type,
-        event_date: eventDate,
-        from_value: ev.from_value,
-        to_value: ev.to_value,
-        created_by_user_id: user.id,
-        created_by_name: user.display_name,
-      })}
-    `;
-  }
+  await applyEmployeeUpdate(id, existing, updates, { silent: c.req.query('storico') === '0', actor: user });
 
   await auditLog({ userId: user.id, username: user.username, action: 'hr.employee.update', entity: 'hr_employee', entityId: id, details: updates });
 
@@ -929,6 +885,21 @@ hrRoutes.get('/employees/:id/events', requireModuleAny('hr', 'hr_team'), async (
     FROM hr_employee_event
     WHERE employee_id = ${id}
     ORDER BY event_date DESC, created_at DESC
+  `;
+  return c.json(rows);
+});
+
+// Contratti (STR, interinali, esterni) del dipendente: elenco per la scheda
+hrRoutes.get('/employees/:id/contracts', requireModuleAny('hr', 'hr_team'), async (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (isNaN(id)) throw new HTTPException(400, { message: 'ID non valido' });
+
+  await assertCanSee(c.get('user'), id);
+  const rows = await db`
+    SELECT id, employee_id, matricola, qualifica, tipo, data_inizio::text AS data_inizio, data_fine::text AS data_fine
+    FROM hr_employee_contract
+    WHERE employee_id = ${id}
+    ORDER BY data_inizio DESC
   `;
   return c.json(rows);
 });

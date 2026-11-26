@@ -307,6 +307,12 @@ if [ "$CMD" = "update" ]; then
   trap - INT TERM HUP
   echo "$PREV_COMMIT" > .deploy-previous
 
+  # Pulizia: ogni update lascia immagini senza tag e cache di build (decine di GB nel tempo).
+  # Le immagini ":previous" (usate dal rollback) hanno un tag e non vengono toccate.
+  # Mai "image prune -a" né "volume prune": rompono il rollback / rischiano i dati.
+  docker image prune -f >/dev/null 2>&1 || true
+  docker builder prune -af >/dev/null 2>&1 || true
+
   info "Aggiornamento completato e verificato."
   echo ""
   SERVER_IP_ECHO="$(grep -E '^SERVER_IP=' .env | cut -d= -f2-)"

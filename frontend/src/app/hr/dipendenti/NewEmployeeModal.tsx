@@ -28,8 +28,8 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
   const [funzioni, setFunzioni] = useState(initialFunzioni);
   const [form, setForm] = useState({
     matricola: '', nome: '', cognome: '', sesso: '', data_nascita: '', codice_fiscale: '', nazionalita: '',
-    email: '', telefono: '', indirizzo: '', citta: '', provincia: '', cap: '', gruppo_orario: '', nome_osti: '', taglia_pantaloni: '', taglia_maglia: '', taglia_scarpe: '', badge: '', transponder: '', terminale: '', qualifica: '', indeterminato: '', indeterminato_data: '', part_time: '', luogo_nascita: '', titolo_studio: '', stato_civile: '', tipo_nazionalita: '', domicilio_indirizzo: '', domicilio_citta: '', domicilio_provincia: '', domicilio_cap: '', note_hr: '', mansione: '', livello: '', categoria: '', tipo_contratto: '', funzione_aziendale: '',
-    reparto_id: '', contract_company_id: '', data_assunzione: '', tag_id: '',
+    email: '', telefono: '', indirizzo: '', citta: '', provincia: '', cap: '', gruppo_orario: '', nome_osti: '', badge: '', transponder: '', terminale: '', qualifica: '', indeterminato: '', indeterminato_data: '', part_time: '', luogo_nascita: '', titolo_studio: '', stato_civile: '', tipo_nazionalita: '', domicilio_indirizzo: '', domicilio_citta: '', domicilio_provincia: '', domicilio_cap: '', note_hr: '', mansione: '', livello: '', categoria: '', tipo_contratto: '', funzione_aziendale: '',
+    reparto_id: '', contract_company_id: '', data_assunzione: '', data_cessazione: '', tag_id: '',
   });
   const [plantIds, setPlantIds] = useState<number[]>([]);
   const [l68, setL68] = useState(false);
@@ -87,10 +87,8 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
         provincia: form.provincia || null,
         cap: form.cap || null,
         gruppo_orario: form.gruppo_orario || null,
+        data_cessazione: form.data_cessazione || null,
         nome_osti: form.nome_osti || null,
-        taglia_pantaloni: form.taglia_pantaloni || null,
-        taglia_maglia: form.taglia_maglia || null,
-        taglia_scarpe: form.taglia_scarpe || null,
         badge: form.badge || null,
         transponder: form.transponder || null,
         terminale: form.terminale || null,
@@ -159,10 +157,6 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
             <div><label className="label">Provincia<OstiMark /></label><input className="input" maxLength={50} value={form.provincia} onChange={e => set('provincia', e.target.value.toUpperCase())} placeholder="es. MO" /></div>
             <div><label className="label">CAP<OstiMark /></label><input className="input" maxLength={10} value={form.cap} onChange={e => set('cap', e.target.value)} /></div>
             <div><label className="label">Gruppo orario</label><input className="input" value={form.gruppo_orario} onChange={e => set('gruppo_orario', e.target.value)} /></div>
-            <p className="col-span-full text-sm font-semibold text-ink-800 -mb-2">Vestiario</p>
-            <div><label className="label">Taglia pantaloni</label><input className="input" maxLength={20} value={form.taglia_pantaloni} onChange={e => set('taglia_pantaloni', e.target.value)} placeholder="es. 48" /></div>
-            <div><label className="label">Taglia maglia</label><input className="input" maxLength={20} value={form.taglia_maglia} onChange={e => set('taglia_maglia', e.target.value)} placeholder="es. L" /></div>
-            <div><label className="label">Taglia scarpe</label><input className="input" maxLength={20} value={form.taglia_scarpe} onChange={e => set('taglia_scarpe', e.target.value)} placeholder="es. 42" /></div>
             <p className="col-span-full text-sm font-semibold text-gray-700 -mb-2">Altri dati (Osti)</p>
             <div><label className="label">Badge<OstiMark /></label><input className="input" maxLength={50} value={form.badge} onChange={e => set('badge', e.target.value)} /></div>
             <div><label className="label">Transponder<OstiMark /></label><input className="input" maxLength={50} value={form.transponder} onChange={e => set('transponder', e.target.value)} /></div>
@@ -206,7 +200,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
                 >+</button>
               </div>
             </div>
-            <div><label className="label">Reparto</label>
+            <div><label className="label">Reparto<OstiMark /></label>
               <div className="flex gap-1.5">
                 <select className="input" value={form.reparto_id} onChange={e => set('reparto_id', e.target.value)}>
                   <option value="">—</option>
@@ -215,7 +209,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
                 <button type="button" onClick={() => addCatalogEntry('departments', 'reparto', setDepartments, 'reparto_id')} title="Nuovo reparto" className="btn-secondary text-sm px-3 shrink-0">+</button>
               </div>
             </div>
-            <div className="col-span-full"><label className="label">Plant / Sede (anche più di una)</label>
+            <div className="col-span-full"><label className="label">Plant / Sede (anche più di una)<OstiMark /></label>
               <PlantMultiSelect plants={plants} value={plantIds} onChange={setPlantIds} onAdd={() => addCatalogEntry('plants', 'plant', setPlants, 'plant_id')} />
             </div>
             <div><label className="label">Mansione<OstiMark /></label><input className="input" value={form.mansione} onChange={e => set('mansione', e.target.value)} /></div>
@@ -225,7 +219,7 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
             </label>
             <div><label className="label">Livello<OstiMark /></label><input className="input" value={form.livello} onChange={e => set('livello', e.target.value)} /></div>
             <div><label className="label">Categoria</label><input className="input" value={form.categoria} onChange={e => set('categoria', e.target.value)} placeholder="es. DIRETTO, APL…" /></div>
-            <div><label className="label">Società contratto</label>
+            <div><label className="label">Società contratto<OstiMark /></label>
               <div className="flex gap-1.5">
                 <select className="input" value={form.contract_company_id} onChange={e => set('contract_company_id', e.target.value)}>
                   <option value="">—</option>
@@ -234,8 +228,9 @@ export function NewEmployeeModal({ departments: initialDepartments, plants: init
                 <button type="button" onClick={() => addCatalogEntry('contract-companies', 'società contratto', setCompanies, 'contract_company_id')} title="Nuova società" className="btn-secondary text-sm px-3 shrink-0">+</button>
               </div>
             </div>
-            <div><label className="label">Tipo contratto</label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
+            <div><label className="label">Tipo contratto<OstiMark /></label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
             <div><label className="label">Data assunzione *<OstiMark /></label><input type="date" className="input" value={form.data_assunzione} onChange={e => set('data_assunzione', e.target.value)} /></div>
+            <div><label className="label">Data cessazione / fine contratto<OstiMark /></label><input type="date" className="input" value={form.data_cessazione} onChange={e => set('data_cessazione', e.target.value)} /></div>
             <div><label className="label">Etichetta</label>
               <select className="input" value={form.tag_id} onChange={e => set('tag_id', e.target.value)}>
                 <option value="">—</option>

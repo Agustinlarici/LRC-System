@@ -122,6 +122,8 @@ services:
       SMTP_USER:      ${SMTP_USER:-}
       SMTP_PASS:      ${SMTP_PASS:-}
       SMTP_FROM:      ${SMTP_FROM:-}
+      # PC IA (STR-IASystem): segreto condiviso per POST /ia/consulta. Vuoto = rotta chiusa (503). Impostarlo nel .env del server.
+      IA_VM_SECRET:   ${IA_VM_SECRET:-}
     volumes:
       - ${SCAN_FOLDER_HOST:-./test-scansioni}:/scansioni:ro
       - ${DOCS_FOLDER_HOST:-./test-documentos}:/documentos

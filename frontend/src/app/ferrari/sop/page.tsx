@@ -12,7 +12,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { StatusBadge, type Tone } from '@/components/ui/StatusBadge';
 import { Tabs } from '@/components/ui/Tabs';
 
-type Scheda = 'confronto' | 'regole';
+type Scheda = 'differenze' | 'colonne' | 'regole';
 const TONO: Record<TipoDifferenza, Tone> = { diverso: 'danger', solo_sop: 'warning', solo_vm: 'info' };
 const PASSO = 100;
 const data = (iso: string) => new Date(iso).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -21,7 +21,7 @@ const num = (n: number) => n.toLocaleString('it-IT');
 export default function ControlloSopPage() {
   const { canManage, user } = useAuth();
   const puoGestire = canManage('ferrari_schede');
-  const [tab, setTab] = useState<Scheda>('confronto');
+  const [tab, setTab] = useState<Scheda>('differenze');
   const [imp, setImp] = useState<ImportSop | null | undefined>(undefined);      // undefined = sto leggendo, null = nessun SOP caricato
   const [conf, setConf] = useState<ConfrontoSop | null>(null);
   const [calcolo, setCalcolo] = useState(false);
@@ -127,7 +127,8 @@ export default function ControlloSopPage() {
         }
       />
       <Errore messaggio={errore} />
-      {puoGestire && <Tabs tabs={['confronto', 'regole'] as const} value={tab} onChange={setTab} labels={{ confronto: 'Confronto', regole: 'Regole' }} />}
+      <Tabs tabs={(puoGestire ? ['differenze', 'colonne', 'regole'] : ['differenze', 'colonne']) as readonly Scheda[]} value={tab} onChange={setTab}
+        labels={{ differenze: 'Differenze', colonne: 'Per colonna', regole: 'Regole' }} badges={{ differenze: daVedere }} />
 
       {tab === 'regole' && puoGestire ? <SopRegole colonneSop={imp?.colonne ?? []} onCambia={() => { if (imp) void confronta(); }} /> : imp === undefined ? (
         <p className="py-10 text-center text-sm text-muted">Caricamento…</p>
@@ -158,8 +159,9 @@ export default function ControlloSopPage() {
               </div>
               {r.mercato_senza_regola > 0 && <p className="mb-4 text-xs text-warning">{num(r.mercato_senza_regola)} schede hanno un valore di MRKT senza traduzione: aggiungila nella regola MERCATO.</p>}
 
-              <h2 className="mb-2 text-sm font-semibold text-ink-700">Per colonna</h2>
-              <div className="mb-6 overflow-x-auto rounded-card border border-line bg-white">
+              {tab === 'colonne' && (
+                <>
+              <div className="overflow-x-auto rounded-card border border-line bg-white">
                 <table className="w-full text-sm">
                   <thead><tr className="border-b border-line bg-stone-50 text-left text-muted">
                     <th className="px-4 py-2 font-medium">Colonna</th><th className="px-4 py-2 text-right font-medium">Coincidono</th><th className="px-4 py-2 text-right font-medium">Valori diversi</th>
@@ -169,7 +171,7 @@ export default function ControlloSopPage() {
                     {conf.colonne.map(c => {
                       const tot = c.ok + c.diverso + c.solo_sop + c.solo_vm;
                       return (
-                        <tr key={c.colonna} className="cursor-pointer hover:bg-stone-50" onClick={() => { setFCol(c.colonna); setLimite(PASSO); }}>
+                        <tr key={c.colonna} className="cursor-pointer hover:bg-stone-50" onClick={() => { setFCol(c.colonna); setLimite(PASSO); setTab('differenze'); }} title="Vedi le differenze di questa colonna">
                           <td className="px-4 py-2 font-semibold">{c.colonna}</td>
                           <td className="px-4 py-2 text-right tabular-nums">{num(c.ok)}</td>
                           <td className={`px-4 py-2 text-right tabular-nums ${c.diverso ? 'text-danger' : 'text-muted'}`}>{num(c.diverso)}</td>
@@ -182,8 +184,13 @@ export default function ControlloSopPage() {
                   </tbody>
                 </table>
               </div>
-              {conf.colonne_senza_regola.length > 0 && <p className="-mt-4 mb-6 text-xs text-muted">Colonne non controllate (senza regola): {conf.colonne_senza_regola.join(', ')}</p>}
+              {conf.colonne_senza_regola.length > 0 && <p className="mt-3 text-xs text-muted">Colonne non controllate (senza regola): {conf.colonne_senza_regola.join(', ')}</p>}
 
+                </>
+              )}
+
+              {tab === 'differenze' && (
+                <>
               <h2 className="mb-2 text-sm font-semibold text-ink-700">Differenze ({num(differenze.length)}{conf.troncato ? '+' : ''}) <span className="font-normal text-muted">· {num(daVedere)} da vedere, {num(conf.differenze.length - daVedere)} viste</span></h2>
               <div className="d-print-none mb-3 flex flex-wrap items-center gap-2">
                 <input className="input !w-44" placeholder="Commessa…" value={fCom} onChange={e => { setFCom(e.target.value); setLimite(PASSO); }} />
@@ -237,6 +244,8 @@ export default function ControlloSopPage() {
                   <p className="mt-2 text-xs text-muted">Carica le loro schede per poterle confrontare.</p>
                   <p className="mt-2 break-words font-mono text-xs text-ink-700">{conf.non_caricate.join(', ')}{r.non_caricate > conf.non_caricate.length ? ` … e altre ${num(r.non_caricate - conf.non_caricate.length)}` : ''}</p>
                 </details>
+              )}
+                </>
               )}
             </>
           )}

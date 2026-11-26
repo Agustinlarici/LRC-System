@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag, HrCapoPair } from '@/types';
 import { PlantMultiSelect } from '../PlantMultiSelect';
-import { usePromptDialog } from '@/components/ui/PromptDialog';
+import { usePromptDialog, useConfirmDialog } from '@/components/ui/PromptDialog';
 import { OstiMark, OstiLegend } from '@/components/ui/OstiMark';
 
 // Il set di stati validi è stato ridotto a questi 3: "aspettativa" e "malattia" restano
@@ -38,6 +39,24 @@ interface Props {
 export function EditEmployeeModal({ employee, departments, plants, companies, tags, funzioni: initialFunzioni, allEmployees, fullManage, onClose, onSaved }: Props) {
   const [funzioni, setFunzioni] = useState(initialFunzioni);
   const { ask, dialog } = usePromptDialog();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
+  const router = useRouter();
+  const [deleting, setDeleting] = useState(false);
+
+  // Elimina la scheda (con contratti, eventi e storico): solo HR, dopo conferma
+  async function deleteEmployee() {
+    const ok = await confirm({
+      title: `Eliminare ${employee.cognome} ${employee.nome}?`,
+      message: 'Si eliminano la scheda e tutti i dati collegati (contratti, eventi, storico). Non si può annullare.',
+      confirmLabel: 'Elimina', cancelLabel: 'Annulla',
+    });
+    if (!ok) return;
+    setDeleting(true); setError('');
+    const res = await fetch(`${BACKEND}/api/hr/employees/${employee.id}`, { method: 'DELETE', credentials: 'include' });
+    if (res.ok) { router.push('/hr/dipendenti'); return; }
+    setDeleting(false);
+    setError((await res.json().catch(() => ({}))).message ?? 'Eliminazione non riuscita');
+  }
   const [form, setForm] = useState({
     matricola: employee.matricola ?? '',
     nome: employee.nome,
@@ -49,9 +68,6 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
     data_nascita: employee.data_nascita?.slice(0, 10) ?? '',
     gruppo_orario: employee.gruppo_orario ?? '',
     nome_osti: employee.nome_osti ?? '',
-    taglia_pantaloni: employee.taglia_pantaloni ?? '',
-    taglia_maglia: employee.taglia_maglia ?? '',
-    taglia_scarpe: employee.taglia_scarpe ?? '',
     badge: employee.badge ?? '',
     transponder: employee.transponder ?? '',
     terminale: employee.terminale ?? '',
@@ -265,14 +281,14 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
               <p className="text-sm font-semibold text-ink-800 mb-2">Contratto</p>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div><label className="label">Matricola<OstiMark /></label><input className="input" value={form.matricola} onChange={e => set('matricola', e.target.value)} placeholder="Vuota per contrattisti/agenzia" /></div>
-                <div><label className="label">Società contratto</label>
+                <div><label className="label">Società contratto<OstiMark /></label>
                   <select className="input" value={form.contract_company_id} onChange={e => set('contract_company_id', e.target.value)}>
                     <option value="">—</option>
                     {companies.map(co => <option key={co.id} value={co.id}>{co.name}</option>)}
                   </select>
                 </div>
                 <div><label className="label">Categoria</label><input className="input" value={form.categoria} onChange={e => set('categoria', e.target.value)} /></div>
-                <div><label className="label">Tipo contratto</label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
+                <div><label className="label">Tipo contratto<OstiMark /></label><input className="input" value={form.tipo_contratto} onChange={e => set('tipo_contratto', e.target.value)} /></div>
                 <div><label className="label">Data cessazione / fine contratto<OstiMark /></label>
                   <input type="date" className="input" value={form.data_cessazione} onChange={e => set('data_cessazione', e.target.value)} />
                   <p className="text-[11px] text-muted mt-1">Con stato Cessato, se vuota verrà usata la data di oggi. Una data futura con stato Attivo indica la scadenza del contratto.</p>
@@ -304,13 +320,13 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
                     >+</button>
                   </div>
                 </div>
-                <div><label className="label">Reparto</label>
+                <div><label className="label">Reparto<OstiMark /></label>
                   <select className="input" value={form.reparto_id} onChange={e => set('reparto_id', e.target.value)}>
                     <option value="">—</option>
                     {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </div>
-                <div className="col-span-full"><label className="label">Plant / Sede (anche più di una)</label>
+                <div className="col-span-full"><label className="label">Plant / Sede (anche più di una)<OstiMark /></label>
                   <PlantMultiSelect plants={plants} value={plantIds} onChange={setPlantIds} />
                 </div>
                 <div><label className="label">Mansione<OstiMark /></label><input className="input" value={form.mansione} onChange={e => set('mansione', e.target.value)} /></div>
@@ -322,17 +338,6 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
                     {allEmployees.map(e => <option key={e.id} value={e.id}>{e.cognome} {e.nome}</option>)}
                   </select>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {fullManage && (
-            <div>
-              <p className="text-sm font-semibold text-ink-800 mb-2">Vestiario</p>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div><label className="label">Taglia pantaloni</label><input className="input" maxLength={20} value={form.taglia_pantaloni} onChange={e => set('taglia_pantaloni', e.target.value)} placeholder="es. 48" /></div>
-                <div><label className="label">Taglia maglia</label><input className="input" maxLength={20} value={form.taglia_maglia} onChange={e => set('taglia_maglia', e.target.value)} placeholder="es. L" /></div>
-                <div><label className="label">Taglia scarpe</label><input className="input" maxLength={20} value={form.taglia_scarpe} onChange={e => set('taglia_scarpe', e.target.value)} placeholder="es. 42" /></div>
               </div>
             </div>
           )}
@@ -404,11 +409,19 @@ export function EditEmployeeModal({ employee, departments, plants, companies, ta
             <button type="button" onClick={onClose} className="btn-secondary text-sm">Annulla</button>
             <button type="submit" disabled={saving} className="btn-primary text-sm">{saving ? 'Salvataggio…' : 'Salva'}</button>
           </div>
+
+          {fullManage && (
+            <div className="flex items-center justify-between gap-3 border-t border-line pt-4">
+              <p className="text-xs text-muted">Elimina la scheda e tutti i dati collegati. Non si può annullare.</p>
+              <button type="button" onClick={deleteEmployee} disabled={deleting} className="btn-danger text-sm shrink-0">{deleting ? 'Eliminazione…' : 'Elimina scheda'}</button>
+            </div>
+          )}
         </form>
         </div>
       </div>
     </div>
     {dialog}
+    {confirmDialog}
     </>
   );
 }

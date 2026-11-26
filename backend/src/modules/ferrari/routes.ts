@@ -17,6 +17,9 @@ import { creaModello, modelloErroreDi, togliModello } from './modelli.js';
 import { iaRoutes } from './ia/routes.js';
 import { accodaDopoCarico, rianalizzaDuplicato } from './ia/aggancio.js';
 import { aggiungiRegoleSuggerite, confrontoSop, elencoImport, importaSop, leggiRegole, RegolaSchema, salvaRegole, segnaViste } from './sop.js';
+import { leggiRegoleComp, provaRegoleComp, salvaRegoleComp, tabellaComponenti } from './regole-comp.js';
+import { MAX_REGOLE, RegolaCompSchema } from './regole-comp-base.js';
+import { esportaRegoleExcel, ImportRegoleError, indiciEsportabili, leggiRegoleExcel } from './regole-comp-import.js';
 import { aggiungiCategorieEsempio, eliminaCategoria, elencoCategorie, riordinaCategorie, salvaCategoria } from './categorie.js';
 import { leggiCartella, leggiConfig, salvaConfig, statoLettura, ultimeLetture } from './cartella.js';
 import { logger } from '../../lib/logger.js';
@@ -240,6 +243,45 @@ ferrariRoutes.get('/sop/regole', requireModule(VISTA), async (c) => c.json({ reg
 ferrariRoutes.put('/sop/regole', requireManage(VISTA), async (c) => {
   const b = await parseBody(c, z.object({ regole: z.array(RegolaSchema).max(60) }));
   return c.json({ salvate: await salvaRegole(utente(c), b.regole) });
+});
+
+// Regole dei componenti (stile Outlook)
+ferrariRoutes.get('/regole-componenti', requireModule(VISTA), async (c) => c.json({ regole: await leggiRegoleComp() }));
+
+ferrariRoutes.put('/regole-componenti', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ regole: z.array(RegolaCompSchema).max(MAX_REGOLE) }));
+  return c.json({ regole: await salvaRegoleComp(utente(c), b.regole) });
+});
+
+// Le regole attuali in Excel (stesso formato dell'importazione)
+ferrariRoutes.get('/regole-componenti/esporta', requireModule(VISTA), async (c) => {
+  const regole = await leggiRegoleComp();
+  const { buffer } = esportaRegoleExcel(regole);
+  return scarica(c, `regole-componenti-${new Date().toISOString().slice(0, 10)}.xlsx`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+});
+
+// Quali di queste regole stanno nel formato Excel (servono a «Sostituisci con Excel»: le altre non si toccano). Solo calcolo, non salva.
+ferrariRoutes.post('/regole-componenti/esportabili', requireManage(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ regole: z.array(RegolaCompSchema).max(MAX_REGOLE) }));
+  return c.json({ indici: indiciEsportabili(b.regole) });
+});
+
+// Carica molte regole da un Excel (una riga = una regola): ritorna le regole lette e gli errori per riga, senza salvare niente
+ferrariRoutes.post('/regole-componenti/importa', requireManage(VISTA), async (c) => {
+  const [f] = await leggiFile(c, 'file', 1);
+  if (!/\.(xls|xlsx|csv)$/i.test(f!.name)) throw new HTTPException(400, { message: 'Estensione non consentita (solo .xlsx, .xls o .csv)' });
+  try { return c.json(leggiRegoleExcel(f!.buf)); } catch (e) {
+    if (e instanceof ImportRegoleError) throw new HTTPException(400, { message: e.message });
+    throw e;
+  }
+});
+
+ferrariRoutes.get('/regole-componenti/tabella', requireModule(VISTA), async (c) =>
+  c.json(await tabellaComponenti(c.req.query('modello')?.slice(0, 30), c.req.query('q')?.slice(0, 40))));
+
+ferrariRoutes.post('/regole-componenti/prova', requireModule(VISTA), async (c) => {
+  const b = await parseBody(c, z.object({ commessa: z.string().min(1).max(40), regole: z.array(RegolaCompSchema).max(MAX_REGOLE).optional() }));
+  return c.json(await provaRegoleComp(b.commessa, b.regole));
 });
 
 ferrariRoutes.post('/sop/regole/suggerite', requireManage(VISTA), async (c) => c.json({ aggiunte: await aggiungiRegoleSuggerite(utente(c)) }));

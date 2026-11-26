@@ -63,6 +63,7 @@ const MODULE_KEY_MAP: Record<string, ModuleKey | ModuleKey[]> = {
   '/mappa':              'mappa',
   '/tickets':            'tickets',
   '/progetti':           'tickets_it',
+  '/quality-control-station':      'photo_station',
   '/admin/system':       'impostazioni',
   '/dashboards':              'dashboards',
   '/dashboards/heatmap':      'dashboards',
@@ -74,6 +75,7 @@ const MODULE_KEY_MAP: Record<string, ModuleKey | ModuleKey[]> = {
   '/recepciones':             'recepciones',
   '/edi':                     'edi',
   '/webddt':                  'webddt',
+  '/fatturazione':            'fatturazione',
   '/spedizione-bucci':        'spedizione_bucci',
   '/admin/monitor/parate':    'monitor_parate',
   '/admin/monitor/motivi':    'monitor_motivi',
@@ -85,6 +87,7 @@ const MODULE_KEY_MAP: Record<string, ModuleKey | ModuleKey[]> = {
   '/hr/richieste':            ['hr', 'hr_team'],
   '/hr/scadenze':             ['hr', 'hr_team'],
   '/hr/documenti':            'hr',
+  '/hr/vestiario':            'hr',
   '/hr/organigramma':         ['hr', 'hr_team'],
   '/hr/analisi':              'hr',
   '/hr/evoluzione':           'hr',
@@ -207,8 +210,8 @@ export function Sidebar() {
     }`}>
 
       {/* Logo */}
-      <div className="flex items-center justify-center border-b border-white/10 h-14 px-4">
-        <img src="/logo-white.png" alt="STR" className="h-9 select-none object-contain" />
+      <div className="flex items-center justify-center border-b border-white/10 h-20 px-4">
+        <img src="/logo-white.png" alt="STR" className="h-11 select-none object-contain" />
       </div>
 
       {/* Nav */}

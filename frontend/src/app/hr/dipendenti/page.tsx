@@ -59,6 +59,13 @@ const IMPORT_COLUMNS = [
   'DATA NASCITA', 'EMAIL', 'INDIRIZZO', 'CITTA', 'PROVINCIA', 'CAP', 'GRUPPO ORARIO',
 ];
 
+interface MissingPerson { key: string; name: string; contracts: number; suggestions: { id: number; label: string }[]; best: number | null }
+// Scelta per ogni persona non trovata: 'new' crea la scheda, 'skip' non importa, numero = collega a quella scheda
+type MissingDecision = 'new' | 'skip' | number;
+
+// CSV del gestionale paghe: una riga = un contratto interinale
+const CONTRACT_COLUMNS = ['MATRICOLA', 'COGNOME', 'NOME', 'QUALIFICA', 'DATA ASSUNZIONE', 'DATA LICENZIAMENTO'];
+
 // Valori riconosciuti come "sì" nella colonna IN PROVA (case-insensitive)
 const IN_PROVA_TRUE = new Set(['si', 'sì', 'x', '1', 'true', 'yes']);
 
@@ -79,6 +86,9 @@ function parseItalianDate(s: string | undefined): string | null {
   const y = yRaw.length === 2 ? `20${yRaw}` : yRaw;
   return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
 }
+
+// aaaa-mm-gg (anche con l'ora in coda) → gg-mm-aaaa per la tabella; vuoto → «—»
+const dmy = (d: string | null | undefined) => d ? d.slice(0, 10).split('-').reverse().join('-') : '—';
 
 export default function DipendentiPage() {
   const router = useRouter();
@@ -133,6 +143,7 @@ export default function DipendentiPage() {
   const [tagMenuFor,    setTagMenuFor]    = useState<number | null>(null);
   const [showMore,      setShowMore]      = useState(false);
   const importRef = useRef<ImportExcelHandle>(null);
+  const contractsRef = useRef<ImportExcelHandle>(null);
   const [tagMenuPos,    setTagMenuPos]    = useState<{ top: number; left: number } | null>(null);
   const [showMatricole, setShowMatricole] = useState(false);
   const [matricoleBands, setMatricoleBands] = useState<{ label: string; from: number; to: number; last: number | null; next: number | null; count: number }[] | null>(null);
@@ -164,6 +175,17 @@ export default function DipendentiPage() {
   const { ask, dialog: promptDialog } = usePromptDialog();
   const { choose, dialog: choiceDialog } = useChoiceDialog();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
+  // Finestra con la tabella delle persone del CSV che non sono in anagrafica (import contratti)
+  const [missingAsk, setMissingAsk] = useState<MissingPerson[] | null>(null);
+  const [missingChoice, setMissingChoice] = useState<Record<string, MissingDecision>>({});
+  const missingResolver = useRef<((c: Record<string, MissingDecision> | null) => void) | null>(null);
+  const askMissing = (list: MissingPerson[]) => new Promise<Record<string, MissingDecision> | null>(resolve => {
+    missingResolver.current = resolve;
+    // Preselezione: la scheda suggerita se è una sola e coincide bene, altrimenti non importare (creare è una scelta esplicita)
+    setMissingChoice(Object.fromEntries(list.map(m => [m.key, m.best ?? 'skip' as MissingDecision])));
+    setMissingAsk(list);
+  });
+  const answerMissing = (c: Record<string, MissingDecision> | null) => { setMissingAsk(null); missingResolver.current?.(c); missingResolver.current = null; };
 
   // Intestazione "congelata" fuori dall'area che scorre in verticale (invece di
   // position:sticky, che su Chrome dentro un contenitore overflow con bordi arrotondati
@@ -312,7 +334,7 @@ export default function DipendentiPage() {
       Funzione: e.funzione_aziendale ?? '', Reparto: e.reparto_name ?? '', Plant: e.plant_name ?? '',
       Mansione: e.mansione ?? '', Livello: e.livello ?? '', Responsabile: e.capo_nome ?? '',
       'Tipo contratto': e.tipo_contratto ?? '', 'Gruppo orario': e.gruppo_orario ?? '', 'Nome Osti': e.nome_osti ?? '',
-      'Taglia pantaloni': e.taglia_pantaloni ?? '', 'Taglia maglia': e.taglia_maglia ?? '', 'Taglia scarpe': e.taglia_scarpe ?? '', Assunzione: e.data_assunzione?.slice(0, 10) ?? '',
+      Assunzione: e.data_assunzione?.slice(0, 10) ?? '',
       Cessazione: e.data_cessazione?.slice(0, 10) ?? '', 'In prova': e.in_prova ? 'Sì' : '',
       Stato: STATO_LABEL[e.stato] ?? e.stato,
     }));
@@ -344,6 +366,36 @@ export default function DipendentiPage() {
     const res = await fetch(`${BACKEND}/api/hr/osti/dipendenti`, { credentials: 'include' });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message ?? 'Impossibile leggere i dati da Osti');
     return res.json();
+  }
+
+  // Contratti interinali: il backend collega le righe alle persone (o le crea), salva i contratti
+  // e scrive gli eventi in timeline. Le date si convertono qui (gg/mm/aaaa → aaaa-mm-gg).
+  async function importContracts(rows: Record<string, string>[]): Promise<ImportResult> {
+    const payload = rows.map(r => ({
+      matricola: r['matricola'] ?? '', cognome: r['cognome'] ?? '', nome: r['nome'] ?? '', qualifica: r['descriz._qualifica'] ?? r['qualifica'] ?? '',
+      data_inizio: parseItalianDate(r['data_assunzione']), data_fine: parseItalianDate(r['data_licenziamento']),
+    }));
+    const call = (extra: { dry_run?: boolean; decisions?: Record<string, MissingDecision> }) => fetch(`${BACKEND}/api/hr/contracts/import`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ rows: payload, ...extra }),
+    });
+    // Prova a vuoto: se ci sono persone non in anagrafica si chiede prima di crearle
+    const dry = await call({ dry_run: true });
+    if (!dry.ok) return { inserted: 0, skipped: 0, errors: 1, detail: (await dry.json().catch(() => ({}))).message ?? 'Import rifiutato dal server' };
+    const missing: MissingPerson[] = (await dry.json()).new_people ?? [];
+    let decisions: Record<string, MissingDecision> = {};
+    if (missing.length) {
+      const choice = await askMissing(missing);
+      if (!choice) return { inserted: 0, skipped: 0, errors: 0, detail: 'Import annullato, nessuna modifica.' };
+      decisions = choice;
+    }
+    const res = await call({ decisions });
+    if (!res.ok) return { inserted: 0, skipped: 0, errors: 1, detail: (await res.json().catch(() => ({}))).message ?? 'Import rifiutato dal server' };
+    const d: { created: number; linked: number; contracts: number; duplicates: number; skipped: number; issues: ImportIssue[] } = await res.json();
+    return {
+      inserted: d.contracts, skipped: d.skipped + d.duplicates, errors: 0, issues: d.issues,
+      detail: `${d.contracts} contratti registrati · ${d.linked} persone già in anagrafica · ${d.created} persone nuove create · ${d.duplicates} contratti già presenti`,
+    };
   }
 
   async function importRows(rows: Record<string, string>[], variant?: string): Promise<ImportResult> {
@@ -718,6 +770,12 @@ export default function DipendentiPage() {
                       Importa da Excel (senza eventi)
                     </button>
                     <button type="button" role="menuitem"
+                      title={`CSV del gestionale paghe, una riga per contratto. Colonne attese: ${CONTRACT_COLUMNS.join(', ')}`}
+                      onClick={() => { setShowMore(false); contractsRef.current?.open(); }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
+                      Import massivo contratti interinali
+                    </button>
+                    <button type="button" role="menuitem"
                       title="Elenco dipendenti di Osti (CSV): abbina per cognome e nome (o Nome Osti) e aggiorna le schede"
                       onClick={() => { setShowMore(false); importRef.current?.open('osti'); }}
                       className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
@@ -747,6 +805,50 @@ export default function DipendentiPage() {
         </>}
       />
 
+      {missingAsk && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] p-4" onClick={() => answerMissing(null)}>
+          <div role="dialog" aria-modal="true" className="bg-white rounded-card shadow-float w-full max-w-4xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-line">
+              <h2 className="text-base font-medium">{missingAsk.length} persone del CSV non trovate in anagrafica</h2>
+              <p className="text-sm text-muted mt-1">Per ognuna scegli: collegarla a una scheda simile già presente, crearne una nuova o non importare i suoi contratti.</p>
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-stone-50 text-left text-xs font-medium text-muted uppercase tracking-wide">
+                  <tr><th className="px-5 py-2">Nel CSV</th><th className="px-3 py-2 text-right">Contratti</th><th className="px-3 py-2">Cosa fare</th></tr>
+                </thead>
+                <tbody>
+                  {missingAsk.map(m => (
+                    <tr key={m.key} className="border-t border-line align-top">
+                      <td className="px-5 py-1.5 font-medium">{m.name}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{m.contracts}</td>
+                      <td className="px-3 py-1.5">
+                        <select
+                          className="input text-sm w-full"
+                          value={String(missingChoice[m.key] ?? 'skip')}
+                          onChange={e => {
+                            const v = e.target.value;
+                            setMissingChoice(c => ({ ...c, [m.key]: v === 'new' || v === 'skip' ? v : Number(v) }));
+                          }}
+                        >
+                          {m.suggestions.map(x => <option key={x.id} value={x.id}>Collega a: {x.label}</option>)}
+                          <option value="new">Crea nuova scheda interinale</option>
+                          <option value="skip">Non importare</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3 border-t border-line">
+              <button type="button" onClick={() => answerMissing(null)} className="btn-secondary text-sm">Annulla import</button>
+              <button type="button" onClick={() => answerMissing(missingChoice)} className="btn-primary text-sm">Conferma e importa</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {manage && <ImportExcelButton ref={contractsRef} hideButton columns={CONTRACT_COLUMNS} processRows={importContracts} onDone={load} />}
       {manage && <ImportExcelButton ref={importRef} hideButton columns={IMPORT_COLUMNS} processRows={importRows} onDone={load} sources={{ 'osti-db': fetchOstiRows }} />}
 
       <div className="card p-0 overflow-hidden">
@@ -987,7 +1089,7 @@ export default function DipendentiPage() {
               <div className="text-sm text-muted truncate">{e.contract_company_name ?? '—'}</div>
               <div className="text-sm text-muted truncate">{e.nazionalita?.toUpperCase() ?? '—'}</div>
               <div className="text-sm text-muted truncate">{tipoNazLabel(e.tipo_nazionalita) || '—'}</div>
-              <div className="text-sm text-muted truncate">{e.data_nascita?.slice(0, 10) ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{dmy(e.data_nascita)}</div>
               <div className="text-sm text-muted truncate" title={e.email ?? undefined}>{e.email ?? '—'}</div>
               <div className="text-sm text-muted truncate" title={e.indirizzo ?? undefined}>{e.indirizzo ?? '—'}</div>
               <div className="text-sm text-muted truncate">{e.citta ?? '—'}</div>
@@ -1002,8 +1104,8 @@ export default function DipendentiPage() {
               <div className="text-sm text-muted truncate">{e.tipo_contratto ?? '—'}</div>
               <div className="text-sm text-muted truncate">{e.gruppo_orario ?? '—'}</div>
               <div className="text-sm text-muted truncate" title={e.nome_osti ?? undefined}>{e.nome_osti ?? '—'}</div>
-              <div className="text-sm text-muted truncate">{e.data_assunzione?.slice(0, 10) ?? '—'}</div>
-              <div className="text-sm text-muted truncate">{e.data_cessazione?.slice(0, 10) ?? '—'}</div>
+              <div className="text-sm text-muted truncate">{dmy(e.data_assunzione)}</div>
+              <div className="text-sm text-muted truncate">{dmy(e.data_cessazione)}</div>
               <div className="text-center text-sm text-muted">{e.in_prova ? 'Sì' : '—'}</div>
               <div className="text-center">
                 <StatusBadge tone={STATO_TONE[e.stato] ?? 'neutral'}>{STATO_LABEL[e.stato]}</StatusBadge>

@@ -8,6 +8,7 @@ const OSTI_LABELS = new Set([
   'Data cessazione / fine contratto', 'Fine contratto / cessazione', 'Mansione', 'Livello', 'Note', 'Note HR',
   'Badge', 'Transponder', 'Terminale di timbratura', 'Qualifica', 'Tempo indeterminato',
   'Data passaggio a indeterminato', 'Passaggio a indeterminato', 'Part-time', 'Luogo di nascita', 'Stato civile',
+  'Reparto', 'Società', 'Plant / Sedi', 'Tipologia',   // ditta, filiale e reparto di Osti, abbinati per nome ai nostri elenchi
 ]);
 
 export const isOstiLabel = (label: string) => OSTI_LABELS.has(label.replace(/\s*\*$/, '').trim());

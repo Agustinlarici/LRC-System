@@ -65,6 +65,7 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
   useEffect(() => { carica(); }, [carica]);
 
   // al primo ingresso si mostra subito cio' che va deciso
+  useEffect(() => { if (c && c.sigle.length === 0) setElencoAperto(true); }, [c?.sigle.length === 0]); // eslint-disable-line react-hooks/exhaustive-deps
   const totDa = c ? Object.values(c.da_decidere).reduce((a, b) => a + b, 0) : 0;
   useEffect(() => { if (!scelto && totDa > 0) { setFiltro('da'); setScelto(true); } }, [totDa, scelto]);
 
@@ -77,6 +78,14 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
 
   async function imposta(s: Voce, stato: string, alias?: string | null, padre?: string | null) {
     const mods = modelliScelti(s);
+    if (!mods.length && !c?.modelli.length) {                       // ancora nessuna scheda: la scelta vale per tutti i modelli
+      try {
+        await api.post('/api/ferrari/sigle/imposta', { codice: s.codice, stato, modelli: '*', alias, padre });
+        setNota(null);
+      } catch (e) { setErrore((e as Error).message); }
+      await carica();
+      return;
+    }
     if (!mods.length) { setNota('Scegli prima a quali modelli vale (colonna «Modelli»).'); return; }
     const tutti = mods.length === c!.modelli.length;
     if (tutti && Object.values(s.stati).some(y => y.ambito === 'modello') && !confirm('Questa scelta sostituisce quelle fatte per i singoli modelli. Continuare?')) return;
@@ -146,7 +155,8 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
   }
 
   const proposteDesc = useMemo(() => (c?.sigle ?? []).filter(x => x.descrizione_proposta), [c]);
-  const tutte = useMemo(() => (c?.sigle ?? []).filter(s => Object.keys(s.stati).length > 0), [c]);
+  // anche le sigle caricate per tutti i modelli e non ancora comparse in nessuna scheda
+  const tutte = useMemo(() => (c?.sigle ?? []).filter(s => Object.keys(s.stati).length > 0 || s.tutti), [c]);
   const conta = useMemo(() => {
     const k = { da: 0, si: 0, no: 0, ns: 0 };
     for (const s of tutte) { const st = sintesi(s).stato; if (st === 'da_decidere') k.da++; else if (st === 'no') k.no++; else if (st === 'nonsigla') k.ns++; else k.si++; }
@@ -163,15 +173,7 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
   }), [tutte, cerca, filtro]);
 
   if (!c) return <Errore messaggio={errore} />;
-  if (c.modelli.length === 0) {
-    return (
-      <div className="rounded-card border border-line bg-white p-6 text-sm">
-        <h2 className="text-lg font-semibold">Non c&apos;è ancora nessuna scheda</h2>
-        <p className="mt-1 text-muted">Le sigle si decidono guardando le schede. Carica uno o più Excel (o leggi la cartella) e poi torna qui: troverai l&apos;elenco delle sigle da decidere.</p>
-        <Link href="/ferrari" className="btn-primary mt-3 inline-block">Vai a «Vedere»</Link>
-      </div>
-    );
-  }
+  const senzaSchede = c.modelli.length === 0;
   const padriPossibili = (s: Voce, padre: string | null) => {
     const p = tutte.filter(z => z.codice !== s.codice && Object.values(z.stati).some(y => y.stato === 'colonna')).map(z => z.codice);
     if (padre && !p.includes(padre)) p.push(padre);
@@ -182,6 +184,13 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
     <div className="space-y-3">
       <Errore messaggio={errore} />
       {nota && <p className="text-xs text-ink-700">{nota}</p>}
+
+      {senzaSchede && (
+        <div className="rounded-card border border-sky-300 bg-accent-soft px-4 py-2 text-sm">
+          Non c&apos;è ancora nessuna scheda: puoi già caricare l&apos;elenco delle sigle (con le descrizioni) qui sotto. Quando leggerai gli Excel le ritroverai pronte;
+          quelle nuove che compaiono nelle schede te le chiederò io. <Link href="/ferrari" className="font-semibold text-accent-ink hover:underline">Vai a «Vedere»</Link> per caricare gli Excel.
+        </div>
+      )}
 
       <div className="rounded-card border border-line bg-white px-4 py-2 text-sm">
         <button className="font-medium text-accent-ink hover:underline" onClick={() => setElencoAperto(o => !o)}><span className="inline-flex items-center gap-1">{elencoAperto ? <IconaGiu /> : <IconaDestra />} Aggiungi sigle (una o un elenco, con le descrizioni)</span></button>
@@ -293,7 +302,7 @@ export function ImpostazioniSigle({ onCambia }: { onCambia?: (c: ConfigSigle) =>
                   <td className="border-b border-stone-100 px-3 py-1.5">
                     <details className="relative">
                       <summary className="btn-secondary !py-0.5 text-xs cursor-pointer list-none whitespace-nowrap">
-                        {!sc.length ? 'Scegli i modelli…' : sc.length === c.modelli.length ? `Tutti i modelli (${sc.length})` : sc.length <= 2 ? sc.join(', ') : `${sc.length} modelli`}
+                        {senzaSchede ? 'Tutti i modelli' : !sc.length ? 'Scegli i modelli…' : sc.length === c.modelli.length ? `Tutti i modelli (${sc.length})` : sc.length <= 2 ? sc.join(', ') : `${sc.length} modelli`}
                       </summary>
                       <div className="absolute z-20 mt-1 min-w-[14rem] rounded-card border border-line bg-white p-2 shadow-lg">
                         <label className="block text-xs font-semibold">

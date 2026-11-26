@@ -11,6 +11,7 @@ import { EditEmployeeModal } from './EditEmployeeModal';
 import { ProponiModificaModal } from './ProponiModificaModal';
 import { EventTimeline } from './EventTimeline';
 import { SalaryHistory } from './SalaryHistory';
+import { ContractsCard } from './ContractsCard';
 import { EmployeeAvatar } from '@/components/hr/EmployeeAvatar';
 import { tagBadgeStyle } from '@/lib/tagColors';
 import { resizePhoto } from '@/lib/hrPhoto';
@@ -251,12 +252,6 @@ export default function EmployeeDetailPage() {
             {employee.data_cessazione && <Field label="Fine contratto / cessazione" value={fmtDate(employee.data_cessazione)} />}
           </InfoCard>
 
-          <InfoCard title="Vestiario">
-            <Field label="Taglia pantaloni" value={employee.taglia_pantaloni} />
-            <Field label="Taglia maglia" value={employee.taglia_maglia} />
-            <Field label="Taglia scarpe" value={employee.taglia_scarpe} />
-          </InfoCard>
-
           <InfoCard title="Domicilio">
             <Field label="Indirizzo" value={employee.domicilio_indirizzo} />
             <Field label="Città" value={employee.domicilio_citta} />
@@ -295,6 +290,7 @@ export default function EmployeeDetailPage() {
         {/* Colonna destra: retribuzione e storico */}
         <div className="space-y-5">
           {salaryView && <SalaryHistory employeeId={employee.id} canManageSalary={canManage('hr_salary')} />}
+          <ContractsCard employeeId={employee.id} />
           <EventTimeline employeeId={employee.id} employee={employee} departments={departments} plants={plants} allEmployees={allEmployees} canManage={manage} canManageLimited={manage} />
         </div>
       </div>
