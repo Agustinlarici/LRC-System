@@ -252,13 +252,6 @@ export default function EmployeeDetailPage() {
             {employee.data_cessazione && <Field label="Fine contratto / cessazione" value={fmtDate(employee.data_cessazione)} />}
           </InfoCard>
 
-          <InfoCard title="Vestiario">
-            <Field label="Taglia pantaloni" value={employee.taglia_pantaloni} />
-            <Field label="Taglia maglia" value={employee.taglia_maglia} />
-            <Field label="Taglia scarpe" value={employee.taglia_scarpe} />
-            <Field label="Taglia giubbotto" value={employee.taglia_campera} />
-          </InfoCard>
-
           <InfoCard title="Domicilio">
             <Field label="Indirizzo" value={employee.domicilio_indirizzo} />
             <Field label="Città" value={employee.domicilio_citta} />
