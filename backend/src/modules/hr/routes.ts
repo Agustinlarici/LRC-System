@@ -9,6 +9,7 @@ import { hrAnalyticsRoutes } from './analytics.js';
 import { hrDocumentRoutes } from './documents.js';
 import { hrOstiRoutes } from './osti.js';
 import { hrContractRoutes } from './contracts.js';
+import { hrVestiarioRoutes } from './vestiario-routes.js';
 import { applyEmployeeUpdate } from './employee-update.js';
 
 export const hrRoutes = new Hono<Env>();
@@ -16,6 +17,7 @@ hrRoutes.route('/analytics', hrAnalyticsRoutes);
 hrRoutes.route('/documents', hrDocumentRoutes);
 hrRoutes.route('/osti', hrOstiRoutes);
 hrRoutes.route('/contracts', hrContractRoutes);
+hrRoutes.route('/vestiario', hrVestiarioRoutes);
 
 // Eventi il cui inizio/fine deve riflettersi sullo stato del dipendente — altrimenti
 // un evento "in corso" (senza end_date passata) resta invisibile ai filtri per stato
@@ -207,7 +209,7 @@ hrRoutes.post('/requests/:id/cancel', requireModuleAny('hr', 'hr_team'), async (
 const PROPOSABLE_FIELDS = [
   'mansione', 'qualifica', 'reparto_id', 'gruppo_orario',
   'telefono', 'email', 'indirizzo', 'citta', 'provincia', 'cap',
-  'taglia_pantaloni', 'taglia_maglia', 'taglia_scarpe', 'taglia_campera', 'note',
+  'note',
 ] as const;
 
 const changeRequestSchema = z.object({
@@ -603,7 +605,7 @@ const employeeSelect = db`
   SELECT
     e.id, e.matricola, e.nome, e.cognome, e.sesso, e.data_nascita, e.codice_fiscale,
     e.nazionalita, e.email, e.telefono, e.indirizzo, e.citta, e.provincia, e.cap, e.gruppo_orario,
-    e.nome_osti, e.taglia_pantaloni, e.taglia_maglia, e.taglia_scarpe, e.taglia_campera,
+    e.nome_osti,
     e.badge, e.transponder, e.terminale, e.qualifica, e.indeterminato, e.indeterminato_data, e.part_time,
     e.luogo_nascita, e.domicilio_indirizzo, e.domicilio_citta, e.domicilio_provincia, e.domicilio_cap,
     e.titolo_studio, e.stato_civile, e.note_hr, e.tipo_nazionalita,
@@ -756,10 +758,6 @@ const employeeFieldsSchema = z.object({
   cap:                  z.string().max(10).optional().nullable(),
   gruppo_orario:        z.string().max(100).optional().nullable(),
   nome_osti:            z.string().max(200).optional().nullable(),
-  taglia_pantaloni:     z.string().max(20).optional().nullable(),
-  taglia_maglia:        z.string().max(20).optional().nullable(),
-  taglia_scarpe:        z.string().max(20).optional().nullable(),
-  taglia_campera:       z.string().max(20).optional().nullable(),
   badge:                z.string().max(50).optional().nullable(),
   transponder:          z.string().max(50).optional().nullable(),
   terminale:            z.string().max(50).optional().nullable(),

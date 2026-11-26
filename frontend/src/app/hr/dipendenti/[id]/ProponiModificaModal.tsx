@@ -15,10 +15,6 @@ const TEXT_FIELDS: { key: keyof HrEmployee & string; label: string }[] = [
   { key: 'citta', label: 'Città' },
   { key: 'provincia', label: 'Provincia' },
   { key: 'cap', label: 'CAP' },
-  { key: 'taglia_pantaloni', label: 'Taglia pantaloni' },
-  { key: 'taglia_maglia', label: 'Taglia maglia' },
-  { key: 'taglia_scarpe', label: 'Taglia scarpe' },
-  { key: 'taglia_campera', label: 'Taglia giubbotto' },
   { key: 'note', label: 'Note' },
 ];
 
