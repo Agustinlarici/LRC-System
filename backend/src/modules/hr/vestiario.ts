@@ -1,7 +1,7 @@
 // Vestiario per capo: parser dell'Excel di import (intestazioni «CAPO (COLORE)», celle con la taglia).
 // Funzioni pure, senza accesso al DB, così si possono provare con i test.
 
-export const TAGLIE = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', '5XL'] as const;
+export const TAGLIE = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', '5XL'] as const;
 export type Taglia = typeof TAGLIE[number];
 
 const ALIAS: Record<string, Taglia> = { '2XL': 'XXL', 'XXXL': '3XL' };
