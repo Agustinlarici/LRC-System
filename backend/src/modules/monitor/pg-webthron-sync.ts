@@ -45,12 +45,23 @@ const QUIET_FROM_HOUR   = envInt('WEBTHRON_QUIET_FROM_HOUR', 23);
 const QUIET_TO_HOUR     = envInt('WEBTHRON_QUIET_TO_HOUR', 5);
 const QUIET_INTERVAL_MS = envInt('WEBTHRON_QUIET_INTERVAL_SECONDS', 300) * 1000;
 
+// Passata `lastup` (schede modificate): `lastup` non ha indice, quindi si entra da `datain` negli ultimi
+// N giorni (a settimane) e si filtra `lastup`. Di default a ogni ciclo (5 minuti), come la lettura su `datain`.
+const LASTUP_DAYS     = Math.max(1, envInt('WEBTHRON_LASTUP_DAYS', 90));
+const LASTUP_EVERY_MS = envInt('WEBTHRON_LASTUP_EVERY_SECONDS', 300) * 1000;
+// Inizio dell'ultima passata riuscita: da lì si guarda `lastup` (in memoria, come lastSyncAt)
+let lastLastupOkAt: Date | null = null;
+
 // Aggiornamento fasi/combos: finestra totale e ampiezza di ogni rebanadina
 const LOOKUP_DAYS       = Math.max(1, envInt('WEBTHRON_LOOKUP_DAYS', 90));
 const LOOKUP_SLICE_DAYS = 7;
 
+function dayItaly(d: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(d);
+}
+
 function todayItaly(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome' }).format(new Date());
+  return dayItaly();
 }
 
 /** Returns midnight Rome time as a UTC Date (uses index on datain). */
@@ -137,10 +148,10 @@ async function sostituisciModificate(rows: WebthronEvent[]): Promise<{ sostituit
  * Con `swallow` l'errore non si propaga (incrementale: gli eventi nuovi non devono dipenderne).
  */
 async function passataLastup(
-  since: Date, combos: LineaCombo[], deliberaFasi: string[], origine: string, swallow: boolean,
-): Promise<number> {
+  since: Date, fromDay: string, toDay: string, combos: LineaCombo[], deliberaFasi: string[], origine: string, swallow: boolean,
+): Promise<number | null> {
   const n = await trackedPass('sync_lastup', async () => {
-    const modificate = await queryWebthronEvents(combos, deliberaFasi, { mode: 'modified', since });
+    const modificate = await queryWebthronEvents(combos, deliberaFasi, { mode: 'modified', since, fromDay, toDay });
     const { sostituite, nonTrovate } = await sostituisciModificate(modificate);
     const msg = `[LastupSync] ${origine}: ${modificate.length} schede modificate, ${sostituite} righe sostituite, ${nonTrovate} non trovate nello storico`;
     if (nonTrovate > 0 || sostituite > 0) logger.info(msg); else logger.debug(msg);
@@ -149,20 +160,22 @@ async function passataLastup(
     swallow,
     onError: err => logger.error(`[LastupSync] ${origine}: passata fallita, gli eventi nuovi proseguono: ${err instanceof Error ? err.message : String(err)}`),
   });
-  return n ?? 0;
+  return n;
 }
 
 /**
- * Passata su `lastup` per la carica dei 180 giorni: sostituisce nello storico le righe delle schede
- * modificate da `fromDay` (YYYY-MM-DD, ora di Roma) in poi. Solo se il flag `iknow_andon_lastup_enabled`
- * è acceso. Ritorna le righe sostituite; lancia l'errore se WebThron non risponde.
+ * Passata su `lastup` per la carica dei 180 giorni: sostituisce nello storico le righe delle schede con
+ * `datain` da `fromDay` (YYYY-MM-DD, ora di Roma) in poi modificate da `modificateDa` (di solito l'inizio
+ * della carica: quello che era già cambiato prima è già stato riletto). Solo se il flag
+ * `iknow_andon_lastup_enabled` è acceso. Ritorna le righe sostituite; lancia l'errore se WebThron non risponde.
  */
-export async function sostituisciModificateDal(fromDay: string): Promise<number> {
+export async function sostituisciModificateDal(fromDay: string, modificateDa: Date): Promise<number> {
   if (!(await isIKnowEnabled('iknow_andon_lastup_enabled'))) return 0;
   const combos       = await getActiveLineeWithCombos();
   const deliberaFasi = getDeliberaFasi();
   if (combos.length === 0) return 0;
-  return passataLastup(midnightRome(fromDay), combos, deliberaFasi, `dal ${fromDay}`, false);
+  const since = new Date(modificateDa.getTime() - OVERLAP_MS);
+  return (await passataLastup(since, fromDay, todayItaly(), combos, deliberaFasi, `datain dal ${fromDay}`, false)) ?? 0;
 }
 
 // ─── Main sync ────────────────────────────────────────────────────────────────
@@ -211,10 +224,15 @@ export async function syncWebthronToPostgres(): Promise<void> {
   try {
     const rows = await queryWebthronEvents(combos, deliberaFasi, dateFilter);
 
-    // Opzione (spenta finché non provata): schede già lette ma modificate dopo (lastup), stessa data `since`
+    // Opzione: schede già lette ma modificate dopo (lastup), ogni LASTUP_EVERY_MS e solo sugli ultimi LASTUP_DAYS giorni.
     // Un errore qui non ferma l'incrementale: è registrato nel job «sync_lastup» e gli eventi nuovi entrano comunque.
-    if (await isIKnowEnabled('iknow_andon_lastup_enabled')) {
-      await passataLastup(since, combos, deliberaFasi, 'incrementale', true);
+    const adesso = new Date();
+    if ((!lastLastupOkAt || adesso.getTime() - lastLastupOkAt.getTime() >= LASTUP_EVERY_MS - 10_000)  // 10 s di tolleranza sul timer
+        && await isIKnowEnabled('iknow_andon_lastup_enabled')) {
+      const sinceLastup = lastLastupOkAt ? new Date(lastLastupOkAt.getTime() - OVERLAP_MS) : since;
+      const fromDay     = dayItaly(new Date(adesso.getTime() - LASTUP_DAYS * 86_400_000));
+      const n = await passataLastup(sinceLastup, fromDay, today, combos, deliberaFasi, 'incrementale', true);
+      if (n !== null) lastLastupOkAt = adesso;
     }
 
     if (rows.length === 0) {

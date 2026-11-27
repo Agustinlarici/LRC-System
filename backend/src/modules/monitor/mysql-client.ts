@@ -217,14 +217,14 @@ export type LineaCombo = { fase: string; modello: string; componente: string };
 
 type DateFilter =
   | { mode: 'since'; since: Date }     // datain > ?
-  | { mode: 'modified'; since: Date }  // lastup > ? (schede modificate), stessa query delle altre letture
+  | { mode: 'modified'; since: Date; fromDay: string; toDay: string }  // lastup > ? solo su schede con datain in [fromDay, toDay] (indice), a settimane
   | { mode: 'range'; from: string; to: string; sliceHours?: number };  // giorni [from, to] letti a rebanadine di datain (indice), backfill
 
 /** Ore per rebanadina nelle letture di giorni interi: ~1000 documenti al massimo, query da pochi ms. */
 const RANGE_SLICE_HOURS = 4;
 const SLICE_ROW_LIMIT   = 20_000;
-/** Limite righe della passata lastup (schede modificate): con 180 giorni sono molte di più di una rebanadina. */
-const LASTUP_ROW_LIMIT  = 40_000;
+/** Ore per rebanadina nella passata lastup: una settimana, come la carica dei 180 giorni. */
+const LASTUP_SLICE_HOURS = 168;
 
 /**
  * Ore per rebanadina nella carica dei 180 giorni: di default una settimana intera (168 h) = una
@@ -353,14 +353,20 @@ export async function queryWebthronEvents(
     return fetchRows(buildSql('AND ubi.datain > ?', 5000), [dateFilter.since]);
   }
 
-  // Schede modificate (lastup > since): stessa query delle altre letture, cambia solo la condizione sulla data. Nessun filtro su `datain`
-  // (coprirebbe quasi tutta la tabella): le schede nuove già lette sono un aggiornamento senza effetto.
+  // Schede modificate (lastup > since): stessa query delle altre letture, ma `lastup` non ha indice
+  // (la query intera scade). Si entra dall'indice di `datain` a settimane, nei giorni [fromDay, toDay],
+  // e `lastup` filtra solo le righe già lette: nessuna scansione dell'intera tabella.
   if (dateFilter.mode === 'modified') {
-    const rows = await fetchRows(buildSql('AND ubi.lastup > ?', LASTUP_ROW_LIMIT), [dateFilter.since]);
-    if (rows.length >= LASTUP_ROW_LIMIT) {
-      logger.warn(`[WebThron] Schede modificate (lastup) al limite di ${LASTUP_ROW_LIMIT} righe: ne mancano`);
+    const sql    = buildSql('AND ubi.datain >= ? AND ubi.datain < ? AND ubi.lastup > ?', SLICE_ROW_LIMIT);
+    const result: WebthronEvent[] = [];
+    for (const slice of buildRangeSlices(dateFilter.fromDay, dateFilter.toDay, LASTUP_SLICE_HOURS)) {
+      const rows = await fetchRows(sql, [slice.from, slice.to, dateFilter.since]);
+      if (rows.length >= SLICE_ROW_LIMIT) {
+        logger.warn(`[WebThron] Schede modificate (lastup) ${slice.from} → ${slice.to} al limite di ${SLICE_ROW_LIMIT} righe: ne mancano`);
+      }
+      result.push(...rows);
     }
-    return rows;
+    return result;
   }
 
   // Giorni interi: query su `datain` (indice), con la pausa della guardia tra una e l'altra.
