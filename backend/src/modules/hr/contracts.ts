@@ -39,17 +39,37 @@ interface Contratto { matricola: string | null; qualifica: string | null; inizio
 
 // Registra un contratto (riga in hr_employee_contract + eventi in timeline). false = già presente
 // (stessa persona e stesse date): rieseguire non duplica nulla.
+// Un contratto registrato «aperto» (senza fine) e poi chiuso in Osti con lo stesso inizio non diventa un
+// secondo contratto: si aggiorna la riga esistente con la data di fine (e l'eventuale doppione aperto, che
+// il sync vecchio lasciava accanto a quello chiuso, si toglie). Gli eventi «assunzione» e «cessazione» non si
+// duplicano: se per quella data c'è già un evento dello stesso tipo (es. creato dall'aggiornamento della scheda) non se ne crea un altro.
 export async function registraContratto(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any, employeeId: number, r: Contratto,
   user: { id: number | null; display_name: string }, today: string, etichetta: string,
 ): Promise<boolean> {
+  let chiuso = false;
+  if (r.fine) {
+    const [upd] = await tx<{ id: number }[]>`
+      UPDATE hr_employee_contract SET data_fine = ${r.fine}::date, tipo = COALESCE(tipo, ${r.tipo})
+      WHERE employee_id = ${employeeId} AND data_inizio = ${r.inizio}::date AND data_fine IS NULL
+        AND NOT EXISTS (SELECT 1 FROM hr_employee_contract x
+                        WHERE x.employee_id = ${employeeId} AND x.data_inizio = ${r.inizio}::date AND x.data_fine = ${r.fine}::date)
+      RETURNING id`;
+    chiuso = !!upd;
+    // Esiste già la riga chiusa: quella aperta con lo stesso inizio è un doppione
+    await tx`
+      DELETE FROM hr_employee_contract
+      WHERE employee_id = ${employeeId} AND data_inizio = ${r.inizio}::date AND data_fine IS NULL
+        AND EXISTS (SELECT 1 FROM hr_employee_contract x
+                    WHERE x.employee_id = ${employeeId} AND x.data_inizio = ${r.inizio}::date AND x.data_fine = ${r.fine}::date)`;
+  }
   const [ins] = await tx<{ id: number }[]>`
     INSERT INTO hr_employee_contract (employee_id, matricola, qualifica, data_inizio, data_fine, tipo)
     VALUES (${employeeId}, ${r.matricola}, ${r.qualifica}, ${r.inizio}, ${r.fine}, ${r.tipo})
     ON CONFLICT (employee_id, data_inizio, (COALESCE(data_fine, 'infinity'::date))) DO NOTHING
     RETURNING id`;
-  if (!ins) {
+  if (!ins && !chiuso) {
     // Già presente: se mancava il tipo (contratto registrato prima della colonna) lo si completa
     if (r.tipo) {
       await tx`
@@ -60,17 +80,23 @@ export async function registraContratto(
     return false;
   }
   const note = `${etichetta}${r.matricola ? ` · matricola ${r.matricola}` : ''}`;
+  if (r.fine) {
+    // L'assunzione registrata prima senza fine (contratto aperto) ora ha la sua data di fine
+    await tx`
+      UPDATE hr_employee_event SET end_date = ${r.fine}::date
+      WHERE employee_id = ${employeeId} AND event_type = 'assunzione' AND event_date = ${r.inizio}::date AND end_date IS NULL`;
+  }
   await tx`
-    INSERT INTO hr_employee_event ${tx({
-      employee_id: employeeId, event_type: 'assunzione', event_date: r.inizio, end_date: r.fine,
-      to_value: r.qualifica, note, created_by_user_id: user.id, created_by_name: user.display_name,
-    })}`;
+    INSERT INTO hr_employee_event (employee_id, event_type, event_date, end_date, to_value, note, created_by_user_id, created_by_name)
+    SELECT ${employeeId}::int, 'assunzione'::hr_event_type, ${r.inizio}::date, ${r.fine}::date, ${r.qualifica}::text, ${note}::text, ${user.id}::int, ${user.display_name}::text
+    WHERE NOT EXISTS (SELECT 1 FROM hr_employee_event
+                      WHERE employee_id = ${employeeId} AND event_type = 'assunzione' AND event_date = ${r.inizio}::date)`;
   if (r.fine && r.fine <= today) {
     await tx`
-      INSERT INTO hr_employee_event ${tx({
-        employee_id: employeeId, event_type: 'cessazione', event_date: r.fine,
-        note: `Fine ${etichetta.toLowerCase()}`, created_by_user_id: user.id, created_by_name: user.display_name,
-      })}`;
+      INSERT INTO hr_employee_event (employee_id, event_type, event_date, note, created_by_user_id, created_by_name)
+      SELECT ${employeeId}::int, 'cessazione'::hr_event_type, ${r.fine}::date, ${`Fine ${etichetta.toLowerCase()}`}::text, ${user.id}::int, ${user.display_name}::text
+      WHERE NOT EXISTS (SELECT 1 FROM hr_employee_event
+                        WHERE employee_id = ${employeeId} AND event_type = 'cessazione' AND event_date = ${r.fine}::date)`;
   }
   return true;
 }

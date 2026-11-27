@@ -1,4 +1,5 @@
 import { db } from '../../db/client.js';
+import { logger } from '../../lib/logger.js';
 
 // Scrittura di una modifica alla scheda dipendente, con gli eventi automatici della timeline.
 // La usano sia la rotta PATCH /employees/:id sia la sync automatica con Osti.
@@ -53,6 +54,15 @@ export async function applyEmployeeUpdate(
       && !(updates.data_cessazione && updates.data_cessazione > new Date().toISOString().slice(0, 10))) {
     updates.data_cessazione = null;
   }
+  // Data di cessazione già trascorsa: la persona è cessata (una data futura è solo la scadenza del contratto).
+  // Vale per ogni modifica della data (scheda, sync Osti); chi ha già la data passata e non viene toccato
+  // lo chiude `cessaScaduti` (job orario).
+  const oggi = new Date().toISOString().slice(0, 10);
+  if (updates.data_cessazione && String(updates.data_cessazione).slice(0, 10) <= oggi
+      && (updates.stato ?? existing.stato) !== 'cessato') {
+    updates.stato = 'cessato';
+    events.push({ event_type: 'cessazione', from_value: existing.stato, to_value: 'cessato' });
+  }
 
   updates.updated_at = new Date();
   await db`UPDATE hr_employee SET ${db(updates)} WHERE id = ${id}`;
@@ -74,4 +84,27 @@ export async function applyEmployeeUpdate(
       })}
     `;
   }
+}
+
+const ACTOR_SISTEMA: UpdateActor = { id: null, display_name: 'Cessazione automatica' };
+
+/**
+ * Chi non è cessato ma ha una data di cessazione già trascorsa passa a «cessato» (con l'evento in timeline,
+ * datato alla data di cessazione). Ritorna quante schede ha chiuso.
+ */
+export async function cessaScaduti(): Promise<number> {
+  const oggi = new Date().toISOString().slice(0, 10);
+  const rows = await db<{ id: number; stato: string; data_cessazione: string }[]>`
+    SELECT id, stato, data_cessazione::text AS data_cessazione FROM hr_employee
+    WHERE stato <> 'cessato' AND data_cessazione IS NOT NULL AND data_cessazione <= ${oggi}`;
+  let chiusi = 0;
+  for (const r of rows) {
+    try {
+      await applyEmployeeUpdate(r.id, r, { stato: 'cessato', data_cessazione: r.data_cessazione }, { silent: false, actor: ACTOR_SISTEMA });
+      chiusi++;
+    } catch (err) {
+      logger.error(`[hr] cessazione automatica scheda ${r.id} non riuscita: ${err instanceof Error ? err.message : err}`);   // le altre schede vanno avanti
+    }
+  }
+  return chiusi;
 }
