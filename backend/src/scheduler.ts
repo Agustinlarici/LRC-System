@@ -21,6 +21,7 @@ import { letturaNotturna } from './modules/ferrari/cartella.js';
 import { pollOneDriveFolder } from './modules/spma/onedrive-watcher.js';
 import { sincronizza as sincronizzaFatturazione } from './modules/fatturazione/sync.js';
 import { runOstiSync } from './modules/hr/osti-sync.js';
+import { cessaScaduti } from './modules/hr/employee-update.js';
 import { runPhotoFeed } from './modules/quality-control-station/feed.js';
 
 function nextEvery10Min(): Date {
@@ -237,6 +238,21 @@ export function startScheduler() {
       logger.error(`[scheduler] Sync Osti fallita: ${e instanceof Error ? e.message : e}`);
     }
     setNextRun('osti_sync', nextHourAt(50));
+  }, { timezone: 'Europe/Rome' });
+
+  // Ogni ora (minuto 55, subito dopo il sync Osti che toglie le date vecchie ai contratti rinnovati) — HR: chi ha la
+  // data di cessazione già trascorsa passa a «cessato»
+  cron.schedule('55 * * * *', async () => {
+    startRun('hr_cessazioni');
+    try {
+      const n = await cessaScaduti();
+      endRun('hr_cessazioni', n);
+      if (n) logger.info(`[scheduler] HR: ${n} dipendenti passati a cessato (data di cessazione trascorsa)`);
+    } catch (e) {
+      failRun('hr_cessazioni', e);
+      logger.error(`[scheduler] HR cessazioni automatiche fallite: ${e instanceof Error ? e.message : e}`);
+    }
+    setNextRun('hr_cessazioni', nextHourAt(55));
   }, { timezone: 'Europe/Rome' });
 
   // 06:00 — scansione Ferrari DELINS inbox → aggiorna edi_ferrari_delins

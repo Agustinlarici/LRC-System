@@ -119,7 +119,7 @@ function pickBest(rows: Row[], today: string): Row {
 }
 
 interface ContrattoOsti { matricola: string | null; qualifica: string | null; tipo: 'STR' | 'INTERINALE' | 'ESTERNO' | null; inizio: string; fine: string | null }
-function contrattiOf(list: Row[]): ContrattoOsti[] {
+export function contrattiOf(list: Row[]): ContrattoOsti[] {
   const seen = new Set<string>();
   const out: ContrattoOsti[] = [];
   for (const r of list) {
@@ -186,7 +186,7 @@ function wantOf(r: Row, ctx: Ctx): Record<string, string | number | boolean | nu
 }
 
 // Confronta la scheda con quanto propone Osti e dice cosa scrivere
-function buildPlan(emp: Emp, r: Row, ctx: Ctx): { plan: Plan | null; conflict: boolean } {
+export function buildPlan(emp: Emp, r: Row, ctx: Ctx): { plan: Plan | null; conflict: boolean } {
   const want = wantOf(r, ctx);
   want.nome_osti = mergeOstiName(emp.nome_osti, r.dip_nome ?? '');
   const licenziato = ostiDate(r.dip_licenziato);
@@ -240,6 +240,13 @@ function buildPlan(emp: Emp, r: Row, ctx: Ctx): { plan: Plan | null; conflict: b
     plan.changes.push({ field: 'stato', from: 'cessato', to: 'attivo' });
     plan.riassunta = ostiDate(r.dip_assunto) ?? ctx.today;
     delete plan.fill.data_cessazione;
+  }
+  // Riga in corso in Osti ma da noi una data di cessazione già trascorsa (contratto rinnovato, data vecchia rimasta):
+  // senza toglierla, il job di cessazione automatica rimetterebbe la persona a «cessato».
+  const vecchia = have('data_cessazione');
+  if (!licenziato && vecchia && vecchia <= ctx.today && emp.stato !== 'cessato') {
+    plan.change.data_cessazione = null;
+    plan.changes.push({ field: 'data_cessazione', from: vecchia, to: '—' });
   }
   const empty = !Object.keys(plan.fill).length && !Object.keys(plan.change).length;
   if (empty) plan.takeFrom = [];
@@ -402,7 +409,7 @@ export async function applyRows(rows: Row[]): Promise<OstiSyncResult> {
     const { plan } = buildPlan(emp, r, ctx);
     if (plan) plans.push(plan);
     const contratti = contrattiOf(list);
-    if (list.length > 1 && contratti.length) contractJobs.push({ emp, contratti });
+    if (contratti.length) contractJobs.push({ emp, contratti });
   }
 
   // ── Applicazione: un errore su una scheda non ferma le altre ──
