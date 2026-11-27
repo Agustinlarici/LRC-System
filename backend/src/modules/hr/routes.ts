@@ -10,7 +10,9 @@ import { hrDocumentRoutes } from './documents.js';
 import { hrOstiRoutes } from './osti.js';
 import { hrContractRoutes } from './contracts.js';
 import { hrVestiarioRoutes } from './vestiario-routes.js';
-import { applyEmployeeUpdate } from './employee-update.js';
+import { applyEmployeeUpdate, cessaScaduti } from './employee-update.js';
+import { runOstiSync, isOstiSyncRunning } from './osti-sync.js';
+import { logger } from '../../lib/logger.js';
 
 export const hrRoutes = new Hono<Env>();
 hrRoutes.route('/analytics', hrAnalyticsRoutes);
@@ -18,6 +20,24 @@ hrRoutes.route('/documents', hrDocumentRoutes);
 hrRoutes.route('/osti', hrOstiRoutes);
 hrRoutes.route('/contracts', hrContractRoutes);
 hrRoutes.route('/vestiario', hrVestiarioRoutes);
+
+// «Esegui ora»: lo stesso giro orario dello scheduler (sync automatica con Osti, poi cessazione di chi ha la data
+// trascorsa), lanciato a mano da HR senza aspettare il minuto 50/55. Sola lettura su Osti.
+hrRoutes.post('/osti/sync-ora', requireManage('hr'), async (c) => {
+  const user = c.get('user');
+  if (isOstiSyncRunning()) throw new HTTPException(409, { message: 'Sync Osti già in corso: riprova tra qualche minuto' });
+  let r;
+  try {
+    r = await runOstiSync();
+  } catch (err) {
+    if (err instanceof HTTPException) throw err;   // Osti non configurato (503)
+    logger.error(`[hr] sync Osti manuale fallita: ${err instanceof Error ? err.message : err}`);
+    throw new HTTPException(502, { message: 'Sync con Osti non riuscita (database non raggiungibile, in timeout o risposta non riconosciuta)' });
+  }
+  const cessati = await cessaScaduti();
+  await auditLog({ userId: user.id, username: user.username, action: 'hr.osti.sync_ora', entity: 'hr_employee', details: { ...r, cessati } });
+  return c.json({ ...r, cessati, detail: `${r.detail}; ${cessati} passati a cessato` });
+});
 
 // Eventi il cui inizio/fine deve riflettersi sullo stato del dipendente — altrimenti
 // un evento "in corso" (senza end_date passata) resta invisibile ai filtri per stato
