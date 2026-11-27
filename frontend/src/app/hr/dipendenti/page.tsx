@@ -398,6 +398,25 @@ export default function DipendentiPage() {
     };
   }
 
+  // Stesso giro orario dello scheduler (sync Osti + cessazioni), lanciato a mano
+  async function syncOra() {
+    if (!(await confirm({
+      title: 'Sync automatica con Osti',
+      message: 'Esegue ora lo stesso aggiornamento che parte ogni ora: schede, contratti e cessazioni. Può richiedere qualche minuto.',
+      confirmLabel: 'Esegui ora',
+    }))) return;
+    let esito: string;
+    try {
+      const res = await fetch(`${BACKEND}/api/hr/osti/sync-ora`, { method: 'POST', credentials: 'include' });
+      const b = await res.json().catch(() => ({}));
+      esito = res.ok ? `Sync completata: ${b.detail}.` : (b.message ?? 'Sync non riuscita');
+      if (res.ok) refreshEmployees();
+    } catch {
+      esito = 'Sync non riuscita: il server non risponde. Controlla tra qualche minuto se è partita.';
+    }
+    await confirm({ title: 'Sync Osti', message: esito, confirmLabel: 'OK', cancelLabel: 'Chiudi' });
+  }
+
   async function importRows(rows: Record<string, string>[], variant?: string): Promise<ImportResult> {
     if (variant === 'osti' || variant === 'osti-db') {
       const [empRes, depRes] = await Promise.all([
@@ -786,6 +805,12 @@ export default function DipendentiPage() {
                       onClick={() => { setShowMore(false); importRef.current?.open('osti-db'); }}
                       className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
                       Sincronizza con Osti
+                    </button>
+                    <button type="button" role="menuitem"
+                      title="Lancia ora l'aggiornamento automatico orario (schede, contratti, cessazioni), senza domande"
+                      onClick={() => { setShowMore(false); void syncOra(); }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-stone-50">
+                      Esegui sync automatica ora
                     </button>
                     <button type="button" role="menuitem"
                       onClick={() => { setShowMore(false); router.push('/hr/dipendenti/foto-massiva'); }}
