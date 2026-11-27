@@ -63,16 +63,18 @@ export default function VestiarioPage() {
   const [minGiorni, setMinGiorni] = useState('');
   const [saving, setSaving] = useState(false);
   const [errore, setErrore] = useState('');
+  const [gilet, setGilet] = useState<Set<number>>(new Set());
   const [modal, setModal] = useState<'import' | 'gestisci' | null>(null);
 
   async function loadCapi() {
     try {
-      const [k, t, cg] = await Promise.all([
+      const [k, t, g, cg] = await Promise.all([
         api.get<Capo[]>('/api/hr/vestiario/capi'),
         api.get<{ employee_id: number; capo_id: number; taglia: string }[]>('/api/hr/vestiario/taglie'),
+        api.get<number[]>('/api/hr/vestiario/gilet'),
         api.get<Consegna[]>('/api/hr/vestiario/consegne'),
       ]);
-      setCapi(k); setTaglie(t); setConsegne(cg);
+      setCapi(k); setTaglie(t); setGilet(new Set(g)); setConsegne(cg);
     } catch { /* la pagina funziona anche senza capi */ }
   }
 
@@ -131,7 +133,7 @@ export default function VestiarioPage() {
       for (const t of taglie) {
         if (t.capo_id !== k.id) continue;
         const e = empIds.get(t.employee_id);
-        if (!e) continue;
+        if (!e || gilet.has(e.id)) continue;   // con il gilet gli altri capi non si ordinano
         const slot = map.get(t.taglia) ?? { tot: 0, byGroup: new Map() };
         slot.tot++;
         if (dividi) { const g = groupOf(e); slot.byGroup.set(g, (slot.byGroup.get(g) ?? 0) + 1); }
@@ -140,7 +142,9 @@ export default function VestiarioPage() {
       const sizes = Array.from(map.entries()).sort((a, b) => compareSize(a[0], b[0]));
       return { ...k, sizes, totale: sizes.reduce((n, [, v]) => n + v.tot, 0) };
     });
-  }, [capi, taglie, rows, dividi]);
+  }, [capi, taglie, rows, dividi, gilet]);
+
+  const nGilet = useMemo(() => rows.filter(e => gilet.has(e.id)).length, [rows, gilet]);
 
   // taglia di ogni dipendente per capo: "employee_id:capo_id" → taglia
   const tagliaOf = useMemo(() => new Map(taglie.map(t => [`${t.employee_id}:${t.capo_id}`, t.taglia])), [taglie]);
@@ -209,10 +213,12 @@ export default function VestiarioPage() {
         ordine.push(r);
       }
     }
+    if (nGilet > 0) ordine.push({ Capo: 'GILET', Colore: '', Taglia: 'SI', Totale: nGilet });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ordine), 'Da ordinare');
     // Foglio 2: elenco persone, una colonna per capo
     const persone = elenco.map(e => {
       const r: Record<string, string> = { Cognome: e.cognome, Nome: e.nome, Matricola: e.matricola ?? '', Funzione: e.funzione_aziendale ?? '', Responsabile: respOf(e) === SENZA_RESP ? '' : respOf(e) };
+      r.Gilet = gilet.has(e.id) ? 'SI' : '';
       for (const k of capi) r[k.colore ? `${k.nome} (${k.colore})` : k.nome] = tagliaOf.get(`${e.id}:${k.id}`) ?? '';
       return r;
     });
@@ -300,10 +306,19 @@ export default function VestiarioPage() {
       ) : rows.length === 0 ? (
         <div className="card"><EmptyState title="Nessun dipendente" hint="Cambia i filtri per vedere altri risultati." /></div>
       ) : tab === 'capi' ? (
-        capi.length === 0 ? (
+        capi.length === 0 && gilet.size === 0 ? (
           <div className="card"><EmptyState title="Nessun capo" hint="Importa un Excel con le taglie per creare capi e colori." /></div>
         ) : (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-4">
+            {nGilet > 0 && (
+              <div className="card !p-0">
+                <div className="flex items-baseline justify-between gap-3 px-4 py-3">
+                  <h2 className="font-semibold text-ink-900">Gilet</h2>
+                  <span className="whitespace-nowrap text-sm text-muted">{nGilet} da ordinare</span>
+                </div>
+                <p className="border-t border-line px-4 py-2 text-xs text-muted">Chi ha il gilet non conta negli altri capi.</p>
+              </div>
+            )}
             {riepilogoCapi.map(k => (
               <div key={k.id} className="card overflow-x-auto !p-0">
                 <div className="flex items-baseline justify-between gap-3 border-b border-line px-4 py-3">
@@ -403,6 +418,7 @@ export default function VestiarioPage() {
                 <th className="px-4 py-2 font-medium">Dipendente</th>
                 <th className="px-3 py-2 font-medium">Funzione</th>
                 <th className="px-3 py-2 font-medium">Responsabile</th>
+                <th className="px-3 py-2 font-medium">Gilet</th>
                 {capi.map(k => <th key={k.id} className="px-3 py-2 font-medium">{k.nome}{k.colore && <span className="block text-[10px] normal-case tracking-normal">{k.colore}</span>}</th>)}
               </tr>
             </thead>
@@ -414,6 +430,7 @@ export default function VestiarioPage() {
                   </td>
                   <td className="px-3 py-2">{e.funzione_aziendale ?? '—'}</td>
                   <td className="px-3 py-2">{respOf(e) === SENZA_RESP ? '—' : respOf(e)}</td>
+                  <td className="px-3 py-2">{gilet.has(e.id) ? 'SI' : <span className="text-stone-300">·</span>}</td>
                   {capi.map(k => (
                     <td key={k.id} className="px-3 py-2">{tagliaOf.get(`${e.id}:${k.id}`) ?? <span className="text-stone-300">·</span>}</td>
                   ))}

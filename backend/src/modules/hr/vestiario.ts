@@ -35,12 +35,27 @@ export function parseTaglia(raw: string): Taglia | '' | 'ambigua' | 'sconosciuta
   return found.size > 1 ? 'ambigua' : 'sconosciuta';
 }
 
+// Colonna GILET: non è una taglia ma sì/no. '' = vuota (non cambia nulla), null = non riconosciuto.
+export function parseSiNo(raw: string): boolean | '' | null {
+  const s = normText(raw).replace(/[^A-Z0-9]/g, '');
+  if (!s) return '';
+  if (['SI', 'S', 'YES', 'Y', 'X', '1', 'OK'].includes(s)) return true;
+  if (['NO', 'N', '0'].includes(s)) return false;
+  return null;
+}
+
+export function isGiletHeader(raw: string): boolean {
+  const p = parseCapoHeader(raw);
+  return !!p && p.nome === 'GILET' && p.colore === '';
+}
+
 export interface EmpLite { id: number; nome: string; cognome: string; stato: string }
 
 export interface ImportCapo { col: number; nome: string; colore: string }
 export interface ImportAssegnazione { employee_id: number; col: number; taglia: Taglia }
 export interface ImportPlan {
   capi: ImportCapo[];                                  // colonne riconosciute come capi
+  gilet: { employee_id: number; valore: boolean }[];  // colonna GILET (sì/no)
   assegnazioni: ImportAssegnazione[];
   non_trovati: { riga: number; nome: string; motivo: string }[];
   avvisi: { riga: number; nome: string; capo: string; valore: string; motivo: string }[];
@@ -49,8 +64,10 @@ export interface ImportPlan {
 // header[0] = «COGNOME E NOME»; le altre colonne sono capi. rows = righe dati (senza intestazione).
 export function buildImportPlan(header: string[], rows: string[][], employees: EmpLite[]): ImportPlan {
   const capi: ImportCapo[] = [];
+  let giletCol = -1;
   const seen = new Set<string>();
   for (let col = 1; col < header.length; col++) {
+    if (isGiletHeader(header[col] ?? '')) { if (giletCol < 0) giletCol = col; continue; }
     const p = parseCapoHeader(header[col] ?? '');
     if (!p) continue;
     const key = `${p.nome}|${p.colore}`;
@@ -66,7 +83,7 @@ export function buildImportPlan(header: string[], rows: string[][], employees: E
     add(normText(`${e.nome} ${e.cognome}`), e);   // nel caso l'Excel abbia «Nome Cognome»
   }
 
-  const plan: ImportPlan = { capi, assegnazioni: [], non_trovati: [], avvisi: [] };
+  const plan: ImportPlan = { capi, gilet: [], assegnazioni: [], non_trovati: [], avvisi: [] };
   const done = new Set<number>();
   rows.forEach((row, i) => {
     const riga = i + 2;   // riga Excel (1 = intestazione)
@@ -80,6 +97,12 @@ export function buildImportPlan(header: string[], rows: string[][], employees: E
     const emp = pool[0];
     if (done.has(emp.id)) { plan.non_trovati.push({ riga, nome, motivo: 'Dipendente ripetuto nel file (vale la prima riga)' }); return; }
     done.add(emp.id);
+    if (giletCol >= 0) {
+      const valore = (row[giletCol] ?? '').trim();
+      const v = parseSiNo(valore);
+      if (v === null) plan.avvisi.push({ riga, nome, capo: 'GILET', valore, motivo: 'Valore non riconosciuto (serve SI o NO)' });
+      else if (v !== '') plan.gilet.push({ employee_id: emp.id, valore: v });
+    }
     for (const c of capi) {
       const valore = (row[c.col] ?? '').trim();
       const t = parseTaglia(valore);
