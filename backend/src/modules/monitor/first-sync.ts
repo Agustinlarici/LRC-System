@@ -87,6 +87,7 @@ export function startFirstSync(
 }
 
 async function run(list: Array<{ from: string; to: string }>, pauseSec: number, flag: IKnowQueryFlag): Promise<void> {
+  const iniziata = new Date();
   try {
     for (const week of list) {
       if (cancelRequested) { status.cancelled = true; break; }
@@ -125,7 +126,7 @@ async function run(list: Array<{ from: string; to: string }>, pauseSec: number, 
       status.current = 'schede modificate (lastup)';
       try {
         await sleep(pauseSec * 1000);
-        await sostituisciModificateDal(dal);
+        await sostituisciModificateDal(dal, iniziata);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         logger.error(`[FirstSync] Passata lastup: ${msg}`);
