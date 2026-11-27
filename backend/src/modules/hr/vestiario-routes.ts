@@ -25,6 +25,12 @@ hrVestiarioRoutes.get('/taglie', requireModule('hr'), async (c) => {
   return c.json(rows);
 });
 
+// Dipendenti con il gilet: nella somma da ordinare non contano gli altri capi
+hrVestiarioRoutes.get('/gilet', requireModule('hr'), async (c) => {
+  const rows = await db`SELECT id AS employee_id FROM hr_employee WHERE gilet`;
+  return c.json(rows.map(r => r.employee_id as number));
+});
+
 const capoSchema = z.object({
   nome:   z.string().trim().min(1).max(120),
   colore: z.string().trim().max(60),
@@ -72,7 +78,7 @@ hrVestiarioRoutes.post('/import', requireManage('hr'), async (c) => {
   const body = await parseBody(c, importSchema);
   const employees = await db<EmpLite[]>`SELECT id, nome, cognome, stato FROM hr_employee`;
   const plan = buildImportPlan(body.header, body.rows, employees);
-  if (!plan.capi.length) throw new HTTPException(400, { message: 'Nessuna colonna di capi riconosciuta' });
+  if (!plan.capi.length && !plan.gilet.length) throw new HTTPException(400, { message: 'Nessuna colonna di capi riconosciuta' });
 
   const existing = await db<{ id: number; nome: string; colore: string }[]>`SELECT id, nome, colore FROM hr_capo`;
   const idOf = new Map(existing.map(k => [`${normText(k.nome)}|${normText(k.colore)}`, k.id]));
@@ -84,6 +90,8 @@ hrVestiarioRoutes.post('/import', requireManage('hr'), async (c) => {
     capi: capi.map(k => ({ nome: k.nome, colore: k.colore, nuovo: k.nuovo, n_taglie: nPerCol.get(k.col) ?? 0 })),
     n_dipendenti: new Set(plan.assegnazioni.map(a => a.employee_id)).size,
     n_taglie: plan.assegnazioni.length,
+    gilet_si: plan.gilet.filter(g => g.valore).length,
+    gilet_no: plan.gilet.filter(g => !g.valore).length,
     non_trovati: plan.non_trovati,
     avvisi: plan.avvisi,
   };
@@ -100,6 +108,9 @@ hrVestiarioRoutes.post('/import', requireManage('hr'), async (c) => {
       `;
       idByCol.set(k.col, row.id);
     }
+    for (const g of plan.gilet) {
+      await tx`UPDATE hr_employee SET gilet = ${g.valore} WHERE id = ${g.employee_id}`;
+    }
     for (const a of plan.assegnazioni) {
       await tx`
         INSERT INTO hr_capo_taglia (employee_id, capo_id, taglia)
@@ -111,7 +122,7 @@ hrVestiarioRoutes.post('/import', requireManage('hr'), async (c) => {
   const user = c.get('user');
   await auditLog({
     userId: user.id, username: user.username, action: 'hr.vestiario.import', entity: 'hr_capo', entityId: 0,
-    details: { capi: capi.length, nuovi: capi.filter(k => k.nuovo).length, taglie: plan.assegnazioni.length },
+    details: { capi: capi.length, nuovi: capi.filter(k => k.nuovo).length, taglie: plan.assegnazioni.length, gilet: plan.gilet.length },
   });
   return c.json({ applicato: true, ...riepilogo });
 });

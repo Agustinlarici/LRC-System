@@ -12,6 +12,8 @@ interface ImportRiepilogo {
   capi: { nome: string; colore: string; nuovo: boolean; n_taglie: number }[];
   n_dipendenti: number;
   n_taglie: number;
+  gilet_si: number;
+  gilet_no: number;
   non_trovati: { riga: number; nome: string; motivo: string }[];
   avvisi: { riga: number; nome: string; capo: string; valore: string; motivo: string }[];
 }
@@ -76,7 +78,7 @@ export function ImportCapiModal({ onClose, onDone }: { onClose: () => void; onDo
       <p className="text-sm text-muted">
         Prima colonna: <b>COGNOME E NOME</b>. Le altre colonne sono i capi; il colore va tra parentesi nell&apos;intestazione
         (es. <i>FELPA BCWG004 (GRIGIA)</i>). Nelle celle basta la taglia (XS, S, M, L, XL, XXL, 3XL, 4XL, 5XL); se c&apos;è altro testo
-        (es. «L uomo») si prende solo la taglia. I capi e i colori che non esistono vengono creati. Le celle vuote non cancellano le taglie già inserite.
+        (es. «L uomo») si prende solo la taglia. La colonna <b>GILET</b> è SI/NO: chi ha SI non entra nella somma degli altri capi. I capi e i colori che non esistono vengono creati. Le celle vuote non cancellano le taglie già inserite.
       </p>
       <div className="flex items-center gap-3">
         <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => { void onFile(e.target.files?.[0]); e.target.value = ''; }} />
@@ -91,6 +93,9 @@ export function ImportCapiModal({ onClose, onDone }: { onClose: () => void; onDo
           <p className="text-ink-900">
             <b>{preview.n_taglie}</b> taglie per <b>{preview.n_dipendenti}</b> dipendenti, su <b>{preview.capi.length}</b> capi.
           </p>
+          {(preview.gilet_si > 0 || preview.gilet_no > 0) && (
+            <p className="text-ink-900">Gilet: <b>{preview.gilet_si}</b> sì, <b>{preview.gilet_no}</b> no. Chi ha il gilet non conta negli altri capi da ordinare.</p>
+          )}
           <ul className="divide-y divide-line rounded-ctl border border-line">
             {preview.capi.map(k => (
               <li key={`${k.nome}|${k.colore}`} className="flex items-center justify-between gap-3 px-3 py-1.5">
@@ -122,7 +127,7 @@ export function ImportCapiModal({ onClose, onDone }: { onClose: () => void; onDo
 
       <div className="flex justify-end gap-2">
         <button className="btn-secondary text-sm" onClick={onClose}>Chiudi</button>
-        <button className="btn-primary text-sm" onClick={applica} disabled={busy || !preview || preview.n_taglie === 0}>Importa</button>
+        <button className="btn-primary text-sm" onClick={applica} disabled={busy || !preview || (preview.n_taglie === 0 && preview.gilet_si + preview.gilet_no === 0)}>Importa</button>
       </div>
     </Shell>
   );

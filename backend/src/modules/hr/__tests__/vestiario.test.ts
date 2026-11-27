@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCapoHeader, parseTaglia, buildImportPlan, type EmpLite } from '../vestiario.js';
+import { parseCapoHeader, parseTaglia, parseSiNo, isGiletHeader, buildImportPlan, type EmpLite } from '../vestiario.js';
 
 describe('parseCapoHeader', () => {
   it('separa nome e colore tra parentesi', () => {
@@ -41,7 +41,7 @@ describe('buildImportPlan', () => {
     { id: 3, cognome: 'Bianchi', nome: 'Luca', stato: 'cessato' },
     { id: 4, cognome: 'Bianchi', nome: 'Luca', stato: 'attivo' },
   ];
-  const header = ['COGNOME E NOME', 'PANTALONI', 'FELPA (GRIGIA)', 'GILET'];
+  const header = ['COGNOME E NOME', 'PANTALONI', 'FELPA (GRIGIA)', 'T-SHIRT'];
 
   it('assegna le taglie e salta le celle vuote', () => {
     const p = buildImportPlan(header, [['ROSSI MARIO', 'L', '', 'xl uomo']], emps);
@@ -64,5 +64,29 @@ describe('buildImportPlan', () => {
   it('tra omonimi sceglie l\'unico attivo', () => {
     const p = buildImportPlan(header, [['BIANCHI LUCA', 'S']], emps);
     expect(p.assegnazioni).toEqual([{ employee_id: 4, col: 1, taglia: 'S' }]);
+  });
+});
+
+describe('gilet sì/no', () => {
+  const emps: EmpLite[] = [{ id: 1, cognome: 'Rossi', nome: 'Mario', stato: 'attivo' }];
+  it('riconosce sì/no', () => {
+    expect(parseSiNo('SI')).toBe(true);
+    expect(parseSiNo(' sì ')).toBe(true);
+    expect(parseSiNo('No')).toBe(false);
+    expect(parseSiNo('')).toBe('');
+    expect(parseSiNo('forse')).toBeNull();
+  });
+  it('la colonna GILET non è un capo con taglia', () => {
+    expect(isGiletHeader('GILET')).toBe(true);
+    expect(isGiletHeader('GILET (BLU)')).toBe(false);
+    const p = buildImportPlan(['COGNOME E NOME', 'PANTALONI', 'GILET'], [['ROSSI MARIO', 'L', 'SI']], emps);
+    expect(p.capi.map(c => c.nome)).toEqual(['PANTALONI']);
+    expect(p.gilet).toEqual([{ employee_id: 1, valore: true }]);
+    expect(p.assegnazioni).toEqual([{ employee_id: 1, col: 1, taglia: 'L' }]);
+  });
+  it('valore non riconosciuto = avviso', () => {
+    const p = buildImportPlan(['COGNOME E NOME', 'GILET'], [['ROSSI MARIO', 'M']], emps);
+    expect(p.gilet).toEqual([]);
+    expect(p.avvisi[0].capo).toBe('GILET');
   });
 });
