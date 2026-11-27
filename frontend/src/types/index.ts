@@ -782,7 +782,11 @@ export interface HrEmployee {
   tag_color:                string | null;
   in_prova:                 boolean;
   import_warning:           string | null;
-  anzianita_anni:           number;
+  anzianita_anni:           number;   // anni compiuti, sommando tutti i contratti
+  anzianita_giorni:         number;   // giorni di servizio, tutti i contratti (un giorno coperto da più contratti conta una volta)
+  giorni_str:               number;
+  giorni_interinale:        number;
+  giorni_esterno:           number;
   eta:                      number | null;
   n_riporti:                number;
   photo_version:            number | null;

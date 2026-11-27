@@ -68,8 +68,8 @@ function topN(data: Count[], n: number): Count[] {
   return [...data.slice(0, n), { name: 'Altre', value: rest }];
 }
 
-// Anzianità in fasce per funzione aziendale — a differenza dell'età, data_assunzione
-// è un campo obbligatorio: questo grafico ha sempre dati reali da mostrare oggi.
+// Anzianità in fasce per funzione aziendale: anni compiuti sommando tutti i contratti della persona
+// (calcolati dal backend, vista hr_employee_anzianita), non solo dall'ultima assunzione.
 const ANZIANITA_BUCKETS = ['<1 anno', '1-5 anni', '5-10 anni', '10-20 anni', '20+ anni'];
 function anzianitaBucket(anni: number): string {
   if (anni < 1) return ANZIANITA_BUCKETS[0];
@@ -467,7 +467,7 @@ export function AnalisiOrganico({ view = 'main' }: { view?: 'main' | 'mansioni' 
   // le persone senza nessuno sopra E senza nessuno sotto: quelle sì mancano di un collegamento.
   const senzaResp = active.filter(e => !e.capo_id && e.n_riporti === 0).length;
   const anzianita = active.length
-    ? active.reduce((s, e) => s + (Date.now() - new Date(`${iso(e.data_assunzione)}T12:00:00Z`).getTime()) / (365.25 * 86400000), 0) / active.length
+    ? active.reduce((s, e) => s + e.anzianita_giorni / 365.25, 0) / active.length
     : null;
   const conEta = active.filter(e => e.eta != null);
   const etaMedia = conEta.length ? conEta.reduce((s, e) => s + (e.eta as number), 0) / conEta.length : null;

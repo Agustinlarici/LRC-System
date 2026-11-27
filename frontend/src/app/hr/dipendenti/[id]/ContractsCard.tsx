@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { HrEmployeeContract } from '@/types';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { fmtAnzianita } from '@/lib/hrAnzianita';
 
 const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
@@ -22,7 +23,9 @@ function days(from: string, to: string): number {
   return Math.round((Date.parse(`${to.slice(0, 10)}T12:00:00Z`) - Date.parse(`${from.slice(0, 10)}T12:00:00Z`)) / DAY) + 1;
 }
 
-export function ContractsCard({ employeeId }: { employeeId: number }) {
+interface Giorni { totale: number; str: number; interinale: number; esterno: number }
+
+export function ContractsCard({ employeeId, giorni }: { employeeId: number; giorni: Giorni }) {
   const [items, setItems] = useState<HrEmployeeContract[] | null>(null);
 
   useEffect(() => {
@@ -38,19 +41,34 @@ export function ContractsCard({ employeeId }: { employeeId: number }) {
   if (!items || items.length === 0) return null;
 
   const today = new Date().toISOString().slice(0, 10);
-  const total = items.reduce((sum, c) => sum + (c.data_fine ? days(c.data_inizio, c.data_fine) : days(c.data_inizio, today)), 0);
+  // Giorni maturati: un contratto con fine futura conta fino a oggi (come l'anzianità calcolata dal backend)
+  const served = (c: HrEmployeeContract) => Math.max(0, days(c.data_inizio, c.data_fine && c.data_fine < today ? c.data_fine : today));
 
   return (
     <div className="card">
       <p className="text-sm font-medium text-muted mb-2">Contratti</p>
-      <div className="flex gap-8 mb-4">
+      <div className="flex flex-wrap gap-x-8 gap-y-3 mb-4">
         <div>
           <p className="text-3xl font-semibold tabular-nums leading-none">{items.length}</p>
           <p className="text-xs text-muted mt-1">{items.length === 1 ? 'contratto' : 'contratti'}</p>
         </div>
         <div>
-          <p className="text-3xl font-semibold tabular-nums leading-none">{total}</p>
-          <p className="text-xs text-muted mt-1">giorni in totale</p>
+          <p className="text-3xl font-semibold tabular-nums leading-none">{giorni.interinale}</p>
+          <p className="text-xs text-muted mt-1">giorni interinale</p>
+        </div>
+        <div>
+          <p className="text-3xl font-semibold tabular-nums leading-none">{giorni.str}</p>
+          <p className="text-xs text-muted mt-1">giorni STR</p>
+        </div>
+        {giorni.esterno > 0 && (
+          <div>
+            <p className="text-3xl font-semibold tabular-nums leading-none">{giorni.esterno}</p>
+            <p className="text-xs text-muted mt-1">giorni esterno</p>
+          </div>
+        )}
+        <div className="border-l border-line pl-8">
+          <p className="text-3xl font-semibold tabular-nums leading-none">{giorni.totale}</p>
+          <p className="text-xs text-muted mt-1">giorni in totale · {fmtAnzianita(giorni.totale)}</p>
         </div>
       </div>
       <table className="w-full text-sm">
@@ -68,7 +86,7 @@ export function ContractsCard({ employeeId }: { employeeId: number }) {
                 <td className="py-1.5 pr-6">{TIPO_LABEL[c.tipo ?? 'INTERINALE']}</td>
                 <td className="py-1.5">{fmtDate(c.data_inizio)}</td>
                 <td className="py-1.5">{c.data_fine ? fmtDate(c.data_fine) : 'Indeterminato'}</td>
-                <td className="py-1.5 pr-6 text-right tabular-nums">{c.data_fine ? days(c.data_inizio, c.data_fine) : `${days(c.data_inizio, today)}+`}</td>
+                <td className="py-1.5 pr-6 text-right tabular-nums">{ongoing ? `${served(c)}+` : served(c)}</td>
                 <td className="py-1.5 px-6 border-l border-stone-100">{c.matricola ?? ''}</td>
                 <td className="py-1.5 text-right">{ongoing && <StatusBadge tone="success">In corso</StatusBadge>}</td>
               </tr>

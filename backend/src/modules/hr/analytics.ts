@@ -41,10 +41,11 @@ hrAnalyticsRoutes.get('/summary', requireModule('hr'), async (c) => {
     SELECT
       COUNT(*) FILTER (WHERE stato != 'cessato')::int AS total_attivi,
       ROUND(AVG(EXTRACT(YEAR FROM AGE(now(), data_nascita))) FILTER (WHERE stato != 'cessato' AND data_nascita IS NOT NULL), 1)::float8 AS eta_media,
-      ROUND(AVG(EXTRACT(EPOCH FROM AGE(now(), data_assunzione)) / (365.25*86400)) FILTER (WHERE stato != 'cessato'), 1)::float8 AS anzianita_media,
+      ROUND(AVG(an.giorni_totale / 365.25) FILTER (WHERE stato != 'cessato'), 1)::float8 AS anzianita_media,
       COUNT(*) FILTER (WHERE data_assunzione >= now() - interval '1 year')::int AS assunzioni_ultimo_anno,
       COUNT(*) FILTER (WHERE data_cessazione >= now() - interval '1 year')::int AS cessazioni_ultimo_anno
-    FROM hr_employee
+    FROM hr_employee e
+    LEFT JOIN hr_employee_anzianita an ON an.employee_id = e.id
   `;
 
   const eventRows = await db`
@@ -108,10 +109,31 @@ hrAnalyticsRoutes.get('/manager-distribution', requireModule('hr'), async (c) =>
 hrAnalyticsRoutes.get('/evolution', requireModule('hr'), async (c) => {
   const { start, count } = await monthRange(k => c.req.query(k));
 
+  // Anzianità media: giorni di servizio sommando tutti i contratti fino a fine mese (o a oggi, se il mese non è
+  // finito), come la vista hr_employee_anzianita; un giorno coperto da più contratti conta una volta.
+  // Chi non ha contratti registrati: dalla data di assunzione.
   const rows = await db`
     WITH months AS (
       SELECT date_trunc('month', ${start}::date::timestamptz) + (n || ' months')::interval AS month_start
       FROM generate_series(0, ${count - 1}) n
+    ),
+    refs AS (
+      SELECT month_start, LEAST((month_start + interval '1 month' - interval '1 day')::date, CURRENT_DATE) AS ref FROM months
+    ),
+    iv AS (
+      SELECT r.month_start, c.employee_id, c.data_inizio AS s,
+             LEAST(COALESCE(c.data_fine, CASE WHEN e.stato = 'cessato' THEN e.data_cessazione END, r.ref), r.ref) AS f
+      FROM refs r
+      JOIN hr_employee_contract c ON c.data_inizio <= r.ref
+      JOIN hr_employee e ON e.id = c.employee_id
+    ),
+    nuovi AS (
+      SELECT month_start, employee_id,
+             GREATEST(0, f - GREATEST(s - 1, COALESCE(MAX(f) OVER (PARTITION BY month_start, employee_id ORDER BY s, f ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), s - 1))) AS n
+      FROM iv WHERE f >= s
+    ),
+    servizio AS (
+      SELECT month_start, employee_id, SUM(n)::int AS giorni FROM nuovi GROUP BY month_start, employee_id
     )
     SELECT
       m.month_start::date AS month,
@@ -130,12 +152,14 @@ hrAnalyticsRoutes.get('/evolution', requireModule('hr'), async (c) => {
           AND (e.data_cessazione IS NULL OR e.data_cessazione > (m.month_start + interval '1 month' - interval '1 day'))
           AND e.data_nascita IS NOT NULL
       ), 1)::float8 AS avg_age,
-      ROUND(AVG(EXTRACT(EPOCH FROM AGE(m.month_start, e.data_assunzione)) / (365.25*86400)) FILTER (
+      ROUND(AVG(COALESCE(sv.giorni, GREATEST(0, r.ref - e.data_assunzione + 1)) / 365.25) FILTER (
         WHERE e.data_assunzione <= (m.month_start + interval '1 month' - interval '1 day')
           AND (e.data_cessazione IS NULL OR e.data_cessazione > (m.month_start + interval '1 month' - interval '1 day'))
       ), 1)::float8 AS avg_seniority_years
     FROM months m
+    JOIN refs r ON r.month_start = m.month_start
     CROSS JOIN hr_employee e
+    LEFT JOIN servizio sv ON sv.month_start = m.month_start AND sv.employee_id = e.id
     GROUP BY m.month_start
     ORDER BY m.month_start
   `;

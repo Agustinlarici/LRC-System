@@ -12,6 +12,7 @@ import { ProponiModificaModal } from './ProponiModificaModal';
 import { EventTimeline } from './EventTimeline';
 import { SalaryHistory } from './SalaryHistory';
 import { ContractsCard } from './ContractsCard';
+import { fmtAnzianita } from '@/lib/hrAnzianita';
 import { EmployeeAvatar } from '@/components/hr/EmployeeAvatar';
 import { tagBadgeStyle } from '@/lib/tagColors';
 import { resizePhoto } from '@/lib/hrPhoto';
@@ -248,7 +249,7 @@ export default function EmployeeDetailPage() {
             <Field label="Tipologia" value={employee.tipo_contratto} />
             <Field label="Data assunzione" value={fmtDate(employee.data_assunzione)} />
             {manage && <Field label="Account di sistema" value={employee.account_username} />}
-            <Field label="Anzianità" value={`${employee.anzianita_anni} ${employee.anzianita_anni === 1 ? 'anno' : 'anni'}`} />
+            <Field label="Anzianità (tutti i contratti)" value={fmtAnzianita(employee.anzianita_giorni)} />
             {employee.data_cessazione && <Field label="Fine contratto / cessazione" value={fmtDate(employee.data_cessazione)} />}
           </InfoCard>
 
@@ -290,7 +291,7 @@ export default function EmployeeDetailPage() {
         {/* Colonna destra: retribuzione e storico */}
         <div className="space-y-5">
           {salaryView && <SalaryHistory employeeId={employee.id} canManageSalary={canManage('hr_salary')} />}
-          <ContractsCard employeeId={employee.id} />
+          <ContractsCard employeeId={employee.id} giorni={{ totale: employee.anzianita_giorni, str: employee.giorni_str, interinale: employee.giorni_interinale, esterno: employee.giorni_esterno }} />
           <EventTimeline employeeId={employee.id} employee={employee} departments={departments} plants={plants} allEmployees={allEmployees} canManage={manage} canManageLimited={manage} />
         </div>
       </div>

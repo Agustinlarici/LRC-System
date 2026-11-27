@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth';
 import type { HrEmployee, HrDepartment, HrPlant, HrContractCompany, HrEmployeeTag } from '@/types';
 import { ImportExcelButton, type ImportExcelHandle, type ImportResult, type ImportIssue } from '@/components/ui/ImportExcelButton';
 import { runOstiImport } from './ostiImport';
+import { fmtAnzianita } from '@/lib/hrAnzianita';
 import { NewEmployeeModal } from './NewEmployeeModal';
 import { TagsSettingsModal } from './TagsSettingsModal';
 import { usePromptDialog, useChoiceDialog, useConfirmDialog, SKIP_ALL } from '@/components/ui/PromptDialog';
@@ -43,11 +44,11 @@ const STATO_FILTER_OPTIONS: { value: string; label: string }[] = [
 const tipoNazLabel = (v: string | null | undefined) => (v === 'ITALIANO' ? 'ITALIA' : (v ?? '').toUpperCase());
 const gridCols = (warn: boolean) => (warn ? '24px ' : '') + GRID_COLS;
 // Larghezza minima della tabella: somma delle colonne, così righe e intestazione hanno lo stesso sfondo
-const TABLE_MIN_WIDTH = 3380;
+const TABLE_MIN_WIDTH = 3500;
 const GRID_COLS = '28px minmax(130px,1fr) minmax(110px,1fr) 90px 56px minmax(100px,1fr) minmax(120px,1fr) '
   + 'minmax(100px,1fr) minmax(100px,1fr) 92px minmax(170px,1.2fr) minmax(170px,1.2fr) minmax(110px,1fr) 60px 64px '
   + 'minmax(120px,1fr) minmax(110px,1fr) minmax(110px,1fr) minmax(120px,1fr) 80px '
-  + 'minmax(120px,1fr) minmax(110px,1fr) minmax(120px,1fr) minmax(150px,1.2fr) 100px 100px 68px 118px';
+  + 'minmax(120px,1fr) minmax(110px,1fr) minmax(120px,1fr) minmax(150px,1.2fr) 100px 100px 120px 68px 118px';
 
 // Intestazioni esattamente come nell'Excel STR — il parser CSV le trasforma in
 // minuscolo con underscore al posto degli spazi (mantiene apostrofi).
@@ -335,7 +336,7 @@ export default function DipendentiPage() {
       Mansione: e.mansione ?? '', Livello: e.livello ?? '', Responsabile: e.capo_nome ?? '',
       'Tipo contratto': e.tipo_contratto ?? '', 'Gruppo orario': e.gruppo_orario ?? '', 'Nome Osti': e.nome_osti ?? '',
       Assunzione: e.data_assunzione?.slice(0, 10) ?? '',
-      Cessazione: e.data_cessazione?.slice(0, 10) ?? '', 'In prova': e.in_prova ? 'Sì' : '',
+      Cessazione: e.data_cessazione?.slice(0, 10) ?? '', 'Anzianità (giorni)': e.anzianita_giorni, Anzianità: fmtAnzianita(e.anzianita_giorni), 'In prova': e.in_prova ? 'Sì' : '',
       Stato: STATO_LABEL[e.stato] ?? e.stato,
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -1039,7 +1040,7 @@ export default function DipendentiPage() {
             <div>Data nascita</div><div>Email</div><div>Indirizzo</div><div>Città</div><div>Prov.</div><div>CAP</div>
             <div>Funzione</div><div>Reparto</div><div>Plant</div>
             <div>Mansione</div><div>Livello</div><div>Responsabile</div><div>Tipo contratto</div><div>Gruppo orario</div><div>Nome Osti</div>
-            <div>Assunzione</div><div>Cessazione</div><div className="text-center">Prova</div>
+            <div>Assunzione</div><div>Cessazione</div><div title="Somma di tutti i contratti (STR, interinali, esterni)">Anzianità</div><div className="text-center">Prova</div>
             <div className="text-center">Stato</div>
           </div>
         </div>
@@ -1131,6 +1132,7 @@ export default function DipendentiPage() {
               <div className="text-sm text-muted truncate" title={e.nome_osti ?? undefined}>{e.nome_osti ?? '—'}</div>
               <div className="text-sm text-muted truncate">{dmy(e.data_assunzione)}</div>
               <div className="text-sm text-muted truncate">{dmy(e.data_cessazione)}</div>
+              <div className="text-sm text-muted truncate" title={`${e.anzianita_giorni} giorni`}>{fmtAnzianita(e.anzianita_giorni)}</div>
               <div className="text-center text-sm text-muted">{e.in_prova ? 'Sì' : '—'}</div>
               <div className="text-center">
                 <StatusBadge tone={STATO_TONE[e.stato] ?? 'neutral'}>{STATO_LABEL[e.stato]}</StatusBadge>

@@ -640,7 +640,9 @@ const employeeSelect = db`
     e.in_prova, e.import_warning,
     (SELECT EXTRACT(EPOCH FROM ph.updated_at)::bigint FROM hr_employee_photo ph WHERE ph.employee_id = e.id) AS photo_version,
     e.created_at, e.updated_at,
-    ROUND(EXTRACT(EPOCH FROM AGE(COALESCE(e.data_cessazione, now()), e.data_assunzione)) / (365.25*86400))::int AS anzianita_anni,
+    -- Anzianità: giorni di servizio sommando tutti i contratti (vista hr_employee_anzianita); anni = anni compiuti
+    an.giorni_totale AS anzianita_giorni, an.giorni_str, an.giorni_interinale, an.giorni_esterno,
+    FLOOR(an.giorni_totale / 365.25)::int AS anzianita_anni,
     CASE WHEN e.data_nascita IS NOT NULL
       THEN EXTRACT(YEAR FROM AGE(COALESCE(e.data_cessazione, now()), e.data_nascita))::int
       ELSE NULL END AS eta,
@@ -651,6 +653,7 @@ const employeeSelect = db`
   LEFT JOIN hr_employee capo ON capo.id = e.capo_id
   LEFT JOIN hr_employee_tag tg ON tg.id = e.tag_id
   LEFT JOIN users u ON u.id = e.user_id
+  LEFT JOIN hr_employee_anzianita an ON an.employee_id = e.id
 `;
 
 // Un account può essere collegato a una sola scheda: altrimenti il capo vedrebbe i team di entrambe.
