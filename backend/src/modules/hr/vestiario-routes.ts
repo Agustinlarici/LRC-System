@@ -5,7 +5,7 @@ import { db } from '../../db/client.js';
 import { requireModule, requireManage, type Env } from '../../lib/auth.js';
 import { parseBody } from '../../lib/validate.js';
 import { auditLog } from '../../lib/audit.js';
-import { buildImportPlan, normText, type EmpLite } from './vestiario.js';
+import { buildImportPlan, normText, dataConsegnaValida, type EmpLite } from './vestiario.js';
 
 export const hrVestiarioRoutes = new Hono<Env>();
 
@@ -125,4 +125,53 @@ hrVestiarioRoutes.post('/import', requireManage('hr'), async (c) => {
     details: { capi: capi.length, nuovi: capi.filter(k => k.nuovo).length, taglie: plan.assegnazioni.length, gilet: plan.gilet.length },
   });
   return c.json({ applicato: true, ...riepilogo });
+});
+
+// Consegne del vestiario: una data per dipendente. «giorni» = giorni passati da oggi (calcolati dal DB).
+hrVestiarioRoutes.get('/consegne', requireModule('hr'), async (c) => {
+  const rows = await db`
+    SELECT employee_id, to_char(consegnato_il, 'YYYY-MM-DD') AS consegnato_il,
+           (CURRENT_DATE - consegnato_il)::int AS giorni
+    FROM hr_vestiario_consegna
+  `;
+  return c.json(rows);
+});
+
+const consegnaSchema = z.object({
+  employee_ids: z.array(z.number().int().positive()).min(1).max(1000),
+  data: z.string().refine(s => dataConsegnaValida(s), 'Data non valida'),
+});
+
+// Segna come consegnato (o cambia la data) per più dipendenti insieme
+hrVestiarioRoutes.put('/consegne', requireManage('hr'), async (c) => {
+  const body = await parseBody(c, consegnaSchema);
+  const user = c.get('user');
+  const ids = Array.from(new Set(body.employee_ids));
+  const res = await db`
+    INSERT INTO hr_vestiario_consegna (employee_id, consegnato_il, updated_by)
+    SELECT id, ${body.data}::date, ${user.username} FROM hr_employee WHERE id IN ${db(ids)}
+    ON CONFLICT (employee_id) DO UPDATE
+      SET consegnato_il = EXCLUDED.consegnato_il, updated_by = EXCLUDED.updated_by, updated_at = NOW()
+    RETURNING employee_id
+  `;
+  await auditLog({
+    userId: user.id, username: user.username, action: 'hr.vestiario.consegna', entity: 'hr_vestiario_consegna', entityId: 0,
+    details: { data: body.data, n: res.length },
+  });
+  return c.json({ ok: true, n: res.length });
+});
+
+const annullaSchema = z.object({ employee_ids: z.array(z.number().int().positive()).min(1).max(1000) });
+
+// Annulla la consegna (torna «da consegnare»)
+hrVestiarioRoutes.post('/consegne/annulla', requireManage('hr'), async (c) => {
+  const body = await parseBody(c, annullaSchema);
+  const ids = Array.from(new Set(body.employee_ids));
+  const res = await db`DELETE FROM hr_vestiario_consegna WHERE employee_id IN ${db(ids)} RETURNING employee_id`;
+  const user = c.get('user');
+  await auditLog({
+    userId: user.id, username: user.username, action: 'hr.vestiario.consegna.annulla', entity: 'hr_vestiario_consegna', entityId: 0,
+    details: { n: res.length },
+  });
+  return c.json({ ok: true, n: res.length });
 });

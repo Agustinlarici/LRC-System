@@ -17,12 +17,23 @@ const BACKEND = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:3001`
   : (process.env.INTERNAL_API_URL ?? 'http://backend:3001');
 
-const TABS = ['capi', 'elenco'] as const;
+const TABS = ['capi', 'elenco', 'consegne'] as const;
 type Tab = typeof TABS[number];
 
 type Dividi = '' | 'funzione' | 'responsabile';
 const SENZA_FUNZIONE = 'Senza funzione';
 const SENZA_RESP = 'Senza responsabile';
+type Consegna = { employee_id: number; consegnato_il: string; giorni: number };
+type StatoConsegna = '' | 'consegnato' | 'da_consegnare';
+type OrdineConsegne = 'vecchie' | 'recenti' | 'nome';
+
+// Data di oggi «YYYY-MM-DD» nel fuso del browser
+function oggi() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+const fmtData = (iso: string) => iso.split('-').reverse().join('/');
+
 const LETTER_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', '5XL'];
 
 // Ordine naturale delle taglie: XS…5XL, poi il resto
@@ -32,7 +43,8 @@ function compareSize(a: string, b: string) {
 }
 
 export default function VestiarioPage() {
-  const { canView } = useAuth();
+  const { canView, canManage } = useAuth();
+  const manage = canManage('hr');
   const allowed = canView('hr');
 
   const [employees, setEmployees] = useState<HrEmployee[]>([]);
@@ -43,17 +55,26 @@ export default function VestiarioPage() {
   const [dividi, setDividi] = useState<Dividi>('');
   const [capi, setCapi] = useState<Capo[]>([]);
   const [taglie, setTaglie] = useState<{ employee_id: number; capo_id: number; taglia: string }[]>([]);
+  const [consegne, setConsegne] = useState<Consegna[]>([]);
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  const [dataSel, setDataSel] = useState(oggi);
+  const [statoSel, setStatoSel] = useState<StatoConsegna>('');
+  const [ordine, setOrdine] = useState<OrdineConsegne>('vecchie');
+  const [minGiorni, setMinGiorni] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [errore, setErrore] = useState('');
   const [gilet, setGilet] = useState<Set<number>>(new Set());
   const [modal, setModal] = useState<'import' | 'gestisci' | null>(null);
 
   async function loadCapi() {
     try {
-      const [k, t, g] = await Promise.all([
+      const [k, t, g, cg] = await Promise.all([
         api.get<Capo[]>('/api/hr/vestiario/capi'),
         api.get<{ employee_id: number; capo_id: number; taglia: string }[]>('/api/hr/vestiario/taglie'),
         api.get<number[]>('/api/hr/vestiario/gilet'),
+        api.get<Consegna[]>('/api/hr/vestiario/consegne'),
       ]);
-      setCapi(k); setTaglie(t); setGilet(new Set(g));
+      setCapi(k); setTaglie(t); setGilet(new Set(g)); setConsegne(cg);
     } catch { /* la pagina funziona anche senza capi */ }
   }
 
@@ -134,6 +155,53 @@ export default function VestiarioPage() {
     [rows],
   );
 
+  // Consegna del vestiario: una data per dipendente
+  const consegnaOf = useMemo(() => new Map(consegne.map(c => [c.employee_id, c])), [consegne]);
+  const minG = minGiorni.trim() === '' ? null : Math.max(0, parseInt(minGiorni, 10) || 0);
+
+  const righeConsegne = useMemo(() => {
+    const list = rows.filter(e => {
+      const c = consegnaOf.get(e.id);
+      if (statoSel === 'consegnato' && !c) return false;
+      if (statoSel === 'da_consegnare' && c) return false;
+      if (minG != null && (!c || c.giorni < minG)) return false;
+      return true;
+    });
+    const nome = (a: HrEmployee, b: HrEmployee) => a.cognome.localeCompare(b.cognome) || a.nome.localeCompare(b.nome);
+    return list.sort((a, b) => {
+      if (ordine === 'nome') return nome(a, b);
+      const ga = consegnaOf.get(a.id)?.giorni, gb = consegnaOf.get(b.id)?.giorni;
+      // chi non ha ancora ricevuto nulla va in fondo, in entrambi gli ordini
+      if (ga == null || gb == null) return ga == null && gb == null ? nome(a, b) : ga == null ? 1 : -1;
+      return (ordine === 'vecchie' ? gb - ga : ga - gb) || nome(a, b);
+    });
+  }, [rows, consegnaOf, statoSel, minG, ordine]);
+
+  const nConsegnati = useMemo(() => rows.filter(e => consegnaOf.has(e.id)).length, [rows, consegnaOf]);
+  const selVisibili = righeConsegne.filter(e => sel.has(e.id));
+  const tuttiSel = righeConsegne.length > 0 && selVisibili.length === righeConsegne.length;
+
+  function toggleSel(id: number) {
+    setSel(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
+  function toggleTutti() {
+    setSel(tuttiSel ? new Set() : new Set(righeConsegne.map(e => e.id)));
+  }
+
+  async function azioneConsegna(annulla: boolean) {
+    const ids = selVisibili.map(e => e.id);
+    if (!ids.length) return;
+    setSaving(true); setErrore('');
+    try {
+      if (annulla) await api.post('/api/hr/vestiario/consegne/annulla', { employee_ids: ids });
+      else await api.put('/api/hr/vestiario/consegne', { employee_ids: ids, data: dataSel });
+      setSel(new Set());
+      await loadCapi();
+    } catch (e) {
+      setErrore(e instanceof Error ? e.message : 'Operazione non riuscita');
+    } finally { setSaving(false); }
+  }
+
   function exportExcel() {
     const wb = XLSX.utils.book_new();
     // Foglio 1: da ordinare (capo + colore × taglia, con reparti)
@@ -191,6 +259,28 @@ export default function VestiarioPage() {
             <label className="label">Responsabile</label>
             <MultiSelectDropdown options={respOptions} selected={respSel} onChange={setRespSel} allLabel="Tutti i responsabili" />
           </div>
+          {tab === 'consegne' && (<>
+            <div className="w-48">
+              <label className="label">Stato</label>
+              <select className="input" value={statoSel} onChange={e => setStatoSel(e.target.value as StatoConsegna)}>
+                <option value="">Tutti</option>
+                <option value="consegnato">Consegnato</option>
+                <option value="da_consegnare">Da consegnare</option>
+              </select>
+            </div>
+            <div className="w-44">
+              <label className="label">Consegnato da almeno (giorni)</label>
+              <input type="number" min={0} className="input" value={minGiorni} onChange={e => setMinGiorni(e.target.value)} placeholder="es. 180" />
+            </div>
+            <div className="w-52">
+              <label className="label">Ordina per</label>
+              <select className="input" value={ordine} onChange={e => setOrdine(e.target.value as OrdineConsegne)}>
+                <option value="vecchie">Consegna più vecchia</option>
+                <option value="recenti">Consegna più recente</option>
+                <option value="nome">Cognome</option>
+              </select>
+            </div>
+          </>)}
           {tab === 'capi' && (
             <div className="w-48">
               <label className="label">Dividi per</label>
@@ -204,11 +294,12 @@ export default function VestiarioPage() {
         </div>
         <p className="text-sm text-muted">
           {rows.length} {rows.length === 1 ? 'persona' : 'persone'}
+          {tab === 'consegne' && <> · {nConsegnati} con vestiario consegnato · {rows.length - nConsegnati} da consegnare</>}
           {capi.length > 0 && nSenzaTaglie > 0 && <> · <span className="text-warning">{nSenzaTaglie} senza nessuna taglia</span></>}
         </p>
       </div>
 
-      <Tabs tabs={TABS} value={tab} onChange={setTab} labels={{ capi: 'Da ordinare', elenco: 'Elenco persone' }} />
+      <Tabs tabs={TABS} value={tab} onChange={setTab} labels={{ capi: 'Da ordinare', elenco: 'Elenco persone', consegne: 'Vestiario consegnato' }} />
 
       {loading ? (
         <SkeletonTable rows={6} cols={5} />
@@ -260,6 +351,65 @@ export default function VestiarioPage() {
             ))}
           </div>
         )
+      ) : tab === 'consegne' ? (
+        <div className="card overflow-x-auto !p-0">
+          {manage && (
+            <div className="flex flex-wrap items-end gap-3 border-b border-line px-4 py-3">
+              <div className="w-44">
+                <label className="label">Data di consegna</label>
+                <input type="date" className="input" value={dataSel} max={oggi()} onChange={e => setDataSel(e.target.value)} />
+              </div>
+              <button onClick={() => void azioneConsegna(false)} disabled={saving || !selVisibili.length || !dataSel} className="btn-primary text-sm">
+                Segna come consegnato{selVisibili.length > 0 && ` (${selVisibili.length})`}
+              </button>
+              <button onClick={() => void azioneConsegna(true)} disabled={saving || !selVisibili.length} className="btn-secondary text-sm">
+                Annulla consegna
+              </button>
+              {errore && <span className="text-sm text-danger">{errore}</span>}
+            </div>
+          )}
+          {righeConsegne.length === 0 ? (
+            <EmptyState title="Nessun risultato" hint="Cambia i filtri per vedere altre persone." />
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted">
+                  {manage && (
+                    <th className="w-10 px-4 py-2">
+                      <input type="checkbox" checked={tuttiSel} onChange={toggleTutti} aria-label="Seleziona tutti" />
+                    </th>
+                  )}
+                  <th className="px-4 py-2 font-medium">Dipendente</th>
+                  <th className="px-3 py-2 font-medium">Funzione</th>
+                  <th className="px-3 py-2 font-medium">Responsabile</th>
+                  <th className="px-3 py-2 font-medium">Consegnato il</th>
+                  <th className="px-3 py-2 text-right font-medium">Giorni</th>
+                </tr>
+              </thead>
+              <tbody>
+                {righeConsegne.map(e => {
+                  const c = consegnaOf.get(e.id);
+                  return (
+                    <tr key={e.id} className="border-b border-line last:border-0 hover:bg-stone-50">
+                      {manage && (
+                        <td className="px-4 py-2">
+                          <input type="checkbox" checked={sel.has(e.id)} onChange={() => toggleSel(e.id)} aria-label={`Seleziona ${e.cognome} ${e.nome}`} />
+                        </td>
+                      )}
+                      <td className="px-4 py-2">
+                        <Link href={`/hr/dipendenti/${e.id}`} className="font-medium text-ink-900 hover:text-accent-ink">{e.cognome} {e.nome}</Link>
+                      </td>
+                      <td className="px-3 py-2">{e.funzione_aziendale ?? '—'}</td>
+                      <td className="px-3 py-2">{respOf(e) === SENZA_RESP ? '—' : respOf(e)}</td>
+                      <td className="px-3 py-2">{c ? fmtData(c.consegnato_il) : <span className="text-warning">Da consegnare</span>}</td>
+                      <td className="px-3 py-2 text-right font-semibold tabular-nums text-ink-900">{c ? c.giorni : <span className="text-stone-300">·</span>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
       ) : (
         <div className="card overflow-x-auto !p-0">
           <table className="w-full text-sm">

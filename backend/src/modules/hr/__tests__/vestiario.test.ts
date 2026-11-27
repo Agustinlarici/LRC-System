@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCapoHeader, parseTaglia, parseSiNo, isGiletHeader, buildImportPlan, type EmpLite } from '../vestiario.js';
+import { parseCapoHeader, parseTaglia, parseSiNo, isGiletHeader, buildImportPlan, dataConsegnaValida, type EmpLite } from '../vestiario.js';
 
 describe('parseCapoHeader', () => {
   it('separa nome e colore tra parentesi', () => {
@@ -64,6 +64,20 @@ describe('buildImportPlan', () => {
   it('tra omonimi sceglie l\'unico attivo', () => {
     const p = buildImportPlan(header, [['BIANCHI LUCA', 'S']], emps);
     expect(p.assegnazioni).toEqual([{ employee_id: 4, col: 1, taglia: 'S' }]);
+  });
+});
+
+describe('dataConsegnaValida', () => {
+  const now = new Date('2026-11-27T10:00:00Z');
+  it('accetta oggi e il passato', () => {
+    expect(dataConsegnaValida('2026-11-27', now)).toBe(true);
+    expect(dataConsegnaValida('2026-01-05', now)).toBe(true);
+  });
+  it('rifiuta il futuro, date inesistenti e formati sbagliati', () => {
+    expect(dataConsegnaValida('2026-12-30', now)).toBe(false);
+    expect(dataConsegnaValida('2026-02-31', now)).toBe(false);
+    expect(dataConsegnaValida('27/11/2026', now)).toBe(false);
+    expect(dataConsegnaValida('1999-01-01', now)).toBe(false);
   });
 });
 

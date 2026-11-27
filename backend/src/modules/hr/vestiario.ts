@@ -117,3 +117,15 @@ export function buildImportPlan(header: string[], rows: string[][], employees: E
   });
   return plan;
 }
+
+// Data di consegna «YYYY-MM-DD»: deve esistere davvero (niente 2026-02-31) e non essere nel futuro.
+// Si accetta fino a domani per i fusi orari (server e browser possono avere date diverse).
+export function dataConsegnaValida(s: string, now: Date = new Date()): boolean {
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return false;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return false;
+  if (y < 2000) return false;
+  return dt.getTime() <= now.getTime() + 36 * 3600 * 1000;
+}
