@@ -21,6 +21,8 @@ describe('parseTaglia', () => {
     expect(parseTaglia('L')).toBe('L');
     expect(parseTaglia(' xl ')).toBe('XL');
     expect(parseTaglia('3XL')).toBe('3XL');
+    expect(parseTaglia('XXS')).toBe('XXS');
+    expect(parseTaglia('xxs donna')).toBe('XXS');
   });
   it('estrae la taglia quando la cella ha altro testo', () => {
     expect(parseTaglia('L uomo')).toBe('L');

@@ -77,7 +77,7 @@ export function ImportCapiModal({ onClose, onDone }: { onClose: () => void; onDo
     <Shell title="Importa taglie da Excel" onClose={onClose}>
       <p className="text-sm text-muted">
         Prima colonna: <b>COGNOME E NOME</b>. Le altre colonne sono i capi; il colore va tra parentesi nell&apos;intestazione
-        (es. <i>FELPA BCWG004 (GRIGIA)</i>). Nelle celle basta la taglia (XS, S, M, L, XL, XXL, 3XL, 4XL, 5XL); se c&apos;è altro testo
+        (es. <i>FELPA BCWG004 (GRIGIA)</i>). Nelle celle basta la taglia (XXS, XS, S, M, L, XL, XXL, 3XL, 4XL, 5XL); se c&apos;è altro testo
         (es. «L uomo») si prende solo la taglia. La colonna <b>GILET</b> è SI/NO: chi ha SI non entra nella somma degli altri capi. I capi e i colori che non esistono vengono creati. Le celle vuote non cancellano le taglie già inserite.
       </p>
       <div className="flex items-center gap-3">

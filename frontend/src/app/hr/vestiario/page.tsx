@@ -34,7 +34,7 @@ function oggi() {
 }
 const fmtData = (iso: string) => iso.split('-').reverse().join('/');
 
-const LETTER_ORDER = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', '5XL'];
+const LETTER_ORDER = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', '5XL'];
 
 // Ordine naturale delle taglie: XS…5XL, poi il resto
 function compareSize(a: string, b: string) {
